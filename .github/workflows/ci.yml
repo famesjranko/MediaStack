@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -31,7 +34,7 @@ jobs:
             exit 1
           fi
           if git ls-files -z | \
-            grep -zEv '^(docs/api/|\.github/workflows/ci\.yml$|\.env\.example$|tests/\.env\.gcp\.example$)' | \
+            grep -zEv '^(\.env\.example$|tests/\.env\.gcp\.example$)' | \
             xargs -0 rg -n \
               -e '-----BEGIN (RSA|OPENSSH|EC|DSA)? ?PRIVATE KEY-----|AIza[0-9A-Za-z_-]{35}|ya29\.[0-9A-Za-z_-]+|AKIA[0-9A-Z]{16}|gh[pousr]_[0-9A-Za-z_]{36,}|xox[baprs]-[0-9A-Za-z-]+|client_secret[[:space:]]*[:=][[:space:]]*["'\'']?[^"'\''[:space:]]+|private_key[[:space:]]*[:=][[:space:]]*["'\'']?[^"'\''[:space:]]+'; then
             echo "Potential secret pattern found"
@@ -91,7 +94,7 @@ jobs:
           bash tests/unit/test-runner.sh
 
   wizard-ui:
-    name: Wizard PTY scenarios (DinD, no image pulls)
+    name: Wizard PTY scenarios (DinD, no service image pulls)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

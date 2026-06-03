@@ -691,7 +691,6 @@ For deeper review and maintenance detail:
 | [`docs/testing/README.md`](docs/testing/README.md) | DinD harness, scenarios, and verification workflow |
 | [`docs/project/stack.md`](docs/project/stack.md) | Runtime, services, commands, and host dependencies |
 | [`docs/project/structure.md`](docs/project/structure.md) | Directory tree, placement rules, and service-add workflow |
-| [`docs/project/roadmap.md`](docs/project/roadmap.md) | Planned and deferred features |
 
 ---
 

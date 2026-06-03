@@ -73,7 +73,6 @@ tests/
 
 docs/                               Product and project docs (human-facing)
   README.md                         Docs index and reviewer reading order
-  api/                              Checked-in API schemas used for reference/review
   assets/                           Docs images and static media
     mediastack-banner.png           README banner
   design/
@@ -95,7 +94,6 @@ docs/                               Product and project docs (human-facing)
   project/
     stack.md                        Runtime, services, commands, and host dependencies
     structure.md                    This placement contract
-    roadmap.md                      Planned and deferred features
   private/                          Private maintainer notes, excluded from public sync
 ```
 

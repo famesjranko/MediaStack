@@ -40,7 +40,6 @@ installation, runtime, test, and maintenance surface.
 |-----|---------------|
 | [project/stack.md](project/stack.md) | Runtime, services, commands, and host dependencies. |
 | [project/structure.md](project/structure.md) | Directory tree, placement rules, and service-add workflow. |
-| [project/roadmap.md](project/roadmap.md) | Planned and deferred features. |
 
 ## Reading Order
 

@@ -146,7 +146,7 @@ check_ram_warn() {
     if (( free_gb < 2 )); then
         log_warn "Only ${ctx} — Bazarr/Jellyseerr may struggle. Continuing."
     elif (( free_gb < 4 )); then
-        log_warn "Only ${ctx} — flaresolverr (Cloudflare bypass) needs ~1GB for Chromium and may flap on this host. If indexer tests stall, consider disabling flaresolverr (see docs/project/roadmap.md). Continuing."
+        log_warn "Only ${ctx} — flaresolverr (Cloudflare bypass) needs ~1GB for Chromium and may flap on this host. If indexer tests stall, consider disabling the public indexer preset. Continuing."
     else
         log_ok "RAM: ${ctx}"
     fi
