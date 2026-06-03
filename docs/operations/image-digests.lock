@@ -1,0 +1,22 @@
+# MediaStack tested image digest record v1
+# Update only after the matching local DinD preflight has passed.
+service	image	digest	tested_at_utc	preflight
+jellyfin	jellyfin/jellyfin:latest	sha256:f66273e014b307e4ac46778845ebc1e9ee24b2e57c1fc17d5ec5ac3015649bfa	2026-06-01T06:49:06Z	scenario:fresh-install
+sonarr	linuxserver/sonarr:latest	sha256:0b5c4803f92456fb9b65bae8375716ea120b4ea17b3cced7da32b63f0085782b	2026-06-01T06:49:06Z	scenario:fresh-install
+radarr	linuxserver/radarr:latest	sha256:c0a4335d4249b46102f64cf6fa27ffc3bddfd9138fac1e4ddf238afd37f02d1f	2026-06-01T06:49:06Z	scenario:fresh-install
+jackett	linuxserver/jackett:latest	sha256:235af6070371c279c51439080d0b5c0b5ef118703c583e085f3dd8bf9f376c1e	2026-06-01T06:49:06Z	scenario:fresh-install
+qbittorrent	linuxserver/qbittorrent:latest	sha256:715d2bfbcf1cd3d734cbbd4fbd599eb7ea0642eaa079a372dd0d343f59516700	2026-06-01T06:49:06Z	scenario:fresh-install
+flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47	2026-06-01T06:49:06Z	compose-only
+jellyseerr	fallenbagel/jellyseerr:latest	sha256:4538137bc5af902dece165f2bf73776d9cf4eafb6dd714670724af8f3eb77764	2026-06-01T06:49:06Z	scenario:fresh-install
+unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:b0939e1b2c64499b82678a8c8c3e189d1e92c8223633fd34239174382de8ca8a	2026-06-01T06:49:06Z	compose-only
+bazarr	linuxserver/bazarr:latest	sha256:95f27692c3de6dbe130cd035d342d8138ec74ade7b62cfc52e11ae222c52c855	2026-06-01T06:49:06Z	manual
+homepage	ghcr.io/gethomepage/homepage:latest	sha256:d8d784e5090111b6e4c56dfd90e272d2953a2094e87349f647165df0fa6c4401	2026-06-01T06:49:06Z	scenario:fresh-install
+portainer	portainer/portainer-ce:latest	sha256:8d2f5c9fbc5b8490fb3a12efadbad74978e22991911e1db611d8a45871775112	2026-06-01T06:49:06Z	scenario:fresh-install
+npm	jc21/nginx-proxy-manager:2	sha256:83b8d6a2d5ddfdd1f9f8ee240499953dec5f7bbf3b4dafc5f4ac394f1edca930	2026-06-01T06:49:06Z	scenario:npm-heal
+fail2ban	crazymax/fail2ban:latest	sha256:7cd8a427a44675397398a8dace2a3d755e62c72527f8730e4fd37697731a9321	2026-06-01T06:49:06Z	scenario:fail2ban-drift
+ddns-updater	qmcgaw/ddns-updater:latest	sha256:9313e1c31f366c89dc0819e5eff85576cb23821424c0c267fa66cfa39aabde83	2026-06-01T06:49:06Z	scenario:ddns-seed
+uptime-kuma	louislam/uptime-kuma:2	sha256:91e963bfda569ba115206e843febb446f473ab525add4e08b2b9e3beffa16985	2026-06-01T06:49:06Z	scenario:fresh-install
+beszel	henrygd/beszel:latest	sha256:a849ad80814b6a1a3be665304dcace5d4854b3bed7bde4dd1227e8ce1b82d477	2026-06-01T06:49:06Z	scenario:fresh-install
+beszel-agent	henrygd/beszel-agent:alpine	sha256:c6e925e00784b90eab68e2b813e4c722cf185f378d77e1129a97c064ca5fa7e4	2026-06-01T06:49:06Z	scenario:fresh-install
+wireguard	ghcr.io/wg-easy/wg-easy:15.3.0	sha256:93bbd593e07bab98d02807a28770ac87ab6c48818e319e68c1f66561feb99876	2026-06-01T06:49:06Z	scenario:wireguard
+autoheal	willfarrell/autoheal:latest	sha256:2bdbf136634db083cac4b68132dcdbb0589b8b3dc05d49f0c3d63e9656a8b9c4	2026-06-01T06:49:06Z	compose-only

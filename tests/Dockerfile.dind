@@ -1,0 +1,56 @@
+# Debian-based Docker-in-Docker for MediaStack tests.
+#
+# Why not docker:dind (Alpine)? Alpine's BusyBox + musl diverge from our
+# production target (Debian) in small ways that bite silently — e.g. BusyBox
+# grep lacks `-P` (PCRE), and gettext-base (which ships envsubst) isn't in
+# Alpine's default set. Matching production's distro makes the test environment
+# a faithful proxy for what ships to users.
+FROM debian:bookworm-slim
+
+# Two-stage install: (1) base utilities + Docker apt repo bootstrap,
+# (2) Docker CE stack + our runtime deps. Mirrors setup.sh's production flow
+# so tests run against the same Docker/Compose versions users get.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        lsb-release \
+        bash \
+        python3 \
+        python3-yaml \
+        grep \
+        sed \
+        gettext-base \
+        iptables \
+        nfs-common \
+        nfs-kernel-server \
+        pigz \
+        rpcbind \
+        xz-utils && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    chmod a+r /etc/apt/keyrings/docker.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+        > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        docker-ce \
+        docker-ce-cli \
+        containerd.io \
+        docker-buildx-plugin \
+        docker-compose-plugin && \
+    rm -rf /var/lib/apt/lists/*
+
+# dockerd writes to /var/lib/docker — declaring it a volume means the host
+# gets an anonymous volume per launch instead of a fat layer inside the
+# container, matching docker:dind's behaviour. tests/lib/dind.sh uses
+# `docker rm -fv` so these don't pile up.
+VOLUME /var/lib/docker
+
+COPY dind-entrypoint.sh /usr/local/bin/dind-entrypoint.sh
+RUN chmod +x /usr/local/bin/dind-entrypoint.sh
+
+EXPOSE 2375 2376
+ENTRYPOINT ["dind-entrypoint.sh"]

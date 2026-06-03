@@ -1,0 +1,983 @@
+#!/usr/bin/env bash
+# =============================================================================
+# MediaStack — front-door launcher
+# =============================================================================
+# Interactive menu for non-technical users. Adapts to install state:
+#   - Pre-install: install + readiness diagnostics (system, ports, DNS, public IP)
+#   - Post-install: status, ports, update, configure, add-feature, manage,
+#                   wipe-and-reinstall
+#
+# Reuses the existing pure-bash UI library (scripts/lib/ui.sh) and dispatches
+# to existing scripts (setup.sh, configure.sh, port-check.sh, update.sh,
+# nvidia-repatch.sh) — no business logic here.
+#
+# Usage: ./mediastack
+# =============================================================================
+set -uo pipefail   # NOT -e: a failed diagnostic must not kill the loop.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Front-door root check. setup.sh refuses root via check_not_root, but only
+# after dispatch — better to fail fast here so a `sudo ./mediastack` doesn't
+# render the whole menu before refusing.
+if [[ $EUID -eq 0 ]]; then
+    echo "Please run ./mediastack as your normal user (sudo will be used internally when needed)." >&2
+    exit 1
+fi
+
+# Refuse to run with a closed/non-TTY stdin unless explicitly opted in.
+# ui_choose defaults to item 1 on empty input — that's "Install MediaStack"
+# pre-install or "Stop all services" in the manage submenu. A wrapper or CI
+# job that closes stdin would silently trigger destructive actions.
+# Set MEDIASTACK_NONINTERACTIVE=1 to drive the launcher from a piped script
+# (mirrors setup.sh's MEDIASTACK_NONINTERACTIVE behavior).
+if [[ ! -t 0 && "${MEDIASTACK_NONINTERACTIVE:-0}" != "1" ]]; then
+    echo "./mediastack is interactive — set MEDIASTACK_NONINTERACTIVE=1 to pipe input." >&2
+    exit 2
+fi
+
+source "$SCRIPT_DIR/scripts/lib/common.sh"
+source "$SCRIPT_DIR/scripts/lib/ui.sh"
+source "$SCRIPT_DIR/scripts/lib/network.sh"
+source "$SCRIPT_DIR/scripts/setup/storage.sh"
+
+# Source .env if it exists, so STAGE_1_COMPLETE / DOMAIN / JELLYFIN_GPU /
+# NVIDIA_DRIVER_MODE / etc. are available. Don't fail if missing — pre-install
+# is a valid state.
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+# Recovery predicates (recovery_menu_remote_available / _transcoding_available).
+# The file's other functions only execute when called, so this is safe.
+source "$SCRIPT_DIR/scripts/setup/recovery.sh"
+
+# Cache the public IP for the session — multiple banner renders should not
+# re-hit the IP-detection API on every menu refresh.
+_MS_PUBLIC_IP=""
+_MS_PUBLIC_IP_CHECKED=0
+
+# =============================================================================
+# State detection
+# =============================================================================
+
+is_installed() {
+    [[ "${STAGE_1_COMPLETE:-}" == "1" ]]
+}
+
+# =============================================================================
+# Banner
+# =============================================================================
+
+_cached_public_ip() {
+    if (( _MS_PUBLIC_IP_CHECKED == 0 )); then
+        if net_detect_public_ip 2>/dev/null; then
+            _MS_PUBLIC_IP="$_NET_PUBLIC_IP"
+        else
+            _MS_PUBLIC_IP=""
+        fi
+        _MS_PUBLIC_IP_CHECKED=1
+    fi
+    printf '%s' "$_MS_PUBLIC_IP"
+}
+
+_docker_reachable() {
+    command -v docker &>/dev/null && docker info &>/dev/null 2>&1
+}
+
+# Build the --profile args matching the user's .env-declared configuration.
+# Mirrors _build_profile_args in scripts/setup/stack.sh:7 — kept inline here
+# so the launcher doesn't need to source the heavy stack module. The launcher
+# already sourced .env at startup, so live-env vars are authoritative.
+# Usage: _ms_profile_args ARRAY_NAME
+_ms_profile_args() {
+    local -n _arr=$1
+    _arr=()
+    [[ "${BAZARR_ENABLED:-false}" == "true" ]] && _arr+=(--profile subtitles)
+    [[ "${AUTOHEAL_ENABLED:-true}" != "false" ]] && _arr+=(--profile autoheal)
+    if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then
+        _arr+=(--profile proxy)
+    fi
+    if [[ -n "${WG_INIT_PASSWORD:-}" ]]; then
+        _arr+=(--profile remote)
+    fi
+}
+
+_compose_running_summary() {
+    # Echoes "running/total" on success. Returns 1 when no containers exist for
+    # this compose project. Counts include all .env-declared profiles, not just
+    # default — otherwise npm/bazarr/wireguard/autoheal would be invisible.
+    local profiles=()
+    _ms_profile_args profiles
+    local total running
+    total=$(docker compose "${profiles[@]}" ps --format '{{.Name}}' 2>/dev/null | wc -l)
+    running=$(docker compose "${profiles[@]}" ps --filter 'status=running' --format '{{.Name}}' 2>/dev/null | wc -l)
+    if [[ -z "$total" || "$total" == "0" ]]; then
+        return 1
+    fi
+    printf '%s/%s' "$running" "$total"
+}
+
+render_banner() {
+    local hostname_short
+    hostname_short=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "unknown")
+    local public_ip
+    public_ip=$(_cached_public_ip)
+    local public_ip_line="Public IP:   ${public_ip:-not detected}"
+
+    local lines=()
+    if is_installed; then
+        if _docker_reachable; then
+            local summary
+            if summary=$(_compose_running_summary); then
+                lines+=("Status:      Running   ${summary} containers")
+            else
+                lines+=("Status:      Installed (stack not running)")
+            fi
+        else
+            lines+=("Status:      Installed (Docker not reachable)")
+        fi
+        if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then
+            lines+=("Domain:      ${DOMAIN}")
+        fi
+        lines+=("Host:        ${hostname_short}")
+        lines+=("$public_ip_line")
+    else
+        lines+=("Status:      Not yet installed")
+        lines+=("Host:        ${hostname_short}")
+        lines+=("$public_ip_line")
+    fi
+
+    ui_box "MediaStack — Turnkey Media Server" "${lines[@]}"
+}
+
+# =============================================================================
+# Inline diagnostics (pre-install + post-install — no .env required)
+# =============================================================================
+
+# diag_readiness — read-only snapshot of host readiness. Each underlying check
+# is wrapped in a subshell so that an `exit 1` (hard fail in disk/internet
+# checks) returns to the menu instead of killing the launcher.
+diag_readiness() {
+    source "$SCRIPT_DIR/scripts/setup/checks.sh"
+    source "$SCRIPT_DIR/scripts/setup/gpu.sh"
+
+    echo ""
+    ui_log info "Running read-only readiness checks (this prompts no questions)..."
+    echo ""
+
+    # Each check exits 1 on hard failure; subshell isolates that exit.
+    ( check_disk_floor ) || true
+    ( check_internet_reachability ) || true
+    ( check_ram_warn ) || true
+
+    # GPU detection sets a global; we want the user to see what was detected
+    # but don't need to keep the value (post-install reads from .env instead).
+    ( detect_gpu ) || true
+
+    # Sudo: don't prompt — just probe. prompt_sudo_cache would block on a
+    # password input which is wrong for a readiness check.
+    if command -v sudo &>/dev/null; then
+        if sudo -n true 2>/dev/null; then
+            log_ok "Sudo: passwordless OK"
+        else
+            log_warn "Sudo: requires password (install will prompt once)"
+        fi
+    else
+        log_error "Sudo: not installed (apt-get install sudo)"
+    fi
+
+    # Docker: read-only probe.
+    if command -v docker &>/dev/null && docker info &>/dev/null; then
+        log_ok "Docker: $(docker --version | awk '{print $3}' | tr -d ',')"
+    else
+        log_warn "Docker: not installed (will be installed on first install run)"
+    fi
+}
+
+# diag_dns_check — pre-install or ad-hoc subdomain DNS verification.
+# Prompts for a domain and runs stage2_dns_classify (which checks
+# jellyfin.<domain> and jellyseerr.<domain> A-records vs the public IP).
+diag_dns_check() {
+    echo ""
+    # bind9-dnsutils (dig) is installed by setup.sh's install_base_packages,
+    # so post-install this is always present. Pre-install on a bare Debian, dig
+    # may be absent — and stage2_dns_classify silently returns "no-a" when dig
+    # is missing, which the user reads as "your A-records are wrong" instead of
+    # "tool missing". Fail fast with an actionable apt hint.
+    if ! command -v dig &>/dev/null; then
+        ui_log error "dig is not installed (bind9-dnsutils package)."
+        ui_log info "Install it with:  sudo apt-get install -y bind9-dnsutils"
+        ui_log info "Or run option 1 (Install MediaStack) — setup.sh installs it automatically."
+        return 0
+    fi
+
+    local default_domain="${DOMAIN:-}"
+    [[ "$default_domain" == "example.com" ]] && default_domain=""
+
+    local domain
+    domain=$(ui_input "Domain to check (e.g. example.com)" "$default_domain")
+    if [[ -z "$domain" ]]; then
+        ui_log warn "No domain provided — nothing to check."
+        return 0
+    fi
+
+    echo ""
+    ui_log info "Detecting public IP..."
+    local public_ip=""
+    if net_detect_public_ip; then
+        public_ip="$_NET_PUBLIC_IP"
+        ui_kv "Public IP" "$public_ip"
+        # Sync the launcher's banner cache so a previously-failed detection
+        # doesn't leave stale "not detected" in the banner.
+        _MS_PUBLIC_IP="$public_ip"
+        _MS_PUBLIC_IP_CHECKED=1
+    else
+        ui_log error "Could not detect public IP — DNS comparison cannot run."
+        return 0
+    fi
+
+    echo ""
+    ui_log info "Checking jellyfin.${domain} and jellyseerr.${domain} A-records (via 8.8.8.8)..."
+    local result
+    result=$(stage2_dns_classify "$domain" "$public_ip")
+    local rc=$?
+
+    case "$result" in
+        ok)
+            ui_log ok "DNS looks good — both subdomains resolve to your public IP."
+            ;;
+        no-a)
+            ui_log error "Missing A-records: set jellyfin.${domain} and jellyseerr.${domain} to ${public_ip} at your DNS provider."
+            ;;
+        apex-only)
+            ui_log warn "Only the apex (${domain}) has an A-record. Add subdomain A-records for jellyfin.* and jellyseerr.*"
+            ;;
+        cloudflare)
+            ui_log warn "DNS points to Cloudflare. MediaStack expects the A-record to point directly at your home IP (${public_ip}). Disable Cloudflare proxying (grey cloud)."
+            ;;
+        mismatch:*)
+            local got="${result#mismatch:}"
+            ui_log error "DNS mismatch — subdomain resolves to ${got}, but your public IP is ${public_ip}. Update the A-record (or wait for DDNS propagation)."
+            ;;
+        *)
+            ui_log warn "DNS classification: ${result} (rc=${rc})"
+            ;;
+    esac
+}
+
+diag_public_ip() {
+    echo ""
+    ui_log info "Detecting public IP via api.ipify.org..."
+    if net_detect_public_ip; then
+        ui_kv "Public IP" "$_NET_PUBLIC_IP"
+        # Refresh the cached banner value too.
+        _MS_PUBLIC_IP="$_NET_PUBLIC_IP"
+        _MS_PUBLIC_IP_CHECKED=1
+    else
+        ui_log error "Could not detect public IP — check your internet connection."
+    fi
+}
+
+diag_status() {
+    echo ""
+    if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null 2>&1; then
+        ui_log error "Docker / Compose not available."
+        return 0
+    fi
+
+    local profiles=()
+    _ms_profile_args profiles
+
+    # One-line summary above the raw ps table so users see stack health at a
+    # glance — non-technical users get alarmed by raw "Restarting (1) Xs ago"
+    # without context.
+    local raw total running restarting
+    raw=$(docker compose "${profiles[@]}" ps --format '{{.Status}}' 2>/dev/null || true)
+    total=$(grep -c . <<<"$raw" 2>/dev/null || echo 0)
+    running=$(grep -cE '^Up\b' <<<"$raw" 2>/dev/null || echo 0)
+    restarting=$(grep -cE '^Restarting' <<<"$raw" 2>/dev/null || echo 0)
+
+    if (( total > 0 )); then
+        local summary="${running}/${total} containers running"
+        (( restarting > 0 )) && summary+=", ${restarting} restarting"
+        ui_log info "$summary"
+        echo ""
+    fi
+
+    docker compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' 2>&1 || true
+}
+
+# =============================================================================
+# Action wrappers (call existing scripts)
+# =============================================================================
+
+# Capstone summary printed after each action so the user gets an unambiguous
+# success/failure verdict, not just whatever raw output the script emitted.
+_show_action_result() {
+    local rc="$1" label="$2"
+    echo ""
+    if (( rc == 0 )); then
+        ui_log ok "${label} completed successfully."
+    else
+        ui_log error "${label} exited with code ${rc}."
+    fi
+}
+
+action_install()    {
+    ui_log warn "About to run the full installer (~5–10 min, requires sudo)."
+    local confirm=""
+    read -rp "  Continue? [Y/n]: " confirm || :
+    # Accept n/N/no/No/NO/nope/etc, with optional leading whitespace so
+    # "  n" doesn't fall through and install. Empty input lowercases to
+    # empty (doesn't match ^[[:space:]]*n) so the [Y] default proceeds.
+    [[ "${confirm,,}" =~ ^[[:space:]]*n ]] && return 0
+    exec "$SCRIPT_DIR/setup.sh"
+}
+action_remote()     { exec "$SCRIPT_DIR/setup.sh" --remote; }
+action_transcode()  { exec "$SCRIPT_DIR/setup.sh" --transcoding; }
+# Wipe-and-reinstall: setup.sh's detect_existing_install path shows the
+# recovery menu which already has a "Wipe everything and start fresh" item
+# gated by a DESTROY-typed confirm. Reuse it.
+action_wipe()       { exec "$SCRIPT_DIR/setup.sh"; }
+
+action_port_check() {
+    local rc=0
+    "$SCRIPT_DIR/scripts/port-check.sh" || rc=$?
+    _show_action_result "$rc" "Port check"
+    pause_for_menu
+}
+action_update() {
+    local rc=0
+    "$SCRIPT_DIR/scripts/update.sh" || rc=$?
+    _show_action_result "$rc" "Update services"
+    pause_for_menu
+}
+action_configure() {
+    echo ""
+    # Precondition: configure.sh polls each core service for 90s via
+    # wait_for_service (lib/http.sh:47). If even one core service is missing,
+    # the user waits 90s+ per missing service before configure.sh bails. Check
+    # all 10 core services configure.sh requires (configure.sh:105-112). The
+    # bazarr/npm/wireguard checks inside configure.sh are already gated by
+    # container presence, so we don't enforce those here.
+    local core_services=(qbittorrent jackett sonarr radarr jellyfin jellyseerr portainer homepage uptime-kuma beszel)
+    local running missing=()
+    running=$(docker compose ps --filter status=running --format '{{.Name}}' 2>/dev/null || true)
+    local svc
+    for svc in "${core_services[@]}"; do
+        if ! grep -qx "$svc" <<<"$running"; then
+            missing+=("$svc")
+        fi
+    done
+    if (( ${#missing[@]} > 0 )); then
+        ui_log warn "Stack is not fully running — configure.sh would wait 90s per missing service."
+        ui_log info "Not running: ${missing[*]}"
+        ui_log info "Start the stack first:  Manage stack → Start all services"
+        pause_for_menu
+        return 0
+    fi
+    local rc=0
+    "$SCRIPT_DIR/scripts/configure.sh" || rc=$?
+    _show_action_result "$rc" "Re-run configuration"
+    pause_for_menu
+}
+action_repatch() {
+    local rc=0
+    "$SCRIPT_DIR/scripts/nvidia-repatch.sh" || rc=$?
+    _show_action_result "$rc" "Repatch NVIDIA"
+    pause_for_menu
+}
+
+action_stack_stop() {
+    echo ""
+    # Precondition check: if no containers exist for this project, calling
+    # `down` would either be a no-op or fail with a confusing rc=1 +
+    # invalid-spec error if .env is incomplete. Bail early. Capture-then-test
+    # avoids the SIGPIPE+pipefail race that motivated C1: piping into
+    # `grep -q .` reads false when grep's early exit SIGPIPEs compose.
+    local ids
+    ids=$(docker compose ps -q 2>/dev/null || true)
+    if [[ -z "$ids" ]]; then
+        ui_log info "No MediaStack services are running — nothing to stop."
+        pause_for_menu
+        return 0
+    fi
+    ui_log info "Stopping all MediaStack services..."
+    # Pass profile args so optional services (npm, bazarr, wireguard, autoheal)
+    # actually stop. `--profile all` is a literal name, not a wildcard, so
+    # without explicit profile args those containers survive `down`.
+    local profiles=()
+    _ms_profile_args profiles
+    local rc=0
+    docker compose "${profiles[@]}" down --remove-orphans 2>&1 || rc=$?
+    _show_action_result "$rc" "Stop stack"
+    pause_for_menu
+}
+
+action_stack_start() {
+    echo ""
+    if ! storage_guard_before_start; then
+        pause_for_menu
+        return 0
+    fi
+    ui_log info "Starting MediaStack services..."
+    # Pass profile args so optional services (npm, bazarr, wireguard, autoheal)
+    # come back up — not just default-profile ones.
+    local profiles=()
+    _ms_profile_args profiles
+    local rc=0
+    docker compose "${profiles[@]}" up -d 2>&1 || rc=$?
+    _show_action_result "$rc" "Start stack"
+    pause_for_menu
+}
+
+action_stack_logs() {
+    echo ""
+    ui_log info "Tailing logs from all active profiles (Ctrl-C to return to menu)..."
+    echo ""
+    # Ignore SIGINT in the launcher itself — `trap - INT` would reset to
+    # default which in non-interactive bash exits the whole shell on Ctrl-C.
+    # `trap '' INT` makes bash drop the signal; the docker child still
+    # receives it via the process group and exits cleanly.
+    trap '' INT
+    local profiles=()
+    _ms_profile_args profiles
+    docker compose "${profiles[@]}" logs -f --tail=200 2>&1 || true
+    trap 'echo; echo "  Goodbye."; exit 0' INT
+    echo ""
+    ui_log info "Logs stream ended."
+    pause_for_menu
+}
+
+# =============================================================================
+# Submenus
+# =============================================================================
+
+# "Add a feature" submenu — only shows items that are actually addable.
+# Caller checks at least one is available before invoking.
+submenu_add_feature() {
+    clear
+    render_banner
+    local options=()
+
+    if recovery_menu_remote_available; then
+        options+=("Add remote access (HTTPS, domain, WireGuard)")
+    fi
+    if recovery_menu_transcoding_available; then
+        options+=("Add hardware transcoding (GPU)")
+    fi
+    options+=("Back")
+
+    echo ""
+    local choice
+    choice=$(ui_choose "Add which feature?" "${options[@]}")
+
+    case "$choice" in
+        "Add remote access"*)        action_remote ;;
+        "Add hardware transcoding"*) action_transcode ;;
+        *)                           return 0 ;;
+    esac
+}
+
+submenu_manage_stack() {
+    clear
+    render_banner
+    echo ""
+    local choice
+    choice=$(ui_choose "Manage stack:" \
+        "Stop all services" \
+        "Start all services" \
+        "Tail logs (live)" \
+        "Back")
+
+    case "$choice" in
+        "Stop all services"*)  action_stack_stop ;;
+        "Start all services"*) action_stack_start ;;
+        "Tail logs"*)          action_stack_logs ;;
+        *)                     return 0 ;;
+    esac
+}
+
+submenu_diagnostics() {
+    clear
+    render_banner
+    echo ""
+    local choice
+    choice=$(ui_choose "Diagnostics:" \
+        "Show public IP" \
+        "Check domain DNS" \
+        "System readiness check" \
+        "Back")
+
+    case "$choice" in
+        "Show public IP"*)    diag_public_ip; pause_for_menu ;;
+        "Check domain DNS"*)  diag_dns_check; pause_for_menu ;;
+        "System readiness"*)  diag_readiness; pause_for_menu ;;
+        *)                    return 0 ;;
+    esac
+}
+
+submenu_manage_hardware() {
+    clear
+    render_banner
+    echo ""
+
+    local options=()
+    if stage3_pending_nvidia_reboot_same_boot; then
+        options+=("Reboot to finish hardware transcoding")
+    fi
+    options+=("Configure or change hardware transcoding")
+    if [[ "${NVIDIA_DRIVER_MODE:-}" == "unlock" ]]; then
+        options+=("Repatch NVIDIA driver (Unlock mode)")
+    fi
+    options+=("Back")
+
+    local choice
+    choice=$(ui_choose "Manage hardware transcoding:" "${options[@]}")
+    case "$choice" in
+        "Reboot to finish hardware transcoding"*) action_transcode ;;
+        "Configure or change hardware transcoding"*) action_transcode ;;
+        "Repatch NVIDIA"*) action_repatch ;;
+        *) return 0 ;;
+    esac
+}
+
+# --- Manage updates (per-service image policy + channel; ADR-30) ------------
+
+# Echo the `--profile X` flag a service needs for compose to target it (or "").
+_service_profile_flag() {
+    case "$1" in
+        bazarr)                     echo "--profile subtitles" ;;
+        npm|fail2ban|ddns-updater)  echo "--profile proxy" ;;
+        wireguard)                  echo "--profile remote" ;;
+        autoheal)                   echo "--profile autoheal" ;;
+        *)                          echo "" ;;
+    esac
+}
+
+# Source the override generator (defines functions only) and regenerate
+# docker-compose.override.yml from the live channel + per-service policy + lock.
+# Mirrors scripts/update.sh so GPU/mem/NAS settings are reproduced exactly.
+_regenerate_override() {
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/scripts/setup/override.sh"
+    detect_host_memory >/dev/null 2>&1 || true
+    generate_override "${JELLYFIN_GPU:-none}"
+}
+
+_image_policy_state_file() { printf '%s\n' "$SCRIPT_DIR/config/state/image-policy.tsv"; }
+
+_image_policy_header() {
+    echo "# MediaStack per-service image policy — managed by 'Manage updates' (ADR-30)."
+    echo "# Format: service<TAB>stable|latest. Absent row = follow global IMAGE_CHANNEL."
+}
+
+# Set (or replace) a service's policy row.
+_set_service_policy() {
+    local svc="$1" pol="$2" file tmp
+    file="$(_image_policy_state_file)"
+    mkdir -p "$(dirname "$file")"
+    tmp=$(mktemp)
+    {
+        _image_policy_header
+        [[ -f "$file" ]] && awk -F '\t' -v s="$svc" \
+            '$1 !~ /^#/ && NF >= 2 && $1 != s { print $1 "\t" $2 }' "$file"
+        printf '%s\t%s\n' "$svc" "$pol"
+    } > "$tmp"
+    mv "$tmp" "$file"
+}
+
+# Remove a service's policy row (falls back to the global channel).
+_clear_service_policy() {
+    local svc="$1" file tmp
+    file="$(_image_policy_state_file)"
+    [[ -f "$file" ]] || return 0
+    tmp=$(mktemp)
+    {
+        _image_policy_header
+        awk -F '\t' -v s="$svc" \
+            '$1 !~ /^#/ && NF >= 2 && $1 != s { print $1 "\t" $2 }' "$file"
+    } > "$tmp"
+    mv "$tmp" "$file"
+}
+
+# Rewrite a KEY=value line in .env (append if absent). Value here has no '='.
+_set_env_var() {
+    local key="$1" val="$2" file="$SCRIPT_DIR/.env" tmp
+    [[ -f "$file" ]] || return 1
+    tmp=$(mktemp)
+    awk -v k="$key" -v v="$val" '
+        $0 ~ "^" k "=" { print k "=" v; done = 1; next }
+        { print }
+        END { if (!done) print k "=" v }
+    ' "$file" > "$tmp"
+    mv "$tmp" "$file"
+}
+
+# Lightweight readiness poll after a single-service recreate (no http.sh needed).
+_wait_service_running() {
+    local svc="$1" i=0 max=60 state health
+    echo -ne "  Waiting for ${svc}..."
+    while (( i < max )); do
+        state=$(docker inspect --format '{{.State.Status}}' "$svc" 2>/dev/null || echo "")
+        if [[ "$state" == "running" ]]; then
+            health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$svc" 2>/dev/null || echo "")
+            if [[ -z "$health" || "$health" == "healthy" ]]; then
+                echo -e " ${GREEN}ready${NC}"; return 0
+            elif [[ "$health" == "unhealthy" ]]; then
+                echo -e " ${RED}unhealthy${NC}"; return 1
+            fi
+        fi
+        sleep 2; (( i += 2 )); echo -ne "."
+    done
+    echo -e " ${YELLOW}still starting${NC}"
+    return 0
+}
+
+# True only when the container exists AND is currently running.
+_service_is_running() {
+    [[ "$(docker inspect --format '{{.State.Running}}' "$1" 2>/dev/null || echo false)" == "true" ]]
+}
+
+# Pull the (regenerated-override) image and recreate the service — but ONLY if it
+# is currently running. A stopped/exited service is left stopped: the new image is
+# staged and applies next time the stack starts. Never starts a stopped service.
+_recreate_service() {
+    local svc="$1" done_msg="$2" pflag
+    pflag=$(_service_profile_flag "$svc")
+    # shellcheck disable=SC2086
+    docker compose $pflag pull "$svc" 2>&1 || ui_log warn "Pull reported an issue; using cached image."
+    if ! _service_is_running "$svc"; then
+        ui_log info "${svc} is stopped — the new image is staged and applies next time it starts."
+        return 0
+    fi
+    # shellcheck disable=SC2086
+    if docker compose $pflag up -d "$svc" 2>&1; then
+        _wait_service_running "$svc"
+        ui_log ok "$done_msg"
+    else
+        ui_log error "Failed to recreate ${svc}."
+        return 1
+    fi
+}
+
+# Apply a service update. Status-aware: a "Tested Stable update available" stays
+# on Stable (re-pins to the advanced lock); an upstream update on a Stable
+# install floats the service to its compose tag (sticky, outside the baseline).
+_apply_service_update() {
+    local svc="$1" status="${2:-}"
+    if [[ "$svc" == "wireguard" ]]; then
+        ui_log warn "Updating WireGuard restarts remote access and may disconnect VPN clients."
+        ui_log info "Run this from your LAN / local console if you rely on WireGuard for access."
+        ui_confirm "Update WireGuard now?" no || { ui_log info "Skipped WireGuard."; return 0; }
+    fi
+    local g="${IMAGE_CHANNEL:-stable}"; g="${g,,}"
+    # Float to the upstream tag only for an upstream (ahead-of-tested) update on a
+    # Stable install. A tested-Stable update applies in-channel (no policy change).
+    local sl="${status,,}"
+    if [[ "$g" == "stable" && "$sl" == *upstream* ]]; then
+        _set_service_policy "$svc" latest
+        ui_log info "${svc}: now tracking its Upstream tag — outside the tested Stable baseline."
+    elif [[ "$g" == "stable" ]]; then
+        ui_log info "${svc}: applying the tested Stable update."
+    fi
+    _regenerate_override || { ui_log error "Could not regenerate compose override."; return 1; }
+    storage_guard_before_start || return 1
+    ui_log info "Pulling ${svc}..."
+    _recreate_service "$svc" "${svc} updated."
+}
+
+# Clear a service's manual override so it follows the default channel again, and
+# recreate it onto the resulting image. Under global Stable this re-pins to the
+# tested lock; under global Upstream tags it follows the tag.
+_reset_service_to_default() {
+    local svc="$1" g="${IMAGE_CHANNEL:-stable}"; g="${g,,}"
+    _clear_service_policy "$svc"
+    if [[ "$g" == "stable" ]]; then
+        ui_log info "${svc}: returning to the tested Stable digest..."
+    else
+        ui_log info "${svc}: following the default channel (Upstream tags)..."
+    fi
+    _regenerate_override || { ui_log error "Could not regenerate compose override."; return 1; }
+    storage_guard_before_start || return 1
+    _recreate_service "$svc" "${svc} reset to the default channel."
+}
+
+# Channel-agnostic scan: TSV of service<TAB>policy<TAB>override<TAB>status<TAB>updatable.
+_update_status_scan() {
+    python3 "$SCRIPT_DIR/scripts/image-drift.py" --status-tsv 2>/dev/null
+}
+
+_render_update_table() {
+    local tsv="$1" svc pol override status upd label color has_manual=0
+    printf '  %-13s %-18s %s\n' "SERVICE" "POLICY" "STATUS"
+    printf '  %-13s %-18s %s\n' "-------------" "------------------" "------"
+    while IFS=$'\t' read -r svc pol override status upd; do
+        [[ -z "$svc" ]] && continue
+        case "$pol" in
+            stable) label="Stable (tested)" ;;
+            latest) label="Upstream tag" ;;
+            *)      label="$pol" ;;
+        esac
+        if [[ "$override" == "manual" ]]; then label="${label} *"; has_manual=1; fi
+        case "$status" in
+            "Up to date"|"On tested Stable")     color="$GREEN" ;;
+            *"update available"*)                color="$YELLOW" ;;
+            "Not installed"|"Unknown (offline)"|"Unknown local digest") color="$CYAN" ;;
+            *)                                   color="$NC" ;;
+        esac
+        printf '  %-13s %-18s %b%s%b\n' "$svc" "$label" "$color" "$status" "$NC"
+    done <<<"$tsv"
+    (( has_manual )) && printf '  %s\n' "* manual override — not following the default channel"
+}
+
+_menu_update_selected() {
+    local tsv="$1" svc pol override status upd
+    local -a labels=()
+    while IFS=$'\t' read -r svc pol override status upd; do
+        [[ "$upd" == "true" ]] || continue
+        labels+=("${svc}  (${status})")
+    done <<<"$tsv"
+    if (( ${#labels[@]} == 0 )); then
+        ui_log info "No services have an available update."
+        pause_for_menu
+        return 0
+    fi
+    labels+=("Back")
+    local choice
+    choice=$(ui_choose "Update which service?" "${labels[@]}")
+    [[ "$choice" == "Back" ]] && return 0
+    local picked="${choice%% *}" st
+    st=$(awk -F '\t' -v s="$picked" '$1 == s { print $4 }' <<<"$tsv")
+    _apply_service_update "$picked" "$st"
+    pause_for_menu
+}
+
+_menu_update_all() {
+    local tsv="$1" svc pol override status upd wg_updatable=0 tested_pending=0
+    local -a svcs=()
+    # Only services with an *upstream* (ahead-of-tested) update. Tested-Stable
+    # updates belong to "Pull tested Stable updates"; WireGuard is excluded here.
+    local sl
+    while IFS=$'\t' read -r svc pol override status upd; do
+        [[ "$upd" == "true" ]] || continue
+        sl="${status,,}"
+        if [[ "$sl" != *upstream* ]]; then tested_pending=1; continue; fi
+        if [[ "$svc" == "wireguard" ]]; then wg_updatable=1; continue; fi
+        svcs+=("$svc")
+    done <<<"$tsv"
+    if (( ${#svcs[@]} == 0 )); then
+        if (( tested_pending )); then
+            ui_log info "Only tested Stable updates are pending — use 'Pull tested Stable updates'."
+        elif (( wg_updatable )); then
+            ui_log info "Only WireGuard has an update — use 'Update a service' to update it explicitly."
+        else
+            ui_log info "No upstream updates available."
+        fi
+        pause_for_menu
+        return 0
+    fi
+    ui_log warn "About to update ${#svcs[@]} service(s) to their Upstream tag."
+    ui_log info "May use images not yet accepted in the tested Stable record."
+    ui_log info "Services: ${svcs[*]}"
+    (( wg_updatable )) && ui_log info "WireGuard is excluded (remote access) — update it explicitly if needed."
+    ui_confirm "Proceed?" no || { ui_log info "Cancelled."; pause_for_menu; return 0; }
+    local s st
+    for s in "${svcs[@]}"; do
+        st=$(awk -F '\t' -v k="$s" '$1 == k { print $4 }' <<<"$tsv")
+        _apply_service_update "$s" "$st"
+    done
+    pause_for_menu
+}
+
+_menu_reset_default() {
+    local tsv="$1" svc pol override status upd
+    local -a labels=()
+    # Only services with an *explicit* override (not those merely inheriting the
+    # global channel) and that have a container. A stopped one is staged, not
+    # started (see _recreate_service); Not installed (no container) is skipped.
+    while IFS=$'\t' read -r svc pol override status upd; do
+        [[ "$override" == "manual" ]] || continue
+        [[ "$status" == "Not installed" ]] && continue
+        labels+=("${svc}  (${status})")
+    done <<<"$tsv"
+    if (( ${#labels[@]} == 0 )); then
+        ui_log info "No services have a manual override to reset."
+        pause_for_menu
+        return 0
+    fi
+    labels+=("Back")
+    local choice
+    choice=$(ui_choose "Reset which service to the default channel?" "${labels[@]}")
+    [[ "$choice" == "Back" ]] && return 0
+    _reset_service_to_default "${choice%% *}"
+    pause_for_menu
+}
+
+_menu_switch_channel() {
+    local cur="${IMAGE_CHANNEL:-stable}"; cur="${cur,,}"
+    local target cur_label tgt_label
+    if [[ "$cur" == "stable" ]]; then target="latest"; else target="stable"; fi
+    [[ "$cur" == "stable" ]] && cur_label="Stable (tested)" || cur_label="Upstream tags"
+    [[ "$target" == "stable" ]] && tgt_label="Stable (tested)" || tgt_label="Upstream tags"
+    ui_log info "Default image channel is currently: ${cur_label}"
+    ui_log info "This affects only services without a per-service override."
+    ui_confirm "Switch default channel to ${tgt_label}?" no || { ui_log info "Unchanged."; pause_for_menu; return 0; }
+    _set_env_var IMAGE_CHANNEL "$target"
+    export IMAGE_CHANNEL="$target"
+    if _regenerate_override; then
+        ui_log ok "Default channel set to ${tgt_label}."
+        ui_log info "Use 'Pull tested Stable updates' or 'Update all' to apply images."
+    else
+        ui_log error "Override regenerate failed."
+    fi
+    pause_for_menu
+}
+
+submenu_manage_updates() {
+    clear
+    render_banner
+    echo ""
+    if ! _docker_reachable; then
+        ui_log warn "Docker isn't reachable — cannot check for image updates."
+        pause_for_menu
+        return 0
+    fi
+    ui_log info "Checking each image against its registry (a few seconds)..."
+    local tsv
+    tsv=$(_update_status_scan)
+    if [[ -z "$tsv" ]]; then
+        ui_log error "Could not read update status (is python3 + python3-yaml installed?)."
+        pause_for_menu
+        return 0
+    fi
+    echo ""
+    _render_update_table "$tsv"
+    echo ""
+    local choice
+    choice=$(ui_choose "Manage updates:" \
+        "Update a service" \
+        "Update all upstream-tag services" \
+        "Pull tested Stable updates (recommended)" \
+        "Reset a service to the default channel" \
+        "Switch default channel (Stable / Upstream tags)" \
+        "Back")
+
+    case "$choice" in
+        "Update a service"*)          _menu_update_selected "$tsv" ;;
+        "Update all upstream-tag"*)   _menu_update_all "$tsv" ;;
+        "Pull tested Stable"*)        action_update ;;
+        "Reset a service to the default channel"*) _menu_reset_default "$tsv" ;;
+        "Switch default channel"*)    _menu_switch_channel ;;
+        *)                            return 0 ;;
+    esac
+}
+
+# =============================================================================
+# Top-level menus
+# =============================================================================
+
+menu_pre() {
+    echo ""
+    local choice
+    choice=$(ui_choose "What would you like to do?" \
+        "Install MediaStack" \
+        "System readiness check (disk, RAM, internet, GPU)" \
+        "Test port forwarding (router config)" \
+        "Check domain DNS (verify subdomain A-records)" \
+        "Show my public IP" \
+        "Quit")
+
+    case "$choice" in
+        "Install MediaStack"*)         action_install ;;
+        "System readiness check"*)     diag_readiness; pause_for_menu ;;
+        "Test port forwarding"*)       action_port_check ;;
+        "Check domain DNS"*)           diag_dns_check; pause_for_menu ;;
+        "Show my public IP"*)          diag_public_ip; pause_for_menu ;;
+        "Quit"*)                       echo; echo "  Goodbye."; exit 0 ;;
+        *)                             ;;  # unrecognized choice — re-render menu
+    esac
+}
+
+menu_post() {
+    # Determine whether "Add a feature" should appear at all.
+    local show_add_feature=0
+    if recovery_menu_remote_available \
+        || recovery_menu_transcoding_available; then
+        show_add_feature=1
+    fi
+
+    # The port-check parenthetical only honestly applies once a real domain
+    # is configured — pre-Stage-2 the script can only probe TCP 6881.
+    local pc_label="Test port forwarding (router config)"
+    if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then
+        pc_label="Test port forwarding (DNS, ports, HTTP)"
+    fi
+    local options=(
+        "Show service status"
+        "$pc_label"
+        "Manage updates (status, per-service, channel)"
+        "Manage hardware transcoding (GPU)"
+        "Re-run configuration (apply config.yml changes)"
+        "Diagnostics (public IP, DNS, readiness)"
+    )
+    (( show_add_feature == 1 )) && options+=("Add a feature")
+    options+=(
+        "Manage stack (stop, start, logs)"
+        "Wipe and reinstall (destructive)"
+        "Quit"
+    )
+
+    echo ""
+    local choice
+    choice=$(ui_choose "What would you like to do?" "${options[@]}")
+
+    case "$choice" in
+        "Show service status"*)   diag_status; pause_for_menu ;;
+        "Test port forwarding"*)  action_port_check ;;
+        "Manage updates"*)        submenu_manage_updates ;;
+        "Manage hardware transcoding"*) submenu_manage_hardware ;;
+        "Re-run configuration"*)  action_configure ;;
+        "Diagnostics"*)           submenu_diagnostics ;;
+        "Add a feature"*)         submenu_add_feature ;;
+        "Manage stack"*)          submenu_manage_stack ;;
+        "Wipe and reinstall"*)    action_wipe ;;
+        "Quit"*)                  echo; echo "  Goodbye."; exit 0 ;;
+        *)                        ;;  # unrecognized choice — re-render menu
+    esac
+}
+
+# =============================================================================
+# Main loop
+# =============================================================================
+
+pause_for_menu() {
+    echo ""
+    # `|| :` so EOF on piped stdin doesn't kill the launcher (2026-05-04 lesson).
+    read -rp "  Press Enter to return to menu..." _ || :
+}
+
+main() {
+    # Ctrl-C at the top level exits cleanly.
+    trap 'echo; echo "  Goodbye."; exit 0' INT
+
+    while true; do
+        clear 2>/dev/null || printf '\033[2J\033[H'
+        render_banner
+        if is_installed; then
+            menu_post
+        else
+            menu_pre
+        fi
+    done
+}
+
+# Only run when executed directly (sourcing for tests just exposes helpers).
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

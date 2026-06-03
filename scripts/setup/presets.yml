@@ -1,0 +1,148 @@
+# Quality tier presets for MediaStack setup wizard.
+# Values calibrated to deliver the doc-claimed grab sizes, based on real-world
+# 1080p WEB-DL (4-7 GB/movie) and 1080p Bluray rip (8-12 GB/movie) ranges.
+# See docs/reference/quality-bounds.md for context.
+# Add new presets by copying a block; wizard_apply.py picks them up automatically.
+#
+# Quality IDs:
+#   HDTV-720p=4, WEBDL-720p=5, Bluray-720p=6, WEBRip-720p=14
+#   HDTV-1080p=9, WEBDL-1080p=3, Bluray-1080p=7, WEBRip-1080p=15
+#   Remux-1080p=30 (deliberately excluded from all presets — home-server audience)
+# Group IDs (for cutoff_id):
+#   WEB 720p=1001, WEB 1080p=1002
+
+presets:
+  compact:
+    display_name: "Compact"
+    profile_name: "WEB-720p/1080p"
+    description: "Smaller files, good quality. 720p only. Best for limited storage."
+    size_hint: "~2-4 GB/movie"
+    cutoff_id: 1001
+    upgrade_allowed: true
+    custom_format_scores:
+      "Repack/Proper":  5
+      "x264":           0
+      "x265 (HD)":      0
+      "BR-DISK":        -10000
+      "LQ":             -10000
+      "No-RlsGroup":    -10
+      "Obfuscated":     -10
+    sonarr_qualities:
+      - 5    # WEBDL-720p
+      - 14   # WEBRip-720p
+    radarr_qualities:
+      - 5    # WEBDL-720p
+      - 14   # WEBRip-720p
+    quality_definitions:
+      sonarr:
+        WEBDL-720p:    { min: 8.0,  preferred: 20.0, max: 35.0 }
+        WEBRip-720p:   { min: 8.0,  preferred: 20.0, max: 35.0 }
+      radarr:
+        WEBDL-720p:    { min: 2.0,  preferred: 22.0, max: 37.0 }
+        WEBRip-720p:   { min: 2.0,  preferred: 22.0, max: 37.0 }
+
+  balanced:
+    display_name: "Balanced"
+    profile_name: "HD-720p/1080p"
+    description: "Recommended for most users."
+    size_hint: "~4-8 GB/movie"
+    cutoff_id: 1002
+    upgrade_allowed: true
+    custom_format_scores:
+      "Repack/Proper":  5
+      "x264":           10
+      "x265 (HD)":      -25
+      "BR-DISK":        -10000
+      "LQ":             -10000
+      "No-RlsGroup":    -25
+      "Obfuscated":     -25
+    sonarr_qualities:
+      - 4    # HDTV-720p
+      - 5    # WEBDL-720p
+      - 6    # Bluray-720p
+      - 14   # WEBRip-720p
+      - 9    # HDTV-1080p
+      - 3    # WEBDL-1080p
+      - 7    # Bluray-1080p
+      - 15   # WEBRip-1080p
+    radarr_qualities:
+      - 4    # HDTV-720p
+      - 5    # WEBDL-720p
+      - 6    # Bluray-720p
+      - 14   # WEBRip-720p
+      - 9    # HDTV-1080p
+      - 3    # WEBDL-1080p
+      - 7    # Bluray-1080p
+      - 15   # WEBRip-1080p
+    quality_definitions:
+      sonarr:
+        HDTV-720p:     { min: 12.0, preferred: 30.0, max: 50.0 }
+        WEBDL-720p:    { min: 10.0, preferred: 30.0, max: 50.0 }
+        WEBRip-720p:   { min: 10.0, preferred: 30.0, max: 50.0 }
+        Bluray-720p:   { min: 18.0, preferred: 40.0, max: 60.0 }
+        HDTV-1080p:    { min: 18.0, preferred: 45.0, max: 75.0 }
+        WEBDL-1080p:   { min: 12.0, preferred: 45.0, max: 75.0 }
+        WEBRip-1080p:  { min: 12.0, preferred: 45.0, max: 75.0 }
+        Bluray-1080p:  { min: 30.0, preferred: 60.0, max: 90.0 }
+      radarr:
+        HDTV-720p:     { min: 2.0,  preferred: 25.0, max: 50.0 }
+        WEBDL-720p:    { min: 2.0,  preferred: 25.0, max: 50.0 }
+        WEBRip-720p:   { min: 2.0,  preferred: 25.0, max: 50.0 }
+        Bluray-720p:   { min: 4.0,  preferred: 30.0, max: 55.0 }
+        HDTV-1080p:    { min: 4.0,  preferred: 50.0, max: 80.0 }
+        WEBDL-1080p:   { min: 4.0,  preferred: 50.0, max: 80.0 }
+        WEBRip-1080p:  { min: 4.0,  preferred: 50.0, max: 80.0 }
+        Bluray-1080p:  { min: 10.0, preferred: 65.0, max: 90.0 }
+
+  quality:
+    display_name: "Quality"
+    profile_name: "HQ-1080p"
+    description: "Best non-Remux 1080p. Falls back to 720p when 1080p unavailable."
+    size_hint: "~6-15 GB/movie"
+    cutoff_id: 1002
+    upgrade_allowed: true
+    custom_format_scores:
+      "Repack/Proper":  5
+      "x264":           10
+      "x265 (HD)":      -50
+      "BR-DISK":        -10000
+      "LQ":             -10000
+      "No-RlsGroup":    -25
+      "Obfuscated":     -25
+    sonarr_qualities:
+      - 4    # HDTV-720p
+      - 5    # WEBDL-720p
+      - 6    # Bluray-720p
+      - 14   # WEBRip-720p
+      - 9    # HDTV-1080p
+      - 3    # WEBDL-1080p
+      - 7    # Bluray-1080p
+      - 15   # WEBRip-1080p
+    radarr_qualities:
+      - 4    # HDTV-720p
+      - 5    # WEBDL-720p
+      - 6    # Bluray-720p
+      - 14   # WEBRip-720p
+      - 9    # HDTV-1080p
+      - 3    # WEBDL-1080p
+      - 7    # Bluray-1080p
+      - 15   # WEBRip-1080p
+    quality_definitions:
+      sonarr:
+        HDTV-720p:     { min: 12.0, preferred: 30.0, max: 55.0  }
+        WEBDL-720p:    { min: 10.0, preferred: 30.0, max: 55.0  }
+        WEBRip-720p:   { min: 10.0, preferred: 30.0, max: 55.0  }
+        Bluray-720p:   { min: 18.0, preferred: 40.0, max: 60.0  }
+        HDTV-1080p:    { min: 18.0, preferred: 55.0, max: 90.0  }
+        WEBDL-1080p:   { min: 12.0, preferred: 55.0, max: 85.0  }
+        WEBRip-1080p:  { min: 12.0, preferred: 55.0, max: 85.0  }
+        Bluray-1080p:  { min: 30.0, preferred: 80.0, max: 125.0 }
+      radarr:
+        HDTV-720p:     { min: 2.0,  preferred: 30.0, max: 60.0  }
+        WEBDL-720p:    { min: 2.0,  preferred: 30.0, max: 60.0  }
+        WEBRip-720p:   { min: 2.0,  preferred: 30.0, max: 60.0  }
+        Bluray-720p:   { min: 4.0,  preferred: 40.0, max: 65.0  }
+        HDTV-1080p:    { min: 4.5,  preferred: 55.0, max: 90.0  }
+        WEBDL-1080p:   { min: 4.3,  preferred: 55.0, max: 85.0  }
+        WEBRip-1080p:  { min: 4.3,  preferred: 55.0, max: 85.0  }
+        Bluray-1080p:  { min: 10.0, preferred: 85.0, max: 125.0 }

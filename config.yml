@@ -1,0 +1,204 @@
+# =============================================================================
+# MediaStack Configuration
+# =============================================================================
+# Edit this file to change indexers, quality profiles, and service wiring.
+# Then re-run: ./scripts/configure.sh
+#
+# This file is read by configure.sh - no need to touch docker-compose.yml
+# or any bash scripts to make changes here.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Jackett Indexers
+# ---------------------------------------------------------------------------
+# Public releases ship with no indexers enabled by default. Add only the
+# indexers you are legally allowed to use, then re-run ./scripts/configure.sh.
+# The setup wizard can enable an example public-tracker preset, and the same
+# example lives at config/examples/public-indexers.yml.
+#
+# Format: id: description (description is for humans only)
+indexers: []
+
+# ---------------------------------------------------------------------------
+# Torznab Categories
+# ---------------------------------------------------------------------------
+# Fallback category IDs — used only when Torznab caps auto-discovery fails.
+# Normally, configure.sh queries each indexer's caps and selects categories
+# automatically (split by app: movie cats for Radarr, TV cats for Sonarr).
+# Standard IDs: https://wiki.servarr.com/sonarr/settings#indexers
+categories:
+  tv: "5000,5030,5040"          # TV, TV/SD, TV/HD
+  movies: "2000,2030,2040"      # Movies, Movies/SD, Movies/HD
+
+# ---------------------------------------------------------------------------
+# Quality Profile
+# ---------------------------------------------------------------------------
+# Created in both Sonarr and Radarr as "HD-720p/1080p".
+# Cutoff: WEB 1080p group (stops upgrading once any 1080p WEB quality is reached).
+#
+# Quality IDs reference:
+#   HDTV-720p=4, WEBDL-720p=5, Bluray-720p=6, WEBRip-720p=14
+#   HDTV-1080p=9, WEBDL-1080p=3, Bluray-1080p=7, WEBRip-1080p=15
+#   Remux-1080p=30 (deliberately excluded; see docs/reference/quality-bounds.md)
+# Group IDs (for cutoff_id; Sonarr rejects sub-quality IDs as cutoffs):
+#   WEB 480p=1000, WEB 720p=1001, WEB 1080p=1002, WEB 2160p=1003
+quality_profile:
+  name: "HD-720p/1080p"
+  cutoff_id: 1002                # WEB 1080p group (contains WEBRip-1080p + WEBDL-1080p)
+  upgrade_allowed: true
+  sonarr_qualities:
+    - 4    # HDTV-720p
+    - 5    # WEBDL-720p
+    - 6    # Bluray-720p
+    - 14   # WEBRip-720p
+    - 9    # HDTV-1080p
+    - 3    # WEBDL-1080p
+    - 7    # Bluray-1080p
+    - 15   # WEBRip-1080p
+  radarr_qualities:              # No Remux; single grabs run 25-40 GB
+    - 4    # HDTV-720p
+    - 5    # WEBDL-720p
+    - 6    # Bluray-720p
+    - 14   # WEBRip-720p
+    - 9    # HDTV-1080p
+    - 3    # WEBDL-1080p
+    - 7    # Bluray-1080p
+    - 15   # WEBRip-1080p
+
+# ---------------------------------------------------------------------------
+# Quality Definitions — per-tier file-size bounds
+# ---------------------------------------------------------------------------
+# Sonarr/Radarr ship with very loose defaults (e.g. HDTV-720p max ≈ 2000 MB/min
+# for movies) so a single grab can land a 25 GB bloat rip or — at the other
+# end — a 400 MB cam. These bounds tighten both extremes.
+#
+# Units: MB per minute (Sonarr per episode, Radarr per movie). Values are
+# calibrated to deliver the Balanced preset's "~4-8 GB/movie" envelope based
+# on real-world 1080p WEB-DL (4-7 GB) and 1080p Bluray rip (8-12 GB) sizes —
+# not the TRaSH max-quality baselines, which target much larger files.
+# See docs/reference/quality-bounds.md for rationale.
+#
+# Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive).
+# Tiers not listed here keep their upstream defaults. To opt out entirely,
+# delete or comment this whole section.
+quality_definitions:
+  sonarr:                                                     # ~1.1-3.4 GB/ep at 45 min
+    HDTV-720p:     { min: 12.0, preferred: 30.0, max: 50.0 }
+    WEBDL-720p:    { min: 10.0, preferred: 30.0, max: 50.0 }
+    WEBRip-720p:   { min: 10.0, preferred: 30.0, max: 50.0 }
+    Bluray-720p:   { min: 18.0, preferred: 40.0, max: 60.0 }
+    HDTV-1080p:    { min: 18.0, preferred: 45.0, max: 75.0 }
+    WEBDL-1080p:   { min: 12.0, preferred: 45.0, max: 75.0 }
+    WEBRip-1080p:  { min: 12.0, preferred: 45.0, max: 75.0 }
+    Bluray-1080p:  { min: 30.0, preferred: 60.0, max: 90.0 }
+  radarr:                                                     # ~3-9.9 GB/movie at 110 min
+    HDTV-720p:     { min: 2.0,  preferred: 25.0, max: 50.0 }
+    WEBDL-720p:    { min: 2.0,  preferred: 25.0, max: 50.0 }
+    WEBRip-720p:   { min: 2.0,  preferred: 25.0, max: 50.0 }
+    Bluray-720p:   { min: 4.0,  preferred: 30.0, max: 55.0 }
+    HDTV-1080p:    { min: 4.0,  preferred: 50.0, max: 80.0 }
+    WEBDL-1080p:   { min: 4.0,  preferred: 50.0, max: 80.0 }
+    WEBRip-1080p:  { min: 4.0,  preferred: 50.0, max: 80.0 }
+    Bluray-1080p:  { min: 10.0, preferred: 65.0, max: 90.0 }
+
+# ---------------------------------------------------------------------------
+# Custom Formats — TRaSH Guides scoring
+# ---------------------------------------------------------------------------
+# Scores custom release attributes within a quality tier. Higher scores are
+# preferred; negative scores penalise. -10000 effectively blocks.
+# Set to 0 to disable a format's scoring (format still exists but is neutral).
+# Delete this section to skip custom format configuration entirely.
+#
+# Format definitions: scripts/lib/arr/custom_formats.yml
+custom_formats:
+  "Repack/Proper":  5
+  "x264":           10
+  "x265 (HD)":      -25
+  "BR-DISK":        -10000
+  "LQ":             -10000
+  "No-RlsGroup":    -25
+  "Obfuscated":     -25
+
+# ---------------------------------------------------------------------------
+# Disk Space Protection
+# ---------------------------------------------------------------------------
+# Minimum free disk space (GB) before Sonarr/Radarr stop importing and
+# grabbing new releases. Applied as minimumFreeSpaceWhenImporting in each
+# app's Media Management settings. Set to 0 to disable (restores 100 MB default).
+min_free_space_gb: 20
+
+# ---------------------------------------------------------------------------
+# qBittorrent
+# ---------------------------------------------------------------------------
+qbittorrent:
+  save_path: "/data/torrents"
+  temp_path: "/data/torrents/incomplete"
+  max_ratio: 1
+  max_seeding_time: 1440            # minutes (1440 = 24h). Pauses torrents after this time.
+  max_active_downloads: 5
+  max_active_uploads: 5
+  max_active_torrents: 10
+  dl_speed_limit: 0              # MB/s (0 = unlimited). .env QBT_DL_LIMIT overrides.
+  ul_speed_limit: 0              # MB/s (0 = unlimited). .env QBT_UL_LIMIT overrides.
+  categories:
+    tv-sonarr: "/data/torrents/tv"
+    radarr: "/data/torrents/movies"
+
+# ---------------------------------------------------------------------------
+# Sonarr
+# ---------------------------------------------------------------------------
+sonarr:
+  root_folder: "/data/media/tv"
+  download_client_category: "tv-sonarr"
+
+# ---------------------------------------------------------------------------
+# Radarr
+# ---------------------------------------------------------------------------
+radarr:
+  root_folder: "/data/media/movies"
+  download_client_category: "radarr"
+
+# ---------------------------------------------------------------------------
+# Jellyseerr
+# ---------------------------------------------------------------------------
+jellyseerr:
+  quotas:
+    movie:
+      limit: 0                     # Max movie requests per period (0 = unlimited)
+      days: 7                      # Period in days
+    tv:
+      limit: 0                     # Max TV requests per period (0 = unlimited)
+      days: 7                      # Period in days
+
+# ---------------------------------------------------------------------------
+# Bazarr - Subtitle Management
+# ---------------------------------------------------------------------------
+bazarr:
+  languages:
+    - english
+
+# ---------------------------------------------------------------------------
+# Jellyfin Libraries
+# ---------------------------------------------------------------------------
+jellyfin:
+  server_name: "MediaStack"       # Displayed in Jellyfin Dashboard header and browser tab.
+  remote_bitrate_limit: 0         # Mbps per remote viewer (0 = unlimited). Set by wizard.
+  libraries:
+    - name: "Movies"
+      type: "movies"
+      path: "/data/media/movies"
+    - name: "TV Shows"
+      type: "tvshows"
+      path: "/data/media/tv"
+
+# ---------------------------------------------------------------------------
+# Rate Limiting (nginx via NPM)
+# ---------------------------------------------------------------------------
+# Applied to internet-facing proxy hosts (Jellyfin, Jellyseerr).
+# Jellyfin UI sends ~30-50 requests per page load in short bursts.
+# These defaults allow bursty page loads while catching automated abuse.
+rate_limiting:
+  requests_per_second: 15          # Sustained rate per IP
+  burst: 60                        # Burst bucket (absorbs page-load spikes)
+  ban_maxretry: 10                 # 429 responses within ban_findtime triggers ban
+  ban_findtime: 60                 # Seconds to accumulate ban_maxretry 429s

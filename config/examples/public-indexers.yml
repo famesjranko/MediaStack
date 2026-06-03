@@ -1,0 +1,33 @@
+# Example Jackett public-tracker preset.
+#
+# Copy entries into config.yml only for indexers you are legally allowed to use,
+# then run ./scripts/configure.sh. The Stage 1 wizard can also apply this preset.
+#
+# Format: id: description (description is for humans only)
+indexers:
+  - id: 1337x
+    type: general        # movies + tv
+  - id: eztv
+    type: tv             # tv only
+  - id: thepiratebay
+    type: general
+  - id: therarbg
+    type: general
+  - id: kickasstorrents-to
+    type: general
+  - id: limetorrents
+    type: general        # movies + tv
+  - id: yts
+    type: movies         # movies only
+  - id: showrss
+    type: tv
+  - id: knaben
+    type: general        # meta-search aggregator
+  - id: torrentgalaxyclone
+    type: general        # TorrentGalaxy mirror
+  - id: extratorrent-st
+    type: general        # ExtraTorrent mirror
+  - id: torrentdownload
+    type: general
+  - id: uindex
+    type: general

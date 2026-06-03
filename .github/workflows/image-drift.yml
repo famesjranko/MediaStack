@@ -1,0 +1,24 @@
+name: Image Drift Alert
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  image-drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-yaml
+
+      - name: Check remote image digests
+        run: |
+          set -euo pipefail
+          python3 scripts/image-drift.py --require-previous

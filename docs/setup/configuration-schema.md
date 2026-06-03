@@ -1,0 +1,386 @@
+# Configuration Schema
+
+Reference for everything a user (or maintainer) can change about a running MediaStack.
+
+## `config.yml` — service wiring
+
+Top-level source of truth for service configuration. `scripts/configure.sh` reads it via Python YAML helpers ([configure-flow.md](configure-flow.md)).
+
+### `indexers`
+
+List of Jackett indexers. Public releases default this to `[]`; add entries only for indexers you are legally allowed to use, or apply the optional preset from `config/examples/public-indexers.yml`. Each entry has `id` (Jackett's internal indexer ID) and `type` — one of `general`, `tv`, `movies`. Consumed by:
+
+- Step 2 Jackett (`cfg_indexers` in `scripts/lib/common.sh`) — adds to Jackett.
+- `configure_arr_indexers` (`scripts/lib/arr/main.sh`) — filters by type: Sonarr gets `general`+`tv`, Radarr gets `general`+`movies`. Each add is retried up to 3× with 8s backoff to absorb FlareSolverr cold-start timeouts during first-run setup.
+
+An empty list is valid. Jackett still receives its admin password and FlareSolverr URL, while Sonarr/Radarr skip Torznab wiring.
+
+### `categories`
+
+Fallback Torznab category IDs for Sonarr/Radarr indexer registration.
+
+- `tv: "5000,5030,5040"` — TV, TV/SD, TV/HD.
+- `movies: "2000,2030,2040"` — Movies, Movies/SD, Movies/HD.
+
+`configure_arr_indexers` (`scripts/lib/arr/main.sh`, delegating to `scripts/lib/arr/render/torznab_caps.py`) **auto-discovers categories from each indexer's Torznab caps** first. Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Many trackers use native 100xxx IDs that standard Torznab doesn't cover — without them, the *arr app's add-time test rejects the indexer. These `config.yml` values are the fallback when caps discovery fails.
+
+### `quality_profile`
+
+> See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for the actual file-size and format-score numbers across all three presets.
+
+Shared between Sonarr and Radarr. The setup wizard (`scripts/setup/wizard.sh`) writes this section based on the user's chosen quality tier. Three presets are defined in `scripts/setup/presets.yml`:
+
+| Preset | Profile name | Cutoff | Qualities | Approx size |
+|--------|-------------|--------|-----------|-------------|
+| Compact | `WEB-720p/1080p` | 1001 (WEB 720p) | WEB 720p only (5, 14) | ~2-4 GB/movie |
+| Balanced | `HD-720p/1080p` | 1002 (WEB 1080p) | All 720p+1080p HDTV/WEB/Bluray (no Remux) | ~4-8 GB/movie |
+| Quality | `HQ-1080p` | 1002 (WEB 1080p) | 1080p + 720p fallback (no Remux) | ~6-15 GB/movie |
+
+| Field | Meaning |
+|-------|---------|
+| `name` | Profile display name, also the key used for idempotency checks. |
+| `cutoff_id` | **Group** ID (1000+), not a quality ID. Sonarr/Radarr reject sub-quality IDs as cutoffs. The mapping table is in the `quality_profile` section comments in `config.yml`. |
+| `upgrade_allowed` | Whether upgrades continue above the currently-matched quality. |
+| `sonarr_qualities` | List of quality IDs allowed for TV. |
+| `radarr_qualities` | List of quality IDs allowed for movies. |
+
+Remux-1080p (ID 30) is deliberately excluded across all presets — see [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for rationale.
+
+Consumed by `configure_quality_profile` (`scripts/lib/arr/main.sh`, with Python profile transform at `scripts/lib/arr/render/quality_profile.py`) and the Jellyseerr *arr connection helpers (`scripts/services/jellyseerr/main.sh`) which look up the profile by name.
+
+### `quality_definitions`
+
+> See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for the per-preset bounds tables.
+
+Per-tier file-size bounds (MB per minute of runtime — Sonarr per episode, Radarr per movie). Overrides Sonarr/Radarr's stock defaults, which are loose enough to let in both 400 MB cam rips and 25 GB bloat releases. Values calibrated to deliver each preset's advertised size based on real-world 1080p WEB-DL/Bluray ranges — not the TRaSH max-quality values, which target much larger files.
+
+Structure: `quality_definitions.{sonarr,radarr}.<QualityName>: { min, preferred, max }`. Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive): `HDTV-720p`, `WEBDL-1080p`, `Bluray-1080p`, etc. Tiers not listed keep their upstream defaults. Delete or comment the whole section to opt out entirely.
+
+Example (Balanced preset):
+```yaml
+quality_definitions:
+  sonarr:
+    HDTV-720p:    { min: 12.0, preferred: 30.0, max: 50.0 }
+    WEBDL-1080p:  { min: 12.0, preferred: 45.0, max: 75.0 }
+    Bluray-1080p: { min: 30.0, preferred: 60.0, max: 90.0 }
+  radarr:
+    WEBDL-1080p:  { min: 4.0,  preferred: 50.0, max: 80.0 }
+    Bluray-1080p: { min: 10.0, preferred: 65.0, max: 90.0 }
+```
+
+Consumed by `configure_quality_definitions` (`scripts/lib/arr/main.sh`, with diff helper at `scripts/lib/arr/render/quality_definitions.py`) during steps 3 and 4, after `configure_quality_profile`. Idempotent — reads the live set via `GET /api/v3/qualitydefinition`, compares with a small float tolerance, `PUT`s only the tiers that differ.
+
+### `custom_formats`
+
+Custom release attribute scoring within a quality tier — based on TRaSH Guides. A simple `name: score` mapping where higher scores are preferred and negative scores penalise. `-10000` effectively blocks a format. Set a format's score to `0` to make it neutral (format still exists in Sonarr/Radarr but doesn't influence selection). Delete the entire section to skip custom format configuration.
+
+Format *definitions* (regex conditions, implementation type) are developer-managed in `scripts/lib/arr/custom_formats.yml` — users only tune scores here.
+
+Example:
+```yaml
+custom_formats:
+  "Repack/Proper":  5
+  "x264":           10
+  "x265 (HD)":      -25
+  "BR-DISK":        -10000
+  "LQ":             -10000
+  "No-RlsGroup":    -25
+  "Obfuscated":     -25
+```
+
+Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/main.sh`) during steps 3 and 4. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
+
+The setup wizard writes preset-appropriate scores via `wizard_apply.py`. Per-preset values are defined in `scripts/setup/presets.yml` under the `custom_format_scores` key.
+
+### `min_free_space_gb`
+
+Minimum free disk space (in GB) before Sonarr and Radarr stop importing and grabbing new releases. Applied as `minimumFreeSpaceWhenImporting` (in MB) in each app's global Media Management config (`/api/v3/config/mediamanagement`). This is a global setting, not per-root-folder.
+
+| Field | Value |
+|-------|-------|
+| Type | integer |
+| Default | `20` (= 20480 MB) |
+| Disable | Set to `0` (restores the upstream 100 MB default) |
+
+Consumed by `configure_arr_disk_threshold` (`scripts/lib/arr/main.sh`) during steps 3 and 4. Only applied on first run (when the value is the API default of 100 MB). If the user has changed the value in the UI, configure.sh warns on drift but does not reconcile.
+
+### `qbittorrent`
+
+Passed directly to `POST /api/v2/app/setPreferences`:
+
+| Field | Consumed as |
+|-------|-------------|
+| `save_path` | `save_path` |
+| `temp_path` | `temp_path` (with `temp_path_enabled:true`) |
+| `max_ratio` | `max_ratio` |
+| `max_active_downloads` | `max_active_downloads` |
+| `max_active_uploads` | `max_active_uploads` |
+| `max_active_torrents` | `max_active_torrents` |
+| `dl_speed_limit` | `dl_limit` (converted from MB/s to bytes/s; `.env QBT_DL_LIMIT` overrides) |
+| `ul_speed_limit` | `up_limit` (converted from MB/s to bytes/s; `.env QBT_UL_LIMIT` overrides) |
+| `categories` | `name:path` pairs → `POST /api/v2/torrents/createCategory` per entry |
+
+**Not configurable here:** `max_ratio_act`, `web_ui_auth_subnet_whitelist`, connection limits — hardcoded in `scripts/services/qbittorrent/templates/preferences.json`. See [configure-flow.md](configure-flow.md) Observations.
+
+### `sonarr` / `radarr`
+
+Minimal per-*arr settings — the rest comes from `quality_profile` / `categories` / `indexers`:
+
+- `root_folder` — `/data/media/tv` or `/data/media/movies`. Must exist; `setup.sh` creates it during directory initialization.
+- `download_client_category` — the qBittorrent category name. Must match a key in `qbittorrent.categories`.
+
+### `bazarr`
+
+Bazarr subtitle management settings. Only active when the `subtitles` profile is enabled (`BAZARR_ENABLED=true` in `.env`).
+
+| Field | Meaning |
+|-------|---------|
+| `languages` | List of subtitle languages to enable (e.g. `english`). Used to seed the language profile in Bazarr's SQLite database on first run. |
+
+Consumed by `configure_bazarr` (`scripts/services/bazarr/main.sh`) and `cfg_bazarr_languages` (`scripts/lib/common.sh`).
+
+### `jellyfin.server_name`
+
+Display name shown in the Jellyfin Dashboard header and browser tab. Defaults to `"MediaStack"`. Consumed by `configure_jellyfin_server_name` (`scripts/services/jellyfin/main.sh`) which applies the value via GET-merge-POST on `/System/Configuration`. On re-run, if the name has been changed in the UI to something other than the docker default, configure.sh warns about drift and does not overwrite.
+
+### `jellyfin.remote_bitrate_limit`
+
+Per-remote-viewer streaming bitrate cap in Mbps. `0` means unlimited. Set by the setup wizard (speed test → viewer count → recommendation) or manually in `config.yml`. Maps to Jellyfin's `RemoteClientBitrateLimit` (in bits/sec, so the configured Mbps value is multiplied by 1,000,000).
+
+Consumed by `configure_jellyfin_streaming` (`scripts/services/jellyfin/main.sh`) which applies the value via GET-merge-POST on `/System/Configuration`. This setting is authoritative — config.yml always wins (unlike GPU encoding, which warns on drift).
+
+### `jellyfin.libraries`
+
+List of `{name, type, path}`. `type` is Jellyfin's `collectionType` (`movies`, `tvshows`). Consumed by `configure_jellyfin_libraries` (`scripts/services/jellyfin/main.sh`). Library name is URL-encoded when posted.
+
+### `rate_limiting`
+
+Nginx rate limiting applied to internet-facing proxy hosts (Jellyfin, Jellyseerr) via NPM's advanced config. Jellyfin's UI sends 30--50 requests per page load in short bursts, so the defaults are tuned to allow bursty page loads while catching automated abuse.
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `requests_per_second` | `15` | Sustained request rate per IP. Written as an nginx `limit_req_zone` directive in NPM's `http_top.conf`. |
+| `burst` | `60` | Burst bucket size. Absorbs page-load spikes via `limit_req burst=N nodelay` in each proxy host's advanced config. |
+| `ban_maxretry` | `10` | Number of 429 responses within `ban_findtime` that triggers a fail2ban ban. Validated against the `[npm-ratelimit]` jail in `mediastack.conf` (drift is warned, not reconciled). |
+| `ban_findtime` | `60` | Window in seconds for accumulating `ban_maxretry` 429s. |
+
+Consumed by `configure_npm` (`scripts/services/npm/main.sh`), which:
+1. Writes the `limit_req_zone` directive to NPM's `http_top.conf`.
+2. Injects `limit_req` directives into each proxy host's `advanced_config`.
+3. Reloads nginx inside the NPM container to activate.
+4. Checks that the `[npm-ratelimit]` jail values in `config/fail2ban/jail.d/mediastack.conf` match `ban_maxretry` / `ban_findtime`.
+
+---
+
+## `.env.example` — secrets and host values
+
+`.env.example` is the template; `.env` is generated by `setup.sh` (chmod 600).
+
+### User-set (interactive prompts in `setup.sh`)
+
+| Key | Default source | Example |
+|-----|---------------|---------|
+| `TZ` | `timedatectl` | `America/Los_Angeles` |
+| `PUID` / `PGID` | `id -u` / `id -g` | `1000` / `1000` |
+| `DATA_DIR` | prompt, default `/data` | `/mnt/media` |
+| `HOST_ADDRESS` | `hostname -I` | `192.168.1.50` |
+| `IMAGE_CHANNEL` | wizard prompt, default `stable` | `stable` or `latest` |
+| `MEDIASTACK_NETWORK_PREFIX` | setup network collision check | `172.28.0` |
+| `MEDIASTACK_SUBNET` | derived from prefix | `172.28.0.0/24` |
+| `MEDIASTACK_GATEWAY` | derived from prefix | `172.28.0.1` |
+| `MEDIASTACK_NPM_IP` | derived from prefix | `172.28.0.10`; Jellyfin `KnownProxies` trusts this IP when remote HTTPS is ready |
+| `STORAGE_MODE` | prompt, default `local` | `local` or `nas`; controls mount/sentinel protection |
+| `STORAGE_APP_WIRING` | prompt, default `managed` | `managed` or `manual`; controls whether MediaStack configures app storage paths |
+| `UNPACKERR_TORRENT_PATHS` | setup, default `/data/torrents` | watched torrent path for Unpackerr; blank when `STORAGE_APP_WIRING=manual` |
+| `STORAGE_PROTOCOL` | prompt when NAS selected | `nfs` |
+| `STORAGE_MOUNTPOINT` | prompt when NAS selected | `/data` |
+| `STORAGE_NFS_HOST` / `STORAGE_NFS_EXPORT` | prompt when NAS selected | `192.168.1.10` / `/mnt/tank/media` |
+| `STORAGE_SENTINEL` | generated from `DATA_DIR` | `/data/.mediastack-storage-ready` |
+| `JELLYFIN_ADMIN_USER` | prompt, default `admin` | `admin` |
+| `JELLYFIN_ADMIN_PASSWORD` | `openssl rand -base64 12` — shared across all services | (random) |
+| `NPM_ADMIN_EMAIL` | `admin@example.com` (not prompted) | — |
+| `JELLYFIN_GPU` | Hardware transcoding proof | `nvidia`, `intel`, `amd`, `none` |
+| `NVIDIA_DRIVER_MODE` | Hardware transcoding (NVIDIA) | `standard` (Debian-managed, default), `unlock` (patch-managed `.run` + nvidia-patch), `existing` (a non-Debian driver kept as-is), or empty. Primary NVIDIA driver state; "patch enabled" is **derived** (true iff `unlock`) — there is no separately-settable `NVIDIA_PATCH_ENABLED` (a legacy value migrates to `unlock`). |
+| `STAGE_3_GPU_STATE` / `STAGE_3_GPU_VENDOR` / `STAGE_3_GPU_ENCODER` | Hardware transcoding state | `complete` / `nvidia` / `nvenc` |
+| `STAGE_3_GPU_HW_DECODING_CODECS` | Hardware codec probes | `h264,hevc,vp9` |
+| `STAGE_3_GPU_DECODE_HEVC_10BIT` / `STAGE_3_GPU_DECODE_VP9_10BIT` | Hardware codec probes | `true` or `false` |
+| `STAGE_3_GPU_ALLOW_HEVC_ENCODING` / `STAGE_3_GPU_ALLOW_AV1_ENCODING` | Hardware codec probes | `true` or `false` |
+| `STAGE_3_GPU_RENDER_DEVICE` | Intel/AMD render-node probe | `/dev/dri/renderD128` |
+| `DOMAIN` | prompt, blank to skip remote | `example.com` |
+| `WG_HOST` | `${DOMAIN}` | `example.com` |
+| `WG_INIT_PASSWORD` | plaintext `JELLYFIN_ADMIN_PASSWORD` (first-boot only) | `'GeneratedPassword123'` |
+| `WG_DEFAULT_DNS` | default `1.1.1.1` | `1.1.1.1` |
+| `WG_ACCESS_TIER` | wizard prompt: `full-lan` / `server` / `containers` (`streaming` is a README template) | `full-lan` |
+| `WG_LAN_CIDR` | wizard prompt (Full LAN tier): detected default, RFC1918 only | `192.168.1.0/24` |
+| `WG_SERVER_LAN_IP` | mirrors `HOST_ADDRESS`; `/32` target for server/containers/streaming tiers | `192.168.1.50` |
+| `WG_INIT_ALLOWED_IPS` | derived from tier → initial peer routing | `192.168.1.0/24` |
+| `WG_PER_CLIENT_FIREWALL` | default `true`; setting to `false` is the documented full-tunnel escape hatch | `true` |
+| `BAZARR_ENABLED` | prompt, default `false` | `true` |
+| `PUBLIC_INDEXERS_ENABLED` | wizard prompt, default `false` | `true` |
+| `SMB_ENABLED` | prompt, default `false` | `true` |
+| `SMB_SHARE_SCOPE` | prompt after enabling SMB, default `data` | `data` or `system` |
+
+**Single-quoting rule:** `WG_INIT_PASSWORD` MUST be single-quoted because the plaintext value can contain shell-special characters (`$`, `"`, `\`, `#`) that Docker Compose interpolates in unquoted values. `setup.sh` writes the quotes automatically; the smoke test (`tests/scenarios/smoke.sh`) asserts the container receives the password byte-for-byte via `INIT_PASSWORD`. v15 reads `INIT_*` env vars at first boot only — after `/etc/wireguard/wg-easy.db` exists, changes to `WG_INIT_PASSWORD` are inert; rotate the admin password in the wg-easy UI instead. See ADR-28.
+
+**SMB scope:** `SMB_SHARE_SCOPE=data` shares `${DATA_DIR}` as `Media` and is the recommended default. `SMB_SHARE_SCOPE=system` keeps the intentional full `/` admin share available as `MediaStackSystem`.
+
+**Storage modes:** `local` is the standard managed `/data` layout. `nas` means MediaStack mounts/verifies NFS storage and runs the storage watchdog. NAS sentinel and managed directory writes are made as the installing user when possible so root-squashed NFS exports work. `manual` is represented by `STORAGE_APP_WIRING=manual`: the stack is installed but storage-facing app configuration is skipped so the user can wire Jellyfin, Sonarr/Radarr, qBittorrent, Jellyseerr, and Unpackerr manually. Manual app wiring can still use `STORAGE_MODE=nas` when the user wants NAS guard/watchdog protection. See [storage.md](storage.md) for the operational flow and guard/watchdog behavior.
+
+**VPN access tiers (ADR-29):** The wizard asks for an access tier instead of a tunnel mode. `WG_INIT_ALLOWED_IPS` (client-side routing) and the wg-easy server-side `firewallIps` for the initial peer are both derived from the tier. Per-client firewall is on for every new install.
+
+| Tier | Client `AllowedIPs` (routing) | Server `firewallIps` (enforcement) | Audience |
+|------|-----------------------|--------------------|----------|
+| `full-lan` | `<WG_LAN_CIDR>` (detected, RFC1918) | `<WG_LAN_CIDR>` — whole LAN, all ports | Owner/admin |
+| `server` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>/32` — all ports incl. host SSH/SMB | Co-admin |
+| `containers` | `<WG_SERVER_LAN_IP>/32` | Enumerated MediaStack container ports at the server IP; **51821 (wg-easy admin) excluded** | Trusted household |
+| `streaming` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>:8096/tcp`, `:5055/tcp`, `:3000/tcp` — Jellyfin + Jellyseerr + Homepage | Friends/kids (README template, not an initial-peer choice) |
+
+**Advanced — full-tunnel routing.** Set **both** `WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0'` AND `WG_PER_CLIENT_FIREWALL=false` in `.env` before first boot. Both are required because per-client firewall would otherwise drop the now-routed traffic. The configurator emits a warning if `WG_PER_CLIENT_FIREWALL=false` is combined with a non-`full-lan` tier (almost certainly user error).
+
+In v15 the per-client firewall is enforced inside the wg-easy container regardless of the WireGuard interface name, and `INIT_PORT` propagates the wizard-chosen `WG_PORT` end-to-end (listen port, `wg0.conf`, compose binding). No host-side iptables FORWARD rules are needed.
+
+### Auto-populated (by `configure.sh`)
+
+| Key | Populated in step | By |
+|-----|-------------------|-----|
+| `SONARR_API_KEY` | 3 | `scripts/services/sonarr/main.sh` (read from `config/sonarr/config.xml`) |
+| `RADARR_API_KEY` | 4 | `scripts/services/radarr/main.sh` (read from `config/radarr/config.xml`) |
+| `JELLYFIN_API_KEY` | 5 | `scripts/services/jellyfin/main.sh` (AccessToken from auth response, saved as a permanent API key via `/Auth/Keys`) |
+| `JELLYFIN_PUBLISHED_URL` | 5 | `scripts/services/jellyfin/main.sh` (`configure_jellyfin_networking` — `https://jellyfin.<DOMAIN>` when DOMAIN set, else `http://<HOST_ADDRESS>:8096`) |
+| `BAZARR_API_KEY` | (conditional) | `scripts/services/bazarr/main.sh` (read from `config/bazarr/config/config.yaml`; only when subtitles profile is active) |
+| `JELLYSEERR_API_KEY` | 6 | `scripts/services/jellyseerr/main.sh` (from `apiKey` field of `GET /api/v1/settings/main`) |
+| `PORTAINER_API_KEY` | 7 | `scripts/services/portainer/main.sh` (persistent access token via `POST /api/users/1/tokens`) |
+
+Unpackerr reads `SONARR_API_KEY` / `RADARR_API_KEY` and `UNPACKERR_TORRENT_PATHS` from env (set in the `unpackerr` service definition in `docker-compose.yml`), which is why `configure.sh` restarts it after API key population for managed app wiring. Homepage reads all seven API keys/credentials from `.env` to generate `services.yaml` with live widgets.
+
+---
+
+## Pre-seeded configs (tracked in git)
+
+These service configs are shipped with the repo. They live under `config/` but survive the `.gitignore` sweep described below.
+
+### `config/fail2ban/jail.d/mediastack.conf`
+
+| Section | Content |
+|---------|---------|
+| `[DEFAULT]` | `ignoreip`: `127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16`. **10.0.0.0/8 is deliberate** — wg-easy hands out 10.8.0.0/24 to peers, and VPN peers are trusted friends/family. Ban 30 min after 5 failures in 30 min, with progressive ban increments (factor 2, max 24h). `banaction = iptables-allports` on `chain = DOCKER-USER` — single-box, all services behind Docker. |
+| `[jellyfin]` | `logpath = /var/log/jellyfin/log_*.log`. |
+| `[npm]` | Two log globs: `default-host_*.log` + `proxy-host-*_*.log`. |
+| `[jellyseerr]` | `logpath = /var/log/jellyseerr/*.log`. |
+| `[npm-ratelimit]` | `logpath = /var/log/npm/proxy-host-*_*.log`. Catches IPs that accumulate 429 (Too Many Requests) responses from nginx `limit_req`. Overrides `[DEFAULT]` with `maxretry = 10`, `findtime = 60` — these values are validated against `config.yml`'s `rate_limiting.ban_maxretry` / `ban_findtime` by `configure_npm` (drift is warned, not reconciled). Uses the `npm-ratelimit` filter (see below). |
+
+Log paths are mounted read-only from the producing service's config dir (fail2ban volume mounts in `docker-compose.yml`).
+
+### `config/fail2ban/filter.d/jellyfin.conf`
+
+```
+failregex = ^.*Authentication request for ".*" has been denied \(IP: "<ADDR>"\).*
+```
+
+Matches Jellyfin's auth-failure log format.
+
+### `config/fail2ban/filter.d/npm.conf`
+
+```
+failregex = \s(401|403)\s.*\[Client <ADDR>\]
+```
+
+Matches NPM's nginx access-log format (v2.12+): `[$time] $cache $upstream_status $status - $method $scheme $host "$uri" [Client $addr]`. The status code appears **before** `[Client]` in the log line, so the regex matches the status first, then extracts the IP. This has drifted before; keep the filter aligned with the current image log format.
+
+### `config/fail2ban/filter.d/jellyseerr.conf`
+
+```
+failregex = .*\[warn\].*Failed (sign-in|login) attempt.*"ip":"<ADDR>".*
+```
+
+Both `sign-in` and `login` variants covered — Jellyseerr's log wording has flipped between releases.
+
+### `config/fail2ban/filter.d/npm-ratelimit.conf`
+
+```
+failregex = \s429\s.*\[Client <ADDR>\]
+```
+
+Matches 429 (Too Many Requests) responses in NPM's nginx access log. Same log format as `npm.conf` — status appears before `[Client]`. Paired with the `[npm-ratelimit]` jail to ban IPs that repeatedly trigger nginx `limit_req` rate limits (configured via `config.yml`'s `rate_limiting` section).
+
+### `config/jackett/Jackett/ServerConfig.json`
+
+Pre-seeded with `FlareSolverrUrl: http://flaresolverr:8191` so Jackett knows how to use the Cloudflare bypass immediately. Empty `APIKey`, `AdminPassword`, `InstanceId` fields — Jackett generates them on first start, then `get_api_key` in `scripts/lib/common.sh` reads them.
+
+### `config/qbittorrent/qBittorrent/qBittorrent.conf`
+
+Baseline preferences applied before qBittorrent even starts. `scripts/services/qbittorrent/main.sh` then overwrites managed storage paths via API with values from `config.yml` using a Python `json.dumps` payload. The pre-seeded file intentionally avoids MediaStack-specific save paths so advanced manual app wiring starts neutral.
+
+Notable entries:
+
+| Setting | Why |
+|---------|-----|
+| `Session\GlobalMaxRatio=1` | 100% share ratio. |
+| `Session\MaxRatioAction=0` | `0`=pause, `1`=remove torrent (keep files), `3`=remove everything. Pre-seed matches the API-applied value. Sonarr/Radarr's download-client validator rejects anything other than `0`. |
+| `WebUI\AuthSubnetWhitelist=172.16.0.0/12` + `AuthSubnetWhitelistEnabled=true` | Docker bridge IPs. `LocalHostAuth=false` alone only covers 127.0.0.1. |
+| CSRF + clickjacking protection headers | Hardened WebUI security defaults. |
+| `WebUI\LocalHostAuth=false` | Required for subnet whitelist to be the only auth bypass. |
+| `WebUI\ServerDomains=*` | Allows access via NPM's reverse proxy. |
+
+### `config/qbittorrent/qBittorrent/categories.json`
+
+An empty object:
+
+```json
+{}
+```
+
+Managed app wiring creates category names and save paths from `qbittorrent.categories` in `config.yml`; category *names* must match `sonarr.download_client_category` / `radarr.download_client_category`.
+
+---
+
+## `.gitignore` — the negation gotcha
+
+The problem: service config dirs are gitignored because they hold runtime state, but a few pre-seeded files inside them must be tracked.
+
+Naive attempt (does NOT work):
+
+```gitignore
+config/*/
+!config/jackett/Jackett/ServerConfig.json
+```
+
+Once the parent directory `config/jackett/` is ignored, nothing inside it can be un-ignored — git never descends into ignored directories to find the negation.
+
+Actual pattern (runtime config exclusions in `.gitignore`):
+
+```gitignore
+# Service runtime configs (generated by containers)
+config/jellyfin/
+config/sonarr/
+config/radarr/
+config/jellyseerr/
+config/unpackerr/
+config/homepage/services.yaml
+config/homepage/logs/
+config/npm/
+config/wireguard/
+
+# qBittorrent runtime data (keep pre-seeded defaults)
+config/qbittorrent/qBittorrent/data/
+config/qbittorrent/qBittorrent/ipc-socket
+config/qbittorrent/qBittorrent/lockfile
+config/qbittorrent/qBittorrent/config/
+```
+
+Rule: **list each service dir explicitly**. `config/jackett/`, `config/qbittorrent/` (except the listed subpaths), and `config/fail2ban/` are *not* in the ignore list — so their pre-seeded tracked files stay visible to git.
+
+Adding a new service with tracked config therefore means:
+
+1. Create `config/<service>/` with the files to track.
+2. Add exactly the runtime subpaths to `.gitignore` — not the whole service dir.
+
+## Observations / open questions
+
+- **`quality_profile.cutoff_id` vs `quality_id`.** Anyone reading the `quality_profile` section in `config.yml` without the comment would assume it's a quality ID. Naming it `cutoff_group_id` would be self-documenting.
+- **NPM filter regex is format-dependent.** `config/fail2ban/filter.d/npm.conf` matches a specific NPM access log format. No test tails a real 401/403 line against it; if NPM changes its log format in a future image, every request would stop triggering bans and fail2ban would log silently. A regression test here would be cheap — generate a known-bad login and assert fail2ban counted it.
+- **Jellyseerr filter accepts both `sign-in` and `login`** — compensating for a known past drift. If the wording changes again, the regex needs a third alternative. No test coverage.
+- **~~qBittorrent pre-seed `MaxRatioAction=1` disagrees with API-applied `0`~~** — fixed: pre-seed now ships `MaxRatioAction=0`.
+- **`.env.example` documents `WG_INIT_PASSWORD=''`** with single quotes but a user copying the file without understanding the rule could paste a password containing `$` or `"` unquoted. The smoke test verifies survival through `.env` → compose → container, but a runtime check on the live `.env` would catch hand-edited drift earlier.
+- **`categories` string format.** `"5000,5030,5040"` is a stringified comma-list; `configure_arr_indexers` parses it via inline Python split (`scripts/lib/arr/main.sh`). A list-of-ints would be more natural in YAML but would require changing the shared-helper contract.
+- **`.env` API-key fields exist in `.env.example`** (the API key block near the end of the file). If a user copies `.env.example` to `.env` themselves (skipping `setup.sh`), the empty keys are fine — `configure.sh` populates them. But it means `.env.example` changes meaning from "template" to "initial state", which is easy to overlook during review.

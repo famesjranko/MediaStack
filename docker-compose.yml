@@ -1,0 +1,660 @@
+# =============================================================================
+# MediaStack - Turnkey Media Server for Friends & Family
+# =============================================================================
+# Usage:
+#   Core stack:       docker compose up -d
+#   + Reverse proxy:  docker compose --profile proxy up -d
+#   + VPN:            docker compose --profile remote up -d
+#
+# Resource limits + GPU: setup.sh generates docker-compose.override.yml.
+# =============================================================================
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Compose merges security_opt lists by append; do not re-add this in
+# docker-compose.override.yml.
+x-security-opt: &default-security-opt
+  - no-new-privileges:true
+
+networks:
+  mediastack:
+    name: mediastack
+    driver: bridge
+    # Every bridge-network container is pinned to a static IP (see each
+    # service's ipv4_address). Two reasons this is all-or-nothing:
+    #
+    # 1. Jellyfin's KnownProxies caches DNS lookups at startup
+    #    (jellyfin/jellyfin#14731, closed not-planned), so the proxy must
+    #    be a literal IP — hostname "npm" goes stale after any network
+    #    rebuild. Pinning only npm wasn't enough: Docker's IPAM allocates
+    #    dynamic IPs from .2 upward, and any service that started before
+    #    npm could grab the pinned slot first ("Address already in use").
+    # 2. With every container pinned, dynamic allocation never runs, so
+    #    no race window exists. Adding a new service requires assigning
+    #    a free host octet in this subnet (current map: see docs/project/structure.md).
+    #
+    # setup.sh writes MEDIASTACK_NETWORK_PREFIX to .env after checking host
+    # routes and Docker networks for collisions. Defaults stay inside Docker's
+    # conventional 172.16.0.0/12 range so qBittorrent's Docker subnet
+    # whitelist and firewall assumptions remain valid.
+    ipam:
+      config:
+        - subnet: ${MEDIASTACK_SUBNET:-172.28.0.0/24}
+          gateway: ${MEDIASTACK_GATEWAY:-172.28.0.1}
+
+services:
+  # ---------------------------------------------------------------------------
+  # Jellyfin - Media Server
+  # ---------------------------------------------------------------------------
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    # Official image runs as root internally - use env vars not user: directive
+    environment:
+      - JELLYFIN_PublishedServerUrl=${JELLYFIN_PUBLISHED_URL:-http://localhost:8096}
+      - TZ=${TZ}
+    volumes:
+      - ./config/jellyfin:/config
+      - ./config/jellyfin/cache:/cache
+      - ${DATA_DIR}:/data:ro
+    ports:
+      - "8096:8096"
+      - "7359:7359/udp"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.20
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8096/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Sonarr - TV Show Management
+  # ---------------------------------------------------------------------------
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    volumes:
+      - ./config/sonarr:/config
+      - ${DATA_DIR}:/data
+    ports:
+      - "8989:8989"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.22
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    depends_on:
+      jackett:
+        condition: service_healthy
+      qbittorrent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Radarr - Movie Management
+  # ---------------------------------------------------------------------------
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    volumes:
+      - ./config/radarr:/config
+      - ${DATA_DIR}:/data
+    ports:
+      - "7878:7878"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.23
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    depends_on:
+      jackett:
+        condition: service_healthy
+      qbittorrent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Jackett - Torrent Indexer Proxy
+  # ---------------------------------------------------------------------------
+  jackett:
+    image: linuxserver/jackett:latest
+    container_name: jackett
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/jackett:/config
+    ports:
+      - "9117:9117"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.30
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    depends_on:
+      flaresolverr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9117"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # qBittorrent - Torrent Client
+  # ---------------------------------------------------------------------------
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+      - WEBUI_PORT=8080
+    volumes:
+      - ./config/qbittorrent:/config
+      - ${DATA_DIR}:/data
+    ports:
+      - "8080:8080"
+      - "${TORRENT_PORT:-6881}:${TORRENT_PORT:-6881}"
+      - "${TORRENT_PORT:-6881}:${TORRENT_PORT:-6881}/udp"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.25
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # FlareSolverr - Cloudflare Bypass for Jackett
+  # ---------------------------------------------------------------------------
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=${TZ}
+    ports:
+      - "8191:8191"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.31
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8191/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
+  # Jellyseerr - Media Request Management
+  # ---------------------------------------------------------------------------
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=${TZ}
+    volumes:
+      - ./config/jellyseerr:/app/config
+    ports:
+      - "5055:5055"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.21
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+      sonarr:
+        condition: service_healthy
+      radarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5055"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Unpackerr - Archive Extraction for Downloads
+  # ---------------------------------------------------------------------------
+  unpackerr:
+    image: ghcr.io/hotio/unpackerr:latest
+    container_name: unpackerr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+      - UN_INTERVAL=2m
+      - UN_START_DELAY=1m
+      - UN_LOG_FILE=/config/unpackerr.log
+      - UN_LOG_FILE_MB=10
+      - UN_MAX_RETRIES=3
+      - UN_RETRY_DELAY=5m
+      - UN_DELETE_DELAY=5m
+      # Sonarr integration
+      - UN_SONARR_0_URL=http://sonarr:8989
+      - UN_SONARR_0_API_KEY=${SONARR_API_KEY}
+      - UN_SONARR_0_PATHS_0=${UNPACKERR_TORRENT_PATHS-/data/torrents}
+      # Radarr integration
+      - UN_RADARR_0_URL=http://radarr:7878
+      - UN_RADARR_0_API_KEY=${RADARR_API_KEY}
+      - UN_RADARR_0_PATHS_0=${UNPACKERR_TORRENT_PATHS-/data/torrents}
+    volumes:
+      - ./config/unpackerr:/config
+      - ${DATA_DIR}:/data
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.32
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    depends_on:
+      sonarr:
+        condition: service_healthy
+      radarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "unpackerr"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Bazarr - Subtitle Management (subtitles profile)
+  # ---------------------------------------------------------------------------
+  bazarr:
+    image: linuxserver/bazarr:latest
+    container_name: bazarr
+    profiles: [subtitles]
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    volumes:
+      - ./config/bazarr:/config
+      - ${DATA_DIR}:/data
+    ports:
+      - "6767:6767"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.24
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    depends_on:
+      sonarr:
+        condition: service_healthy
+      radarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6767"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Homepage - Dashboard
+  # ---------------------------------------------------------------------------
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    environment:
+      - TZ=${TZ}
+      - HOMEPAGE_ALLOWED_HOSTS=*
+    volumes:
+      - ./config/homepage:/app/config
+      - ${DATA_DIR}:/data:ro
+      - /sys:/sys:ro
+    ports:
+      - "3000:3000"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.40
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Portainer CE - Container Management UI
+  # ---------------------------------------------------------------------------
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./config/portainer:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9000:9000"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.41
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    # Portainer CE is a distroless image (no shell, no curl, no wget).
+    # The upstream image declares a wget healthcheck that always fails.
+    # Disable it — Portainer has no dependents, so running status suffices.
+    healthcheck:
+      test: ["NONE"]
+
+  # ---------------------------------------------------------------------------
+  # Nginx Proxy Manager - Reverse Proxy + SSL (built-in Let's Encrypt)
+  # ---------------------------------------------------------------------------
+  npm:
+    image: jc21/nginx-proxy-manager:2
+    container_name: npm
+    profiles: [proxy]
+    environment:
+      - LE_SERVER=${NPM_LE_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+    ports:
+      - "80:80"
+      - "443:443"
+      # Admin UI — default creds (admin@example.com / changeme) are rotated
+      # automatically by scripts/configure.sh using the shared admin password
+      # (JELLYFIN_ADMIN_PASSWORD). Keep port 81 LAN-only: do not port-forward
+      # on your router.
+      - "81:81"
+    volumes:
+      - ./config/npm/data:/data
+      - ./config/npm/letsencrypt:/etc/letsencrypt
+    networks:
+      mediastack:
+        # Pinned so Jellyfin's KnownProxies can trust this IP literal.
+        # See network-level comment above for rationale.
+        ipv4_address: ${MEDIASTACK_NPM_IP:-172.28.0.10}
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "/bin/check-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Fail2ban - Intrusion Prevention
+  # Proxy profile — only needed when a domain is configured and
+  # ports 80/443 are forwarded for external access.
+  # ---------------------------------------------------------------------------
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    profiles: [proxy]
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - TZ=${TZ}
+      - F2B_LOG_TARGET=STDOUT
+      - F2B_LOG_LEVEL=INFO
+      - F2B_DB_PURGE_AGE=7d
+    volumes:
+      - ./config/fail2ban:/data
+      - ./config/jellyfin/log:/var/log/jellyfin:ro
+      - ./config/npm/data/logs:/var/log/npm:ro
+      - ./config/jellyseerr/logs:/var/log/jellyseerr:ro
+    depends_on:
+      - npm
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "fail2ban-client", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # DDNS Updater - Dynamic DNS for users with changing home IPs
+  # ---------------------------------------------------------------------------
+  ddns-updater:
+    image: qmcgaw/ddns-updater:latest
+    container_name: ddns-updater
+    profiles: [proxy]
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.50
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config/ddns-updater:/updater/data
+    environment:
+      - TZ=${TZ}
+      - PERIOD=5m
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    # Mirrors image-baked healthcheck — defensive override guards against silent upstream drift.
+    healthcheck:
+      test: ["CMD", "/updater/ddns-updater", "healthcheck"]
+      interval: 60s
+      timeout: 5s
+      retries: 2
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Uptime Kuma - Service Health Monitoring
+  # ---------------------------------------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    container_name: uptime-kuma
+    environment:
+      - TZ=${TZ}
+      - UPTIME_KUMA_DB_TYPE=sqlite
+    volumes:
+      - ./config/uptime-kuma:/app/data
+    ports:
+      - "3001:3001"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.42
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Beszel Hub - System Resource Monitoring Dashboard
+  # ---------------------------------------------------------------------------
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
+    environment:
+      - TZ=${TZ}
+      - USER_EMAIL=${NPM_ADMIN_EMAIL}
+      - USER_PASSWORD=${JELLYFIN_ADMIN_PASSWORD}
+    volumes:
+      - ./config/beszel:/beszel_data
+    ports:
+      - "8090:8090"
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.43
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://localhost:8090"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Beszel Agent - Host Resource Collector
+  # ---------------------------------------------------------------------------
+  beszel-agent:
+    image: henrygd/beszel-agent:alpine
+    container_name: beszel-agent
+    network_mode: host
+    environment:
+      - PORT=45876
+      - KEY=${BESZEL_AGENT_KEY:-}
+      - HUB_URL=http://localhost:8090
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      beszel:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "/agent", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # WireGuard (wg-easy) - VPN with Web UI (remote access profile)
+  # ---------------------------------------------------------------------------
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:15.3.0
+    container_name: wireguard
+    profiles:
+      - remote
+    environment:
+      - INIT_ENABLED=${WG_INIT_ENABLED:-true}
+      - INIT_USERNAME=${JELLYFIN_ADMIN_USER}
+      - INIT_PASSWORD=${WG_INIT_PASSWORD}
+      - INIT_HOST=${WG_HOST}
+      - INIT_PORT=${WG_PORT:-51820}
+      - INIT_DNS=${WG_DEFAULT_DNS}
+      # Initial peer's client-side AllowedIPs. Wizard sets this from WG_ACCESS_TIER
+      # (full-lan/server/containers/streaming). Fallback is a safe split-routing
+      # default so a missing key never re-enables full-tunnel by accident — power
+      # users wanting full tunnel set WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0' AND
+      # WG_PER_CLIENT_FIREWALL=false in .env. See README "Advanced" section.
+      - INIT_ALLOWED_IPS=${WG_INIT_ALLOWED_IPS:-192.168.0.0/16}
+      - INIT_IPV4_CIDR=10.8.0.0/24
+      - PORT=51821
+      - INSECURE=true
+      - DISABLE_IPV6=true
+    volumes:
+      - ./config/wireguard:/etc/wireguard
+      - /lib/modules:/lib/modules:ro
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.11
+    ports:
+      - "${WG_PORT:-51820}:${WG_PORT:-51820}/udp"
+      - "51821:51821/tcp"
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wg show | grep -q interface"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_MODULE
+      - DAC_OVERRIDE
+
+  # ---------------------------------------------------------------------------
+  # autoheal - Restart containers Docker has marked unhealthy
+  # ---------------------------------------------------------------------------
+  # Reads container health via the Docker socket (read-only) and restarts
+  # any container in `unhealthy` state. Catches flaresolverr's Chromium
+  # failure loops, NPM config corruption, and any future health regression
+  # without operator intervention. AUTOHEAL_START_PERIOD=0 means it honours
+  # each container's own start_period.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    profiles:
+      - autoheal
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+      - AUTOHEAL_INTERVAL=10
+      - AUTOHEAL_START_PERIOD=0
+      - TZ=${TZ}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      mediastack:
+        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.60
+    restart: unless-stopped
+    security_opt: *default-security-opt
+    logging: *default-logging

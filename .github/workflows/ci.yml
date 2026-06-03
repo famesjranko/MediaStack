@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-yaml ripgrep locales
+          # Generate a non-C-collation UTF-8 locale so the ui-box-alignment
+          # locale guard actually exercises the LC_ALL=C path (otherwise it
+          # skips and the regression could slip through).
+          sudo locale-gen en_US.UTF-8 || true
+
+      - name: Secret and private-file guard
+        run: |
+          set -euo pipefail
+          forbidden='(^|/)(\.env($|\.)|\.envrc|tests/\.env\.gcp|private(/|$)|docs/plans(/|$)|\.planning(/|$)|\.tmp(/|$)|CONTEXT\.md$|tests/.*-plan\.md$)'
+          if git ls-files | grep -E "$forbidden" | grep -Ev '(^|/)(\.env\.example|\.env\.gcp\.example)$'; then
+            echo "Forbidden private or planning file is tracked"
+            exit 1
+          fi
+          if git ls-files -z | \
+            grep -zEv '^(docs/api/|\.github/workflows/ci\.yml$|\.env\.example$|tests/\.env\.gcp\.example$)' | \
+            xargs -0 rg -n \
+              -e '-----BEGIN (RSA|OPENSSH|EC|DSA)? ?PRIVATE KEY-----|AIza[0-9A-Za-z_-]{35}|ya29\.[0-9A-Za-z_-]+|AKIA[0-9A-Z]{16}|gh[pousr]_[0-9A-Za-z_]{36,}|xox[baprs]-[0-9A-Za-z-]+|client_secret[[:space:]]*[:=][[:space:]]*["'\'']?[^"'\''[:space:]]+|private_key[[:space:]]*[:=][[:space:]]*["'\'']?[^"'\''[:space:]]+'; then
+            echo "Potential secret pattern found"
+            exit 1
+          fi
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          git ls-files '*.sh' mediastack setup.sh | xargs bash -n
+
+      - name: Python syntax
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/image-drift.py \
+            scripts/setup/wizard_apply.py \
+            scripts/lib/arr/render/*.py \
+            tests/lib/wizard_pty.py
+
+      - name: Config and compose validation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import yaml
+
+          for path in ["config.yml", *pathlib.Path(".github/workflows").glob("*.yml")]:
+              yaml.safe_load(pathlib.Path(path).read_text())
+          PY
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose --profile proxy config --quiet
+          docker compose --profile remote config --quiet
+          docker compose --profile subtitles config --quiet
+          docker compose --profile autoheal config --quiet
+          docker compose --profile proxy --profile remote --profile subtitles --profile autoheal config --quiet
+          rm -f .env
+
+      - name: Focused unit tests
+        run: |
+          set -euo pipefail
+          bash tests/unit/config-validation.sh
+          bash tests/unit/upgrades-manifest.sh
+          bash tests/unit/image-drift.sh
+          bash tests/unit/resource-limits.sh
+          bash tests/unit/update.sh
+          bash tests/unit/wizard-flow.sh
+          bash tests/unit/stage1-confirm.sh
+          bash tests/unit/stage3-gpu-content.sh
+          bash tests/unit/wizard-presets.sh
+          bash tests/unit/validators.sh
+          bash tests/unit/stage1-qbit-math.sh
+          bash tests/unit/nvidia-patch.sh
+          bash tests/unit/gpu-branching.sh
+          bash tests/unit/ui-box-alignment.sh
+          bash tests/unit/test-runner.sh
+
+  wizard-ui:
+    name: Wizard PTY scenarios (DinD, no image pulls)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-yaml
+
+      - name: Run wizard-ui scenarios (stubbed Docker, MS_TEST_SKIP_PRELOAD=1)
+        run: |
+          set -uo pipefail
+          scenarios=$(ls tests/scenarios/wizard-ui-*.sh \
+            | xargs -n1 basename | sed 's/\.sh$//' | tr '\n' ' ')
+          echo "Running: $scenarios"
+          MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $scenarios

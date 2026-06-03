@@ -1,0 +1,532 @@
+#!/usr/bin/env bash
+# tests/unit/stage2-flow.sh
+#
+# Contract tests for Stage 2 terminal-flow copy and choice labels.
+
+set -uo pipefail
+
+UNIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$UNIT_DIR/../.." && pwd)"
+
+source "$REPO_ROOT/tests/lib/assert.sh"
+CURRENT_SCENARIO="stage2-flow"
+scenario_begin "$CURRENT_SCENARIO"
+
+[[ -f "$REPO_ROOT/scripts/setup/stages/stage2.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
+
+set +e
+set +u
+
+DDNS_UPDATER_UID="$(id -u)"
+DDNS_UPDATER_GID="$(id -g)"
+
+if ! type stage2_offer_choices >/dev/null 2>&1; then
+    stage2_offer_choices() { printf '__not_implemented__'; }
+fi
+if ! type stage2_dns_retry_choices >/dev/null 2>&1; then
+    stage2_dns_retry_choices() { printf '__not_implemented__'; }
+fi
+if ! type stage2_port_gate_choices >/dev/null 2>&1; then
+    stage2_port_gate_choices() { printf '__not_implemented__'; }
+fi
+if ! type stage2_confirm_choices >/dev/null 2>&1; then
+    stage2_confirm_choices() { printf '__not_implemented__'; }
+fi
+if ! type stage2_le_failure_choices >/dev/null 2>&1; then
+    stage2_le_failure_choices() { printf '__not_implemented__'; }
+fi
+if ! type stage2_skip_summary_copy >/dev/null 2>&1; then
+    stage2_skip_summary_copy() { printf '__not_implemented__'; }
+fi
+if ! type stage2_tell_me_more_copy >/dev/null 2>&1; then
+    stage2_tell_me_more_copy() { printf '__not_implemented__'; }
+fi
+
+# S2-01: offer choices and tell-more copy.
+offer_choices="$(stage2_offer_choices)"
+assert_contains "$offer_choices" "Enable remote access" "S2-01: offer includes Enable remote access"
+assert_contains "$offer_choices" "Skip for now" "S2-01: offer includes Skip for now"
+assert_contains "$offer_choices" "Tell me more" "S2-01: offer includes Tell me more"
+
+tell_more="$(stage2_tell_me_more_copy)"
+assert_contains "$tell_more" "domain" "S2-01: tell-me-more explains domain requirement"
+assert_contains "$tell_more" "WireGuard" "S2-01: tell-me-more explains WireGuard"
+
+# S2-10: retry/continue/skip choices for gate failures.
+dns_choices="$(stage2_dns_retry_choices)"
+assert_contains "$dns_choices" "Retry DNS check" "S2-10: DNS retry choices include Retry DNS check"
+assert_contains "$dns_choices" "Skip HTTPS for now" "S2-10: DNS retry choices include Skip HTTPS for now"
+
+port_choices="$(stage2_port_gate_choices)"
+assert_contains "$port_choices" "Retry" "S2-10: port gate includes Retry"
+assert_contains "$port_choices" "Continue with manual verification" "S2-10: port gate includes manual verification fallback"
+assert_contains "$port_choices" "Skip HTTPS for now" "S2-10: port gate includes Skip HTTPS for now"
+
+le_choices="$(stage2_le_failure_choices)"
+assert_contains "$le_choices" "Skip HTTPS for now" "S2-16: LE gate includes Skip HTTPS for now"
+assert_contains "$le_choices" "Exit so I can fix and retry" "S2-16: LE gate includes fix-and-retry exit"
+assert_contains "$le_choices" "Abort setup" "S2-16: LE gate includes Abort setup"
+
+# S2-12: confirm choices use approved UI-SPEC labels.
+confirm_choices="$(stage2_confirm_choices)"
+assert_contains "$confirm_choices" "Install" "S2-12: confirm includes Install"
+assert_contains "$confirm_choices" "Back" "S2-12: confirm includes Back"
+assert_contains "$confirm_choices" "Skip Stage 2" "S2-12: confirm includes Skip Stage 2"
+
+# S2-15: skip copy is the user-facing fallback when ready postconditions fail.
+skip_copy="$(stage2_skip_summary_copy)"
+assert_contains "$skip_copy" "HTTPS skipped. LAN + VPN work. Run ./setup.sh --remote to try again." "S2-10: skip summary matches UI-SPEC copy"
+
+TMP_ROOT=$(mktemp -d)
+trap 'rm -rf "$TMP_ROOT"' EXIT
+
+log_ok() { :; }
+log_warn() { :; }
+log_skip() { :; }
+log_info() { :; }
+log_error() { :; }
+ui_log() {
+    local level="$1"
+    shift
+    if [[ "$level" == "warn" ]]; then
+        WARN_COUNT=$((WARN_COUNT + 1))
+        LAST_WARN="$*"
+        [[ -n "${LAST_WARN_FILE:-}" ]] && printf '%s\n' "$LAST_WARN" > "$LAST_WARN_FILE"
+    fi
+}
+
+source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/stack.sh"
+source "$REPO_ROOT/scripts/lib/validators.sh"
+
+_WIZ_ADMIN_EMAIL=""
+_WIZ_PREV_EMAIL=""
+NPM_ADMIN_EMAIL="admin@mediastack.local"
+_stage2_seed_wizard_defaults
+assert_eq "" "$_WIZ_ADMIN_EMAIL" "S2-01: remote setup blanks LAN-only demo email"
+
+_WIZ_ADMIN_EMAIL=""
+_WIZ_PREV_EMAIL=""
+NPM_ADMIN_EMAIL="owner@gate.test"
+_stage2_seed_wizard_defaults
+assert_eq "owner@gate.test" "$_WIZ_ADMIN_EMAIL" "S2-01: remote setup preserves real email"
+
+env_val_from() {
+    local env_path="$1"
+    local key="$2"
+    python3 - "$env_path" "$key" <<'PY'
+import pathlib
+import sys
+
+env_path = pathlib.Path(sys.argv[1])
+key = sys.argv[2]
+for line in env_path.read_text().splitlines():
+    if line.startswith(key + "="):
+        value = line.split("=", 1)[1]
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        print(value, end="")
+        break
+PY
+}
+
+seed_stage2_env_vars() {
+    SCRIPT_DIR="$TMP_ROOT/env"
+    rm -rf "$SCRIPT_DIR"
+    mkdir -p "$SCRIPT_DIR/config/ddns-updater"
+    _ENV_TZ="Etc/UTC"
+    _ENV_PUID="$(id -u)"
+    _ENV_PGID="$(id -g)"
+    _ENV_HOST_ADDRESS="192.168.1.10"
+    GPU_TYPE="none"
+    _WIZ_TZ="Etc/UTC"
+    _WIZ_DATA_DIR="/data"
+    _WIZ_ADMIN_USER="admin"
+    _WIZ_ADMIN_PW="GeneratedPassword123"
+    _WIZ_ADMIN_EMAIL="owner@gate.test"
+    _WIZ_DOMAIN="gate.test"
+    _WIZ_REMOTE_WEB_STATE="unchecked"
+    _WIZ_WG_HOST="gate.test"
+    _WIZ_WG_PORT="51820"
+    _WIZ_WG_DNS="1.1.1.1"
+    _WIZ_WG_ACCESS_TIER="full-lan"
+    _WIZ_WG_LAN_CIDR="10.8.0.0/24"
+    _WIZ_WG_SERVER_LAN_IP="192.168.1.10"
+    _WIZ_WG_INIT_ALLOWED_IPS="10.8.0.0/24"
+    _WIZ_WG_PER_CLIENT_FIREWALL="true"
+    _WIZ_WG_INIT_PASSWORD="GeneratedPassword123"
+    _WIZ_DDNS_USER="dynu-user"
+    _WIZ_DDNS_PW='dynu"pw\with$chars'
+    _WIZ_DDNS_PREFLIGHT_OK="false"
+    _WIZ_DDNS_INVALIDATED="false"
+    _WIZ_TORRENT_PORT="6881"
+    _WIZ_DL_LIMIT="0"
+    _WIZ_UL_LIMIT="0"
+    _WIZ_BAZARR_ENABLED="false"
+    _WIZ_SMB_ENABLED="false"
+}
+
+# v15 wg-easy takes plaintext INIT_PASSWORD; no bcrypt step. The wizard sets
+# _WIZ_WG_INIT_PASSWORD from _WIZ_ADMIN_PW inside _stage2_collect_wireguard and
+# env_gen.sh persists it. The Stage 2 skip path should leave it empty so the
+# remote profile stays inactive.
+seed_stage2_env_vars
+seed_jf_pw="$_WIZ_ADMIN_PW"
+_WIZ_WG_INIT_PASSWORD="$seed_jf_pw"
+write_env >/dev/null
+assert_eq "$seed_jf_pw" "$(env_val_from "$SCRIPT_DIR/.env" WG_INIT_PASSWORD)" "AUDIT: Stage 2 install path persists WireGuard init password from admin password"
+
+seed_stage2_env_vars
+_WIZ_WG_INIT_PASSWORD=""
+unset WG_INIT_PASSWORD
+STAGE_1_COMPLETE=1
+_stage2_skip_https >/dev/null
+assert_eq "skipped" "$(env_val_from "$SCRIPT_DIR/.env" REMOTE_WEB_STATE)" "AUDIT: Stage 2 immediate skip persists skipped state"
+assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" WG_INIT_PASSWORD)" "AUDIT: Stage 2 immediate skip leaves WireGuard init password empty"
+_build_profile_args skip_profiles
+case " ${skip_profiles[*]} " in
+    *" --profile remote "*) fail "AUDIT: Stage 2 immediate skip leaves remote profile inactive" "profiles=${skip_profiles[*]}" ;;
+    *) pass "AUDIT: Stage 2 immediate skip leaves remote profile inactive" ;;
+esac
+unset DDNS_USERNAME DDNS_PASSWORD
+
+seed_stage2_env_vars
+_WIZ_DDNS_PREFLIGHT_OK="true"
+write_env >/dev/null
+assert_eq "gate.test" "$(env_val_from "$SCRIPT_DIR/.env" DOMAIN)" "04-05: Stage 2 domain persists to .env"
+assert_eq "unchecked" "$(env_val_from "$SCRIPT_DIR/.env" REMOTE_WEB_STATE)" "04-05: Stage 2 starts unchecked before install verification"
+assert_eq '10.8.0.0/24' "$(env_val_from "$SCRIPT_DIR/.env" WG_INIT_ALLOWED_IPS)" "04-05: WireGuard init allowed IPs persist"
+assert_eq 'true' "$(env_val_from "$SCRIPT_DIR/.env" WG_PER_CLIENT_FIREWALL)" "04-05: WireGuard per-client firewall flag persists"
+assert_eq 'full-lan' "$(env_val_from "$SCRIPT_DIR/.env" WG_ACCESS_TIER)" "ADR-29: WG_ACCESS_TIER persists"
+assert_eq '10.8.0.0/24' "$(env_val_from "$SCRIPT_DIR/.env" WG_LAN_CIDR)" "ADR-29: WG_LAN_CIDR persists"
+assert_eq '192.168.1.10' "$(env_val_from "$SCRIPT_DIR/.env" WG_SERVER_LAN_IP)" "ADR-29: WG_SERVER_LAN_IP persists"
+assert_eq 'dynu"pw\with$chars' "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["settings"][0]["password"])' "$SCRIPT_DIR/config/ddns-updater/config.json")" "04-05: DDNS password persists via JSON-safe writer"
+assert_eq "${DDNS_UPDATER_UID}:${DDNS_UPDATER_GID} 600" "$(stat -c '%u:%g %a' "$SCRIPT_DIR/config/ddns-updater/config.json")" "AUDIT: DDNS config writer secures file for configured container user"
+
+if grep -q '^PASSWORD=' "$SCRIPT_DIR/.env"; then
+    fail "04-05: WireGuard plaintext PASSWORD is not written"
+else
+    pass "04-05: WireGuard plaintext PASSWORD is not written"
+fi
+assert_contains "$(grep '^WG_INIT_PASSWORD=' "$SCRIPT_DIR/.env")" "WG_INIT_PASSWORD='" "04-05: WireGuard init password is single-quoted"
+
+DDNS_PERM_CALLS="$TMP_ROOT/ddns-permission-calls"
+DDNS_PERM_DIR="$TMP_ROOT/ddns-permission-dir"
+mkdir -p "$DDNS_PERM_DIR"
+: > "$DDNS_PERM_DIR/config.json"
+unset DDNS_UPDATER_UID DDNS_UPDATER_GID
+stat() {
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%u:%g" ]]; then
+        printf '1001:1001\n'
+        return 0
+    fi
+    command stat "$@"
+}
+chown() {
+    printf 'direct chown %s\n' "$*" >> "$DDNS_PERM_CALLS"
+    return 1
+}
+chmod() {
+    printf 'direct chmod %s\n' "$*" >> "$DDNS_PERM_CALLS"
+    return 1
+}
+sudo() {
+    printf 'sudo %s\n' "$*" >> "$DDNS_PERM_CALLS"
+    return 0
+}
+_ddns_prepare_config_dir "$DDNS_PERM_DIR" >/dev/null 2>&1
+_ddns_secure_config_file "$DDNS_PERM_DIR/config.json" >/dev/null 2>&1
+DDNS_PERM_LOG="$(cat "$DDNS_PERM_CALLS")"
+assert_contains "$DDNS_PERM_LOG" "sudo chown 1000:1000 $DDNS_PERM_DIR" "AUDIT: DDNS config dir repairs non-1000 owner"
+assert_contains "$DDNS_PERM_LOG" "sudo chmod 755 $DDNS_PERM_DIR" "AUDIT: DDNS config dir mode remains traversable"
+assert_contains "$DDNS_PERM_LOG" "sudo chown 1000:1000 $DDNS_PERM_DIR/config.json" "AUDIT: DDNS config file repairs non-1000 owner"
+assert_contains "$DDNS_PERM_LOG" "sudo chmod 600 $DDNS_PERM_DIR/config.json" "AUDIT: DDNS config file stays private but container-readable"
+unset -f stat chown chmod sudo
+DDNS_UPDATER_UID="$(id -u)"
+DDNS_UPDATER_GID="$(id -g)"
+
+seed_stage2_env_vars
+DDNS_USERNAME="saved-dynu-user"
+DDNS_PASSWORD='saved"dynu\password$chars'
+_WIZ_DDNS_USER=""
+_WIZ_DDNS_PW=""
+_WIZ_DDNS_PREFLIGHT_OK="false"
+_WIZ_DDNS_INVALIDATED="false"
+STAGE_1_COMPLETE=1
+_stage2_skip_https >/dev/null
+assert_eq "saved-dynu-user" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_USERNAME)" "AUDIT: Stage 2 skip preserves existing verified DDNS username"
+assert_eq 'saved"dynu\password$chars' "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PASSWORD)" "AUDIT: Stage 2 skip preserves existing verified DDNS password"
+unset DDNS_USERNAME DDNS_PASSWORD
+
+reset_stage2_ddns_prompt_stubs() {
+    WARN_COUNT=0
+    LAST_WARN=""
+    LAST_WARN_FILE="$TMP_ROOT/ddns-last-warn"
+    : > "$LAST_WARN_FILE"
+    DDNS_PASSWORD_COUNT_FILE="$TMP_ROOT/ddns-password-count"
+    printf '0\n' > "$DDNS_PASSWORD_COUNT_FILE"
+    _WIZ_DOMAIN="gate.test"
+    _WIZ_DDNS_USER=""
+    _WIZ_DDNS_PW=""
+    _WIZ_DDNS_PREFLIGHT_OK="false"
+    _WIZ_DDNS_INVALIDATED="false"
+}
+
+ui_input() {
+    printf 'dynu-user\n'
+}
+
+ui_input_validated() {
+    local prompt="$1"
+    local default="$2"
+    local validator_fn="$3"
+    local value="${default:-dynu-user}"
+    if "$validator_fn" "$value"; then
+        printf '%s\n' "$value"
+        return 0
+    fi
+    return 1
+}
+
+ui_password() {
+    local calls
+    calls=$(cat "$DDNS_PASSWORD_COUNT_FILE" 2>/dev/null || printf '0')
+    calls=$((calls + 1))
+    printf '%s\n' "$calls" > "$DDNS_PASSWORD_COUNT_FILE"
+    case "$calls" in
+        1) printf "bad'quote\n" ;;
+        *) printf 'good-secret\n' ;;
+    esac
+}
+
+stage2_dynu_preflight() {
+    printf 'ok\n'
+}
+
+reset_stage2_ddns_prompt_stubs
+_stage2_offer_ddns "true" >/dev/null
+assert_eq "good-secret" "$_WIZ_DDNS_PW" "04-05: DDNS password rejects single quote before .env persistence"
+assert_eq "true" "$_WIZ_DDNS_PREFLIGHT_OK" "AUDIT: DDNS credentials are marked persistable only after Dynu preflight"
+assert_eq "2" "$(cat "$DDNS_PASSWORD_COUNT_FILE")" "04-05: DDNS password re-prompts after invalid single quote"
+assert_contains "$(cat "$LAST_WARN_FILE")" "single quote" "04-05: DDNS password validation explains single quote rejection"
+
+BAD_DDNS_SLEEP_COUNT=0
+BAD_DDNS_PREFLIGHT_COUNT_FILE="$TMP_ROOT/bad-ddns-preflight-count"
+printf '0\n' > "$BAD_DDNS_PREFLIGHT_COUNT_FILE"
+ui_confirm() {
+    return 0
+}
+ui_input_validated() {
+    case "$1" in
+        Your*) printf 'gate.test\n' ;;
+        Dynu*) printf 'dynu-user\n' ;;
+        *) printf 'value\n' ;;
+    esac
+}
+ui_password() {
+    printf 'bad-secret\n'
+}
+ui_choose() {
+    case "$1" in
+        Do\ you*) printf 'Yes\n' ;;
+        Remote*) printf 'Skip HTTPS for now\n' ;;
+        *) printf 'Skip HTTPS for now\n' ;;
+    esac
+}
+sleep() {
+    BAD_DDNS_SLEEP_COUNT=$((BAD_DDNS_SLEEP_COUNT + 1))
+}
+net_detect_public_ip() {
+    _NET_PUBLIC_IP="203.0.113.10"
+    return 0
+}
+stage2_dynu_preflight() {
+    local calls
+    calls=$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE" 2>/dev/null || printf '0')
+    calls=$((calls + 1))
+    printf '%s\n' "$calls" > "$BAD_DDNS_PREFLIGHT_COUNT_FILE"
+    printf 'badauth\n'
+    return 1
+}
+stage2_dns_classify() {
+    printf 'no-a'
+    return 1
+}
+
+seed_stage2_env_vars
+DDNS_USERNAME="stale-dynu-user"
+DDNS_PASSWORD='stale-dynu-password'
+_WIZ_DDNS_USER="stale-dynu-user"
+_WIZ_DDNS_PW='stale-dynu-password'
+_WIZ_DDNS_PREFLIGHT_OK="true"
+_WIZ_DDNS_INVALIDATED="false"
+_stage2_collect_domain >/dev/null 2>&1
+assert_eq "1" "$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE")" "AUDIT: bad Dynu auth test exercises preflight"
+assert_eq "0" "$BAD_DDNS_SLEEP_COUNT" "AUDIT: bad Dynu auth does not wait for propagation"
+assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_USERNAME)" "AUDIT: bad Dynu auth does not persist DDNS username"
+assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PASSWORD)" "AUDIT: bad Dynu auth does not persist DDNS password"
+if [[ -f "$SCRIPT_DIR/config/ddns-updater/config.json" ]]; then
+    fail "AUDIT: bad Dynu auth does not write DDNS config.json"
+else
+    pass "AUDIT: bad Dynu auth does not write DDNS config.json"
+fi
+unset DDNS_USERNAME DDNS_PASSWORD
+
+stage2_dns_classify() {
+    printf 'ok'
+    return 0
+}
+pull_images() { :; }
+start_stack() { :; }
+wait_all_healthy() { :; }
+print_access_info() { :; }
+stage2_le_gate() { return 0; }
+
+printf '0\n' > "$BAD_DDNS_PREFLIGHT_COUNT_FILE"
+seed_stage2_env_vars
+mkdir -p "$SCRIPT_DIR/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SCRIPT_DIR/scripts/configure.sh"
+chmod +x "$SCRIPT_DIR/scripts/configure.sh"
+DDNS_USERNAME="stale-dynu-user"
+DDNS_PASSWORD='stale-dynu-password'
+_WIZ_DDNS_USER="stale-dynu-user"
+_WIZ_DDNS_PW='stale-dynu-password'
+_WIZ_DDNS_PREFLIGHT_OK="true"
+_WIZ_DDNS_INVALIDATED="false"
+_WIZ_JELLYFIN_BITRATE=""
+if _stage2_collect_domain >/dev/null 2>&1; then
+    pass "AUDIT: bad Dynu auth with ready DNS reaches install path"
+else
+    fail "AUDIT: bad Dynu auth with ready DNS reaches install path"
+fi
+_stage2_install >/dev/null 2>&1
+assert_eq "1" "$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE")" "AUDIT: install-path bad Dynu auth test exercises preflight"
+assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_USERNAME)" "AUDIT: install after bad Dynu auth does not persist DDNS username"
+assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PASSWORD)" "AUDIT: install after bad Dynu auth does not persist DDNS password"
+if [[ -f "$SCRIPT_DIR/config/ddns-updater/config.json" ]]; then
+    fail "AUDIT: install after bad Dynu auth does not write DDNS config.json"
+else
+    pass "AUDIT: install after bad Dynu auth does not write DDNS config.json"
+fi
+unset DDNS_USERNAME DDNS_PASSWORD
+
+seed_stage2_env_vars
+mkdir -p "$SCRIPT_DIR/scripts" "$TMP_ROOT/ddns-symlink-target"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SCRIPT_DIR/scripts/configure.sh"
+chmod +x "$SCRIPT_DIR/scripts/configure.sh"
+cat > "$SCRIPT_DIR/.env" <<'EOF'
+DOMAIN=example.com
+REMOTE_WEB_STATE=existing-safe
+DDNS_USERNAME='old-user'
+DDNS_PASSWORD='old-secret'
+STAGE_1_COMPLETE=1
+EOF
+cp "$SCRIPT_DIR/.env" "$TMP_ROOT/stage2-symlink-existing.env"
+rm -rf "$SCRIPT_DIR/config/ddns-updater"
+ln -s "$TMP_ROOT/ddns-symlink-target" "$SCRIPT_DIR/config/ddns-updater"
+_WIZ_DDNS_PREFLIGHT_OK="true"
+_WIZ_DDNS_USER="dynu-user"
+_WIZ_DDNS_PW="good-secret"
+_WIZ_JELLYFIN_BITRATE=""
+STAGE2_SYMLINK_PULLS=0
+STAGE2_SYMLINK_STARTS=0
+pull_images() { STAGE2_SYMLINK_PULLS=$((STAGE2_SYMLINK_PULLS + 1)); }
+start_stack() { STAGE2_SYMLINK_STARTS=$((STAGE2_SYMLINK_STARTS + 1)); }
+_stage2_install >/dev/null 2>&1
+stage2_symlink_rc=$?
+if (( stage2_symlink_rc != 0 )); then
+    pass "AUDIT: Stage 2 install aborts on symlinked DDNS config directory"
+else
+    fail "AUDIT: Stage 2 install aborts on symlinked DDNS config directory"
+fi
+assert_eq "0" "$STAGE2_SYMLINK_PULLS" "AUDIT: symlinked DDNS dir aborts before pull_images"
+assert_eq "0" "$STAGE2_SYMLINK_STARTS" "AUDIT: symlinked DDNS dir aborts before start_stack"
+assert_eq "no" "$([[ -f "$TMP_ROOT/ddns-symlink-target/config.json" ]] && echo yes || echo no)" "AUDIT: Stage 2 does not write DDNS config through symlinked dir"
+if cmp -s "$TMP_ROOT/stage2-symlink-existing.env" "$SCRIPT_DIR/.env"; then
+    pass "AUDIT: symlinked DDNS dir abort preserves existing .env"
+else
+    fail "AUDIT: symlinked DDNS dir abort preserves existing .env"
+fi
+
+seed_stage2_env_vars
+mkdir -p "$SCRIPT_DIR/scripts" "$TMP_ROOT/ddns-run-stage2-target"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SCRIPT_DIR/scripts/configure.sh"
+chmod +x "$SCRIPT_DIR/scripts/configure.sh"
+cat > "$SCRIPT_DIR/.env" <<'EOF'
+DOMAIN=example.com
+REMOTE_WEB_STATE=existing-safe
+DDNS_USERNAME='old-user'
+DDNS_PASSWORD='old-secret'
+STAGE_1_COMPLETE=1
+EOF
+cp "$SCRIPT_DIR/.env" "$TMP_ROOT/run-stage2-symlink-existing.env"
+rm -rf "$SCRIPT_DIR/config/ddns-updater"
+ln -s "$TMP_ROOT/ddns-run-stage2-target" "$SCRIPT_DIR/config/ddns-updater"
+_WIZ_DDNS_PREFLIGHT_OK="true"
+_WIZ_DDNS_USER="dynu-user"
+_WIZ_DDNS_PW="good-secret"
+_WIZ_JELLYFIN_BITRATE=""
+STAGE2_RUN_STAGE2_PULLS=0
+STAGE2_RUN_STAGE2_STARTS=0
+pull_images() { STAGE2_RUN_STAGE2_PULLS=$((STAGE2_RUN_STAGE2_PULLS + 1)); }
+start_stack() { STAGE2_RUN_STAGE2_STARTS=$((STAGE2_RUN_STAGE2_STARTS + 1)); }
+ui_banner() { :; }
+_stage2_offer() { printf 'Enable remote access\n'; }
+_stage2_collect_domain() { return 0; }
+_stage2_port_gate() { return 0; }
+_stage2_collect_wireguard() { :; }
+_stage2_collect_jellyfin_remote_bitrate() { :; }
+_stage2_confirm() { _STAGE2_CONFIRM_ACTION=Install; }
+run_stage2 >/dev/null 2>&1
+run_stage2_symlink_rc=$?
+if (( run_stage2_symlink_rc != 0 )); then
+    pass "AUDIT: run_stage2 install branch aborts on symlinked DDNS config directory"
+else
+    fail "AUDIT: run_stage2 install branch aborts on symlinked DDNS config directory"
+fi
+assert_eq "0" "$STAGE2_RUN_STAGE2_PULLS" "AUDIT: run_stage2 symlinked DDNS dir aborts before pull_images"
+assert_eq "0" "$STAGE2_RUN_STAGE2_STARTS" "AUDIT: run_stage2 symlinked DDNS dir aborts before start_stack"
+assert_eq "no" "$([[ -f "$TMP_ROOT/ddns-run-stage2-target/config.json" ]] && echo yes || echo no)" "AUDIT: run_stage2 does not write DDNS config through symlinked dir"
+if cmp -s "$TMP_ROOT/run-stage2-symlink-existing.env" "$SCRIPT_DIR/.env"; then
+    pass "AUDIT: run_stage2 symlinked DDNS dir abort preserves existing .env"
+else
+    fail "AUDIT: run_stage2 symlinked DDNS dir abort preserves existing .env"
+fi
+unset DDNS_USERNAME DDNS_PASSWORD
+
+# Plan 04-04 controller shell contract.
+stage2_path="$REPO_ROOT/scripts/setup/stages/stage2.sh"
+if [[ -f "$stage2_path" ]]; then
+    stage2_source="$(cat "$stage2_path")"
+else
+    stage2_source=""
+fi
+
+assert_contains "$stage2_source" "run_stage2()" "04-04: run_stage2 controller exists"
+assert_contains "$stage2_source" "MediaStack -- Stage 2: Remote Access" "04-04: Stage 2 banner title"
+assert_contains "$stage2_source" "HTTPS + WireGuard in 3-5 minutes" "04-04: Stage 2 banner subtitle"
+assert_contains "$stage2_source" "_stage2_install()" "04-04: install function exists"
+assert_contains "$stage2_source" "MEDIASTACK_NPM_ATTEMPT_REMOTE=1 ./scripts/configure.sh --only npm,ddns-updater,wireguard" "04-05: NPM remote attempt is process-scoped"
+assert_contains "$stage2_source" "type ui_spin" "S2-16: Stage 2 remote attempt falls back when UI spinner is not loaded"
+assert_contains "$stage2_source" '_stage2_le_ready_hosts' "04-05: ready promotion checks NPM disk/proxy postconditions"
+assert_contains "$stage2_source" '_stage2_probe_https_ready "https://$fqdn"' "04-05: ready promotion checks live HTTPS"
+assert_contains "$stage2_source" "_stage2_set_remote_state ready" "04-05: install can promote ready after postconditions"
+assert_contains "$stage2_source" "_stage2_set_remote_state failed" "S2-16: install records failed state after cert failure"
+assert_contains "$stage2_source" "stage2_le_gate" "S2-16: install delegates certificate postconditions to LE gate"
+assert_contains "$stage2_source" "config/state/npm-cert-status-last.json" "S2-16: LE gate exposes persistent cert status path"
+assert_contains "$stage2_source" "stage2_le_failure_copy" "S2-16: LE classifications have user-facing copy helper"
+
+recovery_path="$REPO_ROOT/scripts/setup/recovery.sh"
+if [[ -f "$recovery_path" ]]; then
+    recovery_source_non_comments="$(grep -v '^[[:space:]]*#' "$recovery_path" || true)"
+    if [[ "$recovery_source_non_comments" == *"MEDIASTACK_NPM_ATTEMPT_REMOTE=1"* ]]; then
+        fail "REC-02: recovery does not own MEDIASTACK_NPM_ATTEMPT_REMOTE"
+    else
+        pass "REC-02: recovery does not own MEDIASTACK_NPM_ATTEMPT_REMOTE"
+    fi
+else
+    fail "REC-02: recovery source exists"
+fi
+
+scenario_end "$CURRENT_SCENARIO"
+summary

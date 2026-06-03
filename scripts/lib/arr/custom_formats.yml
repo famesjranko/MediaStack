@@ -1,0 +1,87 @@
+# Curated custom format definitions for Sonarr/Radarr.
+# Based on TRaSH Guides — optimised for "least limiting, best gaining".
+# Developer-managed: users tune scores in config.yml, not conditions here.
+#
+# All specifications use ReleaseTitleSpecification (portable across versions).
+# Format names must match the keys in config.yml's custom_formats section.
+
+formats:
+  - name: "Repack/Proper"
+    includeCustomFormatWhenRenaming: true
+    specifications:
+      - name: "Repack/Proper"
+        implementation: "ReleaseTitleSpecification"
+        negate: false
+        required: false
+        fields:
+          - name: "value"
+            value: "\\b(REPACK|PROPER)\\b"
+
+  - name: "x264"
+    includeCustomFormatWhenRenaming: false
+    specifications:
+      - name: "x264"
+        implementation: "ReleaseTitleSpecification"
+        negate: false
+        required: false
+        fields:
+          - name: "value"
+            value: "(?<=[ ._-])[xXhH]\\.?264|AVC"
+
+  - name: "x265 (HD)"
+    includeCustomFormatWhenRenaming: false
+    specifications:
+      - name: "x265/HEVC"
+        implementation: "ReleaseTitleSpecification"
+        negate: false
+        required: false
+        fields:
+          - name: "value"
+            value: "(?<=[ ._-])[xXhH]\\.?265|HEVC"
+
+  - name: "BR-DISK"
+    includeCustomFormatWhenRenaming: false
+    specifications:
+      - name: "BR-DISK"
+        implementation: "ReleaseTitleSpecification"
+        negate: false
+        required: false
+        fields:
+          - name: "value"
+            value: "\\b(BR[ ._-]?DISK|BDMV|BDR)\\b"
+
+  - name: "LQ"
+    includeCustomFormatWhenRenaming: false
+    specifications:
+      - name: "LQ Groups"
+        implementation: "ReleaseTitleSpecification"
+        negate: false
+        required: false
+        fields:
+          - name: "value"
+            value: "\\b(YIFY|YTS|SWTYBLZ|EVO|RARBG.+repack)\\b"
+
+  - name: "No-RlsGroup"
+    includeCustomFormatWhenRenaming: false
+    specifications:
+      - name: "No Release Group"
+        implementation: "ReleaseTitleSpecification"
+        negate: false
+        required: false
+        fields:
+          # Matches titles that do NOT end with -GROUP (any case). Earlier
+          # pattern required uppercase before the hyphen, missing legitimate
+          # groups after lowercase tags like h264-GROUP.
+          - name: "value"
+            value: "^(?!.*-[A-Za-z0-9]+$)"
+
+  - name: "Obfuscated"
+    includeCustomFormatWhenRenaming: false
+    specifications:
+      - name: "Obfuscated"
+        implementation: "ReleaseTitleSpecification"
+        negate: false
+        required: false
+        fields:
+          - name: "value"
+            value: "\\b[0-9a-f]{32}\\b"

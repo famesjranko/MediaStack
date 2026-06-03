@@ -1,0 +1,28 @@
+title: MediaStack
+theme: dark
+color: slate
+headerStyle: clean
+background:
+  image: https://images.unsplash.com/photo-1502790671504-542ad42d5189?auto=format&fit=crop&w=2560&q=80
+  blur: sm
+  brightness: 30
+  opacity: 30
+cardBlur: sm
+iconStyle: theme
+statusStyle: dot
+layout:
+  Media:
+    style: row
+    columns: 2
+  Media Management:
+    style: row
+    columns: 3
+  Downloads:
+    style: row
+    columns: 2
+  Network:
+    style: row
+    columns: 3
+  Admin:
+    style: row
+    columns: 1

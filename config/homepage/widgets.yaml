@@ -1,0 +1,17 @@
+- greeting:
+    text_size: xl
+    text: MediaStack
+- datetime:
+    text_size: lg
+    format:
+      dateStyle: long
+      timeStyle: short
+      hour12: true
+- resources:
+    cpu: true
+    memory: true
+    cputemp: true
+    network: true
+    expanded: true
+    refresh: 3000
+    disk: /data
