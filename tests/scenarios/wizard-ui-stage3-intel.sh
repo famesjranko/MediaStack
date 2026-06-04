@@ -14,12 +14,8 @@ run_scenario() {
     wizard_stage3_write_base_fixture "$fixture"
     wizard_stage3_append_runner "$fixture" intel
 
-    dind_exec 'cat >/tmp/wizard-stage3-intel.steps.json <<"JSON"
-[
-  {"expect": "Configure hardware transcoding now\\?"},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_stage3_steps "$steps" \
+        transcode_offer 1
 
     wizard_stage3_run_pty "wizard-ui stage3 intel" "$fixture" "$steps" "$plain_log" || return 1
 

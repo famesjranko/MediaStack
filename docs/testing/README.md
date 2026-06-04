@@ -11,12 +11,11 @@ This document covers **DinD** — the fast in-VM surface. Two further surfaces c
 | Surface | Driver | Scope | Wall time | Cost |
 |---------|--------|-------|-----------|------|
 | **DinD** | `tests/run.sh` | Everything that happens *inside* the VM (configurators, fail2ban filters, NPM cert-disk drift heal, wizard flows, compose validation) | ~16 min full battery (252/252 baseline as of f7a7f71) | host CPU only |
-| **GCP VM** | `tests/gcp-vm/run-fresh.sh` | Real Let's Encrypt HTTP-01, real public DNS via Dynu, real GCP firewall, real DDNS pushes, real-world UFW + GCP firewall interaction | ~10-15 min for full wipe + recreate + setup + 15 checks | ~$0.03/hr e2-medium |
-| **LAN / bare-metal host** | `tests/lan-host/` (manual SSH) | Real hardware DinD can't model: GPU passthrough, UFW, systemd, disk I/O, bare-metal Docker daemon — plus an optional real domain/DDNS/TLS run on your own box | manual, minutes per run | your own hardware |
+| **Live-host** (maintainer-private) | private harnesses (not in this repo) | Real Let's Encrypt HTTP-01, public DNS via Dynu, real firewall/WAN-block proof + DDNS pushes (ephemeral cloud VM), plus real-hardware behaviour DinD can't model — GPU passthrough, UFW, systemd, disk I/O (bare metal). Needs real infra/creds. | minutes per run | cloud ~$0.03/hr or your hardware |
 
-DinD cannot prove DDNS pushes work, that public DNS resolves to the new IP, or that GCP's firewall actually blocks admin ports. GCP VM cannot run every internal scenario (npm-heal, wireguard-{server,containers,streaming}, wizard-presets are DinD-only because they exercise interrupted/corrupted setup paths a real VM should never see). The LAN/bare-metal surface is where GPU passthrough and host-specific OS behaviour get exercised on real silicon.
+DinD cannot prove DDNS pushes work, that public DNS resolves to the new IP, or that a real firewall actually blocks admin ports — the maintainer-private live-host harnesses cover that (an ephemeral cloud VM for the WAN/DNS/LE proof, bare metal for GPU passthrough and host-specific OS behaviour on real silicon). Conversely, the live-host runs don't exercise every internal scenario (npm-heal, wireguard-{server,containers,streaming}, wizard-presets are DinD-only because they exercise interrupted/corrupted setup paths a real VM should never see).
 
-Pick by what's being validated. See `tests/gcp-vm/README.md` for the GCP VM harness, prerequisites, and gotchas (LE staging vs prod, DDNS provider seeding, fail2ban self-ban prevention), and `tests/lan-host/README.md` for the bare-metal/LAN host workflow (Mode A LAN baseline vs Mode B full remote-access).
+Pick by what's being validated. The live-host harnesses are maintainer-only — they need real infra/creds and are not published here.
 
 ## CI boundary
 
@@ -318,7 +317,7 @@ The focused remote-access DinD gate is:
 ./tests/run.sh smoke remote-gating npm-heal ddns-seed wireguard wireguard-server wireguard-containers wireguard-streaming stage2-skip stage2-ready
 ```
 
-This DinD gate does not prove real public WAN reachability, real DDNS propagation, or production Let's Encrypt issuance. That proof is covered by the GCP VM harness via `tests/gcp-vm/run-fresh.sh`, which exercises a real GCP VM, public DNS, DDNS pushes, WAN firewalls, and real Let's Encrypt HTTP-01.
+This DinD gate does not prove real public WAN reachability, real DDNS propagation, or production Let's Encrypt issuance. That proof is covered on the maintainer-private live-host harnesses — an ephemeral cloud VM exercises real public DNS, DDNS pushes, WAN firewalls, and real Let's Encrypt HTTP-01.
 
 ### Hardware transcoding/finalization units
 
@@ -354,7 +353,7 @@ The focused recovery DinD regression gate is:
 ./tests/run.sh smoke stage2-skip stage2-ready
 ```
 
-This gate is not a real public WAN or production Let's Encrypt proof. Real DNS, DDNS provider pushes, WAN firewall behavior, and production ACME issuance are covered by the GCP VM harness via `tests/gcp-vm/run-fresh.sh`. Real physical Intel/AMD/NVIDIA GPU transcode proof requires a real host because DinD cannot provide a user host GPU.
+This gate is not a real public WAN or production Let's Encrypt proof. Real DNS, DDNS provider pushes, WAN firewall behavior, and production ACME issuance are covered on the maintainer-private live-host harnesses. Real physical Intel/AMD/NVIDIA GPU transcode proof requires a real host because DinD cannot provide a user host GPU.
 
 ### Focused staged-setup scenarios
 
@@ -377,11 +376,7 @@ Focused staged-setup DinD gate:
 ./tests/run.sh smoke stage1-lan stage2-skip stage2-ready remote-after-skip remote-ready-idempotent demo-lan existing-install-nuke fail2ban-drift
 ```
 
-TEST-08 is intentionally separate. Only the GCP VM harness proves real public DNS, DDNS pushes, WAN firewall behavior, and real Let's Encrypt HTTP-01:
-
-```bash
-bash tests/gcp-vm/run-fresh.sh
-```
+TEST-08 is intentionally separate: real public DNS, DDNS pushes, WAN firewall behavior, and real Let's Encrypt HTTP-01 are proven on the maintainer-private live-host harnesses, not in this public repo.
 
 ## Two-tier image cache
 
@@ -485,7 +480,7 @@ docker rm -fv ms-test-dind
 
 ## Observations / open questions
 
-- **Core scenarios** include `smoke`, `fresh-install`, `remote-gating`, `npm-heal`, `ddns-seed`, `wireguard`, `wireguard-server`, `wireguard-containers`, `wireguard-streaming`, `stage2-skip`, `stage2-ready`, and `wizard-presets`. `update.sh` has host-side option/default coverage in `tests/unit/update.sh`. `nvidia-repatch.sh` has shared-helper coverage through `tests/unit/nvidia-patch.sh`, but no real NVIDIA hardware execution in DinD. `--full` path (Docker install, GPU driver install, reboot + resume) has no test coverage in DinD; real public DNS, real DDNS pushes, and real Let's Encrypt remain covered by the GCP VM proof via `tests/gcp-vm/run-fresh.sh`.
+- **Core scenarios** include `smoke`, `fresh-install`, `remote-gating`, `npm-heal`, `ddns-seed`, `wireguard`, `wireguard-server`, `wireguard-containers`, `wireguard-streaming`, `stage2-skip`, `stage2-ready`, and `wizard-presets`. `update.sh` has host-side option/default coverage in `tests/unit/update.sh`. `nvidia-repatch.sh` has shared-helper coverage through `tests/unit/nvidia-patch.sh`, but no real NVIDIA hardware execution in DinD. `--full` path (Docker install, GPU driver install, reboot + resume) has no test coverage in DinD; real public DNS, real DDNS pushes, and real Let's Encrypt remain covered on the maintainer-private live-host harnesses.
 - **~~No test for configure.sh re-run after config.yml edit.~~** Fixed: the drift-regression block in `fresh-install.sh` (phase 6) mutates three `config.yml` values (`quality_profile.cutoff_id`, `sonarr.download_client_category`, `jellyfin.libraries[0].path`), re-runs `configure.sh`, and asserts the 3 expected `[WARN]` lines fire with no false positives.
 - **~~Jellyseerr library-sync polling termination is untested.~~** Fixed: `assert_jellyseerr_configured` now verifies that Movies and TV Shows are both present and enabled in the Jellyfin settings endpoint, catching silent poll-timeout failures.
 - **~~Value-level assertions are minimal.~~** Partially fixed: custom format scores are now verified against exact config.yml values (all 7 formats with expected scores) for both Sonarr and Radarr. Quality IDs (`sonarr_qualities`/`radarr_qualities`) are still count-checked only.

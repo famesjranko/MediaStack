@@ -20,63 +20,34 @@ storage_mount_nfs() {
 BASH"
     wizard_stage1_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage1-nas-edit-retry.steps.json <<"JSON"
-[
-  {"expect": "Continue with these detected values\\?"},
-  {"send": "1\n"},
-  {"expect": "Admin username"},
-  {"send": "\n"},
-  {"expect": "Admin email"},
-  {"send": "owner@edit-retry.test\n"},
-  {"expect": "Admin password"},
-  {"send": "\n"},
-  {"expect": "Where should MediaStack store media and downloads\\?"},
-  {"send": "2\n"},
-  {"expect": "Local mountpoint for NAS storage"},
-  {"send": "/tmp/ms-wizard-nas-edit\n"},
-  {"expect": "NAS host/IP"},
-  {"send": "127.0.0.1\n"},
-  {"expect": "NFS export path"},
-  {"send": "/exports/bad\n"},
-  {"expect": "NFS mount options"},
-  {"send": "\n"},
-  {"expect": "NAS sentinel file"},
-  {"send": "\n"},
-  {"expect": "NAS mount failed\\. What should setup do\\?"},
-  {"send": "1\n"},
-  {"expect": "Local mountpoint for NAS storage"},
-  {"send": "/tmp/ms-wizard-nas-edit\n"},
-  {"expect": "NAS host/IP"},
-  {"send": "127.0.0.2\n"},
-  {"expect": "NFS export path"},
-  {"send": "/exports/good\n"},
-  {"expect": "NFS mount options"},
-  {"send": "\n"},
-  {"expect": "NAS sentinel file"},
-  {"send": "\n"},
-  {"expect": "NAS share is empty and ready for MediaStack\\."},
-  {"expect": "Enable automatic subtitle downloads with Bazarr\\?"},
-  {"send": "\n"},
-  {"expect": "Enable SMB file share for LAN file access\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how much storage to spend per movie/show:"},
-  {"send": "1\n"},
-  {"expect": "Subtitle languages"},
-  {"send": "\n"},
-  {"expect": "Enable the example public-tracker indexer preset\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how MediaStack should update container images:"},
-  {"send": "1\n"},
-  {"expect": "qBittorrent download limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent upload limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent peer port"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 1 installation\\?"},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_stage1_steps "$steps" \
+        stage1_continue_detected 1 \
+        stage1_admin_username ENTER \
+        stage1_admin_email owner@edit-retry.test \
+        stage1_admin_password ENTER \
+        stage1_storage_location 2 \
+        stage1_nas_local_mountpoint /tmp/ms-wizard-nas-edit \
+        stage1_nas_host 127.0.0.1 \
+        stage1_nas_nfs_export /exports/bad \
+        stage1_nas_nfs_options ENTER \
+        stage1_nas_sentinel ENTER \
+        stage1_nas_mount_failed 1 \
+        stage1_nas_local_mountpoint /tmp/ms-wizard-nas-edit \
+        stage1_nas_host 127.0.0.2 \
+        stage1_nas_nfs_export /exports/good \
+        stage1_nas_nfs_options ENTER \
+        stage1_nas_sentinel ENTER \
+        stage1_nas_share_empty NONE \
+        stage1_bazarr ENTER \
+        stage1_smb ENTER \
+        stage1_quality 1 \
+        stage1_subtitle_langs ENTER \
+        stage1_indexers ENTER \
+        stage1_image_channel 1 \
+        stage1_qbt_download ENTER \
+        stage1_qbt_upload ENTER \
+        stage1_qbt_port ENTER \
+        stage1_proceed 1
 
     wizard_stage1_run_pty "wizard-ui stage1 NAS edit retry" "$fixture" "$steps" "$plain_log" || return 1
 

@@ -92,6 +92,11 @@ run_stage1
 BASH"
 }
 
+# Shared step-builder (prompt regexes live in tests/lib/wizard_prompts.json). The stage-1
+# scenarios call wizard_stage1_steps; the implementation is wizard_build_steps.
+source tests/lib/wizard_steps_common.sh
+wizard_stage1_steps() { wizard_build_steps "$@"; }
+
 wizard_stage1_run_pty() {
     local label="$1"
     local fixture_path="$2"

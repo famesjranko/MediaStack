@@ -14,28 +14,16 @@ run_scenario() {
     wizard_stage2_write_base_fixture "$fixture"
     wizard_stage2_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage2-wg-server.steps.json <<"JSON"
-[
-  {"expect": "Set up remote access now\\?"},
-  {"send": "1\n"},
-  {"expect": "Do you already have a domain name"},
-  {"send": "1\n"},
-  {"expect": "Your hostname \\(e.g. yourname.mywire.org\\)"},
-  {"send": "demo.mywire.org\n"},
-  {"expect": "Use Dynu DDNS for this domain\\?"},
-  {"send": "n\n"},
-  {"expect": "WireGuard UDP port"},
-  {"send": "\n"},
-  {"expect": "VPN access level for your admin device"},
-  {"send": "2\n"},
-  {"expect": "Your upload bandwidth in Mbps"},
-  {"send": "\n"},
-  {"expect": "Per-viewer cap in Mbps"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 2 installation\\?"},
-  {"send": "3\n"}
-]
-JSON'
+    wizard_stage2_steps "$steps" \
+        remote_offer 1 \
+        stage2_have_domain 1 \
+        stage2_hostname demo.mywire.org \
+        stage2_use_dynu n \
+        stage2_wg_port ENTER \
+        stage2_vpn_level 2 \
+        stage2_upload_bw ENTER \
+        stage2_viewer_cap ENTER \
+        stage2_proceed 3
 
     wizard_stage2_run_pty "wizard-ui stage2 wg server" "$fixture" "$steps" "$plain_log" || return 1
 

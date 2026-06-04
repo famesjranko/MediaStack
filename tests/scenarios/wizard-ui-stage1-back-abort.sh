@@ -13,72 +13,38 @@ mkdir -p /tmp/ms-wizard-back-one /tmp/ms-wizard-back-two
 BASH"
     wizard_stage1_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage1-back-abort.steps.json <<"JSON"
-[
-  {"expect": "Continue with these detected values\\?"},
-  {"send": "1\n"},
-  {"expect": "Admin username"},
-  {"send": "\n"},
-  {"expect": "Admin email"},
-  {"send": "owner@back-abort.test\n"},
-  {"expect": "Admin password"},
-  {"send": "\n"},
-  {"expect": "Where should MediaStack store media and downloads\\?"},
-  {"send": "1\n"},
-  {"expect": "Data directory"},
-  {"send": "/tmp/ms-wizard-back-one\n"},
-  {"expect": "Enable automatic subtitle downloads with Bazarr\\?"},
-  {"send": "\n"},
-  {"expect": "Enable SMB file share for LAN file access\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how much storage to spend per movie/show:"},
-  {"send": "1\n"},
-  {"expect": "Subtitle languages"},
-  {"send": "\n"},
-  {"expect": "Enable the example public-tracker indexer preset\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how MediaStack should update container images:"},
-  {"send": "1\n"},
-  {"expect": "qBittorrent download limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent upload limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent peer port"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 1 installation\\?"},
-  {"send": "2\n"},
-  {"expect": "Admin username"},
-  {"send": "\n"},
-  {"expect": "Admin email"},
-  {"send": "owner@back-abort.test\n"},
-  {"expect": "Admin password"},
-  {"send": "\n"},
-  {"expect": "Where should MediaStack store media and downloads\\?"},
-  {"send": "1\n"},
-  {"expect": "Data directory"},
-  {"send": "/tmp/ms-wizard-back-two\n"},
-  {"expect": "Enable automatic subtitle downloads with Bazarr\\?"},
-  {"send": "\n"},
-  {"expect": "Enable SMB file share for LAN file access\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how much storage to spend per movie/show:"},
-  {"send": "1\n"},
-  {"expect": "Subtitle languages"},
-  {"send": "\n"},
-  {"expect": "Enable the example public-tracker indexer preset\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how MediaStack should update container images:"},
-  {"send": "1\n"},
-  {"expect": "qBittorrent download limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent upload limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent peer port"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 1 installation\\?"},
-  {"send": "3\n"}
-]
-JSON'
+    wizard_stage1_steps "$steps" \
+        stage1_continue_detected 1 \
+        stage1_admin_username ENTER \
+        stage1_admin_email owner@back-abort.test \
+        stage1_admin_password ENTER \
+        stage1_storage_location 1 \
+        stage1_data_directory /tmp/ms-wizard-back-one \
+        stage1_bazarr ENTER \
+        stage1_smb ENTER \
+        stage1_quality 1 \
+        stage1_subtitle_langs ENTER \
+        stage1_indexers ENTER \
+        stage1_image_channel 1 \
+        stage1_qbt_download ENTER \
+        stage1_qbt_upload ENTER \
+        stage1_qbt_port ENTER \
+        stage1_proceed 2 \
+        stage1_admin_username ENTER \
+        stage1_admin_email owner@back-abort.test \
+        stage1_admin_password ENTER \
+        stage1_storage_location 1 \
+        stage1_data_directory /tmp/ms-wizard-back-two \
+        stage1_bazarr ENTER \
+        stage1_smb ENTER \
+        stage1_quality 1 \
+        stage1_subtitle_langs ENTER \
+        stage1_indexers ENTER \
+        stage1_image_channel 1 \
+        stage1_qbt_download ENTER \
+        stage1_qbt_upload ENTER \
+        stage1_qbt_port ENTER \
+        stage1_proceed 3
 
     wizard_stage1_run_pty "wizard-ui stage1 back abort" "$fixture" "$steps" "$plain_log" || return 1
 

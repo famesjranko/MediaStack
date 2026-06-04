@@ -7,6 +7,15 @@
 install_base_packages() {
     log_info "Installing base packages..."
     sudo apt-get update -qq
+    # Self-heal an inconsistent dpkg/apt state before installing. An interrupted install or a
+    # driver-mode switch (e.g. Standard<->Unlock leaving the old driver stack half-removed) can
+    # leave packages half-configured, which makes the install below fail with "Unmet
+    # dependencies" and no path forward for a non-technical user. Harmless no-op when healthy.
+    if ! sudo apt-get check >/dev/null 2>&1; then
+        log_warn "Inconsistent package state detected — repairing (dpkg --configure -a + apt --fix-broken)..."
+        sudo dpkg --configure -a >/dev/null 2>&1 || true
+        sudo apt-get install -f -y -qq >/dev/null 2>&1 || true
+    fi
     # Note: samba is intentionally NOT installed here. setup_samba() in
     # hardening.sh installs it on-demand only when SMB_ENABLED=true, so
     # the wizard's port-445 conflict check stays meaningful (otherwise

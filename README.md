@@ -4,7 +4,7 @@
 
 Turnkey media server for home networks. One command takes bare Debian to a fully configured stack.
 
-[![Debian](https://img.shields.io/badge/Debian-11%2F12-A81D33?logo=debian&logoColor=white)](https://www.debian.org)
+[![Debian](https://img.shields.io/badge/Debian-11%2F12%2F13-A81D33?logo=debian&logoColor=white)](https://www.debian.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![License](https://img.shields.io/badge/License-MIT-green)](#license)
 

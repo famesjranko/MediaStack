@@ -4,6 +4,11 @@
 # The scenario runs real prompts through a PTY and asserts both transcript UX
 # and generated storage state.
 
+# Self-contained scenario (invokes wizard_pty.py directly, no wizard_stage1_run_pty): pull in
+# only the side-effect-free shared step-builder. Sourcing wizard_stage1_common.sh would re-source
+# setup.sh (set -euo pipefail) into this shell, which this scenario deliberately avoids.
+source tests/lib/wizard_steps_common.sh
+
 wizard_ui_stage1_nas_retry_write_fixture() {
     dind_exec "cat >/tmp/wizard-stage1-nas-retry.sh <<'BASH'
 #!/usr/bin/env bash
@@ -84,53 +89,29 @@ chmod +x /tmp/wizard-stage1-nas-retry.sh"
 }
 
 wizard_ui_stage1_nas_retry_write_steps() {
-    dind_exec 'cat >/tmp/wizard-stage1-nas-retry.steps.json <<"JSON"
-[
-  {"expect": "Continue with these detected values\\?"},
-  {"send": "1\n"},
-  {"expect": "Admin username"},
-  {"send": "\n"},
-  {"expect": "Admin email"},
-  {"send": "owner@nas.test\n"},
-  {"expect": "Admin password"},
-  {"send": "\n"},
-  {"expect": "Where should MediaStack store media and downloads\\?"},
-  {"send": "2\n"},
-  {"expect": "Local mountpoint for NAS storage"},
-  {"send": "/tmp/ms-wizard-nas-data\n"},
-  {"expect": "NAS host/IP"},
-  {"send": "127.0.0.1\n"},
-  {"expect": "NFS export path"},
-  {"send": "/exports/mediastack\n"},
-  {"expect": "NFS mount options"},
-  {"send": "vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec\n"},
-  {"expect": "NAS sentinel file"},
-  {"send": "\n"},
-  {"expect": "NAS mount failed\\. What should setup do\\?"},
-  {"send": "2\n"},
-  {"expect": "NAS share is empty and ready for MediaStack\\."},
-  {"expect": "Enable automatic subtitle downloads with Bazarr\\?"},
-  {"send": "\n"},
-  {"expect": "Enable SMB file share for LAN file access\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how much storage to spend per movie/show:"},
-  {"send": "1\n"},
-  {"expect": "Subtitle languages"},
-  {"send": "\n"},
-  {"expect": "Enable the example public-tracker indexer preset\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how MediaStack should update container images:"},
-  {"send": "1\n"},
-  {"expect": "qBittorrent download limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent upload limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent peer port"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 1 installation\\?"},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_build_steps "/tmp/wizard-stage1-nas-retry.steps.json" \
+        stage1_continue_detected 1 \
+        stage1_admin_username ENTER \
+        stage1_admin_email owner@nas.test \
+        stage1_admin_password ENTER \
+        stage1_storage_location 2 \
+        stage1_nas_local_mountpoint /tmp/ms-wizard-nas-data \
+        stage1_nas_host 127.0.0.1 \
+        stage1_nas_nfs_export /exports/mediastack \
+        stage1_nas_nfs_options vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec \
+        stage1_nas_sentinel ENTER \
+        stage1_nas_mount_failed 2 \
+        stage1_nas_share_empty NONE \
+        stage1_bazarr ENTER \
+        stage1_smb ENTER \
+        stage1_quality 1 \
+        stage1_subtitle_langs ENTER \
+        stage1_indexers ENTER \
+        stage1_image_channel 1 \
+        stage1_qbt_download ENTER \
+        stage1_qbt_upload ENTER \
+        stage1_qbt_port ENTER \
+        stage1_proceed 1
 }
 
 run_scenario() {

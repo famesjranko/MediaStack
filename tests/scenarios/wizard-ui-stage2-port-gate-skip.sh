@@ -20,20 +20,12 @@ stage2_classify_port_failure() { printf 'carrier-block\n'; }
 BASH"
     wizard_stage2_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage2-port-gate-skip.steps.json <<"JSON"
-[
-  {"expect": "Set up remote access now\\?"},
-  {"send": "1\n"},
-  {"expect": "Do you already have a domain name"},
-  {"send": "1\n"},
-  {"expect": "Your hostname \\(e.g. yourname.mywire.org\\)"},
-  {"send": "demo.mywire.org\n"},
-  {"expect": "Use Dynu DDNS for this domain\\?"},
-  {"send": "n\n"},
-  {"expect": "Fix the router forwarding, then choose:", "timeout": 30},
-  {"send": "3\n"}
-]
-JSON'
+    wizard_stage2_steps "$steps" \
+        remote_offer 1 \
+        stage2_have_domain 1 \
+        stage2_hostname demo.mywire.org \
+        stage2_use_dynu n \
+        stage2_router_forwarding@30 3
 
     wizard_stage2_run_pty "wizard-ui stage2 port gate skip" "$fixture" "$steps" "$plain_log" || return 1
 

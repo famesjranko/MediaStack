@@ -4,7 +4,7 @@ End-to-end tests that run inside a Docker-in-Docker container so your host stays
 
 DinD is a **Debian-based** image (`ms-dind:debian`, built from `tests/Dockerfile.dind`), matching the production distro. First `./tests/run.sh` invocation builds it (~40s); subsequent runs use the docker layer cache.
 
-> **Two surfaces, complementary scope.** This README covers DinD — fast (~16 min full battery), runs everything that happens *inside* the VM. For real Let's Encrypt HTTP-01 + real public DNS via Dynu + the WAN firewall proof for every Docker LAN-only TCP port, see `tests/gcp-vm/README.md` (~10-15 min, ~$0.03/hr e2-medium). The two are not redundant: DinD cannot prove DDNS pushes / public DNS resolution / GCP firewall behavior, and GCP VM does not run every in-VM scenario (npm-heal, wireguard-{server,containers,streaming}, wizard-presets are DinD-only). Pick by what's being validated.
+> **Two surfaces, complementary scope.** This README covers DinD — fast (~16 min full battery), runs everything that happens *inside* the VM. Real Let's Encrypt HTTP-01, real public DNS via Dynu, and the WAN-firewall proof for every Docker LAN-only TCP port are validated on **maintainer-private live-host harnesses** (cloud VM + bare metal — they need real infra/creds, so they're maintainer-only and not published here). The surfaces are complementary: DinD cannot prove DDNS pushes / public DNS resolution / firewall behavior, and the live-host runs don't exercise every in-VM scenario (npm-heal, wireguard-{server,containers,streaming}, wizard-presets are DinD-only). Pick by what's being validated.
 
 GitHub Actions runs a deliberately small PR gate: committed-secret checks, shell/Python
 syntax checks, compose rendering, focused host unit tests, and the `wizard-ui-*` PTY
@@ -100,7 +100,7 @@ Run the focused remote-access DinD gate with:
 ./tests/run.sh smoke remote-gating npm-heal ddns-seed wireguard wireguard-server wireguard-containers wireguard-streaming stage2-skip stage2-ready
 ```
 
-This gate is intentionally not a real public WAN proof. Real public DNS, DDNS provider pushes, GCP firewall behavior, and real Let's Encrypt HTTP-01 remain covered by `tests/gcp-vm/run-fresh.sh`.
+This gate is intentionally not a real public WAN proof. Real public DNS, DDNS provider pushes, firewall behavior, and real Let's Encrypt HTTP-01 remain covered on the maintainer-private live-host harnesses.
 
 ### `nas-storage` — managed NAS/NFS fixture
 
@@ -257,8 +257,8 @@ Current units:
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-image badge block stays derived from the lock file.
 - **manage-updates** — covers the day-2 "Manage updates" feature (ADR-30): `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` truth table and hardened running-digest extraction, and the launcher's WireGuard/non-updatable exclusion from "Update all" (sources `mediastack` via its `BASH_SOURCE` guard). Pure bash + python3; no Docker/network.
 - **launcher-hardware** — covers the `./mediastack` day-2 "Manage hardware transcoding" surface: the post-install menu exposes it, the submenu offers configure/change and NVIDIA repatch where relevant, and configure/change dispatches to the transcoding recovery path. Pure bash; no Docker/network.
-- **gcp-wan-ports** — keeps the GCP WAN blocked-port probe aligned with the Docker LAN-only TCP ports enforced by `setup_ufw_docker_rules`.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
+- **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.
 - **remote-web-state** (`tests/unit/remote-web-state.sh`) — exercises `write_env()` remote marker rules and `print_access_info` output for unchecked, ready, skipped, and LAN-only states.
 - **stage2-domain** — exercises domain/DNS classification, Cloudflare proxy detection, and safe routing before publication.
 - **stage2-dynu** — exercises Dynu IP Update Protocol response-token handling for success, unchanged, auth, host, abuse, DNS, and retry states.
@@ -343,13 +343,7 @@ Scenario catalog:
 | `existing-install-nuke` | TEST-07 | Existing-install wipe menu plus exact `DESTROY`; all-profile compose down is used; data bind-mount sentinel survives reinstall. |
 | `fail2ban-drift` | TEST-09 | Focused regex drift checks for `jellyfin`, `jellyseerr`, `npm`, and `npm-ratelimit`. |
 
-Boundary: these are DinD proofs. `stage2-ready`, `remote-after-skip`, and `remote-ready-idempotent` use fixture DNS and Pebble, not public WAN. TEST-08 remains the GCP VM workflow:
-
-```bash
-bash tests/gcp-vm/run-fresh.sh
-```
-
-The GCP run is the only surface that proves real public DNS, DDNS updates, WAN firewall behavior, and real Let's Encrypt HTTP-01.
+Boundary: these are DinD proofs. `stage2-ready`, `remote-after-skip`, and `remote-ready-idempotent` use fixture DNS and Pebble, not public WAN. TEST-08 — real public DNS, DDNS updates, WAN firewall behavior, and real Let's Encrypt HTTP-01 — is proven on the maintainer-private live-host harnesses, not in this public repo.
 
 ## Debugging with `--keep`
 

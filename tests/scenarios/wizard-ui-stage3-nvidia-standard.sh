@@ -15,14 +15,9 @@ run_scenario() {
     wizard_stage3_write_base_fixture "$fixture"
     wizard_stage3_append_runner "$fixture" nvidia
 
-    dind_exec 'cat >/tmp/wizard-stage3-nvidia-standard.steps.json <<"JSON"
-[
-  {"expect": "Configure hardware transcoding now\\?"},
-  {"send": "1\n"},
-  {"expect": "How should MediaStack set up the NVIDIA driver\\?"},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_stage3_steps "$steps" \
+        transcode_offer 1 \
+        driver_mode 1
 
     wizard_stage3_run_pty "wizard-ui stage3 nvidia standard" "$fixture" "$steps" "$plain_log" || return 1
 

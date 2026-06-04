@@ -17,14 +17,9 @@ run_scenario() {
     # tell-me-more output, then send "2" — buffered and consumed by the second
     # offer's ui_choose (re-matching the duplicate offer prompt would match the
     # already-buffered first prompt instantly, so we key off the unique line).
-    dind_exec 'cat >/tmp/wizard-stage2-tell-me-more.steps.json <<"JSON"
-[
-  {"expect": "Set up remote access now\\?"},
-  {"send": "3\n"},
-  {"expect": "Dynu is recommended because the free tier supports wildcard records"},
-  {"send": "2\n"}
-]
-JSON'
+    wizard_stage2_steps "$steps" \
+        remote_offer 3 \
+        stage2_dynu_recommended 2
 
     wizard_stage2_run_pty "wizard-ui stage2 tell me more" "$fixture" "$steps" "$plain_log" || return 1
 

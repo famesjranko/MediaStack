@@ -13,9 +13,7 @@ run_scenario() {
     wizard_stage3_write_base_fixture "$fixture"
     wizard_stage3_append_runner "$fixture" none
 
-    dind_exec 'cat >/tmp/wizard-stage3-no-gpu.steps.json <<"JSON"
-[]
-JSON'
+    wizard_stage3_steps "$steps"
 
     wizard_stage3_run_pty "wizard-ui stage3 no gpu" "$fixture" "$steps" "$plain_log" || return 1
 

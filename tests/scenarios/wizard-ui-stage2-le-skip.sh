@@ -24,32 +24,18 @@ stage2_le_classify() {
 BASH"
     wizard_stage2_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage2-le-skip.steps.json <<"JSON"
-[
-  {"expect": "Set up remote access now\\?"},
-  {"send": "1\n"},
-  {"expect": "Do you already have a domain name"},
-  {"send": "1\n"},
-  {"expect": "Your hostname \\(e.g. yourname.mywire.org\\)"},
-  {"send": "demo.mywire.org\n"},
-  {"expect": "Use Dynu DDNS for this domain\\?"},
-  {"send": "n\n"},
-  {"expect": "WireGuard UDP port"},
-  {"send": "\n"},
-  {"expect": "VPN access level for your admin device"},
-  {"send": "1\n"},
-  {"expect": "Home LAN CIDR"},
-  {"send": "\n"},
-  {"expect": "Your upload bandwidth in Mbps"},
-  {"send": "\n"},
-  {"expect": "Per-viewer cap in Mbps"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 2 installation\\?"},
-  {"send": "1\n"},
-  {"expect": "HTTPS is not ready. Choose how to continue:", "timeout": 30},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_stage2_steps "$steps" \
+        remote_offer 1 \
+        stage2_have_domain 1 \
+        stage2_hostname demo.mywire.org \
+        stage2_use_dynu n \
+        stage2_wg_port ENTER \
+        stage2_vpn_level 1 \
+        stage2_lan_cidr ENTER \
+        stage2_upload_bw ENTER \
+        stage2_viewer_cap ENTER \
+        stage2_proceed 1 \
+        stage2_https_not_ready@30 1
 
     wizard_stage2_run_pty "wizard-ui stage2 le skip" "$fixture" "$steps" "$plain_log" || return 1
 

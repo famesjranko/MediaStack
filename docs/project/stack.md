@@ -12,14 +12,14 @@ Generator: /project-stack (audit of existing codebase)
 ## Project Profile
 - Type: Self-hosted Docker Compose deployment tool + bash configuration engine
 - Scale: Production (single-box, designed for non-technical end users)
-- Deployment: Bare Debian 11/12 (headless), single machine
+- Deployment: Bare Debian 11/12/13 (headless), single machine; 13 (Trixie) is the newest verified
 - Budget: Hobby / self-hosted (no cloud costs)
 - Team: Solo-maintained project
 
 ## Language & Runtime
 - Primary: Bash 5.x (Debian default)
 - Secondary: Python 3.9+ (3 render helpers for JSON/XML transforms — stdlib only, no pip)
-- Runtime: Debian 11 (Bullseye) or 12 (Bookworm), headless
+- Runtime: Debian 11 (Bullseye), 12 (Bookworm), or 13 (Trixie), headless. 11 is the floor (Python 3.9+, bash 5.x); 13 is the newest verified on real hardware
 - Package manager: apt (system packages only; no pip/npm/cargo)
 - Shell: bash with `set -euo pipefail` throughout
 
@@ -65,7 +65,7 @@ Generator: /project-stack (audit of existing codebase)
   - Smoke: `./tests/run.sh smoke`
   - Full: `./tests/run.sh fresh-install`
   - Staged setup/recovery: `./tests/run.sh smoke stage1-lan stage2-skip stage2-ready remote-after-skip remote-ready-idempotent demo-lan existing-install-nuke fail2ban-drift`
-  - GCP real public proof: `bash tests/gcp-vm/run-fresh.sh`
+  - Real public WAN/DNS/DDNS/LE proof: maintainer-private live-host harnesses (not in the public repo)
   - Keep DinD after run: `./tests/run.sh smoke --keep`
   - Cold cache: `./tests/run.sh --no-cache smoke`
   - Candidate-image preflight: `MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.sh wireguard` — test a new image tag in the DinD compose copy before editing compose (see `docs/operations/upgrades.md`)

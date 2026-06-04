@@ -17,20 +17,12 @@ run_scenario() {
     # Key off lines unique to each post-action state rather than re-matching the
     # (duplicate) mode-picker prompt, which would match the already-buffered first
     # occurrence instantly.
-    dind_exec 'cat >/tmp/wizard-stage3-nvidia-unlock-decline.steps.json <<"JSON"
-[
-  {"expect": "Configure hardware transcoding now\\?"},
-  {"send": "1\n"},
-  {"expect": "How should MediaStack set up the NVIDIA driver\\?"},
-  {"send": "2\n"},
-  {"expect": "Install the patch-managed driver and apply nvidia-patch\\?"},
-  {"send": "n\n"},
-  {"expect": "Leaving the patch unapplied"},
-  {"send": "3\n"},
-  {"expect": "Debian.s packaged NVIDIA driver"},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_stage3_steps "$steps" \
+        transcode_offer 1 \
+        driver_mode 2 \
+        unlock_patch_offer n \
+        unlock_patch_decline_notice 3 \
+        debian_nvidia_box 1
 
     wizard_stage3_run_pty "wizard-ui stage3 nvidia unlock decline" "$fixture" "$steps" "$plain_log" || return 1
 

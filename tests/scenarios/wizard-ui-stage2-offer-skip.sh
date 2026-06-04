@@ -14,12 +14,8 @@ run_scenario() {
     wizard_stage2_write_base_fixture "$fixture"
     wizard_stage2_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage2-offer-skip.steps.json <<"JSON"
-[
-  {"expect": "Set up remote access now\\?"},
-  {"send": "2\n"}
-]
-JSON'
+    wizard_stage2_steps "$steps" \
+        remote_offer 2
 
     wizard_stage2_run_pty "wizard-ui stage2 offer skip" "$fixture" "$steps" "$plain_log" || return 1
 

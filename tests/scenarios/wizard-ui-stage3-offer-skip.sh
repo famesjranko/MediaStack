@@ -16,12 +16,8 @@ run_scenario() {
     wizard_stage3_write_base_fixture "$fixture"
     wizard_stage3_append_runner "$fixture" nvidia
 
-    dind_exec 'cat >/tmp/wizard-stage3-offer-skip.steps.json <<"JSON"
-[
-  {"expect": "Configure hardware transcoding now\\?"},
-  {"send": "2\n"}
-]
-JSON'
+    wizard_stage3_steps "$steps" \
+        transcode_offer 2
 
     wizard_stage3_run_pty "wizard-ui stage3 offer skip" "$fixture" "$steps" "$plain_log" || return 1
 

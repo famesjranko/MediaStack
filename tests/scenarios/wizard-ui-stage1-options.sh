@@ -22,44 +22,24 @@ mkdir -p /tmp/ms-wizard-options
 BASH"
     wizard_stage1_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage1-options.steps.json <<"JSON"
-[
-  {"expect": "Continue with these detected values\\?"},
-  {"send": "1\n"},
-  {"expect": "Admin username"},
-  {"send": "\n"},
-  {"expect": "Admin email"},
-  {"send": "owner@stage1-options.test\n"},
-  {"expect": "Admin password"},
-  {"send": "\n"},
-  {"expect": "Where should MediaStack store media and downloads\\?"},
-  {"send": "1\n"},
-  {"expect": "Data directory"},
-  {"send": "/tmp/ms-wizard-options\n"},
-  {"expect": "Enable automatic subtitle downloads with Bazarr\\?"},
-  {"send": "y\n"},
-  {"expect": "Enable SMB file share for LAN file access\\?"},
-  {"send": "y\n"},
-  {"expect": "Choose SMB share scope:"},
-  {"send": "2\n"},
-  {"expect": "Choose how much storage to spend per movie/show:"},
-  {"send": "3\n"},
-  {"expect": "Subtitle languages"},
-  {"send": "english,spanish,french\n"},
-  {"expect": "Enable the example public-tracker indexer preset\\?"},
-  {"send": "y\n"},
-  {"expect": "Choose how MediaStack should update container images:"},
-  {"send": "2\n"},
-  {"expect": "qBittorrent download limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent upload limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent peer port"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 1 installation\\?"},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_stage1_steps "$steps" \
+        stage1_continue_detected 1 \
+        stage1_admin_username ENTER \
+        stage1_admin_email owner@stage1-options.test \
+        stage1_admin_password ENTER \
+        stage1_storage_location 1 \
+        stage1_data_directory /tmp/ms-wizard-options \
+        stage1_bazarr y \
+        stage1_smb y \
+        stage1_smb_scope 2 \
+        stage1_quality 3 \
+        stage1_subtitle_langs english,spanish,french \
+        stage1_indexers y \
+        stage1_image_channel 2 \
+        stage1_qbt_download ENTER \
+        stage1_qbt_upload ENTER \
+        stage1_qbt_port ENTER \
+        stage1_proceed 1
 
     wizard_stage1_run_pty "wizard-ui stage1 options" "$fixture" "$steps" "$plain_log" || return 1
 

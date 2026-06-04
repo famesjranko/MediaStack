@@ -21,44 +21,24 @@ rm -rf /tmp/ms-wizard-newdir
 BASH"
     wizard_stage1_append_runner "$fixture"
 
-    dind_exec 'cat >/tmp/wizard-stage1-datadir-create.steps.json <<"JSON"
-[
-  {"expect": "Continue with these detected values\\?"},
-  {"send": "1\n"},
-  {"expect": "Admin username"},
-  {"send": "\n"},
-  {"expect": "Admin email"},
-  {"send": "owner@stage1-datadir.test\n"},
-  {"expect": "Admin password"},
-  {"send": "\n"},
-  {"expect": "Where should MediaStack store media and downloads\\?"},
-  {"send": "1\n"},
-  {"expect": "Data directory"},
-  {"send": "/tmp/ms-wizard-newdir\n"},
-  {"expect": "does not exist. Create it\\?"},
-  {"send": "y\n"},
-  {"expect": "Enable automatic subtitle downloads with Bazarr\\?"},
-  {"send": "\n"},
-  {"expect": "Enable SMB file share for LAN file access\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how much storage to spend per movie/show:"},
-  {"send": "1\n"},
-  {"expect": "Subtitle languages"},
-  {"send": "\n"},
-  {"expect": "Enable the example public-tracker indexer preset\\?"},
-  {"send": "\n"},
-  {"expect": "Choose how MediaStack should update container images:"},
-  {"send": "1\n"},
-  {"expect": "qBittorrent download limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent upload limit"},
-  {"send": "\n"},
-  {"expect": "qBittorrent peer port"},
-  {"send": "\n"},
-  {"expect": "Proceed with Stage 1 installation\\?"},
-  {"send": "1\n"}
-]
-JSON'
+    wizard_stage1_steps "$steps" \
+        stage1_continue_detected 1 \
+        stage1_admin_username ENTER \
+        stage1_admin_email owner@stage1-datadir.test \
+        stage1_admin_password ENTER \
+        stage1_storage_location 1 \
+        stage1_data_directory /tmp/ms-wizard-newdir \
+        stage1_datadir_create_confirm y \
+        stage1_bazarr ENTER \
+        stage1_smb ENTER \
+        stage1_quality 1 \
+        stage1_subtitle_langs ENTER \
+        stage1_indexers ENTER \
+        stage1_image_channel 1 \
+        stage1_qbt_download ENTER \
+        stage1_qbt_upload ENTER \
+        stage1_qbt_port ENTER \
+        stage1_proceed 1
 
     wizard_stage1_run_pty "wizard-ui stage1 datadir create" "$fixture" "$steps" "$plain_log" || return 1
 
