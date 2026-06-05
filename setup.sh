@@ -2,6 +2,11 @@
 # =============================================================================
 # MediaStack Setup Script
 # =============================================================================
+# Most users should run ./mediastack instead. The launcher detects machine
+# state and calls this script for them. Run setup.sh directly only for a
+# scripted / non-interactive install (see README "Scripted / automation
+# install").
+#
 # Usage:
 #   ./setup.sh          # Stack setup only (Docker must be installed)
 #   ./setup.sh --full   # Full setup from bare Debian (installs Docker)
