@@ -294,10 +294,10 @@ _npm_ensure_healthy() {
             return 0
         fi
     else
-        log_warn "NPM container is not running — checking for proxy_host config drift before restart"
+        log_warn "NPM container is not running - checking for proxy_host config drift before restart"
     fi
 
-    log_warn "NPM nginx -t failing — checking for proxy_host config drift"
+    log_warn "NPM nginx -t failing - checking for proxy_host config drift"
 
     local _data_dir="$SCRIPT_DIR/config/npm/data"
     local _affected=()
@@ -325,12 +325,12 @@ _npm_ensure_healthy() {
 
     if (( ${#_affected[@]} == 0 )); then
         log_error "NPM nginx -t failing but no proxy_host/*.conf has missing cert refs"
-        log_error "Unknown corruption — inspect: docker exec npm nginx -t"
+        log_error "Unknown corruption - inspect: docker exec npm nginx -t"
         log_error "Forensic: $_data_dir/nginx/proxy_host/"
         return 1
     fi
 
-    log_warn "Drifted host(s): ${_affected[*]} — attempting API repair first"
+    log_warn "Drifted host(s): ${_affected[*]} - attempting API repair first"
 
     # Stage 1: API repair. PUT each affected host to enabled=false cert=0.
     # NPM regenerates the .conf on PUT, so this is usually enough.
@@ -372,12 +372,12 @@ print(json.dumps(h))
             log_ok "NPM healed via API repair (nginx -t passes)"
             return 0
         fi
-        log_warn "API repair didn't heal nginx — falling back to offline patch"
+        log_warn "API repair didn't heal nginx - falling back to offline patch"
     else
         if [[ "$_npm_running" == "true" ]]; then
-            log_warn "No NPM API token available — skipping API repair, going offline"
+            log_warn "No NPM API token available - skipping API repair, going offline"
         else
-            log_warn "NPM container not running — skipping API repair, going offline"
+            log_warn "NPM container not running - skipping API repair, going offline"
         fi
     fi
 
@@ -388,7 +388,7 @@ print(json.dumps(h))
 
     local _db="$_data_dir/database.sqlite"
     if [[ ! -f "$_db" ]]; then
-        log_error "$_db not found — cannot patch DB"
+        log_error "$_db not found - cannot patch DB"
         (cd "$SCRIPT_DIR" && docker compose start npm) >/dev/null 2>&1
         return 1
     fi
@@ -447,7 +447,7 @@ finally:
         (cd "$SCRIPT_DIR" && docker compose start npm) >/dev/null 2>&1
         return 1
     fi
-    log_info "  sqlite: host(s) ${_affected[*]} → enabled=0 cert=0"
+    log_info "  sqlite: host(s) ${_affected[*]} -> enabled=0 cert=0"
 
     # Archive the broken .conf for forensics; do not delete.
     local _ts _archive
@@ -458,7 +458,7 @@ finally:
         local _src="$_data_dir/nginx/proxy_host/$_host_id.conf"
         if [[ -f "$_src" ]]; then
             $_sudo mv "$_src" "$_archive/" 2>/dev/null && \
-                log_info "  archived $_host_id.conf → $_archive/"
+                log_info "  archived $_host_id.conf -> $_archive/"
         fi
     done
 
@@ -478,14 +478,14 @@ finally:
                 -H "Content-Type: application/json" \
                 -d '{"identity":"_probe","secret":"_probe"}' 2>/dev/null)
             if [[ -n "$_probe_http" && "$_probe_http" =~ ^[1-4] ]]; then
-                log_ok "NPM healed (nginx -t clean, express alive — probe HTTP $_probe_http)"
+                log_ok "NPM healed (nginx -t clean, express alive - probe HTTP $_probe_http)"
                 return 0
             fi
         fi
         sleep 2
     done
 
-    log_error "NPM still unhealthy after offline repair — manual review needed"
+    log_error "NPM still unhealthy after offline repair - manual review needed"
     log_error "Forensic: $_archive"
     return 1
 }
@@ -530,18 +530,18 @@ configure_npm() {
     local npm_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
 
     if [[ -z "$npm_email" ]]; then
-        log_warn "NPM_ADMIN_EMAIL not set in .env — skipping NPM."
+        log_warn "NPM_ADMIN_EMAIL not set in .env - skipping NPM."
         return 0
     fi
     if [[ -z "$npm_pw" ]]; then
-        log_warn "JELLYFIN_ADMIN_PASSWORD not set in .env — skipping NPM."
+        log_warn "JELLYFIN_ADMIN_PASSWORD not set in .env - skipping NPM."
         return 0
     fi
 
     # Pre-flight: heal nginx-config drift left by prior interrupted runs.
     # No-op on healthy NPM; bounded recovery (one restart max) when broken.
     _npm_ensure_healthy "$npm_email" "$npm_pw" || {
-        log_error "NPM is in an unrecoverable state — aborting NPM configuration"
+        log_error "NPM is in an unrecoverable state - aborting NPM configuration"
         return 1
     }
 
@@ -608,7 +608,7 @@ print(json.dumps({
             fi
         fi
     else
-        log_error "NPM admin creation failed unexpectedly (HTTP $create_http) — re-run configure.sh"
+        log_error "NPM admin creation failed unexpectedly (HTTP $create_http) - re-run configure.sh"
         return 1
     fi
 
@@ -622,7 +622,7 @@ print(json.dumps({
     if [[ -n "$npm_token" ]]; then
         log_ok "Verified: NPM admin credentials accepted"
     else
-        log_error "NPM credentials not accepted post-setup — defaults may still be active"
+        log_error "NPM credentials not accepted post-setup - defaults may still be active"
         return 1
     fi
 
@@ -684,7 +684,7 @@ for s in json.load(sys.stdin):
             http_top_created="true"
             log_ok "NPM rate limit zone: ${rate_rps}r/s (http_top.conf)"
         else
-            log_warn "Could not create ${http_top_file} (permission denied?) — rate limiting disabled"
+            log_warn "Could not create ${http_top_file} (permission denied?) - rate limiting disabled"
         fi
     fi
 
@@ -771,7 +771,7 @@ for host in json.load(sys.stdin):
 
         local _public_ip="" _dns_ok=""
         if [[ "$_needs_public_dns_gate" != "true" ]]; then
-            log_info "Custom ACME endpoint (${_le_server:-unset}) — skipping public DNS propagation gate"
+            log_info "Custom ACME endpoint (${_le_server:-unset}) - skipping public DNS propagation gate"
         else
             _public_ip=$(curl -s --connect-timeout 5 https://api.ipify.org 2>/dev/null) || \
                 _public_ip=$(curl -s --connect-timeout 5 https://ifconfig.me 2>/dev/null) || \
@@ -779,7 +779,7 @@ for host in json.load(sys.stdin):
         fi
 
         if [[ -n "$_public_ip" ]]; then
-            log_info "Public IP: $_public_ip — waiting for DNS propagation..."
+            log_info "Public IP: $_public_ip - waiting for DNS propagation..."
             local _dns_wait=0 _dns_max=180 _dns_status_line=""
             while (( _dns_wait < _dns_max )); do
                 local _all_dns_ok="yes"
@@ -795,7 +795,7 @@ for host in json.load(sys.stdin):
                 _dns_status_line=$(IFS=', '; echo "${_dns_status[*]}")
                 if [[ -n "$_all_dns_ok" ]]; then
                     _dns_ok="yes"
-                    log_ok "DNS propagated: ${fqdn_list[*]} → $_public_ip (${_dns_wait}s)"
+                    log_ok "DNS propagated: ${fqdn_list[*]} -> $_public_ip (${_dns_wait}s)"
                     break
                 fi
                 sleep 10
@@ -803,9 +803,9 @@ for host in json.load(sys.stdin):
                 echo -ne "."
             done
             [[ -z "$_dns_ok" ]] && echo "" && \
-                log_warn "DNS did not resolve to $_public_ip after ${_dns_max}s (${_dns_status_line:-unresolvable}) — public proxy hosts may be deferred"
+                log_warn "DNS did not resolve to $_public_ip after ${_dns_max}s (${_dns_status_line:-unresolvable}) - public proxy hosts may be deferred"
         else
-            log_info "Could not detect public IP — skipping DNS propagation check"
+            log_info "Could not detect public IP - skipping DNS propagation check"
         fi
 
         # --- Certificate issuance + proxy publication ---
@@ -814,10 +814,6 @@ for host in json.load(sys.stdin):
         # Re-fetch after any disable operations so final writes start from fresh state.
         if ! existing_hosts=$(api_fetch "NPM proxy hosts (publish)" -H "Authorization: Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
             existing_hosts="[]"
-        fi
-        local existing_certs
-        if ! existing_certs=$(api_fetch "NPM certificates" -H "Authorization: Bearer $npm_token" "$npm_api/nginx/certificates"); then
-            existing_certs="[]"
         fi
 
         for entry in "${proxy_hosts[@]}"; do
@@ -859,7 +855,7 @@ for host in json.load(sys.stdin):
             target_cert_id="${host_cert_id:-0}"
             if [[ "${target_cert_id:-0}" != "0" ]] && \
                ! _npm_cert_material_ready "$target_cert_id"; then
-                log_warn "Existing $fqdn cert_id=$target_cert_id has no key+chain on disk — re-issuing"
+                log_warn "Existing $fqdn cert_id=$target_cert_id has no key+chain on disk - re-issuing"
                 target_cert_id="0"
             fi
 
@@ -905,7 +901,7 @@ print(json.dumps({
                 latest_cert_id="$existing_latest"
 
                 if (( existing_rc == 2 )); then
-                    log_warn "Cert pre-flight: NPM API unreachable for $fqdn — refusing to POST (would risk duplicate issuance); deferring"
+                    log_warn "Cert pre-flight: NPM API unreachable for $fqdn - refusing to POST (would risk duplicate issuance); deferring"
                     _npm_cert_status_record "$fqdn" "$cert_post_attempted" "$cert_post_http" "$latest_cert_id" "${target_cert_id:-0}" "false" "false" "$host_id" "npm-api-unreachable"
                     continue
                 fi
@@ -913,17 +909,17 @@ print(json.dumps({
                 local should_post="false"
                 if [[ -z "$existing_latest" || "$existing_latest" == "0" ]]; then
                     if _npm_certbot_busy; then
-                        log_info "Cert pre-flight: certbot is currently running; not POSTing for $fqdn — will wait"
+                        log_info "Cert pre-flight: certbot is currently running; not POSTing for $fqdn - will wait"
                     else
                         should_post="true"
                     fi
                 else
                     if _npm_cert_material_ready "$existing_latest"; then
-                        log_info "Cert pre-flight: NPM already has usable cert_id=$existing_latest for $fqdn — waiting on disk material instead of POSTing"
+                        log_info "Cert pre-flight: NPM already has usable cert_id=$existing_latest for $fqdn - waiting on disk material instead of POSTing"
                     elif _npm_certbot_busy; then
-                        log_info "Cert pre-flight: NPM has incomplete cert_id=$existing_latest for $fqdn and certbot is still running — not POSTing"
+                        log_info "Cert pre-flight: NPM has incomplete cert_id=$existing_latest for $fqdn and certbot is still running - not POSTing"
                     else
-                        log_warn "Cert pre-flight: NPM has stale/incomplete cert_id=$existing_latest for $fqdn with no key+chain on disk and certbot is idle — issuing a fresh cert request"
+                        log_warn "Cert pre-flight: NPM has stale/incomplete cert_id=$existing_latest for $fqdn with no key+chain on disk and certbot is idle - issuing a fresh cert request"
                         should_post="true"
                     fi
                 fi
@@ -937,7 +933,7 @@ print(json.dumps({
                         -d "$cert_body" 2>/dev/null)
                     cert_http=$(echo "$cert_resp" | tail -1)
                     cert_post_http="$cert_http"
-                    log_info "Cert POST for $fqdn → HTTP ${cert_http:-000} (single POST per heal cycle)"
+                    log_info "Cert POST for $fqdn -> HTTP ${cert_http:-000} (single POST per heal cycle)"
                 fi
 
                 # Wait up to ~20 min for any matching cert row to become
@@ -952,8 +948,8 @@ print(json.dumps({
                     latest_cert_id="${latest_cert_id:-$found_cert_id}"
                 else
                     case "$wait_rc" in
-                        2) log_warn "Cert wait: NPM API unreachable throughout the window for $fqdn — public proxy host deferred" ;;
-                        *) log_warn "Cert wait: no usable cert for $fqdn after ~20 min — public proxy host deferred" ;;
+                        2) log_warn "Cert wait: NPM API unreachable throughout the window for $fqdn - public proxy host deferred" ;;
+                        *) log_warn "Cert wait: no usable cert for $fqdn after ~20 min - public proxy host deferred" ;;
                     esac
                     cert_outcome="cert-wait-failed"
                     [[ "$wait_rc" == "2" ]] && cert_outcome="npm-api-unreachable"
@@ -1038,7 +1034,7 @@ print(json.dumps(host))
                         proxy_published="true"
                         log_ok "Proxy host: $fqdn published (cert_id=$target_cert_id, SSL forced, HTTP/2)"
                     else
-                        log_warn "Proxy host: $fqdn updated in NPM API but proxy_host/$host_id.conf did not render with cert_id=$target_cert_id — disabling to avoid orphan"
+                        log_warn "Proxy host: $fqdn updated in NPM API but proxy_host/$host_id.conf did not render with cert_id=$target_cert_id - disabling to avoid orphan"
                         _npm_disable_host "$npm_token" "$npm_api" "$host_id" "$host_json" >/dev/null 2>&1 || true
                     fi
                 else
@@ -1090,7 +1086,7 @@ print(json.dumps({
                         host_id="$new_host_id"
                         log_ok "Proxy host: $fqdn published (cert_id=$target_cert_id, SSL forced, HTTP/2)"
                     else
-                        log_warn "Proxy host: $fqdn created in NPM API but proxy_host/${new_host_id:-?}.conf did not render with cert_id=$target_cert_id — disabling to avoid orphan"
+                        log_warn "Proxy host: $fqdn created in NPM API but proxy_host/${new_host_id:-?}.conf did not render with cert_id=$target_cert_id - disabling to avoid orphan"
                         [[ -n "$new_host_id" ]] && \
                             _npm_disable_host "$npm_token" "$npm_api" "$new_host_id" "" >/dev/null 2>&1 || true
                     fi
@@ -1158,7 +1154,7 @@ for host in json.load(sys.stdin):
     if [[ "$http_top_created" == "true" ]]; then
         docker exec npm nginx -s reload >/dev/null 2>&1 && \
             log_ok "NPM nginx reloaded (rate limit zone active)" || \
-            log_warn "Could not reload NPM nginx — rate limits active after next proxy host change"
+            log_warn "Could not reload NPM nginx - rate limits active after next proxy host change"
     fi
 
     # Verify npm-ratelimit jail values match config.yml

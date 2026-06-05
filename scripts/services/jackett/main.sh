@@ -76,8 +76,7 @@ print(json.dumps(d))
         fi
         # Server config POST triggers an internal webhost restart (~20 s).
         # Wait for Jackett to come back, then re-seed the session cookie.
-        local i
-        for i in $(seq 1 30); do
+        for _ in $(seq 1 30); do
             sleep 1
             if curl -sf -o /dev/null "http://localhost:9117/UI/Dashboard" 2>/dev/null; then
                 break

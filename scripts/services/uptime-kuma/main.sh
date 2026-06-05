@@ -125,7 +125,7 @@ function emit(socket, event, ...args) {
         }
 
         const created = [], skipped = [], errors = [];
-        if (monitorListTimedOut) errors.push(\"monitorList event timed out — duplicate monitors possible on re-run\");
+        if (monitorListTimedOut) errors.push(\"monitorList event timed out - duplicate monitors possible on re-run\");
         for (const mon of monitorsInput) {
             if (existingUrls.has(mon.url)) { skipped.push(mon.name); continue; }
             try {

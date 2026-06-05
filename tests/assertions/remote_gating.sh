@@ -122,8 +122,7 @@ print("|".join(data.get("PublishedServerUriBySubnet") or []))
     fi
 
     if [[ "$published" != *"internal=http://127.0.0.1:8096"* && "$published" != *"internal=http://${host_addr}:8096"* ]]; then
-        local i
-        for i in $(seq 1 15); do
+        for _ in $(seq 1 15); do
             sleep 2
             network_json="$(remote_gating_fetch_jellyfin_network)"
             published="$(echo "$network_json" | python3 -c '

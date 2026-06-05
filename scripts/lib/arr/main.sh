@@ -25,7 +25,7 @@ configure_quality_profile() {
 
     local existing qp_status
     if ! existing=$(api_get "$base/qualityprofile" "$key"); then
-        log_warn "Could not fetch ${app^} quality profiles — skipping check"
+        log_warn "Could not fetch ${app^} quality profiles - skipping check"
         existing="[]"
     fi
     qp_status=$(echo "$existing" | \
@@ -73,7 +73,7 @@ print("drift\t" + "; ".join(drift) if drift else "match")
             return 0
             ;;
         drift)
-            log_warn "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit the profile in the $app_label UI (Settings → Profiles), or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_warn "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit the profile in the $app_label UI (Settings -> Profiles), or rebuild (docker compose down -v && ./setup.sh --full)."
             return 0
             ;;
     esac
@@ -120,13 +120,13 @@ configure_quality_definitions() {
     local desired
     desired=$(cfg_quality_definitions "$app")
     if [[ -z "$desired" || "$desired" == "{}" ]]; then
-        log_skip "No quality_definitions.$app in config.yml — keeping upstream defaults"
+        log_skip "No quality_definitions.$app in config.yml - keeping upstream defaults"
         return 0
     fi
 
     local current
     if ! current=$(api_get "$base/qualitydefinition" "$key"); then
-        log_warn "Could not fetch ${app^} quality definitions — skipping"
+        log_warn "Could not fetch ${app^} quality definitions - skipping"
         current="[]"
     fi
     if [[ -z "$current" || "$current" == "[]" ]]; then
@@ -146,9 +146,9 @@ configure_quality_definitions() {
     rm -f "$warn_file"
 
     if [[ -n "$warn_lines" ]]; then
-        while IFS=$'\t' read -r tag name; do
+        while IFS=$'\t' read -r _ name; do
             [[ -z "$name" ]] && continue
-            log_warn "Quality '$name' not present in ${app^} — skipped"
+            log_warn "Quality '$name' not present in ${app^} - skipped"
         done <<< "$warn_lines"
     fi
 
@@ -185,7 +185,7 @@ configure_arr_custom_formats() {
 
     local existing
     if ! existing=$(api_get "$base/customformat" "$key"); then
-        log_warn "Could not fetch $app_label custom formats — skipping"
+        log_warn "Could not fetch $app_label custom formats - skipping"
         return 0
     fi
 
@@ -230,7 +230,7 @@ configure_arr_format_scores() {
 
     local existing
     if ! existing=$(api_get "$base/customformat" "$key"); then
-        log_warn "Could not fetch $app_label custom formats — skipping score attachment"
+        log_warn "Could not fetch $app_label custom formats - skipping score attachment"
         return 0
     fi
 
@@ -249,7 +249,7 @@ except Exception:
 
     local profiles profile_json
     if ! profiles=$(api_get "$base/qualityprofile" "$key"); then
-        log_warn "Could not fetch $app_label quality profiles — skipping score attachment"
+        log_warn "Could not fetch $app_label quality profiles - skipping score attachment"
         return 0
     fi
 
@@ -268,7 +268,7 @@ except Exception:
 ' 2>/dev/null)
 
     if [[ -z "$profile_json" ]]; then
-        log_warn "$app_label quality profile '$profile_name' not found — skipping format scores"
+        log_warn "$app_label quality profile '$profile_name' not found - skipping format scores"
         return 0
     fi
 
@@ -293,7 +293,7 @@ except Exception:
             fi
             ;;
         drift)
-            log_warn "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit scores in the $app_label UI (Settings → Profiles → $profile_name), or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_warn "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit scores in the $app_label UI (Settings -> Profiles -> $profile_name), or rebuild (docker compose down -v && ./setup.sh --full)."
             ;;
         *)
             log_warn "Could not determine $app_label format score status"
@@ -324,7 +324,7 @@ configure_arr_indexers() {
 
     local existing_indexers
     if ! existing_indexers=$(api_get "$base/indexer" "$key"); then
-        log_warn "Could not fetch ${app^} indexers — skipping check"
+        log_warn "Could not fetch ${app^} indexers - skipping check"
         existing_indexers="[]"
     fi
 
@@ -490,7 +490,7 @@ for n in (i.get("name","") for i in items):
     if [[ -n "$stale" ]]; then
         while IFS= read -r name; do
             [[ -z "$name" ]] && continue
-            log_warn "${app^} indexer '$name' exists but is not in config.yml. configure.sh does not remove indexers on re-run. To remove: ${app^} UI → Settings → Indexers → Delete, or rebuild."
+            log_warn "${app^} indexer '$name' exists but is not in config.yml. configure.sh does not remove indexers on re-run. To remove: ${app^} UI -> Settings -> Indexers -> Delete, or rebuild."
         done <<< "$stale"
     fi
 }
@@ -508,7 +508,7 @@ configure_arr_root_folder() {
 
     local existing rf_status
     if ! existing=$(api_get "$base/rootfolder" "$key"); then
-        log_warn "Could not fetch ${app^} root folders — skipping check"
+        log_warn "Could not fetch ${app^} root folders - skipping check"
         existing="[]"
     fi
     rf_status=$(echo "$existing" | WANT_PATH="$root_folder" python3 -c '
@@ -526,7 +526,7 @@ else:             print("absent")
             log_skip "${app^} root folder $root_folder already matches config.yml"
             ;;
         drift)
-            log_warn "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). configure.sh does not reconcile this on re-run. To change: ${app^} UI → Settings → Media Management → Root Folders → delete the stale entry, or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_warn "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Media Management -> Root Folders -> delete the stale entry, or rebuild (docker compose down -v && ./setup.sh --full)."
             ;;
         *)
             local root_body
@@ -567,7 +567,7 @@ configure_arr_disk_threshold() {
 
     local mm_config current_mb
     if ! mm_config=$(api_get "$base/config/mediamanagement" "$key"); then
-        log_warn "Could not fetch ${app^} media management config — skipping disk threshold"
+        log_warn "Could not fetch ${app^} media management config - skipping disk threshold"
         return 0
     fi
     current_mb=$(echo "$mm_config" | json_get minimumFreeSpaceWhenImporting 100)
@@ -609,7 +609,7 @@ configure_arr_download_client() {
 
     local existing dc_status
     if ! existing=$(api_get "$base/downloadclient" "$key"); then
-        log_warn "Could not fetch ${app^} download clients — skipping check"
+        log_warn "Could not fetch ${app^} download clients - skipping check"
         existing="[]"
     fi
     dc_status=$(echo "$existing" | WANT_CATEGORY="$dl_category" CATEGORY_FIELD="$category_field" python3 -c '
@@ -630,7 +630,7 @@ else:
             log_skip "${app^} qBittorrent category already matches config.yml ($dl_category)"
             ;;
         drift)
-            log_warn "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). configure.sh does not reconcile this on re-run. To change: ${app^} UI → Settings → Download Clients → qBittorrent → update Category, or rebuild."
+            log_warn "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Download Clients -> qBittorrent -> update Category, or rebuild."
             ;;
         *)
             local dlclient_json
@@ -680,7 +680,7 @@ configure_arr_auth() {
 
     local host_config current_auth
     if ! host_config=$(api_get "$base/config/host" "$key"); then
-        log_warn "Could not fetch ${app^} host config — skipping auth check"
+        log_warn "Could not fetch ${app^} host config - skipping auth check"
         host_config="{}"
     fi
     current_auth=$(echo "$host_config" | json_get authenticationMethod none)
@@ -708,7 +708,7 @@ json.dump(config, sys.stdout)' 2>/dev/null)
     if api_put "$base/config/host" "$key" "$auth_config" >/dev/null 2>&1; then
         log_ok "${app^} Forms authentication enabled (user: $jf_user)"
         docker restart "$app" >/dev/null 2>&1
-        local i; for i in $(seq 1 30); do
+        for _ in $(seq 1 30); do
             curl -sf "http://localhost:$port" >/dev/null 2>&1 && break; sleep 2
         done
     else
@@ -725,7 +725,7 @@ configure_arr_jellyfin_connection() {
 
     local jf_key="${JELLYFIN_API_KEY:-}"
     if [[ -z "$jf_key" ]]; then
-        log_warn "JELLYFIN_API_KEY not set — skipping ${app^} Jellyfin connection"
+        log_warn "JELLYFIN_API_KEY not set - skipping ${app^} Jellyfin connection"
         return 0
     fi
 
@@ -733,7 +733,7 @@ configure_arr_jellyfin_connection() {
     if ! existing=$(api_get "$base/notification" "$key"); then
         sleep 5
         if ! existing=$(api_get "$base/notification" "$key"); then
-            log_warn "Could not fetch ${app^} notifications — skipping Jellyfin connection"
+            log_warn "Could not fetch ${app^} notifications - skipping Jellyfin connection"
             return 0
         fi
     fi
@@ -791,13 +791,13 @@ print(json.dumps(payload))')
     local attempt
     for attempt in 1 2 3; do
         if api_post "$base/notification" "$key" "$notif_json" >/dev/null 2>&1; then
-            log_ok "${app^} → Jellyfin: library update on import"
+            log_ok "${app^} -> Jellyfin: library update on import"
             return 0
         fi
         sleep $(( attempt * 3 ))
     done
     if api_post "$base/notification?forceSave=true" "$key" "$notif_json" >/dev/null 2>&1; then
-        log_ok "${app^} → Jellyfin: library update on import"
+        log_ok "${app^} -> Jellyfin: library update on import"
     else
         log_warn "Failed to add Jellyfin connection to ${app^}"
     fi

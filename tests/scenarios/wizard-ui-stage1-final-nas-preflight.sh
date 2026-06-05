@@ -14,7 +14,7 @@ storage_preflight_nas() {
     local attempts=0
     [[ -f /tmp/wizard-final-nas-attempts ]] && attempts=\$(cat /tmp/wizard-final-nas-attempts)
     attempts=\$((attempts + 1))
-    printf '%s\n' "\$attempts" > /tmp/wizard-final-nas-attempts
+    printf '%s\n' \$attempts > /tmp/wizard-final-nas-attempts
     (( attempts >= 2 ))
 }
 BASH"

@@ -106,7 +106,7 @@ stage2_check_http_ports() {
     printf '%s\n' 'probe-unavailable:80,443'
 }
 ui_choose() {
-    local prompt="$1"; shift
+    shift  # prompt arg unused by this mock
     local items=("$@")
     local default_index="${UI_CHOOSE_DEFAULT_INDEX:-1}"
     printf '%s\n' "$default_index" > "$STAGE2_PORT_GATE_TMP/default"

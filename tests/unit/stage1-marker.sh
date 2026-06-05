@@ -79,6 +79,8 @@ assert_contains "$SKIP_CAPTURE" "rebuild from scratch" "stage1-marker (BL-03): s
 WIZARD_RAN_INSTALL=false
 SKIP_CAPTURE=""
 STAGE_1_COMPLETE=
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 EXISTING_INSTALL_DETECTED=true
 INSTALL_CALLED=false
 _wizard_run_discovery() { :; }

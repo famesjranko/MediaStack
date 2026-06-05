@@ -428,7 +428,7 @@ stage3_run_encoder_smoke_test() {
             export STAGE_3_GPU_RENDER_DEVICE="$render_device"
             cmd+=(
                 -vaapi_device "$render_device"
-                -vf format=nv12,hwupload
+                -vf "format=nv12,hwupload"
                 -c:v "$encoder_name"
             )
             ;;
@@ -438,7 +438,7 @@ stage3_run_encoder_smoke_test() {
             cmd+=(
                 -init_hw_device "qsv=hw:${render_device}"
                 -filter_hw_device hw
-                -vf format=nv12,hwupload=extra_hw_frames=64
+                -vf "format=nv12,hwupload=extra_hw_frames=64"
                 -c:v "$encoder_name"
             )
             ;;
@@ -1060,8 +1060,14 @@ stage3_prompt_nvidia_reboot() {
             schedule_post_reboot
             install_post_reboot_banner
             print_reboot_notice
-            ui_confirm "Press Enter to reboot now" "yes"
-            sudo reboot
+            # Honour a typed "no" at the final prompt: the resume is already armed
+            # (schedule/banner/notice above), so declining is safe — fall through to
+            # the same manual-later guidance instead of rebooting regardless.
+            if ui_confirm "Reboot the machine now?" "yes"; then
+                sudo reboot
+            else
+                printf '%s\n' "Reboot manually when ready. MediaStack will resume GPU finalization automatically on the next boot."
+            fi
             ;;
         "Reboot manually later")
             schedule_post_reboot
@@ -1161,7 +1167,7 @@ stage3_finalize_nvidia() {
 }
 
 _stage3_nvidia_mode_more_copy() {
-    ui_log info "Standard driver: Debian's packaged NVIDIA driver. It updates with the system (apt) and keeps NVIDIA's official NVENC session limit — typically 3-5 simultaneous transcodes, which is plenty for a home server where most playback is direct-play."
+    ui_log info "Standard driver: Debian's packaged NVIDIA driver. It updates with the system (apt) and keeps NVIDIA's official NVENC session limit - typically 3-5 simultaneous transcodes, which is plenty for a home server where most playback is direct-play."
     ui_log info "Unlock NVENC limit: a patch-managed driver that removes the session limit, for households doing many simultaneous transcodes. It modifies NVIDIA driver binaries and must be re-applied (./scripts/nvidia-repatch.sh) after every driver update."
     ui_log warn "Unlock modifies NVIDIA driver binaries and may conflict with NVIDIA's terms, warranties, support expectations, or local law."
 }
@@ -1175,6 +1181,8 @@ _stage3_choose_nvidia_mode() {
     while true; do
         {
             ui_box "NVIDIA driver setup" \
+                "Standard is right for almost every home server - pick it unless you know" \
+                "you need more than ~5 people transcoding at the same time." \
                 "Standard driver: Debian-managed, official NVENC limits (recommended)" \
                 "Unlock NVENC limit: patch-managed, removes the limit (advanced)"
         } >&2
@@ -1338,7 +1346,7 @@ run_stage3() {
         return 0
     fi
 
-    ui_banner "MediaStack -- Hardware Transcoding" "Use your GPU for Jellyfin video conversion"
+    ui_banner "MediaStack - Hardware Transcoding" "Use your GPU for Jellyfin video conversion"
 
     local action
     while true; do

@@ -17,6 +17,8 @@ if [[ -t 1 ]]; then
     BOLD='\033[1m'
     NC='\033[0m'
 else
+    # Part of the palette; consumed by other test modules.
+    # shellcheck disable=SC2034
     RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' NC=''
 fi
 

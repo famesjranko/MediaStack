@@ -34,7 +34,7 @@ All 19 services declared in `docker-compose.yml`. Healthcheck, depends_on condit
 | 10 | `npm` | `jc21/nginx-proxy-manager:2` | 80, 443, 81 | **proxy** | — | `/bin/check-health` | 30s |
 | 11 | `portainer` | `portainer/portainer-ce:latest` | 9000 | default | — | `NONE` (distroless) | — |
 | 12 | `fail2ban` | `crazymax/fail2ban:latest` | — (host net) | **proxy** | npm (started, not healthy) | `fail2ban-client ping` | 30s |
-| 13 | `wireguard` | `ghcr.io/wg-easy/wg-easy:15.3.0` | 51820/udp, 51821/tcp | **remote** | — | `wg show \| grep -q interface` | 30s |
+| 13 | `wireguard` | `ghcr.io/wg-easy/wg-easy:15` | 51820/udp, 51821/tcp | **remote** | — | `wg show \| grep -q interface` | 30s |
 | 14 | `ddns-updater` | `qmcgaw/ddns-updater:latest` | 8000 | **proxy** | — | `/updater/ddns-updater healthcheck` | 10s |
 | 15 | `uptime-kuma` | `louislam/uptime-kuma:2` | 3001 | default | — | `curl /` | 30s |
 | 16 | `bazarr` | `linuxserver/bazarr:latest` | 6767 | **subtitles** | sonarr, radarr | `curl /` | 30s |

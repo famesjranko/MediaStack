@@ -15,6 +15,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=../lib/assert.sh
 source "$REPO_ROOT/tests/lib/assert.sh"
+# Read by tests/lib/assert.sh for failure labels.
+# shellcheck disable=SC2034
 CURRENT_SCENARIO="resource-limits"
 echo -e "${CYAN}${BOLD}▶ scenario: resource-limits${NC}"
 
@@ -252,7 +254,6 @@ fi
 HOST_MEMORY_MB=8192
 generate_override none
 
-swap_ok=true
 for svc in $ALL_SERVICES; do
     mem_raw=$(awk "/^  ${svc}:/{found=1} found && /mem_limit:/{print \$2; exit}" "$override")
     swap_raw=$(awk "/^  ${svc}:/{found=1} found && /memswap_limit:/{print \$2; exit}" "$override")
@@ -263,7 +264,6 @@ for svc in $ALL_SERVICES; do
         pass "memswap 1.5x: $svc (${mem_raw} → ${swap_raw})"
     else
         fail "memswap 1.5x: $svc" "mem=${mem_raw} swap=${swap_raw} expected=${expected_swap}m"
-        swap_ok=false
     fi
 done
 
@@ -289,10 +289,10 @@ if grep -qE '^    image: jellyfin/jellyfin:latest@sha256:[0-9a-f]{64}$' "$overri
 else
     fail "generate_override stable: jellyfin image pinned to digest"
 fi
-if grep -qE '^    image: ghcr\.io/wg-easy/wg-easy:15\.3\.0@sha256:[0-9a-f]{64}$' "$override"; then
-    pass "generate_override stable: exact-tag service pinned to digest"
+if grep -qE '^    image: ghcr\.io/wg-easy/wg-easy:15@sha256:[0-9a-f]{64}$' "$override"; then
+    pass "generate_override stable: major-tag service pinned to digest"
 else
-    fail "generate_override stable: exact-tag service pinned to digest"
+    fail "generate_override stable: major-tag service pinned to digest"
 fi
 if grep -q "Image channel: stable" "$override"; then
     pass "generate_override stable: channel recorded in header"
@@ -318,6 +318,8 @@ if [[ "$missing_lock_rc" -ne 0 ]]; then
 else
     fail "generate_override stable: missing lock fails"
 fi
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 IMAGE_CHANNEL=latest
 
 echo -e "${CYAN}◀ resource-limits done${NC}"

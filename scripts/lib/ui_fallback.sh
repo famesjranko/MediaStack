@@ -2,7 +2,14 @@
 # MediaStack UI — pure bash implementation
 # =============================================================================
 # Implements all _ui_*_impl functions using ANSI escape codes and unicode.
-# Zero external dependencies beyond bash 4+.
+# Zero external dependencies beyond bash 4+ (term_caps.sh is an internal sibling).
+
+# Terminal-capability detection — colour gating lives in one place (term_caps.sh).
+# Resolve via BASH_SOURCE (not $SCRIPT_DIR): ui_fallback.sh is also sourced
+# standalone by tests/unit/ui-box-alignment.sh where $SCRIPT_DIR is the test dir.
+_UI_TC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=term_caps.sh
+source "$_UI_TC_DIR/term_caps.sh"
 
 # ANSI color codes
 _UI_RESET='\033[0m'
@@ -10,9 +17,27 @@ _UI_BOLD='\033[1m'
 _UI_RED='\033[0;31m'
 _UI_GREEN='\033[0;32m'
 _UI_YELLOW='\033[1;33m'
-_UI_BLUE='\033[0;34m'
+_UI_BLUE='\033[0;94m'   # bright blue: info is the highest-volume level, and 0;34 is unreadably dark on dark terminals
 _UI_CYAN='\033[0;36m'
 _UI_GRAY='\033[0;90m'
+
+_UI_FRAME_WIDTH=46
+
+# Distinct exit code a piped/non-interactive parent uses to signal "ui_choose
+# ran out of stdin" (input exhausted), as opposed to a generic SIGTERM (143) or
+# a real failure. _ui_choose_impl's EOF branch SIGTERMs the whole process group
+# to take the looping parent (mediastack / setup.sh) down from inside $(...);
+# those parents install a non-interactive TERM trap that maps the group-kill to
+# this code (see mediastack:main and setup.sh:main). Sourced via ui.sh, so both
+# parents share one definition. Exported so it survives the trap subshell.
+export UI_EXIT_INPUT_EXHAUSTED=3
+
+# Blank the whole palette when colour is disabled so escape codes never leak
+# into piped/redirected logs. Frozen here at source time (when the installer's
+# stdout/stderr are still the real TTY); UI_FORCE_COLOR overrides for demos.
+if ! _color_enabled; then
+    _UI_RESET='' _UI_BOLD='' _UI_RED='' _UI_GREEN='' _UI_YELLOW='' _UI_BLUE='' _UI_CYAN='' _UI_GRAY=''
+fi
 
 _ui_repeat_char() {
     local count="${1:-0}" char="${2:- }" out="" i
@@ -72,18 +97,22 @@ _ui_center_text() {
 _ui_banner_impl() {
     local title="${1:-MediaStack}"
     local subtitle="${2:-Turnkey Media Server for Home Networks}"
-    local width=46
+    local width="$_UI_FRAME_WIDTH"
+    local _tlen _slen
+    _tlen=$(_ui_visible_len "$title"); _slen=$(_ui_visible_len "$subtitle")
+    (( _tlen > width )) && width=$_tlen
+    (( _slen > width )) && width=$_slen
 
     local title_line sub_line border
     title_line=$(_ui_center_text "$title" "$width")
     sub_line=$(_ui_center_text "$subtitle" "$width")
-    border=$(_ui_repeat_char "$width" "═")
+    border=$(_ui_repeat_char "$width" "$_G_DH")
 
     echo ""
-    echo -e "  ${_UI_CYAN}╔${border}╗${_UI_RESET}"
-    echo -e "  ${_UI_CYAN}║${_UI_RESET}${_UI_BOLD}${title_line}${_UI_RESET}${_UI_CYAN}║${_UI_RESET}"
-    echo -e "  ${_UI_CYAN}║${_UI_RESET}${sub_line}${_UI_CYAN}║${_UI_RESET}"
-    echo -e "  ${_UI_CYAN}╚${border}╝${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_DTL}${border}${_G_DTR}${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_DV}${_UI_RESET}${_UI_BOLD}${title_line}${_UI_RESET}${_UI_CYAN}${_G_DV}${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_DV}${_UI_RESET}${sub_line}${_UI_CYAN}${_G_DV}${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_DBL}${border}${_G_DBR}${_UI_RESET}"
     echo ""
 }
 
@@ -103,13 +132,17 @@ _ui_log_impl() {
     local color icon
 
     case "$level" in
-        ok)    color="$_UI_GREEN";  icon="✓" ;;
-        warn)  color="$_UI_YELLOW"; icon="!" ;;
-        error) color="$_UI_RED";    icon="✗" ;;
-        info)  color="$_UI_BLUE";   icon="•" ;;
-        skip)  color="$_UI_YELLOW"; icon="→" ;;
-        *)     color="$_UI_GRAY";   icon=" " ;;
+        ok)    color="$_UI_GREEN"  ;;
+        warn)  color="$_UI_YELLOW" ;;
+        error) color="$_UI_RED"    ;;
+        info)  color="$_UI_BLUE"   ;;
+        skip)  color="$_UI_GRAY"   ;;
+        *)     color="$_UI_GRAY"   ;;
     esac
+    # Unified marker: glyph (✓/!/✗/•/→) when the terminal can render it, else the
+    # ASCII bracket tag ([OK]/...). Same vocabulary as common.sh log_*, so a single
+    # run never mixes glyph and bracket "languages".
+    icon=$(_ui_status_token "$level")
 
     # Write to stderr so log output stays visible when the caller is inside
     # a command substitution (e.g. validators run inside ui_input_validated
@@ -119,7 +152,7 @@ _ui_log_impl() {
 
 _ui_spin_impl() {
     local title="$1"; shift
-    local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local frames=("${_G_SPIN[@]}")
     local frame_count=${#frames[@]}
 
     if [[ "${UI_DEMO:-0}" == "1" ]]; then
@@ -140,6 +173,16 @@ _ui_spin_impl() {
     local pid=$!
     local i=0
 
+    # Save the caller's INT/TERM disposition so this transient spinner trap does
+    # not permanently clobber it — `trap - INT TERM` resets to bash *default*,
+    # which would silently wipe setup.sh's interrupt-reassurance handler for
+    # everything after the first spinner. Restore it on the way out instead.
+    local _prev_int _prev_term
+    _prev_int="$(trap -p INT)"
+    _prev_term="$(trap -p TERM)"
+    # $pid must bind now (the spinner's background pid), not at signal time —
+    # single-quoting would defer expansion past its scope. Intentional.
+    # shellcheck disable=SC2064
     trap "kill $pid 2>/dev/null; echo -ne '\r\033[K'" INT TERM
 
     while kill -0 "$pid" 2>/dev/null; do
@@ -151,13 +194,15 @@ _ui_spin_impl() {
     wait "$pid"
     local rc=$?
     trap - INT TERM
+    [[ -n "$_prev_int" ]] && eval "$_prev_int"
+    [[ -n "$_prev_term" ]] && eval "$_prev_term"
     echo -ne "\r\033[K"
     return $rc
 }
 
 _ui_spin_fg_impl() {
     local title="$1"; shift
-    local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local frames=("${_G_SPIN[@]}")
     local frame_count=${#frames[@]}
 
     if [[ "${UI_DEMO:-0}" == "1" ]]; then
@@ -262,6 +307,42 @@ _ui_password_impl() {
     echo "${result:-$default}"
 }
 
+_ui_password_validated_impl() {
+    # MASKED sibling of _ui_input_validated_impl: prompts via ui_password (read -rsp,
+    # no echo) and loops until the validator returns 0. The validator emits its own
+    # ui_log warn on failure, so this helper prints nothing itself. Calls the public
+    # ui_password (not _ui_password_impl directly) — same as the _stage2_password_
+    # validated helper it replaces, so callers/tests that stub ui_password keep working.
+    #
+    # Args:
+    #   $1 prompt          (required)
+    #   $2 default         (required; may be empty for required-no-default fields)
+    #   $3 validator_fn    (required; called as: "$validator_fn" "$value")
+    #   $4 demo_default    (optional; falls back to $2 if unset)
+    local prompt="${1:-Password}"
+    local default="${2:-}"
+    local validator_fn="${3:?ui_password_validated: validator function name required}"
+    local demo_default="${4:-$default}"
+
+    # DEMO short-circuit: BOTH UI_DEMO=1 (simulation) and DEMO=1 (full non-interactive).
+    # No validation in demo — caller is responsible for ensuring demo defaults are valid.
+    # (The previous _stage2_password_validated lacked the DEMO=1 guard; this is stricter.)
+    if [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]]; then
+        echo "$demo_default"
+        return 0
+    fi
+
+    local result
+    while true; do
+        result=$(ui_password "$prompt" "$default")
+        if "$validator_fn" "$result"; then
+            echo "$result"
+            return 0
+        fi
+        # Loop — re-prompt. No extra logging (the validator already warned).
+    done
+}
+
 _ui_confirm_impl() {
     local prompt="${1:-Continue?}"
     local default="${2:-no}"
@@ -274,11 +355,27 @@ _ui_confirm_impl() {
     local hint="y/N"
     [[ "$default" == "yes" ]] && hint="Y/n"
 
+    # Interactive TTY: accept only y/yes/n/no (blank = default) and re-prompt on
+    # anything else — never guess from an unrecognised answer. Non-interactive:
+    # keep the historical deterministic rule (blank = default; anything not
+    # y/yes = no) so piped callers/tests stay stable.
+    local interactive=0; [[ -t 0 ]] && interactive=1
     local result=""
-    read -rp "  $prompt [$hint]: " result || :
-    result="${result:-$default}"
-
-    [[ "${result,,}" == "y" || "${result,,}" == "yes" ]]
+    while true; do
+        read -rp "  $prompt [$hint]: " result || :
+        result="${result:-$default}"
+        case "${result,,}" in
+            y|yes) return 0 ;;
+            n|no)  return 1 ;;
+        esac
+        if (( interactive )); then
+            _ui_log_impl warn "Please answer y or n."
+            result=""
+            continue
+        fi
+        [[ "${result,,}" == "y" || "${result,,}" == "yes" ]]
+        return
+    done
 }
 
 _ui_box_impl() {
@@ -300,37 +397,40 @@ _ui_box_impl() {
     # characters. Multi-byte UTF-8 and ANSI styles break alignment. Measure
     # visible text after stripping ANSI, then append ASCII spaces explicitly.
     local _pad border padded_title empty_line padded_line
-    border=$(_ui_repeat_char "$inner_width" "─")
+    border=$(_ui_repeat_char "$inner_width" "$_G_H")
     echo ""
-    echo -e "  ${_UI_CYAN}╭${border}╮${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_TL}${border}${_G_TR}${_UI_RESET}"
     _pad=$(( inner_width - $(_ui_visible_len " ${title}") ))
     padded_title=" ${title}$(_ui_spaces "$_pad")"
-    echo -e "  ${_UI_CYAN}│${_UI_RESET}${_UI_BOLD}${padded_title}${_UI_RESET}${_UI_CYAN}│${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_V}${_UI_RESET}${_UI_BOLD}${padded_title}${_UI_RESET}${_UI_CYAN}${_G_V}${_UI_RESET}"
     empty_line=$(_ui_spaces "$inner_width")
-    echo -e "  ${_UI_CYAN}│${_UI_RESET}${empty_line}${_UI_CYAN}│${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_V}${_UI_RESET}${empty_line}${_UI_CYAN}${_G_V}${_UI_RESET}"
     for line in "${content[@]}"; do
         _pad=$(( inner_width - $(_ui_visible_len "  ${line}") ))
         (( _pad < 0 )) && _pad=0
         padded_line="  ${line}$(_ui_spaces "$_pad")"
-        echo -e "  ${_UI_CYAN}│${_UI_RESET}${padded_line}${_UI_CYAN}│${_UI_RESET}"
+        echo -e "  ${_UI_CYAN}${_G_V}${_UI_RESET}${padded_line}${_UI_CYAN}${_G_V}${_UI_RESET}"
     done
-    echo -e "  ${_UI_CYAN}╰${border}╯${_UI_RESET}"
+    echo -e "  ${_UI_CYAN}${_G_BL}${border}${_G_BR}${_UI_RESET}"
 }
 
 _ui_kv_impl() {
     local key="$1" value="$2"
-    local formatted_key
-    printf -v formatted_key "%-18s" "$key"
-    echo -e "  ${_UI_BOLD}${formatted_key}${_UI_RESET} ${value}"
+    local _klen _pad
+    _klen=$(_ui_visible_len "$key")
+    _pad=$(( 18 - _klen )); (( _pad < 0 )) && _pad=0
+    echo -e "  ${_UI_BOLD}${key}$(_ui_spaces "$_pad")${_UI_RESET} ${value}"
 }
 
 _ui_divider_impl() {
-    local title="${1:-}"
+    local title="${1:-}" width="$_UI_FRAME_WIDTH"
     echo ""
     if [[ -n "$title" ]]; then
-        echo -e "  ${_UI_GRAY}── $title ──────────────────────────────────────${_UI_RESET}"
+        local rest=$(( width - 4 - $(_ui_visible_len "$title") ))   # "-- title " uses 2 + 1 + len + 1
+        (( rest < 0 )) && rest=0
+        echo -e "  ${_UI_GRAY}$(_ui_repeat_char 2 "$_G_H") ${title} $(_ui_repeat_char "$rest" "$_G_H")${_UI_RESET}"
     else
-        echo -e "  ${_UI_GRAY}─────────────────────────────────────────────────${_UI_RESET}"
+        echo -e "  ${_UI_GRAY}$(_ui_repeat_char "$width" "$_G_H")${_UI_RESET}"
     fi
 }
 
@@ -343,8 +443,8 @@ _ui_progress_impl() {
     local empty=$(( bar_width - filled ))
 
     local bar_fill="" bar_empty=""
-    for ((i=0; i<filled; i++)); do bar_fill+="█"; done
-    for ((i=0; i<empty; i++)); do bar_empty+="░"; done
+    for ((i=0; i<filled; i++)); do bar_fill+="$_G_BAR_FILL"; done
+    for ((i=0; i<empty; i++)); do bar_empty+="$_G_BAR_EMPTY"; done
 
     echo -e "  ${_UI_GREEN}${bar_fill}${_UI_GRAY}${bar_empty}${_UI_RESET} ${pct}%  ${label}"
 }
@@ -361,9 +461,20 @@ _ui_status_clear_impl() {
 _ui_choose_impl() {
     local prompt="$1"; shift
     local items=("$@")
-    local default_index="${UI_CHOOSE_DEFAULT_INDEX:-1}"
-    if ! [[ "$default_index" =~ ^[0-9]+$ ]] || (( default_index < 1 || default_index > ${#items[@]} )); then
-        default_index=1
+    local n=${#items[@]}
+
+    # An explicit UI_CHOOSE_DEFAULT_INDEX means the caller WANTS Enter to accept a
+    # default (the wizard's "recommended" prompts). When it is UNSET there is no
+    # default: an interactive user must make a real choice — a menu must never
+    # silently fall back to item 1 on a stray Enter. Distinguish set-vs-unset with
+    # ${VAR+x} so "" and "unset" don't collapse to the same default.
+    local has_default=0 default_index=1
+    if [[ -n "${UI_CHOOSE_DEFAULT_INDEX+x}" ]]; then
+        has_default=1
+        default_index="$UI_CHOOSE_DEFAULT_INDEX"
+        if ! [[ "$default_index" =~ ^[0-9]+$ ]] || (( default_index < 1 || default_index > n )); then
+            default_index=1
+        fi
     fi
 
     if [[ "${UI_DEMO:-0}" == "1" ]]; then
@@ -372,30 +483,54 @@ _ui_choose_impl() {
     fi
 
     echo -e "  ${_UI_CYAN}$prompt${_UI_RESET}" >&2
-    local i=1
+    local i=1 item suffix
     for item in "${items[@]}"; do
-        echo "  $i) $item" >&2
+        suffix=""
+        (( has_default && i == default_index )) && suffix="  ${_UI_GRAY}(default - press Enter)${_UI_RESET}"
+        printf '  %s) %s%b\n' "$i" "$item" "$suffix" >&2
         ((i++))
     done
 
+    # Interactive TTY: re-prompt until the entry is a valid in-range number (or
+    # blank to accept an explicit default) — never silently pick on empty/garbage.
+    # Non-interactive (piped/CI/harness): keep the historical deterministic
+    # default-fallback so automation can't hang in a re-prompt loop.
+    local interactive=0; [[ -t 0 ]] && interactive=1
+    local label; (( has_default )) && label="[$default_index]" || label="1-$n"
     local choice=""
-    if ! read -rp "  Choice [$default_index]: " choice; then
-        # On closed/piped stdin (EOF), looping with the silent default
-        # spins the menu forever. ui_choose is called inside `$(...)` so a
-        # plain `exit` only kills the subshell — SIGTERM the foreground
-        # process group so the parent script (mediastack/setup.sh) dies too.
-        # Interactive EOF (Ctrl-D) still falls through to the visible default.
-        if [[ ! -t 0 ]]; then
-            _ui_log_impl warn "EOF on stdin — exiting."
-            kill -TERM 0 2>/dev/null || true
-            exit 0
+    while true; do
+        if ! read -rp "  Choice ${label}: " choice; then
+            # EOF. On a pipe a re-prompt loop would spin forever; ui_choose runs
+            # inside $(...) so a plain exit only kills the subshell — SIGTERM the
+            # process group to take the parent (mediastack/setup.sh) down too.
+            # The non-interactive parents install a TERM trap that maps this
+            # group-kill to exit ${UI_EXIT_INPUT_EXHAUSTED} ("input exhausted"),
+            # so a piped driver can tell "ran out of input" from a generic kill
+            # (143) or a real failure. The warn below is the matching breadcrumb.
+            if (( ! interactive )); then
+                _ui_log_impl warn "No more input on stdin - exiting non-interactive session (exit ${UI_EXIT_INPUT_EXHAUSTED}: input exhausted)."
+                kill -TERM 0 2>/dev/null || true
+                exit 0
+            fi
+            choice=""
         fi
-        choice=""
-    fi
-    choice="${choice:-$default_index}"
-    if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#items[@]} )); then
-        _ui_log_impl warn "Choice '$choice' out of range — defaulting to $default_index"
+        if [[ -z "$choice" ]]; then
+            if (( has_default )); then choice="$default_index"
+            elif (( ! interactive )); then choice=1                  # deterministic for automation
+            else _ui_log_impl warn "Enter a number between 1 and $n."; continue
+            fi
+        fi
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= n )); then
+            break
+        fi
+        if (( interactive )); then
+            _ui_log_impl warn "'$choice' is not a valid choice - enter a number between 1 and $n."
+            continue
+        fi
+        # Non-interactive invalid input: historical deterministic fallback.
+        _ui_log_impl warn "Choice '$choice' out of range - defaulting to $default_index"
         choice="$default_index"
-    fi
+        break
+    done
     echo "${items[$((choice - 1))]}"
 }

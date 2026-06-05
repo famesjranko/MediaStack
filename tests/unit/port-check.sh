@@ -26,6 +26,7 @@ setup_sandbox() {
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/"
     cp "$REPO_ROOT/scripts/lib/ui.sh" "$TMP_DIR/sandbox/scripts/lib/"
     cp "$REPO_ROOT/scripts/lib/ui_fallback.sh" "$TMP_DIR/sandbox/scripts/lib/"
+    cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/"  # common.sh + ui_fallback.sh source it
     cat > "$TMP_DIR/sandbox/bin/getent" <<'STUB'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "ahosts" ]]; then

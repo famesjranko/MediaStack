@@ -5,14 +5,32 @@
 # Depends on $SCRIPT_DIR and $CONFIG_FILE being exported by the caller.
 # No `set` flags here — libraries must not mutate the caller's shell options.
 
+# --- Terminal capability (colour gating) ---
+# Resolve term_caps.sh from this file's own dir (BASH_SOURCE), not $SCRIPT_DIR:
+# common.sh is sourced by configure.sh / setup.sh / update.sh / mediastack with
+# differing $SCRIPT_DIR contracts. term_caps.sh sets no shell options.
+_COMMON_TC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=term_caps.sh
+source "$_COMMON_TC_DIR/term_caps.sh"
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+BLUE='\033[0;94m'   # bright blue: [INFO] is the highest-volume level, and 0;34 is unreadably dark on dark terminals
 CYAN='\033[0;36m'
+GRAY='\033[0;90m'
 BOLD='\033[1m'
 NC='\033[0m'
+
+# Blank the palette when colour is disabled (NO_COLOR / captured output / dumb
+# terminal) so [INFO]/[OK]/... never carry escape codes into a redirected log.
+if ! _color_enabled; then
+    # Blanked as a complete set; CYAN/BOLD (and others) are read by sibling
+    # modules (configure.sh, stack.sh, services), not within common.sh.
+    # shellcheck disable=SC2034
+    RED='' GREEN='' YELLOW='' BLUE='' CYAN='' GRAY='' BOLD='' NC=''
+fi
 
 _LOG_CAPTURE=""
 _LOG_COUNTS_OK=0
@@ -33,11 +51,15 @@ _log_emit() {
     fi
 }
 
-log_info()  { _log_emit "${BLUE}[INFO]${NC} $1"; }
-log_ok()    { ((_LOG_COUNTS_OK++)) || true;    _log_emit "${GREEN}[OK]${NC} $1"; }
-log_warn()  { ((_LOG_COUNTS_WARN++)) || true;  _log_emit "${YELLOW}[WARN]${NC} $1"; }
-log_error() { ((_LOG_COUNTS_ERROR++)) || true; _log_emit "${RED}[ERROR]${NC} $1"; }
-log_skip()  { ((_LOG_COUNTS_SKIP++)) || true;  _log_emit "${YELLOW}[SKIP]${NC} $1"; }
+# Marker via _ui_status_token (term_caps.sh): the ASCII bracket tag [INFO]/[OK]/...
+# when glyphs are unavailable (byte-identical to the historical output), or the
+# matching icon (•/✓/!/✗/→) when the terminal can render it — same vocabulary as
+# the wizard's ui_log, so a single run never mixes bracket and glyph "languages".
+log_info()  { _log_emit "${BLUE}$(_ui_status_token info)${NC} $1"; }
+log_ok()    { ((_LOG_COUNTS_OK++)) || true;    _log_emit "${GREEN}$(_ui_status_token ok)${NC} $1"; }
+log_warn()  { ((_LOG_COUNTS_WARN++)) || true;  _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"; }
+log_error() { ((_LOG_COUNTS_ERROR++)) || true; _log_emit "${RED}$(_ui_status_token error)${NC} $1"; }
+log_skip()  { ((_LOG_COUNTS_SKIP++)) || true;  _log_emit "${GRAY}$(_ui_status_token skip)${NC} $1"; }
 
 log_capture_start() {
     _LOG_CAPTURE=$(mktemp)
@@ -233,12 +255,27 @@ get_jackett_api_key() {
     [[ -f "$f" ]] && python3 -c "import json; print(json.load(open('$f')).get('APIKey',''))" 2>/dev/null || echo ""
 }
 
-save_api_key() {
-    local key_name="$1" key_value="$2" env_file="$SCRIPT_DIR/.env"
-    [[ -f "$env_file" ]] || return
-
-    local writer_status
-    if ! writer_status=$(MEDIASTACK_SAVE_API_VALUE="$key_value" python3 - "$env_file" "$key_name" <<'PY'
+# General-purpose, hardened "rewrite a KEY=value line in .env" primitive.
+#
+#   _env_write_kv <env_file> <key> <value>
+#
+# Single-quotes the value (so spaces, $, \, #, =, ", and leading/trailing
+# whitespace round-trip byte-exact when the file is re-sourced), rewrites the
+# matching key in place (or appends if absent) via an atomic temp-file replace
+# that preserves the file mode, and leaves every unrelated line untouched.
+# Refuses values containing a single quote or a newline (which cannot be safely
+# single-quoted) and refuses an invalid key name — in those cases the file is
+# left exactly as it was. Echoes a status word and returns non-zero on failure:
+#   changed | unchanged                              -> rc 0
+#   invalid-key | invalid-newline | invalid-quote
+#   read-error:<reason> | write-error:<reason>       -> rc 1
+# Side-effect-free beyond the file write: it does NOT log or export — callers
+# decide how to surface the outcome. This is the one .env-mutation writer; both
+# save_api_key and the launcher's _set_env_var route through it (no second
+# hand-rolled, unquoted implementation).
+_env_write_kv() {
+    local env_file="$1" key="$2" value="$3"
+    MEDIASTACK_ENV_WRITE_VALUE="$value" python3 - "$env_file" "$key" <<'PY'
 import os
 import pathlib
 import re
@@ -249,7 +286,7 @@ import tempfile
 
 env_path = pathlib.Path(sys.argv[1])
 key = sys.argv[2]
-value = os.environ.get("MEDIASTACK_SAVE_API_VALUE", "")
+value = os.environ.get("MEDIASTACK_ENV_WRITE_VALUE", "")
 
 if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
     print("invalid-key")
@@ -326,24 +363,38 @@ except OSError as exc:
 
 print("changed")
 PY
-    ); then
-        case "$writer_status" in
-            invalid-key)
-                log_warn "Refusing to save invalid .env key name: ${key_name}"
-                ;;
-            invalid-newline)
-                log_warn "Refusing to save ${key_name} to .env: value contains a newline"
-                ;;
-            invalid-quote)
-                log_warn "Refusing to save ${key_name} to .env: value contains a single quote"
-                ;;
-            read-error:*|write-error:*)
-                log_warn "Failed to save ${key_name} to .env (${writer_status#*:})"
-                ;;
-            *)
-                log_warn "Failed to save ${key_name} to .env"
-                ;;
-        esac
+}
+
+# Map an _env_write_kv failure status to a user-facing log_warn line. Shared by
+# the writer's callers so the refusal/error messages stay consistent.
+_env_write_kv_warn() {
+    local key_name="$1" status="$2"
+    case "$status" in
+        invalid-key)
+            log_warn "Refusing to save invalid .env key name: ${key_name}"
+            ;;
+        invalid-newline)
+            log_warn "Refusing to save ${key_name} to .env: value contains a newline"
+            ;;
+        invalid-quote)
+            log_warn "Refusing to save ${key_name} to .env: value contains a single quote"
+            ;;
+        read-error:*|write-error:*)
+            log_warn "Failed to save ${key_name} to .env (${status#*:})"
+            ;;
+        *)
+            log_warn "Failed to save ${key_name} to .env"
+            ;;
+    esac
+}
+
+save_api_key() {
+    local key_name="$1" key_value="$2" env_file="$SCRIPT_DIR/.env"
+    [[ -f "$env_file" ]] || return
+
+    local writer_status
+    if ! writer_status=$(_env_write_kv "$env_file" "$key_name" "$key_value"); then
+        _env_write_kv_warn "$key_name" "$writer_status"
         return 1
     fi
 

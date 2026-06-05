@@ -50,10 +50,10 @@ configure_jellyfin() {
                 configure_jellyfin_networking "$jf_url" "$jf_token"
                 ;;
             2)
-                log_warn "Jellyfin rejected JELLYFIN_ADMIN_PASSWORD from .env — verify the password matches what Jellyfin has stored."
+                log_warn "Jellyfin rejected JELLYFIN_ADMIN_PASSWORD from .env - verify the password matches what Jellyfin has stored."
                 ;;
             *)
-                log_warn "Jellyfin auth subsystem did not become ready within 30s — skipping configuration."
+                log_warn "Jellyfin auth subsystem did not become ready within 30s - skipping configuration."
                 ;;
         esac
         return 0
@@ -209,7 +209,7 @@ else:
                 continue
                 ;;
             drift)
-                log_warn "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). Jellyfin cannot re-root a library without losing watch history. To migrate: Jellyfin UI → Dashboard → Libraries → delete '$lib_name' and re-run configure.sh (accepts history loss), or rebuild (docker compose down -v && ./setup.sh --full)."
+                log_warn "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). Jellyfin cannot re-root a library without losing watch history. To migrate: Jellyfin UI -> Dashboard -> Libraries -> delete '$lib_name' and re-run configure.sh (accepts history loss), or rebuild (docker compose down -v && ./setup.sh --full)."
                 continue
                 ;;
         esac
@@ -244,9 +244,9 @@ configure_jellyfin_encoding() {
 
     if [[ "$gpu" == "none" || -z "$gpu" ]]; then
         case "${STAGE_3_GPU_STATE:-}" in
-            skipped)  log_skip "Hardware transcoding: skipped — Jellyfin will use software transcoding" ;;
-            fallback) log_skip "Hardware transcoding: fallback — Jellyfin will use software transcoding" ;;
-            *)        log_skip "Hardware transcoding: not configured yet — setup handles GPU after Core LAN" ;;
+            skipped)  log_skip "Hardware transcoding: skipped - Jellyfin will use software transcoding" ;;
+            fallback) log_skip "Hardware transcoding: fallback - Jellyfin will use software transcoding" ;;
+            *)        log_skip "Hardware transcoding: not configured yet - setup handles GPU after Core LAN" ;;
         esac
         return 0
     fi
@@ -270,7 +270,7 @@ configure_jellyfin_encoding() {
     local current_config
     if ! current_config=$(api_fetch "Jellyfin encoding config" \
         "$jf_url/System/Configuration/encoding" -H "Authorization: $auth"); then
-        log_warn "Could not read Jellyfin encoding config — skipping"
+        log_warn "Could not read Jellyfin encoding config - skipping"
         return 0
     fi
 
@@ -295,7 +295,7 @@ print(c.get('HardwareAccelerationType', ''))" 2>/dev/null)
         esac
     fi
     if [[ "$current_accel" != "$accel_type" && "$current_accel" != "none" && -n "$current_accel" && "$allow_intel_method_switch" != "true" ]]; then
-        log_warn "Jellyfin transcoding is '$current_accel', expected '$accel_type' (from JELLYFIN_GPU=$gpu). To reset: Jellyfin Dashboard → Playback → Transcoding."
+        log_warn "Jellyfin transcoding is '$current_accel', expected '$accel_type' (from JELLYFIN_GPU=$gpu). To reset: Jellyfin Dashboard -> Playback -> Transcoding."
         return 0
     fi
 
@@ -368,7 +368,7 @@ if changed:
         return 0
     fi
     if [[ "$encoding_action" != "APPLY" ]]; then
-        log_warn "Unexpected Jellyfin encoding config diff result — skipping"
+        log_warn "Unexpected Jellyfin encoding config diff result - skipping"
         return 0
     fi
     if [[ "$stage3_state" == "complete" ]]; then
@@ -385,7 +385,7 @@ if changed:
         -d "$encoding_body" >/dev/null; then
         log_ok "Hardware transcoding: $accel_type (from JELLYFIN_GPU=$gpu)"
     else
-        log_warn "Failed to set Jellyfin encoding config — configure manually in Dashboard → Playback → Transcoding"
+        log_warn "Failed to set Jellyfin encoding config - configure manually in Dashboard -> Playback -> Transcoding"
     fi
 }
 
@@ -400,7 +400,7 @@ configure_jellyfin_server_name() {
     local current_config
     if ! current_config=$(api_fetch "Jellyfin server config" \
         "$jf_url/System/Configuration" -H "Authorization: $auth"); then
-        log_warn "Could not read Jellyfin server config — skipping server name"
+        log_warn "Could not read Jellyfin server config - skipping server name"
         return 0
     fi
 
@@ -437,7 +437,7 @@ print(json.dumps(c))")
         -d "$updated_config" >/dev/null; then
         log_ok "Server name: $want_name"
     else
-        log_warn "Failed to set server name — configure manually in Dashboard → General"
+        log_warn "Failed to set server name - configure manually in Dashboard -> General"
     fi
 }
 
@@ -451,7 +451,7 @@ configure_jellyfin_streaming() {
     # Accept decimal Mbps (3.5, 12.5, etc.) — useful for ISPs whose upload
     # doesn't divide neatly across viewer counts. Reject only true garbage.
     if ! [[ "$bitrate_mbps" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-        log_warn "jellyfin.remote_bitrate_limit is not a valid number ('$bitrate_mbps') — skipping"
+        log_warn "jellyfin.remote_bitrate_limit is not a valid number ('$bitrate_mbps') - skipping"
         return 0
     fi
     # Use python for the Mbps→bps conversion so decimals survive (bash
@@ -463,7 +463,7 @@ configure_jellyfin_streaming() {
     local current_config
     if ! current_config=$(api_fetch "Jellyfin server config" \
         "$jf_url/System/Configuration" -H "Authorization: $auth"); then
-        log_warn "Could not read Jellyfin server config — skipping streaming limit"
+        log_warn "Could not read Jellyfin server config - skipping streaming limit"
         return 0
     fi
 
@@ -501,11 +501,11 @@ print(json.dumps(c))")
             log_ok "Remote streaming limit: ${bitrate_mbps} Mbps"
             local domain="${DOMAIN:-}"
             if [[ -n "$domain" && "$domain" != "example.com" ]]; then
-                log_info "Bitrate limit for proxied users requires KnownProxies — configuring next"
+                log_info "Bitrate limit for proxied users requires KnownProxies - configuring next"
             fi
         fi
     else
-        log_warn "Failed to set streaming limit — configure manually in Dashboard → Playback → Streaming"
+        log_warn "Failed to set streaming limit - configure manually in Dashboard -> Playback -> Streaming"
     fi
 }
 
@@ -516,7 +516,7 @@ configure_jellyfin_networking() {
     local current_config
     if ! current_config=$(api_fetch "Jellyfin network config" \
         "$jf_url/System/Configuration/network" -H "Authorization: $auth"); then
-        log_warn "Could not read Jellyfin network config — skipping"
+        log_warn "Could not read Jellyfin network config - skipping"
         return 0
     fi
 
@@ -651,32 +651,32 @@ else:
             if [[ "$published_url_changed" == "true" ]]; then
                 log_info "Recreating Jellyfin for PublishedServerUrl change..."
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
-                    log_warn "Failed to recreate Jellyfin — check 'docker compose logs jellyfin'"
+                    log_warn "Failed to recreate Jellyfin - check 'docker compose logs jellyfin'"
                 fi
-                local i; for i in $(seq 1 30); do
+                for _ in $(seq 1 30); do
                     curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
                 done
                 if ! curl -sf http://localhost:8096/health >/dev/null 2>&1; then
-                    log_warn "Jellyfin did not become healthy within 60s after recreate — check 'docker logs jellyfin'"
+                    log_warn "Jellyfin did not become healthy within 60s after recreate - check 'docker logs jellyfin'"
                 fi
             fi
             return 0
             ;;
         DRIFT)
             echo "$result" | tail -n +2 | while IFS= read -r msg; do
-                log_warn "Jellyfin networking: $msg — not overwriting (changed in UI?)"
+                log_warn "Jellyfin networking: $msg - not overwriting (changed in UI?)"
             done
             save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
             if [[ "$published_url_changed" == "true" ]]; then
                 log_info "Recreating Jellyfin for PublishedServerUrl change..."
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
-                    log_warn "Failed to recreate Jellyfin — check 'docker compose logs jellyfin'"
+                    log_warn "Failed to recreate Jellyfin - check 'docker compose logs jellyfin'"
                 fi
-                local i; for i in $(seq 1 30); do
+                for _ in $(seq 1 30); do
                     curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
                 done
                 if ! curl -sf http://localhost:8096/health >/dev/null 2>&1; then
-                    log_warn "Jellyfin did not become healthy within 60s after recreate — check 'docker logs jellyfin'"
+                    log_warn "Jellyfin did not become healthy within 60s after recreate - check 'docker logs jellyfin'"
                 fi
             fi
             return 0
@@ -686,7 +686,7 @@ else:
             drift_lines=$(echo "$result" | sed '1d;/^---$/,$d')
             body=$(echo "$result" | sed '1,/^---$/d')
             echo "$drift_lines" | while IFS= read -r msg; do
-                log_warn "Jellyfin networking: $msg — not overwriting (changed in UI?)"
+                log_warn "Jellyfin networking: $msg - not overwriting (changed in UI?)"
             done
             ;;
         APPLY)
@@ -694,7 +694,7 @@ else:
             body=$(echo "$result" | tail -n +2)
             ;;
         *)
-            log_warn "Unexpected result from networking config check — skipping"
+            log_warn "Unexpected result from networking config check - skipping"
             return 0
             ;;
     esac
@@ -718,21 +718,21 @@ else:
             sleep 2
             log_info "Recreating Jellyfin for networking and PublishedServerUrl changes to take effect..."
             if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
-                log_warn "Failed to recreate Jellyfin — check 'docker compose logs jellyfin'"
+                log_warn "Failed to recreate Jellyfin - check 'docker compose logs jellyfin'"
             fi
         else
             log_info "Restarting Jellyfin for networking changes to take effect..."
             if ! docker compose restart jellyfin >/dev/null 2>&1; then
-                log_warn "Failed to restart Jellyfin — check 'docker compose logs jellyfin'"
+                log_warn "Failed to restart Jellyfin - check 'docker compose logs jellyfin'"
             fi
         fi
-        local i; for i in $(seq 1 30); do
+        for _ in $(seq 1 30); do
             curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
         done
         if ! curl -sf http://localhost:8096/health >/dev/null 2>&1; then
-            log_warn "Jellyfin did not become healthy within 60s after restart — check 'docker logs jellyfin'"
+            log_warn "Jellyfin did not become healthy within 60s after restart - check 'docker logs jellyfin'"
         fi
     else
-        log_warn "Failed to set Jellyfin networking config — configure manually in Dashboard → Networking"
+        log_warn "Failed to set Jellyfin networking config - configure manually in Dashboard -> Networking"
     fi
 }

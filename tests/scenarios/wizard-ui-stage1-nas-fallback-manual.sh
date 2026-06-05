@@ -25,7 +25,7 @@ storage_mount_nfs() {
     local attempts=0
     [[ -f /tmp/wizard-nas-manual-mount-attempts ]] && attempts=\$(cat /tmp/wizard-nas-manual-mount-attempts)
     attempts=\$((attempts + 1))
-    printf '%s\n' "\$attempts" > /tmp/wizard-nas-manual-mount-attempts
+    printf '%s\n' \$attempts > /tmp/wizard-nas-manual-mount-attempts
     (( attempts >= 2 ))
 }
 BASH"

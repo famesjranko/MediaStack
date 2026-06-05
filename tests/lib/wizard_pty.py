@@ -55,7 +55,14 @@ def wait_for_pattern(
     pattern: str,
     timeout: float,
     raw_parts: list[str],
-) -> str:
+    optional: bool = False,
+) -> "str | None":
+    # An optional step models a prompt that only appears under some runtime conditions —
+    # e.g. the Stage 3 "Reboot now?" prompt is shown only when a reboot is actually needed
+    # (stage3_reboot_prompt_needed); when the NVIDIA driver loads + verifies live, Stage 3
+    # finalizes in-line and the prompt never appears. For an optional step, a clean process
+    # exit (or a timeout) WITHOUT a match returns None ("not matched, skip the send") instead
+    # of failing the run. A required step keeps the original loud-failure behaviour.
     deadline = time.monotonic() + timeout
     compiled = re.compile(pattern, re.MULTILINE | re.DOTALL)
     while time.monotonic() < deadline:
@@ -72,11 +79,15 @@ def wait_for_pattern(
             plain = strip_ansi("".join(raw_parts))
             if compiled.search(plain):
                 return plain
+            if optional:
+                return None
             raise RuntimeError(
                 f"process exited before pattern matched: {pattern!r}\n"
                 f"--- transcript tail ---\n{tail_lines(plain)}"
             )
         time.sleep(0.05)
+    if optional:
+        return None
     plain = strip_ansi("".join(raw_parts))
     raise TimeoutError(
         f"timed out waiting for pattern: {pattern!r}\n"
@@ -119,9 +130,15 @@ def run(args: argparse.Namespace) -> int:
         for idx, step in enumerate(steps, start=1):
             timeout = float(step.get("timeout", args.step_timeout))
             expect = step.get("expect")
+            optional = bool(step.get("optional", False))
+            matched = True
             if expect:
-                wait_for_pattern(proc, master_fd, expect, timeout, raw_parts)
-            if "send" in step:
+                result = wait_for_pattern(
+                    proc, master_fd, expect, timeout, raw_parts, optional=optional
+                )
+                matched = result is not None
+            # Skip the send for an optional step whose prompt never appeared.
+            if matched and "send" in step:
                 os.write(master_fd, str(step["send"]).encode("utf-8"))
 
         deadline = time.monotonic() + float(args.exit_timeout)

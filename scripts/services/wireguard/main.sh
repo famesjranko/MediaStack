@@ -20,7 +20,7 @@ configure_wireguard() {
     local server_lan_ip="${WG_SERVER_LAN_IP:-${HOST_ADDRESS:-}}"
 
     if [[ -z "$wg_pw" ]]; then
-        log_warn "JELLYFIN_ADMIN_PASSWORD not set in .env — skipping WireGuard"
+        log_warn "JELLYFIN_ADMIN_PASSWORD not set in .env - skipping WireGuard"
         return 0
     fi
 
@@ -38,7 +38,7 @@ configure_wireguard() {
     # tunnel. Pairing it with a restrictive tier silently neutralizes the
     # tier's server-side enforcement, which is almost certainly user error.
     if [[ "$per_client_fw" == "false" && "$access_tier" != "full-lan" ]]; then
-        log_warn "WG_PER_CLIENT_FIREWALL=false with WG_ACCESS_TIER='$access_tier' disables the tier's server-side enforcement — peers will reach more than the tier name suggests. If you wanted full tunnel, also set WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0'."
+        log_warn "WG_PER_CLIENT_FIREWALL=false with WG_ACCESS_TIER='$access_tier' disables the tier's server-side enforcement - peers will reach more than the tier name suggests. If you wanted full tunnel, also set WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0'."
     fi
 
     # Readiness probe. v15 has no /api/health; use GET /api/client with Basic
@@ -51,7 +51,7 @@ configure_wireguard() {
         case "$probe_code" in
             200) break ;;
             401)
-                log_warn "wg-easy rejected Basic Auth for '$wg_user' — UI password may have been changed; skipping configurator"
+                log_warn "wg-easy rejected Basic Auth for '$wg_user' - UI password may have been changed; skipping configurator"
                 return 0
                 ;;
             *)
@@ -61,7 +61,7 @@ configure_wireguard() {
         esac
     done
     if [[ "$probe_code" != "200" ]]; then
-        log_warn "wg-easy did not become ready within $(( max_attempts * 2 ))s — skipping configurator"
+        log_warn "wg-easy did not become ready within $(( max_attempts * 2 ))s - skipping configurator"
         return 0
     fi
 

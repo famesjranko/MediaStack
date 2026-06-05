@@ -180,6 +180,58 @@ apply_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$apply_out" "AFTER_UPSTREAM=[sonarr" "apply: upstream update floats the service to Upstream tag"
 assert_contains "$apply_out" "AFTER_TESTED=[]"        "apply: tested Stable update stays on Stable (no float)"
 
+# Safety gate: a single-service upstream apply MUST confirm before floating. When
+# the user declines (ui_confirm -> 1), no policy row is written and the service
+# stays on tested Stable. (The bulk path passes skip_confirm=1 to bypass this -
+# covered by the update-all test above, which still floats jellyfin.)
+decline_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; mkdir -p "$tmp/config/state"
+  IMAGE_CHANNEL=stable
+  _regenerate_override(){ return 0; }
+  storage_guard_before_start(){ return 0; }
+  _wait_service_running(){ :; }
+  ui_log(){ :; }; ui_confirm(){ return 1; }
+  docker(){ return 0; }
+  pol(){ grep -v "^#" "$tmp/config/state/image-policy.tsv" 2>/dev/null | tr "\n" " "; }
+
+  _apply_service_update sonarr "Untested upstream update available"
+  rc=$?
+  echo "DECLINE_RC=$rc"
+  echo "DECLINE_POLICY=[$(pol)]"
+  # skip_confirm=1 bypasses the decline and floats even with ui_confirm -> 1.
+  rm -f "$tmp/config/state/image-policy.tsv"
+  _apply_service_update radarr "Untested upstream update available" 1
+  echo "SKIP_POLICY=[$(pol)]"
+  rm -rf "$tmp"
+' 2>&1)
+assert_contains "$decline_out" "DECLINE_RC=0"      "apply: declined float returns success (no error)"
+assert_contains "$decline_out" "DECLINE_POLICY=[]" "apply: declined float writes no policy row (stays on Stable)"
+assert_contains "$decline_out" "SKIP_POLICY=[radarr" "apply: skip_confirm bypasses the prompt and floats anyway"
+
+# WireGuard single-service float: its own "Update WireGuard now?" confirm already
+# carries the off-baseline warning and gates the float, so the generic float
+# branch must NOT re-prompt - exactly one confirm, and accepting still floats.
+wg_float_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; mkdir -p "$tmp/config/state"
+  IMAGE_CHANNEL=stable
+  _regenerate_override(){ return 0; }
+  storage_guard_before_start(){ return 0; }
+  _wait_service_running(){ :; }
+  N=0
+  ui_log(){ :; }; ui_confirm(){ N=$((N+1)); return 0; }
+  docker(){ return 0; }
+  pol(){ grep -v "^#" "$tmp/config/state/image-policy.tsv" 2>/dev/null | tr "\n" " "; }
+
+  _apply_service_update wireguard "Untested upstream update available"
+  echo "WG_CONFIRMS=$N"
+  echo "WG_POLICY=[$(pol)]"
+  rm -rf "$tmp"
+' 2>&1)
+assert_contains "$wg_float_out" "WG_CONFIRMS=1"      "apply: single-service WireGuard float prompts once (no double-confirm)"
+assert_contains "$wg_float_out" "WG_POLICY=[wireguard" "apply: accepted WireGuard float still floats to its Upstream tag"
+
 # Reset-to-default lists only services with an *explicit* manual override, and
 # never a Not-installed one (Finding 1: must not start uninstalled services).
 reset_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '

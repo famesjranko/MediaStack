@@ -26,15 +26,15 @@ assert_eq "empty" "$(storage_classify_data_root "$TMP_DIR")" "storage classify: 
 mkdir -p "$TMP_DIR/media/movies" "$TMP_DIR/torrents/tv"
 assert_eq "mediastack" "$(storage_classify_data_root "$TMP_DIR")" "storage classify: existing MediaStack layout"
 
-rm -rf "$TMP_DIR"/*
+rm -rf "${TMP_DIR:?}"/*
 mkdir -p "$TMP_DIR/Photos"
 assert_eq "nonempty" "$(storage_classify_data_root "$TMP_DIR")" "storage classify: unrelated non-empty root"
 
-rm -rf "$TMP_DIR"/*
+rm -rf "${TMP_DIR:?}"/*
 touch "$TMP_DIR/media"
 assert_eq "conflict:media" "$(storage_classify_data_root "$TMP_DIR")" "storage classify: media file conflict"
 
-rm -rf "$TMP_DIR"/*
+rm -rf "${TMP_DIR:?}"/*
 touch "$TMP_DIR/torrents"
 assert_eq "conflict:torrents" "$(storage_classify_data_root "$TMP_DIR")" "storage classify: torrents file conflict"
 
@@ -151,7 +151,7 @@ case "$(cat "$MOUNT_REPAIR_CALLS")" in
         ;;
 esac
 
->"$MOUNT_REPAIR_CALLS"
+: >"$MOUNT_REPAIR_CALLS"
 MOUNT_REPAIR_CONFIRM_PROMPTS=0
 MOUNT_REPAIR_SOURCE="192.0.2.99:/exports/old"
 MOUNT_REPAIR_FSTYPE=nfs4
@@ -345,13 +345,13 @@ storage_pause_watchdog_for_install
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "stop mediastack-storage-watchdog.service" "watchdog install pause: stops existing service before Stage 1 stack stop"
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "disable mediastack-storage-watchdog.service" "watchdog install pause: disables existing service until stack starts"
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "is-active mediastack-storage-watchdog.service" "watchdog install pause: verifies service is inactive after stop"
->"$WATCHDOG_SYSTEMCTL_LOG"
+: >"$WATCHDOG_SYSTEMCTL_LOG"
 STORAGE_MODE=local
 STORAGE_APP_WIRING=manual
 storage_pause_watchdog_for_install
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "stop mediastack-storage-watchdog.service" "watchdog install pause: local/manual fallback still stops stale watchdog"
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "disable mediastack-storage-watchdog.service" "watchdog install pause: local/manual fallback still disables stale watchdog"
->"$WATCHDOG_SYSTEMCTL_LOG"
+: >"$WATCHDOG_SYSTEMCTL_LOG"
 WATCHDOG_SYSTEMCTL_STATE=active
 if storage_pause_watchdog_for_install; then
     fail "watchdog install pause: active-after-stop watchdog aborts setup"
@@ -359,7 +359,7 @@ else
     pass "watchdog install pause: active-after-stop watchdog aborts setup"
 fi
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "is-active mediastack-storage-watchdog.service" "watchdog install pause: active-after-stop path verifies live state"
->"$WATCHDOG_SYSTEMCTL_LOG"
+: >"$WATCHDOG_SYSTEMCTL_LOG"
 WATCHDOG_SYSTEMCTL_STATE=
 WATCHDOG_SYSTEMCTL_QUERY_FAIL=true
 if storage_pause_watchdog_for_install; then

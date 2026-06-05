@@ -20,9 +20,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=../lib/assert.sh
 source "$REPO_ROOT/tests/lib/assert.sh"
+# Read by tests/lib/assert.sh for failure labels.
+# shellcheck disable=SC2034
 CURRENT_SCENARIO="ui-box-alignment"
 echo -e "${CYAN}${BOLD}▶ scenario: ui-box-alignment${NC}"
 
+# Force colour AND glyphs ON before sourcing. This test runs non-TTY with no
+# UTF-8 locale guarantee, where term_caps.sh would otherwise blank the palette
+# (no ANSI to strip) and pick ASCII box chars (the grep for │/╭/╰ below would
+# find nothing) — making the F-005 assertions pass vacuously. The forces keep
+# the coloured unicode render path under test. Must be set BEFORE the source:
+# the palette and glyph vocabulary are frozen at source time.
+export UI_FORCE_COLOR=1
+export UI_FORCE_GLYPHS=1
 # shellcheck source=../../scripts/lib/ui_fallback.sh
 source "$REPO_ROOT/scripts/lib/ui_fallback.sh"
 

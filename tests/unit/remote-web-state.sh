@@ -138,6 +138,8 @@ JELLYFIN_ADMIN_USER="admin"
 NPM_ADMIN_EMAIL="owner@gate.test"
 TORRENT_PORT="6881"
 WG_PORT="51820"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 GPU_TYPE="none"
 SMB_ENABLED="false"
 BAZARR_ENABLED="false"

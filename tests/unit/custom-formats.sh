@@ -59,7 +59,6 @@ fi
 # =========================================================================
 # All 7 expected formats present
 # =========================================================================
-expected_names="Repack/Proper x264 x265 (HD) BR-DISK LQ No-RlsGroup Obfuscated"
 found_names=$(python3 -c "
 import yaml
 with open('$FORMATS_FILE') as f:

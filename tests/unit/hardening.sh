@@ -11,6 +11,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=../lib/assert.sh
 source "$REPO_ROOT/tests/lib/assert.sh"
+# Read by tests/lib/assert.sh for failure labels.
+# shellcheck disable=SC2034
 CURRENT_SCENARIO="hardening"
 echo -e "${CYAN}${BOLD}▶ scenario: hardening${NC}"
 
@@ -416,6 +418,8 @@ sudo() {
     return 0
 }
 
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 SSH_CONNECTION="192.168.1.50 55123 192.168.1.20 2222"
 UFW_CALLS=()
 setup_ufw
@@ -609,6 +613,8 @@ sys.exit(1)
     GPU_RUNTIME_RESULT=\"\$has_nvidia\"
 }"
 
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 GPU_TYPE="nvidia"
 GPU_RUNTIME_RESULT=""
 verify_gpu_runtime_valid_test
@@ -723,15 +729,42 @@ sudo() {
 # samba isn't installed. See note in the fresh-path test.
 smbd() { :; }
 
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 SMB_ENABLED="true"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 JELLYFIN_ADMIN_USER="testadmin"
 JELLYFIN_ADMIN_PASSWORD="testpass"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 DATA_DIR="/data"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 PGID="1000"
 setup_samba
 # Skip path runs ONLY the grep idempotency check, then returns. No useradd,
 # no tee, no systemctl, no ufw — which means SAMBA_CALLS stays empty.
 assert_eq "0" "${#SAMBA_CALLS[@]}" "setup_samba: skip when include file + include line both present"
+unset -f sudo smbd
+
+# Regression: idempotency keys on the functional `include = <path>` line, NOT a
+# decorative comment marker. An existing install whose main smb.conf has the
+# include line but no (or a differently-punctuated) comment must still be
+# detected as already-configured — a prose marker's em-dash was once a fragile
+# byte-exact grep target that silently broke this.
+cat > "$SAMBA_MAIN_CONF" <<EOF
+[global]
+   workgroup = WORKGROUP
+
+include = $SAMBA_INCLUDE_FILE
+EOF
+SAMBA_CALLS=()
+sudo() { if [[ "${1:-}" == "grep" ]]; then shift; command grep "$@"; return $?; fi; SAMBA_CALLS+=("$*"); return 0; }
+smbd() { :; }
+SMB_ENABLED="true"; JELLYFIN_ADMIN_USER="testadmin"; JELLYFIN_ADMIN_PASSWORD="testpass"; DATA_DIR="/data"; PGID="1000"
+setup_samba
+assert_eq "0" "${#SAMBA_CALLS[@]}" "setup_samba: skip is comment-independent (detects bare include line, no marker)"
 unset -f sudo smbd
 
 # ===========================================================================
@@ -753,6 +786,8 @@ cat > "$SAMBA_MAIN_CONF" <<'EOF'
    path = /home/user/share
    read only = no
 EOF
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 SAMBA_MAIN_BEFORE_BYTES=$(wc -c < "$SAMBA_MAIN_CONF")
 
 SAMBA_CALLS=()
@@ -791,10 +826,18 @@ getent() {
     return 1
 }
 
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 SMB_ENABLED="true"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 JELLYFIN_ADMIN_USER="testadmin"
 JELLYFIN_ADMIN_PASSWORD="testpass"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 DATA_DIR="/data"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 PGID="1000"
 
 SAMBA_CALLS=()
@@ -872,6 +915,8 @@ cat > "$SAMBA_MAIN_CONF" <<'EOF'
 [global]
    workgroup = HOMEUSER
 EOF
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 SMB_SHARE_SCOPE="system"
 setup_samba
 if grep -Fxq "[MediaStackSystem]" "$SAMBA_INCLUDE_FILE" \
@@ -900,8 +945,12 @@ sudo() {
     return 0
 }
 
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 TORRENT_PORT="50000"
 DOMAIN="media.example.com"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 WG_PORT="51999"
 
 UFW_CALLS=()
@@ -920,6 +969,8 @@ assert_eq "true" "$found_torrent_udp" "setup_ufw_service_ports: opens custom tor
 assert_eq "true" "$found_wg" "setup_ufw_service_ports: opens custom WireGuard port when domain set"
 
 # Without domain — WireGuard port should not be opened
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 DOMAIN="example.com"
 UFW_CALLS=()
 setup_ufw_service_ports

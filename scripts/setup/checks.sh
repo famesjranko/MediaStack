@@ -4,6 +4,18 @@
 # Sourced by setup.sh. Depends on $SCRIPT_DIR and scripts/lib/common.sh
 # being loaded by the caller.
 
+# Tell the day-2 launcher (mediastack) the real recovery outcome. The launcher
+# runs setup.sh as a child process and can't see RECOVERY_MENU_ACTION across the
+# boundary, so it can't tell a real wipe/reinstall (exit 0) from a user who
+# backed out (also exit 0) or a deliberate abort (exit 1) from a crash. When the
+# launcher wants to know, it sets MEDIASTACK_LAUNCHER_RESULT to a file path and
+# we drop a one-word token in it. No-op for direct `./setup.sh` runs (and the
+# DinD recovery fixtures), which never set the variable. set -u safe.
+record_launcher_outcome() {
+    [[ -n "${MEDIASTACK_LAUNCHER_RESULT:-}" ]] || return 0
+    printf '%s\n' "$1" >"$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null || true
+}
+
 check_not_root() {
     if [[ $EUID -eq 0 ]]; then
         log_error "Do not run this script as root. Run as your normal user (sudo will be used when needed)."
@@ -136,7 +148,7 @@ check_ram_warn() {
         total_gb=$(awk '/^MemTotal:/ {print int($2/1024/1024)}' /proc/meminfo)
     fi
     if [[ -z "$free_gb" ]]; then
-        log_warn "Could not read MemAvailable from /proc/meminfo — skipping RAM check"
+        log_warn "Could not read MemAvailable from /proc/meminfo - skipping RAM check"
         return 0
     fi
     # Show "X of Y total" so non-technical users have context — "Only 1GB free"
@@ -144,9 +156,9 @@ check_ram_warn() {
     local ctx="${free_gb}GB"
     [[ -n "$total_gb" ]] && ctx="${free_gb}GB free of ${total_gb}GB total"
     if (( free_gb < 2 )); then
-        log_warn "Only ${ctx} — Bazarr/Jellyseerr may struggle. Continuing."
+        log_warn "Only ${ctx} - Bazarr/Jellyseerr may struggle. Continuing."
     elif (( free_gb < 4 )); then
-        log_warn "Only ${ctx} — flaresolverr (Cloudflare bypass) needs ~1GB for Chromium and may flap on this host. If indexer tests stall, consider disabling the public indexer preset. Continuing."
+        log_warn "Only ${ctx} - flaresolverr (Cloudflare bypass) needs ~1GB for Chromium and may flap on this host. If indexer tests stall, consider disabling the public indexer preset. Continuing."
     else
         log_ok "RAM: ${ctx}"
     fi
@@ -322,11 +334,13 @@ detect_existing_install() {
             ;;
         "Abort"*)
             log_info "Aborted by user. No changes made."
+            record_launcher_outcome aborted
             exit 0
             ;;
         *)
             # Unexpected ui_choose output — treat as abort (defensive).
             log_warn "Unexpected choice: ${choice}. Aborting."
+            record_launcher_outcome aborted
             exit 0
             ;;
     esac
@@ -340,12 +354,12 @@ _print_destroy_preview() {
     cat <<'PREVIEW'
 
 This will DELETE:
-  • Docker containers and named volumes (compose --profile '*' down -v)
-  • .env (your secrets file — passwords, API keys, domain)
+  * Docker containers and named volumes (compose --profile '*' down -v)
+  * .env (your secrets file - passwords, API keys, domain)
 
 This will PRESERVE:
-  • data/ — your media library (bind mount, never touched by 'down -v')
-  • Pre-seeded configs tracked in git (fail2ban filters, jackett ServerConfig, etc.)
+  * data/ - your media library (bind mount, never touched by 'down -v')
+  * Pre-seeded configs tracked in git (fail2ban filters, jackett ServerConfig, etc.)
 
 PREVIEW
 }
@@ -366,6 +380,7 @@ nuke_existing_install() {
 
     if [[ "$cleaned" != "DESTROY" ]]; then
         log_info "Aborted. No changes made."
+        record_launcher_outcome aborted
         exit 0
     fi
 

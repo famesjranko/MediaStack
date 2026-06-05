@@ -13,6 +13,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Demo mode renders the UI for review / screenshots, usually through a pipe
+# (non-TTY) and sometimes with NO_COLOR set. Force the full colour + glyph
+# render BEFORE the UI libs below freeze their palette + glyph vocabulary at
+# source time — ui_demo.sh also sets these, but it is sourced too late to win.
+[[ " $* " == *" --demo "* ]] && export UI_DEMO=1 UI_FORCE_COLOR=1 UI_FORCE_GLYPHS=1
+
 source "$SCRIPT_DIR/scripts/lib/common.sh"
 source "$SCRIPT_DIR/scripts/lib/ui.sh"
 
@@ -33,6 +39,25 @@ source "$SCRIPT_DIR/scripts/setup/recovery.sh"
 # Main
 # =============================================================================
 
+# Interactive interrupt handler. The target user reflexively hits Ctrl-C on a
+# long, opaque wait (pull_images / start_stack are plain foreground commands)
+# and otherwise lands on a bare bash prompt with no idea whether the box is
+# half-broken or how to resume. Installed only on a TTY (see main), so CI,
+# piped stdin, and the post-reboot systemd run (all non-TTY) behave exactly as
+# before and the post-reboot ERR trap is untouched.
+_setup_on_interrupt() {
+    trap - INT TERM
+    echo ""
+    log_warn "Setup interrupted."
+    if [[ -n "${DATA_DIR:-}" ]]; then
+        log_info "Nothing was destroyed — your media in ${DATA_DIR} is untouched."
+    else
+        log_info "Nothing was destroyed — your existing media and downloads are untouched."
+    fi
+    log_info "Re-run ./setup.sh to resume where you left off."
+    exit 130
+}
+
 main() {
     ui_banner "MediaStack Setup" "Turnkey Media Server for Home Networks"
 
@@ -45,6 +70,21 @@ main() {
 
     if $_is_post_reboot; then
         trap 'write_setup_result "error"' ERR
+    fi
+
+    # Reassure a user who Ctrl-C's a long step. Interactive only: on a non-TTY
+    # (CI, piped stdin, post-reboot systemd) the trap is never installed, so
+    # signal handling and the ERR trap above stay exactly as before. Single
+    # quotes keep $DATA_DIR expansion at fire-time, not install-time.
+    if [[ -t 0 ]]; then
+        trap '_setup_on_interrupt' INT TERM
+    else
+        # Non-TTY (piped) only: ui_choose SIGTERMs the process group when its
+        # stdin runs dry. Map that group-kill to a distinct, documented exit
+        # code so a piped driver can tell "input exhausted" apart from a generic
+        # kill (143) or a real failure. ERR/post-reboot handling above is on a
+        # different signal and is untouched.
+        trap 'log_warn "No more input on stdin - exiting non-interactive setup."; exit '"${UI_EXIT_INPUT_EXHAUSTED:-3}"'' TERM
     fi
 
     check_not_root
@@ -62,6 +102,7 @@ main() {
             if $_is_post_reboot; then
                 write_setup_result "ok"
             fi
+            record_launcher_outcome completed
             return 0
         fi
         log_info "NVIDIA hardware transcoding is prepared; finalization will run after reboot."
@@ -95,6 +136,7 @@ main() {
         if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
             echo ""
             log_warn "Docker and/or Docker Compose v2 is not installed on this host."
+            log_info "Docker is the container engine MediaStack runs on - a normal, safe one-time install."
             log_info "MediaStack can install them now via the official Docker apt repository."
             local _install_choice
             _install_choice=$(ui_choose "Install prerequisites and continue?" \
@@ -103,10 +145,11 @@ main() {
             case "$_install_choice" in
                 "Install Docker + Compose and continue")
                     FULL_MODE=true
-                    log_ok "Will install prerequisites — equivalent to ./setup.sh --full"
+                    log_ok "Will install prerequisites - equivalent to ./setup.sh --full"
                     ;;
                 *)
                     log_info "Exiting. Install Docker, then re-run ./setup.sh"
+                    record_launcher_outcome aborted
                     exit 1
                     ;;
             esac
@@ -224,6 +267,7 @@ main() {
         if $_is_post_reboot; then
             write_setup_result "ok"
         fi
+        record_launcher_outcome completed
         return 0
     fi
 
@@ -234,10 +278,11 @@ main() {
     # services. run_stage1 already sets WIZARD_RAN_INSTALL=true on the skip
     # path, so reaching here with STAGE_1_COMPLETE=1 indicates a regression.
     if [[ "${STAGE_1_COMPLETE:-}" == "1" ]]; then
-        log_skip "Stage 1 marker present — skipping late install block (no stack churn on re-run)"
+        log_skip "Stage 1 marker present - skipping late install block (no stack churn on re-run)"
         if $_is_post_reboot; then
             write_setup_result "ok"
         fi
+        record_launcher_outcome completed
         return 0
     fi
 
@@ -264,6 +309,7 @@ main() {
     if $_is_post_reboot; then
         write_setup_result "ok"
     fi
+    record_launcher_outcome completed
 }
 
 # --- Demo mode: exercise UI components without touching the system ---

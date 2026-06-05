@@ -13,7 +13,7 @@ configure_bazarr() {
     local bazarr_config="$SCRIPT_DIR/config/bazarr/config/config.yaml"
 
     if [[ ! -f "$bazarr_config" ]]; then
-        log_warn "Bazarr config not found at $bazarr_config — skipping"
+        log_warn "Bazarr config not found at $bazarr_config - skipping"
         return 0
     fi
 
@@ -26,7 +26,7 @@ print(c.get('auth', {}).get('apikey', ''))
 " 2>/dev/null || echo "")
 
     if [[ -z "$bazarr_key" ]]; then
-        log_warn "Could not read Bazarr API key — skipping"
+        log_warn "Could not read Bazarr API key - skipping"
         return 0
     fi
 
@@ -131,7 +131,7 @@ print('changed' if changed else 'unchanged')
             log_ok "Sonarr connected to Bazarr"
             needs_restart=true
         elif [[ -z "$sonarr_key" ]]; then
-            log_warn "Sonarr API key not available — skipping Bazarr Sonarr connection"
+            log_warn "Sonarr API key not available - skipping Bazarr Sonarr connection"
         else
             log_skip "Sonarr already connected to Bazarr"
         fi
@@ -140,7 +140,7 @@ print('changed' if changed else 'unchanged')
             log_ok "Radarr connected to Bazarr"
             needs_restart=true
         elif [[ -z "$radarr_key" ]]; then
-            log_warn "Radarr API key not available — skipping Bazarr Radarr connection"
+            log_warn "Radarr API key not available - skipping Bazarr Radarr connection"
         else
             log_skip "Radarr already connected to Bazarr"
         fi
@@ -161,7 +161,7 @@ print('changed' if changed else 'unchanged')
     # --- Enable languages + create profile via SQLite ---
     local bazarr_db="$SCRIPT_DIR/config/bazarr/db/bazarr.db"
     if [[ ! -f "$bazarr_db" ]]; then
-        log_warn "Bazarr database not found at $bazarr_db — skipping language setup"
+        log_warn "Bazarr database not found at $bazarr_db - skipping language setup"
     else
         local profile_exists
         profile_exists=$(python3 -c "

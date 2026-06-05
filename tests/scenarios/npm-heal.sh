@@ -124,8 +124,7 @@ run_scenario() {
     #    asynchronously after the POST returns, so wait for it first.
     # ------------------------------------------------------------------
     local conf_path="config/npm/data/nginx/proxy_host/${host_id}.conf"
-    local i
-    for i in $(seq 1 20); do
+    for _ in $(seq 1 20); do
         if dind_exec "test -f $conf_path"; then break; fi
         sleep 1
     done
@@ -216,8 +215,8 @@ NGINX"
     # multiple times (NPM restart + first auth call land within a few ms),
     # so retry with a short backoff and capture diagnostics on failure.
     local post_token=""
-    local i token_resp
-    for i in $(seq 1 8); do
+    local token_resp
+    for _ in $(seq 1 8); do
         token_resp=$(dind_exec "curl -s -o /tmp/heal-tok-resp.json -w '%{http_code}' --max-time 10 \
             -X POST http://localhost:81/api/tokens \
             -H 'Content-Type: application/json' \

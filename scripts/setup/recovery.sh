@@ -53,13 +53,42 @@ show_existing_install_menu() {
         set +a
     fi
 
+    # Surface the CURRENT state of each add-on this menu offers, so a returning
+    # user can tell what's done vs pending before choosing. Labels are computed
+    # by the same stack.sh helpers print_final_summary uses (single source of
+    # truth — these never drift from the post-install summary). PRINTED text /
+    # ui_box content only — never a ui_choose option (that would consume a
+    # selection index and break the position-based PTY drivers).
+    local status_lines=()
+    if recovery_menu_remote_available; then
+        status_lines+=("Remote access: $(remote_state_label "${REMOTE_WEB_STATE:-}")")
+    fi
+    if recovery_menu_transcoding_available; then
+        status_lines+=("Hardware transcoding: $(transcoding_state_label "${STAGE_3_GPU_STATE:-}" "${STAGE_3_GPU_VENDOR:-}")")
+    fi
+
     if type ui_box >/dev/null 2>&1; then
-        ui_box "Existing install detected" \
-            "You can add skipped features to this install without touching your data or media." \
-            "Remote access will rerun Stage 2 only. Hardware transcoding will rerun only that add-on." \
+        local box_lines=(
+            "You can add skipped features to this install without touching your data or media."
+            "Remote access will rerun Stage 2 only. Hardware transcoding will rerun only that add-on."
             "A fresh reinstall is still available, but it requires typing DESTROY."
+            "For day-to-day management (status, updates, features), run ./mediastack instead."
+        )
+        if (( ${#status_lines[@]} > 0 )); then
+            box_lines+=("" "Current setup:")
+            local line
+            for line in "${status_lines[@]}"; do
+                box_lines+=("  ${line}")
+            done
+        fi
+        ui_box "Existing install detected" "${box_lines[@]}"
     else
         log_info "Existing install detected. Add-stage actions will not touch your data or media."
+        local line
+        for line in "${status_lines[@]}"; do
+            log_info "Current setup -- ${line}"
+        done
+        log_info "For day-to-day management (status, updates, features), run ./mediastack instead."
     fi
 
     local options=()
@@ -67,10 +96,10 @@ show_existing_install_menu() {
         options+=("Reboot to finish hardware transcoding")
     fi
     if recovery_menu_remote_available; then
-        options+=("Retry remote access")
+        options+=("Add remote access")
     fi
     if recovery_menu_transcoding_available; then
-        options+=("Configure hardware transcoding")
+        options+=("Add hardware transcoding")
     fi
     options+=("Continue without changes")
     options+=("Wipe everything and start fresh")
@@ -83,18 +112,23 @@ show_existing_install_menu() {
         "Reboot to finish hardware transcoding"*)
             RECOVERY_MENU_ACTION=completed
             print_final_summary
-            stage3_prompt_pending_nvidia_reboot
+            # "Reboot now" never returns (host reboots); a return here means the
+            # user DEFERRED the reboot — the install is done but GPU transcoding
+            # only activates after a reboot, so the launcher should say exactly
+            # that rather than a flat "completed successfully".
+            stage3_prompt_pending_nvidia_reboot && record_launcher_outcome reboot-pending
             ;;
-        "Retry remote access"*)
+        "Add remote access"*)
             RECOVERY_MENU_ACTION=completed
-            run_remote_recovery
+            run_remote_recovery && record_launcher_outcome completed
             ;;
-        "Configure hardware transcoding"*)
+        "Add hardware transcoding"*)
             RECOVERY_MENU_ACTION=completed
-            run_transcoding_recovery
+            run_transcoding_recovery && record_launcher_outcome completed
             ;;
         "Continue without changes"*)
-            RECOVERY_MENU_ACTION=continue
+            RECOVERY_MENU_ACTION="continue"
+            record_launcher_outcome unchanged
             log_ok "Continuing with existing install. No changes made."
             return 0
             ;;
@@ -104,11 +138,13 @@ show_existing_install_menu() {
             ;;
         "Abort"*)
             RECOVERY_MENU_ACTION=abort
+            record_launcher_outcome aborted
             log_info "Aborted by user. No changes made."
             return 1
             ;;
         *)
             RECOVERY_MENU_ACTION=abort
+            record_launcher_outcome aborted
             log_warn "Unexpected choice: ${choice}. Aborting."
             return 1
             ;;
@@ -177,6 +213,8 @@ run_transcoding_recovery() {
     _wizard_load_existing_env
 
     if stage3_pending_nvidia_reboot_same_boot; then
+        # Global consumed by stage3.sh reboot gating, not within recovery.sh.
+        # shellcheck disable=SC2034
         NEEDS_REBOOT=true
         stage3_prompt_nvidia_reboot
         return 0

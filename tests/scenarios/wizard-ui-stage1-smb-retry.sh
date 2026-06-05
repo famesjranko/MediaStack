@@ -14,7 +14,7 @@ validate_smb_port() {
     local attempts=0
     [[ -f /tmp/wizard-smb-port-attempts ]] && attempts=\$(cat /tmp/wizard-smb-port-attempts)
     attempts=\$((attempts + 1))
-    printf '%s\n' "\$attempts" > /tmp/wizard-smb-port-attempts
+    printf '%s\n' \$attempts > /tmp/wizard-smb-port-attempts
     (( attempts >= 2 ))
 }
 BASH"

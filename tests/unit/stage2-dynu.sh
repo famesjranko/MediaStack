@@ -43,11 +43,11 @@ curl() {
 TMP_CURL_ARGS="$(mktemp)"
 trap 'rm -f "$TMP_CURL_ARGS"' EXIT
 assert_eq "ok" "$(stage2_dynu_preflight "media.example.com" "dynu-user" 'secret with spaces')" "S2-07: Dynu preflight parses live protocol response"
-curl_args="$(cat "$TMP_CURL_ARGS")"
-assert_contains "$curl_args" "-fsS --max-time 15 --get https://api.dynu.com/nic/update" "S2-07: Dynu preflight uses IP Update endpoint"
-assert_contains "$curl_args" "--data-urlencode hostname=media.example.com" "S2-07: Dynu preflight URL-encodes hostname"
-assert_contains "$curl_args" "--data-urlencode username=dynu-user" "S2-07: Dynu preflight URL-encodes username"
-assert_contains "$curl_args" "--data-urlencode password=secret with spaces" "S2-07: Dynu preflight URL-encodes password"
+dynu_curl_args="$(cat "$TMP_CURL_ARGS")"
+assert_contains "$dynu_curl_args" "-fsS --max-time 15 --get https://api.dynu.com/nic/update" "S2-07: Dynu preflight uses IP Update endpoint"
+assert_contains "$dynu_curl_args" "--data-urlencode hostname=media.example.com" "S2-07: Dynu preflight URL-encodes hostname"
+assert_contains "$dynu_curl_args" "--data-urlencode username=dynu-user" "S2-07: Dynu preflight URL-encodes username"
+assert_contains "$dynu_curl_args" "--data-urlencode password=secret with spaces" "S2-07: Dynu preflight URL-encodes password"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

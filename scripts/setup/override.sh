@@ -13,7 +13,7 @@ detect_host_memory() {
         mem_kb=$(free -k 2>/dev/null | awk '/^Mem:/ {print $2}')
     fi
     if [[ -z "$mem_kb" || "$mem_kb" -eq 0 ]] 2>/dev/null; then
-        log_warn "Could not detect host memory — defaulting to 4GB for resource limits"
+        log_warn "Could not detect host memory - defaulting to 4GB for resource limits"
         mem_kb=4194304
     fi
     HOST_MEMORY_MB=$(( mem_kb / 1024 ))
@@ -58,7 +58,7 @@ _image_channel() {
 # Absent row = follow the global channel. The lock file (docs/operations/image-digests.lock)
 # is NEVER edited by this path — it stays the maintainer-tested record; user
 # intent lives here. Policy 'latest' means "follow the compose tag", which keeps
-# ADR-24's tag pins (npm:2, wireguard:15.3.0) intact — it only drops the digest.
+# ADR-24's tag pins (npm:2, wireguard:15) intact — it only drops the digest.
 _image_policy_file() {
     printf '%s\n' "$SCRIPT_DIR/config/state/image-policy.tsv"
 }
@@ -171,25 +171,30 @@ generate_override() {
     overrides_note="$(_policy_overrides_note)"
 
     # --- Compute memory limits (proportional to host RAM) ---
-    local jf_mem=$(compute_mem_limit 40 1024 8192)
-    local sonarr_mem=$(compute_mem_limit 12 256 4096)
-    local radarr_mem=$(compute_mem_limit 12 256 4096)
-    local jackett_mem=$(compute_mem_limit 10 256 2048)
-    local qbt_mem=$(compute_mem_limit 12 256 4096)
-    local flare_mem=$(compute_mem_limit 15 1024 2048)
-    local seerr_mem=$(compute_mem_limit 10 256 2048)
-    local npm_mem=$(compute_mem_limit 10 256 2048)
-    local unpackerr_mem=$(compute_mem_limit 5 128 1024)
-    local bazarr_mem=$(compute_mem_limit 5 128 1024)
-    local homepage_mem=$(compute_mem_limit 5 192 512)
-    local portainer_mem=$(compute_mem_limit 3 64 512)
-    local f2b_mem=$(compute_mem_limit 3 64 512)
-    local wg_mem=$(compute_mem_limit 3 64 512)
-    local ddns_mem=$(compute_mem_limit 2 64 256)
-    local kuma_mem=$(compute_mem_limit 5 192 1024)
-    local beszel_mem=$(compute_mem_limit 3 64 512)
-    local beszel_agent_mem=$(compute_mem_limit 2 64 256)
-    local autoheal_mem=$(compute_mem_limit 1 32 128)
+    # Declared separately from assignment so compute_mem_limit's exit status is
+    # not masked by `local` (SC2155).
+    local jf_mem sonarr_mem radarr_mem jackett_mem qbt_mem flare_mem seerr_mem \
+          npm_mem unpackerr_mem bazarr_mem homepage_mem portainer_mem f2b_mem \
+          wg_mem ddns_mem kuma_mem beszel_mem beszel_agent_mem autoheal_mem
+    jf_mem=$(compute_mem_limit 40 1024 8192)
+    sonarr_mem=$(compute_mem_limit 12 256 4096)
+    radarr_mem=$(compute_mem_limit 12 256 4096)
+    jackett_mem=$(compute_mem_limit 10 256 2048)
+    qbt_mem=$(compute_mem_limit 12 256 4096)
+    flare_mem=$(compute_mem_limit 15 1024 2048)
+    seerr_mem=$(compute_mem_limit 10 256 2048)
+    npm_mem=$(compute_mem_limit 10 256 2048)
+    unpackerr_mem=$(compute_mem_limit 5 128 1024)
+    bazarr_mem=$(compute_mem_limit 5 128 1024)
+    homepage_mem=$(compute_mem_limit 5 192 512)
+    portainer_mem=$(compute_mem_limit 3 64 512)
+    f2b_mem=$(compute_mem_limit 3 64 512)
+    wg_mem=$(compute_mem_limit 3 64 512)
+    ddns_mem=$(compute_mem_limit 2 64 256)
+    kuma_mem=$(compute_mem_limit 5 192 1024)
+    beszel_mem=$(compute_mem_limit 3 64 512)
+    beszel_agent_mem=$(compute_mem_limit 2 64 256)
+    autoheal_mem=$(compute_mem_limit 1 32 128)
 
     # memswap_limit = 1.5x mem_limit (existing convention: 1g/1536m, 512m/768m)
     _swap() { local v="${1%m}"; echo "$(( v * 3 / 2 ))m"; }
@@ -365,10 +370,10 @@ YAML
     if [[ "${MS_DISABLE_RESOURCE_LIMITS:-false}" == "true" ]]; then
         sed -i '/^[[:space:]]*\(mem_limit\|memswap_limit\):/d' "$override_file"
         sed -i '/^[[:space:]]*cpus:[[:space:]]*[0-9]/d' "$override_file"
-        log_warn "MS_DISABLE_RESOURCE_LIMITS=true — mem_limit/memswap_limit/cpus stripped from override"
-        log_ok "Generated docker-compose.override.yml (${HOST_MEMORY_MB}MB host — GPU: ${gpu_type}, image channel: ${image_channel}, limits disabled)"
+        log_warn "MS_DISABLE_RESOURCE_LIMITS=true - mem_limit/memswap_limit/cpus stripped from override"
+        log_ok "Generated docker-compose.override.yml (${HOST_MEMORY_MB}MB host - GPU: ${gpu_type}, image channel: ${image_channel}, limits disabled)"
         return
     fi
 
-    log_ok "Generated docker-compose.override.yml (${HOST_MEMORY_MB}MB host — GPU: ${gpu_type}, image channel: ${image_channel})"
+    log_ok "Generated docker-compose.override.yml (${HOST_MEMORY_MB}MB host - GPU: ${gpu_type}, image channel: ${image_channel})"
 }

@@ -98,10 +98,10 @@ _wizard_run_discovery() {
             _discovery_speed_ok=true
             ui_log ok "Download: ${_NET_DL_MBPS} Mbps | Upload: ${_NET_UL_MBPS} Mbps"
         else
-            ui_log warn "Speed test failed — you can set qBittorrent limits manually."
+            ui_log warn "Speed test failed - you can set qBittorrent limits manually."
         fi
     else
-        ui_log skip "speedtest-cli not installed — qBittorrent limits will default to manual values."
+        ui_log skip "speedtest-cli not installed - qBittorrent limits will default to manual values."
     fi
 
     if $_discovery_ip_ok; then
@@ -120,9 +120,9 @@ _wizard_run_discovery() {
         for port in 6881 80 443 51820; do
             status="${_NET_PORT_STATUS[$port]:-unknown}"
             case "$status" in
-                open)             ui_log warn "Port $port: in use by another process — free it before Stage 1 (e.g. 'sudo lsof -i :$port')" ;;
+                open)             ui_log warn "Port $port: in use by another process - free it before Stage 1 (e.g. 'sudo lsof -i :$port')" ;;
                 closed)           ui_log ok "Port $port: available" ;;
-                udp-unverifiable) ui_log info "Port $port: UDP — availability checked when WireGuard starts" ;;
+                udp-unverifiable) ui_log info "Port $port: UDP - availability checked when WireGuard starts" ;;
                 *)                ui_log info "Port $port: status unknown" ;;
             esac
         done
@@ -165,6 +165,21 @@ exit(0 if c.get('wizard_completed') else 1)
     fi
 
     run_stage1
+
+    # Orient the user before the optional stages. On screen the banners read
+    # "Stage 1" -> "Hardware Transcoding" (no number) -> "Stage 2", so without
+    # this a careful user reads the order as a bug ("did I skip Stage 2?").
+    # Interactive only: DEMO returned above, and a non-TTY run stays silent so
+    # scripted/CI output is unchanged. "may follow" / "if you have a supported
+    # GPU" keeps the copy truthful when the hardware stage self-skips.
+    if [[ -t 0 ]]; then
+        echo ""
+        ui_log info "Core media server is ready. Two optional steps may follow:"
+        ui_log info "  1. Hardware transcoding (if you have a supported GPU)"
+        ui_log info "  2. Remote access — set up last, on purpose, so it can verify your working stack"
+        echo ""
+    fi
+
     run_hardware_transcoding_addon
 
     local stage2_rc=0

@@ -14,8 +14,8 @@ storage_mount_nfs() {
     local attempts=0
     [[ -f /tmp/wizard-nas-edit-attempts ]] && attempts=\$(cat /tmp/wizard-nas-edit-attempts)
     attempts=\$((attempts + 1))
-    printf '%s\n' "\$attempts" > /tmp/wizard-nas-edit-attempts
-    [[ "\${STORAGE_NFS_HOST:-}" == "127.0.0.2" ]]
+    printf '%s\n' \$attempts > /tmp/wizard-nas-edit-attempts
+    [[ \${STORAGE_NFS_HOST:-} == 127.0.0.2 ]]
 }
 BASH"
     wizard_stage1_append_runner "$fixture"

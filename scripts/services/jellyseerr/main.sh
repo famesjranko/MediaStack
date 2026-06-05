@@ -33,7 +33,7 @@ configure_jellyseerr() {
         is_fresh=true
         log_info "Running Jellyseerr first-time setup..."
     elif [[ "$initialized" == "True" ]]; then
-        log_info "Jellyseerr already initialized — reconciling settings..."
+        log_info "Jellyseerr already initialized - reconciling settings..."
     else
         is_fresh=true
         log_info "Running Jellyseerr first-time setup..."
@@ -52,9 +52,9 @@ configure_jellyseerr() {
         sleep 3
     done
     [[ -z "$_js_ready" ]] && \
-        log_warn "Jellyseerr API did not return valid JSON after 60s — auth may fail"
+        log_warn "Jellyseerr API did not return valid JSON after 60s - auth may fail"
 
-    local cookiejar auth_body auth_http auth_resp auth_msg me_resp
+    local cookiejar auth_http auth_resp auth_msg me_resp
     cookiejar="$(mktemp)"
     auth_resp="$(mktemp)"
     me_resp="$(mktemp)"
@@ -197,7 +197,7 @@ except Exception:
         fi
         rm -f "$mf_resp"
     else
-        log_warn "Jellyseerr did not return apiKey from /settings/jellyfin — sync will likely fail"
+        log_warn "Jellyseerr did not return apiKey from /settings/jellyfin - sync will likely fail"
     fi
 
     # Sync libraries. Capture HTTP code + body so real failures surface

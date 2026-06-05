@@ -94,6 +94,8 @@ indexers:
   - id: eztv
   type: tv
 YAML
+# Captured to suppress stdout; only stderr is asserted.
+# shellcheck disable=SC2034
 output=$(cd "$TMPDIR_CV" && CONFIG_FILE="$TMPDIR_CV/broken.yml" \
     python3 -c "import yaml; yaml.safe_load(open('$TMPDIR_CV/broken.yml'))" 2>&1)
 rc=$?

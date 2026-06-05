@@ -34,7 +34,7 @@ configure_radarr() {
     # so Jellyfin matches metadata reliably without scraping guesswork.
     local naming_config current_rename
     if ! naming_config=$(api_get "$base/config/naming" "$radarr_key"); then
-        log_warn "Could not fetch Radarr naming config — skipping"
+        log_warn "Could not fetch Radarr naming config - skipping"
         naming_config="{}"
     fi
     current_rename=$(echo "$naming_config" | json_get renameMovies False)

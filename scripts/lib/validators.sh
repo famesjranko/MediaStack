@@ -67,7 +67,7 @@ validate_admin_email() {
     fi
     local lc="${value,,}"
     if [[ "$lc" =~ @(example\.com|example\.net|example\.org)$ ]]; then
-        ui_log warn "Example email domains are rejected by Let's Encrypt — please use a real email."
+        ui_log warn "Example email domains are rejected by Let's Encrypt - please use a real email."
         return 1
     fi
     if ! [[ "$value" =~ ^[^@]+@[^@]+\.[^@]+$ ]]; then
@@ -107,7 +107,9 @@ validate_admin_password() {
 validate_ddns_credential() {
     local label="${1:-DDNS credential}"
     local value="${2:-}"
-    if [[ -z "$value" ]]; then
+    # Reject empty AND all-whitespace: stage2 trims the stored value, so an
+    # all-spaces entry would collapse to "" and fail Dynu auth without a prompt.
+    if [[ -z "${value//[[:space:]]/}" ]]; then
         ui_log warn "$label is required."
         return 1
     fi
@@ -124,6 +126,33 @@ validate_ddns_username() {
 
 validate_ddns_password() {
     validate_ddns_credential "Dynu password" "$1"
+}
+
+# Whole-number Mbps (upload bandwidth used to size the streaming table). Kept
+# integer because the value is fed to python int() in the bitrate recommendation.
+validate_mbps_whole() {
+    [[ "$1" =~ ^[0-9]+$ ]] && return 0
+    ui_log warn "Enter your upload speed as a whole number of Mbps (e.g. 100)."
+    return 1
+}
+
+# Mbps allowing one decimal place (per-viewer streaming cap; 0 = unlimited).
+validate_mbps_decimal() {
+    [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]] && return 0
+    ui_log warn "Enter a number in Mbps (decimals OK, e.g. 3.5; 0 = unlimited)."
+    return 1
+}
+
+# MB/s (megabytes/sec) allowing decimals — qBittorrent download/upload speed
+# limits; 0 = unlimited. Single source for both Stage 1's install prompt
+# (_stage1_read_limit) and the day-2 "Adjust bandwidth limits" launcher action,
+# so the grammar and the unit-correct "MB/s" copy never drift. Distinct from
+# validate_mbps_decimal (megabits — the Jellyfin streaming cap), whose "Mbps"
+# message would mislabel this byte-rate field.
+validate_mb_per_sec() {
+    [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]] && return 0
+    ui_log warn "Enter a number in MB/s (0 = unlimited)."
+    return 1
 }
 
 validate_data_dir() {
@@ -156,7 +185,7 @@ validate_data_dir() {
 
     if [[ ! -e "$path" ]]; then
         if ! ui_confirm "Path $path does not exist. Create it?" "yes"; then
-            ui_log warn "Data directory $path not created — pick a different path or allow creation."
+            ui_log warn "Data directory $path not created - pick a different path or allow creation."
             return 1
         fi
         # Try unprivileged mkdir first (works for paths under $HOME etc.).
@@ -167,7 +196,7 @@ validate_data_dir() {
         if mkdir -p "$path" 2>/dev/null; then
             :
         elif sudo mkdir -p "$path" 2>/dev/null && sudo chown "$(id -un):$(id -gn)" "$path" 2>/dev/null; then
-            ui_log info "Created $path (root-owned parent — used sudo to create + chown to $(id -un))."
+            ui_log info "Created $path (root-owned parent - used sudo to create + chown to $(id -un))."
         else
             ui_log warn "Could not create $path (read-only parent or permission denied)."
             return 1
@@ -201,7 +230,7 @@ validate_data_dir() {
     # when the user picks a custom path. Match PRE-01's behavior: warn + ask
     # for explicit confirmation, rather than silently looping the prompt.
     if (( free_gb < 30 )); then
-        ui_log warn "$path has only ${free_gb}GB free — recommended minimum is 30GB."
+        ui_log warn "$path has only ${free_gb}GB free - recommended minimum is 30GB."
         if ! ui_confirm "Continue anyway?" "yes"; then
             ui_log warn "Pick a different path with more free space, or free up space on $path."
             return 1
@@ -236,7 +265,7 @@ validate_nas_mountpoint() {
 
     if [[ ! -e "$path" ]]; then
         if ! ui_confirm "Mountpoint $path does not exist. Create it?" "yes"; then
-            ui_log warn "NAS mountpoint $path not created — pick a different path or allow creation."
+            ui_log warn "NAS mountpoint $path not created - pick a different path or allow creation."
             return 1
         fi
         if mkdir -p "$path" 2>/dev/null; then
@@ -264,6 +293,32 @@ validate_nfs_host() {
     fi
     if [[ "$value" =~ [^a-zA-Z0-9._:\-] ]]; then
         ui_log warn "NAS host/IP may only contain letters, digits, '.', ':', '_', and '-'."
+        return 1
+    fi
+    # Dotted-quad IPv4: bound each octet to <= 255 (same shape check as
+    # validate_wireguard_hostname) so 999.999.999.999 is rejected up front.
+    if [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        local octet; local -a octets
+        IFS='.' read -ra octets <<< "$value"
+        for octet in "${octets[@]}"; do
+            # 10# forces base-10 so a leading-zero octet (08/09) isn't read as octal.
+            if (( 10#$octet > 255 )); then
+                ui_log warn "NAS IP has an octet over 255 (expected e.g. 192.168.1.10)."
+                return 1
+            fi
+        done
+        return 0
+    fi
+    # All-numeric with dots but not a 4-octet quad => a partial/malformed IP
+    # (e.g. 192.168.1) the user almost certainly mistyped.
+    if [[ "$value" =~ ^[0-9.]+$ ]]; then
+        ui_log warn "That looks like an incomplete IP address - enter a full IPv4 (e.g. 192.168.1.10) or a hostname."
+        return 1
+    fi
+    # Hostname/FQDN: reject a leading/trailing dot or an empty label. Single-label
+    # LAN names (e.g. 'nas') and dotted names (nas.local) are both allowed.
+    if [[ "$value" == .* || "$value" == *. || "$value" == *..* ]]; then
+        ui_log warn "NAS hostname has a misplaced dot (no leading/trailing dot or empty label)."
         return 1
     fi
     return 0
@@ -363,7 +418,7 @@ validate_domain_name() {
     fi
     case "$lc" in
         example.com|*.example.com|example.org|*.example.org|example.net|*.example.net|example.edu|*.example.edu)
-            ui_log warn "$value is a reserved example domain (RFC 2606) — enter your real domain."
+            ui_log warn "$value is a reserved example domain (RFC 2606) - enter your real domain."
             return 1
             ;;
         test|*.test|invalid|*.invalid)
@@ -435,7 +490,7 @@ validate_wireguard_port() {
     if [[ -n "$ss_output" ]]; then
         process_name=$(_validators_port_process_name "$ss_output")
         if _validators_wireguard_port_is_mediastack "$value"; then
-            ui_log info "WireGuard UDP port $value is already in use by MediaStack wireguard — reusing it."
+            ui_log info "WireGuard UDP port $value is already in use by MediaStack wireguard - reusing it."
             return 0
         fi
         if [[ -n "$process_name" ]]; then
@@ -461,7 +516,7 @@ validate_smb_port() {
     # idempotently. This makes re-runs idempotent: once SMB is enabled and
     # smbd is running, the wizard re-run path doesn't false-flag it.
     if [[ "$process_name" == "smbd" ]]; then
-        ui_log info "Port 445 in use by smbd — MediaStack will manage it."
+        ui_log info "Port 445 in use by smbd - MediaStack will manage it."
         return 0
     fi
     if [[ -n "$process_name" ]]; then
@@ -499,7 +554,7 @@ if not any(n.subnet_of(r) for r in rfc1918):
     if (( rc != 0 )); then
         case "$rc" in
             2) ui_log warn "'$value' is not a valid IPv4 CIDR (try '192.168.1.0/24')." ;;
-            3) ui_log warn "'$value' is not an RFC1918 LAN range — use 10/8, 172.16/12, or 192.168/16." ;;
+            3) ui_log warn "'$value' is not an RFC1918 LAN range - use 10/8, 172.16/12, or 192.168/16." ;;
             *) ui_log warn "Invalid LAN CIDR '$value'." ;;
         esac
         return 1
@@ -529,5 +584,59 @@ validate_timezone() {
             return 1
             ;;
     esac
+    return 0
+}
+
+validate_subtitle_langs() {
+    # Bazarr subtitle languages. The wizard value flows verbatim into
+    # config.yml bazarr.languages, and bazarr/main.sh does a CASE-SENSITIVE
+    # LANG_MAP.get(lang) over the lowercase keys below — so a typo ('englsih'),
+    # an unsupported name ('klingon'), or a capitalised entry ('English', which
+    # the prompt's lowercase example never warns against) is silently dropped.
+    # If every token misses, the language profile ends up empty and subtitles
+    # never download, with no error anywhere. Reject unknown tokens here so the
+    # wizard re-prompts on the TTY path; the call site lowercases the accepted
+    # value before storing it (this validator only returns 0/1, it cannot
+    # transform the captured value).
+    #
+    # Canonical key list: scripts/services/bazarr/main.sh LANG_MAP. The two
+    # copies are kept in sync by the drift guard in tests/unit/validators.sh.
+    local value="$1"
+    local supported="english spanish french german portuguese dutch italian japanese chinese korean arabic russian swedish norwegian danish finnish polish turkish hindi"
+
+    local -a tokens=()
+    # read -ra splits on the comma without pathname expansion (a bare '*' in
+    # the input must not glob). Matches wizard_apply.py: split(',').
+    IFS=',' read -ra tokens <<< "$value"
+
+    local -a bad=()
+    local count=0 tok known s
+    for tok in "${tokens[@]}"; do
+        # Trim surrounding whitespace and lowercase — mirrors wizard_apply.py's
+        # per-token .strip() and Bazarr's lowercase LANG_MAP keys.
+        tok="${tok#"${tok%%[![:space:]]*}"}"
+        tok="${tok%"${tok##*[![:space:]]}"}"
+        tok="${tok,,}"
+        [[ -z "$tok" ]] && continue
+        count=$((count + 1))
+        # Exact match against each supported key. A space-padded substring test
+        # would be fooled twice: 'dan' would match 'danish', and a token with an
+        # internal space like 'english spanish' would match two consecutive
+        # entries in the space-delimited set. Exact equality avoids both.
+        known=0
+        for s in $supported; do
+            [[ "$tok" == "$s" ]] && { known=1; break; }
+        done
+        (( known )) || bad+=("$tok")
+    done
+
+    if (( count == 0 )); then
+        ui_log warn "Enter at least one subtitle language (e.g. english,spanish). Supported: ${supported// /, }."
+        return 1
+    fi
+    if (( ${#bad[@]} > 0 )); then
+        ui_log warn "Unsupported subtitle language(s): ${bad[*]}. Supported: ${supported// /, }."
+        return 1
+    fi
     return 0
 }

@@ -129,8 +129,8 @@ run_scenario() {
         $npm_image" >/dev/null
 
     # Wait for NPM API to respond.
-    local npm_ready=false i
-    for i in $(seq 1 60); do
+    local npm_ready=false
+    for _ in $(seq 1 60); do
         if dind_exec "curl -sf http://127.0.0.1:18181/api/ >/dev/null"; then
             npm_ready=true
             break

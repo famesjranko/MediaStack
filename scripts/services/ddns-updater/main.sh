@@ -16,6 +16,6 @@ configure_ddns_updater() {
     if [[ -f "$config_file" ]]; then
         log_ok "DDNS config present (manage at http://<ip>:8000)"
     else
-        log_warn "DDNS updater running but no config.json — configure at http://<ip>:8000"
+        log_warn "DDNS updater running but no config.json - configure at http://<ip>:8000"
     fi
 }

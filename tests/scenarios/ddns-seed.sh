@@ -49,10 +49,12 @@ errors = []
 if len(settings) != 1:
     errors.append(f"expected 1 entry (base domain), got {len(settings)}")
 e = settings[0]
-if e.get("provider") != "dynu":
-    errors.append(f"provider={e.get('provider')}, expected dynu")
-if e.get("domain") != "ddns.test":
-    errors.append(f"domain={e.get('domain')}, expected ddns.test")
+prov = e.get("provider")
+dom = e.get("domain")
+if prov != "dynu":
+    errors.append(f"provider={prov}, expected dynu")
+if dom != "ddns.test":
+    errors.append(f"domain={dom}, expected ddns.test")
 if e.get("username") != "testuser":
     errors.append("username mismatch")
 if e.get("password") != "testpass123":

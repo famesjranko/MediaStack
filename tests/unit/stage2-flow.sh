@@ -14,6 +14,13 @@ scenario_begin "$CURRENT_SCENARIO"
 
 [[ -f "$REPO_ROOT/scripts/setup/stages/stage2.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
 
+# The DDNS password is collected via the shared ui_password_validated primitive
+# (issue #6, replacing _stage2_password_validated). Source the ui layer so that real
+# loop is defined; the ui_password / ui_log stubs below are defined AFTER this source
+# and override the real ones, so the validated re-prompt loop runs against the stub
+# (no real `read`, deterministic — never a hang on the un-TTY unit path).
+source "$REPO_ROOT/scripts/lib/ui.sh"
+
 set +e
 set +u
 
@@ -138,6 +145,8 @@ seed_stage2_env_vars() {
     _ENV_PUID="$(id -u)"
     _ENV_PGID="$(id -g)"
     _ENV_HOST_ADDRESS="192.168.1.10"
+    # Fixture consumed by the sourced product code under test.
+    # shellcheck disable=SC2034
     GPU_TYPE="none"
     _WIZ_TZ="Etc/UTC"
     _WIZ_DATA_DIR="/data"
@@ -184,6 +193,8 @@ _stage2_skip_https >/dev/null
 assert_eq "skipped" "$(env_val_from "$SCRIPT_DIR/.env" REMOTE_WEB_STATE)" "AUDIT: Stage 2 immediate skip persists skipped state"
 assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" WG_INIT_PASSWORD)" "AUDIT: Stage 2 immediate skip leaves WireGuard init password empty"
 _build_profile_args skip_profiles
+# Populated by _build_profile_args via its `local -n` nameref output param.
+# shellcheck disable=SC2154
 case " ${skip_profiles[*]} " in
     *" --profile remote "*) fail "AUDIT: Stage 2 immediate skip leaves remote profile inactive" "profiles=${skip_profiles[*]}" ;;
     *) pass "AUDIT: Stage 2 immediate skip leaves remote profile inactive" ;;
@@ -277,7 +288,6 @@ ui_input() {
 }
 
 ui_input_validated() {
-    local prompt="$1"
     local default="$2"
     local validator_fn="$3"
     local value="${default:-dynu-user}"
@@ -503,7 +513,7 @@ else
 fi
 
 assert_contains "$stage2_source" "run_stage2()" "04-04: run_stage2 controller exists"
-assert_contains "$stage2_source" "MediaStack -- Stage 2: Remote Access" "04-04: Stage 2 banner title"
+assert_contains "$stage2_source" "MediaStack - Stage 2: Remote Access" "04-04: Stage 2 banner title"
 assert_contains "$stage2_source" "HTTPS + WireGuard in 3-5 minutes" "04-04: Stage 2 banner subtitle"
 assert_contains "$stage2_source" "_stage2_install()" "04-04: install function exists"
 assert_contains "$stage2_source" "MEDIASTACK_NPM_ATTEMPT_REMOTE=1 ./scripts/configure.sh --only npm,ddns-updater,wireguard" "04-05: NPM remote attempt is process-scoped"

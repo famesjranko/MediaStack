@@ -273,12 +273,12 @@ PY
 
     local mediastack_network_prefix="${prev_mediastack_network_prefix:-172.28.0}"
     if ! [[ "$mediastack_network_prefix" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\.(0|[1-9][0-9]{0,2})$ ]]; then
-        log_warn "Ignoring invalid MEDIASTACK_NETWORK_PREFIX '${mediastack_network_prefix}' — setup will use 172.28.0 unless collision checks choose another subnet."
+        log_warn "Ignoring invalid MEDIASTACK_NETWORK_PREFIX '${mediastack_network_prefix}' - setup will use 172.28.0 unless collision checks choose another subnet."
         mediastack_network_prefix="172.28.0"
     else
         local _ms_third_octet="${mediastack_network_prefix##*.}"
         if (( 10#$_ms_third_octet > 255 )); then
-            log_warn "Ignoring invalid MEDIASTACK_NETWORK_PREFIX '${mediastack_network_prefix}' — setup will use 172.28.0 unless collision checks choose another subnet."
+            log_warn "Ignoring invalid MEDIASTACK_NETWORK_PREFIX '${mediastack_network_prefix}' - setup will use 172.28.0 unless collision checks choose another subnet."
             mediastack_network_prefix="172.28.0"
         fi
     fi
@@ -327,7 +327,7 @@ PY
     case "$image_channel" in
         stable|latest) ;;
         *)
-            log_warn "Ignoring invalid IMAGE_CHANNEL '${image_channel}' — using stable."
+            log_warn "Ignoring invalid IMAGE_CHANNEL '${image_channel}' - using stable."
             image_channel="stable"
             ;;
     esac
@@ -543,9 +543,9 @@ print(json.dumps({"settings": [{
         fi
         [[ -n "$ddns_tmp" ]] && rm -f "$ddns_tmp" 2>/dev/null || true
         if $ddns_write_ok; then
-            log_ok "DDNS config written ($_WIZ_DOMAIN — wildcard covers subdomains)"
+            log_ok "DDNS config written ($_WIZ_DOMAIN - wildcard covers subdomains)"
         else
-            log_warn "Failed to write DDNS config.json — configure manually at http://${_ENV_HOST_ADDRESS}:8000"
+            log_warn "Failed to write DDNS config.json - configure manually at http://${_ENV_HOST_ADDRESS}:8000"
         fi
     fi
 

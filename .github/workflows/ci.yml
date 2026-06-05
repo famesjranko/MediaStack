@@ -46,6 +46,16 @@ jobs:
           set -euo pipefail
           git ls-files '*.sh' mediastack setup.sh | xargs bash -n
 
+      - name: Shellcheck (lint gate)
+        run: |
+          set -euo pipefail
+          # Regression gate: fail on any shellcheck WARNING or ERROR. Repo-specific
+          # flags and curated suppressions live in .shellcheckrc; tests/lint.sh pins
+          # the engine (0.11.0). ubuntu-latest's native shellcheck is older than the
+          # pin, so lint.sh runs the pinned koalaman/shellcheck docker image —
+          # byte-for-byte identical to the local gate.
+          ./tests/lint.sh --severity=warning
+
       - name: Python syntax
         run: |
           set -euo pipefail
@@ -74,24 +84,33 @@ jobs:
           docker compose --profile proxy --profile remote --profile subtitles --profile autoheal config --quiet
           rm -f .env
 
-      - name: Focused unit tests
+      - name: Run unit tests
         run: |
-          set -euo pipefail
-          bash tests/unit/config-validation.sh
-          bash tests/unit/upgrades-manifest.sh
-          bash tests/unit/image-drift.sh
-          bash tests/unit/resource-limits.sh
-          bash tests/unit/update.sh
-          bash tests/unit/wizard-flow.sh
-          bash tests/unit/stage1-confirm.sh
-          bash tests/unit/stage3-gpu-content.sh
-          bash tests/unit/wizard-presets.sh
-          bash tests/unit/validators.sh
-          bash tests/unit/stage1-qbit-math.sh
-          bash tests/unit/nvidia-patch.sh
-          bash tests/unit/gpu-branching.sh
-          bash tests/unit/ui-box-alignment.sh
-          bash tests/unit/test-runner.sh
+          set -uo pipefail
+          # Run the whole host unit suite (no Docker), not a curated subset, so
+          # every shipped unit test is actually exercised here. The private repo's
+          # PR gate runs the same loop; the only difference is the maintainer-only
+          # tests that never sync to this repo.
+          fail=0
+          for f in tests/unit/*.sh; do
+            name=$(basename "$f" .sh)
+            echo "::group::unit: $name"
+            # Per-test timeout so a stuck test (e.g. a non-TTY re-prompt loop that
+            # never reaches EOF) fails fast instead of hanging the job.
+            if timeout 300 bash "$f"; then
+              echo "::endgroup::"
+            else
+              rc=$?
+              echo "::endgroup::"
+              if (( rc == 124 )); then
+                echo "::error title=unit timed out::$name (exceeded 300s — likely a hang)"
+              else
+                echo "::error title=unit failed::$name"
+              fi
+              fail=1
+            fi
+          done
+          exit "$fail"
 
   wizard-ui:
     name: Wizard PTY scenarios (DinD, no service image pulls)

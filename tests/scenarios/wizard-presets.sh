@@ -67,7 +67,7 @@ run_scenario() {
 
     # Strip removed services from the override too — generate_override writes
     # limits for all 19 services but stripped ones have no image definition.
-    local _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
+    local _strip; _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
     if [[ "$_strip" != "  " ]]; then
         dind_exec "python3 -c \"
 import yaml

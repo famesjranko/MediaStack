@@ -1,5 +1,5 @@
 # =============================================================================
-# MediaStack Setup — Post-reboot resume (systemd oneshot)
+# MediaStack Setup - Post-reboot resume (systemd oneshot)
 # =============================================================================
 # Sourced by setup.sh. Depends on $SCRIPT_DIR and scripts/lib/common.sh
 # being loaded by the caller.
@@ -62,11 +62,11 @@ cleanup_post_reboot() {
         local _svc_state
         _svc_state=$(systemctl show mediastack-setup.service -p ActiveState --value 2>/dev/null || echo "")
         if [[ "$_svc_state" == "activating" || "$_svc_state" == "active" ]]; then
-            # We ARE the running service — leave the unit file alone so systemd
+            # We ARE the running service - leave the unit file alone so systemd
             # keeps our TimeoutStartSec=infinity. ExecStartPost handles cleanup.
             log_ok "Resuming post-reboot setup"
         else
-            # Manual run with a stale service file — clean it up
+            # Manual run with a stale service file - clean it up
             sudo systemctl disable mediastack-setup.service 2>/dev/null || true
             sudo rm -f /etc/systemd/system/mediastack-setup.service
             sudo systemctl daemon-reload 2>/dev/null || true
@@ -115,12 +115,12 @@ if [ -f "\$_ms_setup_result" ]; then
 elif [ -f /etc/systemd/system/mediastack-setup.service ]; then
     _c='\033[1;33m'; _r='\033[0m'
     printf '\n'
-    printf "  \${_c}╔════════════════════════════════════════════════════╗\${_r}\n"
-    printf "  \${_c}║\${_r}%-52s\${_c}║\${_r}\n" "  MediaStack setup is still running..."
-    printf "  \${_c}║\${_r}%-52s\${_c}║\${_r}\n" ""
-    printf "  \${_c}║\${_r}%-52s\${_c}║\${_r}\n" "  Watch progress:"
-    printf "  \${_c}║\${_r}%-52s\${_c}║\${_r}\n" "    journalctl -u mediastack-setup -f"
-    printf "  \${_c}╚════════════════════════════════════════════════════╝\${_r}\n"
+    printf "  \${_c}+====================================================+\${_r}\n"
+    printf "  \${_c}|\${_r}%-52s\${_c}|\${_r}\n" "  MediaStack setup is still running..."
+    printf "  \${_c}|\${_r}%-52s\${_c}|\${_r}\n" ""
+    printf "  \${_c}|\${_r}%-52s\${_c}|\${_r}\n" "  Watch progress:"
+    printf "  \${_c}|\${_r}%-52s\${_c}|\${_r}\n" "    journalctl -u mediastack-setup -f"
+    printf "  \${_c}+====================================================+\${_r}\n"
     printf '\n'
 fi
 unset _ms_setup_result _c _r
@@ -141,9 +141,9 @@ write_setup_result() {
         _c='\033[0;32m'
         {
             printf '\n'
-            printf "  ${_c}╔════════════════════════════════════════════════════╗${_r}\n"
-            printf "  ${_c}║${_r}%-52s${_c}║${_r}\n" "  MediaStack setup completed successfully!"
-            printf "  ${_c}╚════════════════════════════════════════════════════╝${_r}\n"
+            printf "  ${_c}+====================================================+${_r}\n"
+            printf "  ${_c}|${_r}%-52s${_c}|${_r}\n" "  MediaStack setup completed successfully!"
+            printf "  ${_c}+====================================================+${_r}\n"
             printf '\n'
             printf "  Run:          cd %s && docker ps\n" "$script_dir_q"
             printf '\n'
@@ -152,9 +152,9 @@ write_setup_result() {
         _c='\033[0;31m'
         {
             printf '\n'
-            printf "  ${_c}╔════════════════════════════════════════════════════╗${_r}\n"
-            printf "  ${_c}║${_r}%-52s${_c}║${_r}\n" "  MediaStack post-reboot setup encountered errors."
-            printf "  ${_c}╚════════════════════════════════════════════════════╝${_r}\n"
+            printf "  ${_c}+====================================================+${_r}\n"
+            printf "  ${_c}|${_r}%-52s${_c}|${_r}\n" "  MediaStack post-reboot setup encountered errors."
+            printf "  ${_c}+====================================================+${_r}\n"
             printf '\n'
             printf '  Check the log:  journalctl -u mediastack-setup --no-pager\n'
             printf '  Then re-run:    cd %s && ./setup.sh\n' "$script_dir_q"

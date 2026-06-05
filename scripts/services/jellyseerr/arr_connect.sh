@@ -28,7 +28,7 @@ connect_arr_to_jellyseerr() {
 
     local profile_json profile_id profile_name target_profile_name
     if ! profile_json=$(api_get "http://localhost:${arr_port}/api/v3/qualityprofile" "$arr_key"); then
-        log_warn "Could not fetch ${app_label} quality profiles for Jellyseerr — using defaults"
+        log_warn "Could not fetch ${app_label} quality profiles for Jellyseerr - using defaults"
         profile_json="[]"
     fi
     target_profile_name=$(cfg_field quality_profile.name)
@@ -51,7 +51,7 @@ print(match["name"])
     if [[ "$app" == "sonarr" ]]; then
         local _lang_json
         if ! _lang_json=$(api_get "http://localhost:${arr_port}/api/v3/languageprofile" "$arr_key"); then
-            log_warn "Could not fetch Sonarr language profiles for Jellyseerr — using id=1"
+            log_warn "Could not fetch Sonarr language profiles for Jellyseerr - using id=1"
             _lang_json="[]"
         fi
         lang_id=$(echo "$_lang_json" | python3 -c "

@@ -20,18 +20,14 @@ print(text.rstrip("0").rstrip("."))
 '
 }
 
+# Read a qBittorrent MB/s speed limit, re-prompting until valid. Delegates to the
+# shared ui_input_validated + validate_mb_per_sec so the install prompt and the
+# day-2 "Adjust bandwidth limits" launcher action use one input path (same
+# grammar, same "MB/s" copy — no drift). The default must be numeric (callers
+# pass a suggested/previous value or 0) so a non-TTY EOF returns it without
+# looping.
 _stage1_read_limit() {
-    local prompt="$1"
-    local default="$2"
-    local value=""
-    while true; do
-        value=$(ui_input "$prompt" "$default")
-        if [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-            printf '%s\n' "$value"
-            return 0
-        fi
-        ui_log warn "Enter a number in MB/s (0 = unlimited)."
-    done
+    ui_input_validated "$1" "$2" validate_mb_per_sec
 }
 
 run_stage1() {
@@ -43,7 +39,7 @@ run_stage1() {
     # and a non-empty default would change predicate semantics if env_gen
     # ever wrote an explicit "0".
     if [[ "${STAGE_1_COMPLETE:-}" == "1" ]]; then
-        log_skip "Stage 1 already complete — rerun setup to add remote access or hardware transcoding when needed"
+        log_skip "Stage 1 already complete - rerun setup to add remote access or hardware transcoding when needed"
         log_skip "To rebuild from scratch: docker compose down -v && ./setup.sh --full"
         # Mark the install path as complete so setup.sh::main() does not fall
         # through to stop_existing_stack / pull_images / configure.sh on a
@@ -54,7 +50,7 @@ run_stage1() {
         return 0
     fi
 
-    ui_banner "MediaStack — Stage 1: Core LAN" "Working media server in 5–7 minutes"
+    ui_banner "MediaStack - Stage 1: Core LAN" "Working media server in 5-7 minutes"
 
     _wizard_run_discovery
     _stage1_show_system
@@ -74,7 +70,7 @@ run_stage1() {
             Back) continue ;;
             Abort)
                 _stage1_cleanup_preflight_nas_mount
-                log_info "Setup aborted — re-run setup.sh to try again"
+                log_info "Setup aborted - re-run setup.sh to try again"
                 exit 0
                 ;;
         esac
@@ -165,7 +161,7 @@ _stage1_show_system() {
     ui_box "Detected your system" \
         "$(ui_kv 'Hostname' "$hostname_value")" \
         "$(ui_kv 'LAN IP' "${_ENV_HOST_ADDRESS:-unknown}")" \
-        "$(ui_kv 'Public IP' "${_NET_PUBLIC_IP:-not detected — fine for LAN-only}")" \
+        "$(ui_kv 'Public IP' "${_NET_PUBLIC_IP:-not detected - fine for LAN-only}")" \
         "$(ui_kv 'OS' "$os_value")" \
         "$(ui_kv 'Docker version' "${docker_value:-unknown}")" \
         "$(ui_kv 'RAM total' "${ram_value:-unknown}")" \
@@ -185,7 +181,7 @@ _stage1_show_system() {
             _WIZ_TZ=$(ui_input_validated "Timezone" "$tz_default" validate_timezone)
             ;;
         "Abort")
-            log_info "Setup aborted — re-run setup.sh to try again"
+            log_info "Setup aborted - re-run setup.sh to try again"
             exit 0
             ;;
         *)
@@ -229,7 +225,9 @@ _stage1_collect_admin() {
             exit 1
         fi
     fi
-    _WIZ_ADMIN_PW=$(ui_input_validated \
+    # Masked input: the admin password is the single shared credential for the whole
+    # stack — never echo keystrokes (or the generated default) into terminal scrollback.
+    _WIZ_ADMIN_PW=$(ui_password_validated \
         "Admin password" \
         "$password_default" \
         validate_admin_password)
@@ -244,9 +242,9 @@ _stage1_collect_storage() {
         local_default="${_WIZ_PREV_DATA_DIR:-/data}"
     fi
     storage_choice=$(ui_choose "Where should MediaStack store media and downloads?" \
-        "Local disk (${local_default}) — Recommended for most users." \
-        "Network/NAS storage (NFS) — MediaStack manages mount checks and service protection." \
-        "Advanced manual storage — install apps but skip app-level storage wiring." \
+        "Local disk (${local_default}) - Recommended for most users." \
+        "Network/NAS storage (NFS) - MediaStack manages mount checks and service protection." \
+        "Advanced manual storage - install apps but skip app-level storage wiring." \
         "Quit installer")
 
     case "$storage_choice" in
@@ -261,7 +259,7 @@ _stage1_collect_storage() {
             _stage1_collect_manual_storage
             ;;
         "Quit"*)
-            log_info "Setup aborted — re-run setup.sh to try again"
+            log_info "Setup aborted - re-run setup.sh to try again"
             exit 0
             ;;
         *)
@@ -286,7 +284,7 @@ _stage1_collect_storage() {
     local free_ram_gb
     free_ram_gb=$(awk '/^MemAvailable:/ {print int($2/1024/1024)}' /proc/meminfo 2>/dev/null)
     if [[ -n "$free_ram_gb" && "$free_ram_gb" -lt 4 ]]; then
-        ui_log warn "Only ${free_ram_gb}GB RAM free — Bazarr may struggle (it expects ~4GB)."
+        ui_log warn "Only ${free_ram_gb}GB RAM free - Bazarr may struggle (it expects ~4GB)."
     fi
     if ui_confirm "Enable automatic subtitle downloads with Bazarr?" "$bazarr_default"; then
         _WIZ_BAZARR_ENABLED="true"
@@ -305,7 +303,7 @@ _stage1_collect_storage() {
                     _WIZ_SMB_ENABLED="true"
                     local smb_scope_choice
                     smb_scope_choice=$(ui_choose "Choose SMB share scope:" \
-                        "Media files only (${_WIZ_DATA_DIR}) — Recommended for most users." \
+                        "Media files only (${_WIZ_DATA_DIR}) - Recommended for most users." \
                         "Full system (/): advanced admin access to the whole server.")
                     case "$smb_scope_choice" in
                         "Full system"*) _WIZ_SMB_SHARE_SCOPE="system" ;;
@@ -321,7 +319,7 @@ _stage1_collect_storage() {
                     "Quit installer")
                 case "$smb_action" in
                     "Retry"*) continue ;;
-                    "Quit"*) log_info "Setup aborted — re-run setup.sh to try again"; exit 0 ;;
+                    "Quit"*) log_info "Setup aborted - re-run setup.sh to try again"; exit 0 ;;
                     *)
                         _WIZ_SMB_ENABLED="false"
                         _WIZ_SMB_SHARE_SCOPE="${_WIZ_SMB_SHARE_SCOPE:-${_WIZ_PREV_SMB_SHARE_SCOPE:-data}}"
@@ -475,7 +473,7 @@ _stage1_preflight_nas_choice() {
             case "$fallback" in
                 "Retry"*) continue ;;
                 "Advanced manual"*) _stage1_collect_manual_storage ;;
-                "Quit"*) log_info "Setup aborted — re-run setup.sh to try again"; exit 0 ;;
+                "Quit"*) log_info "Setup aborted - re-run setup.sh to try again"; exit 0 ;;
                 *) _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"; _stage1_reset_local_storage_fields ;;
             esac
             DATA_DIR="$prev_data"; STORAGE_MODE="$prev_mode"; STORAGE_NFS_HOST="$prev_host"; STORAGE_NFS_EXPORT="$prev_export"; STORAGE_NFS_OPTS="$prev_opts"; STORAGE_SENTINEL="$prev_sentinel"; STORAGE_MOUNTPOINT="$prev_mountpoint"; STORAGE_EXPECTED_SOURCE="$prev_expected_source"; STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
@@ -496,7 +494,7 @@ _stage1_preflight_nas_choice() {
                 "Advanced manual"*)
                     _stage1_collect_manual_storage
                     ;;
-                "Quit"*) log_info "Setup aborted — re-run setup.sh to try again"; exit 0 ;;
+                "Quit"*) log_info "Setup aborted - re-run setup.sh to try again"; exit 0 ;;
                 *)
                     _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"
                     _stage1_reset_local_storage_fields
@@ -546,7 +544,7 @@ _stage1_resolve_nonstandard_nas_root() {
     local reason="$1"
     local choice
     choice=$(ui_choose "How should MediaStack handle this NAS share?" \
-        "Use a new mediastack/ subfolder on this NAS — Recommended." \
+        "Use a new mediastack/ subfolder on this NAS - Recommended." \
         "Use local storage instead" \
         "Advanced manual storage" \
         "Quit installer")
@@ -562,7 +560,7 @@ _stage1_resolve_nonstandard_nas_root() {
             ;;
         "Quit"*)
             _stage1_cleanup_preflight_nas_mount
-            log_info "Setup aborted — re-run setup.sh to try again"
+            log_info "Setup aborted - re-run setup.sh to try again"
             exit 0
             ;;
         *)
@@ -621,7 +619,7 @@ _stage1_final_nas_preflight() {
                 continue
                 ;;
             "Quit"*)
-                log_info "Setup aborted — re-run setup.sh to try again"
+                log_info "Setup aborted - re-run setup.sh to try again"
                 exit 0
                 ;;
             *)
@@ -641,18 +639,27 @@ _stage1_collect_quality() {
     # from smallest to largest, but default to Balanced as the recommended tier.
     local preset_choice
     preset_choice=$(UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Choose how much storage to spend per movie/show:" \
-        "Compact (~2-4 GB/movie) — Smaller files, good quality. Best for limited storage." \
-        "Balanced (~4-8 GB/movie) — Recommended for most users." \
-        "Quality (~6-15 GB/movie) — Best quality at 1080p. Larger files.")
+        "Compact (~2-4 GB/movie) - Smaller files, good quality. Best for limited storage." \
+        "Balanced (~4-8 GB/movie) - Recommended for most users." \
+        "Quality (~6-15 GB/movie) - Best quality at 1080p. Larger files.")
     case "$preset_choice" in
         Compact*)  _WIZ_QUALITY_PRESET="compact" ;;
         Quality*)  _WIZ_QUALITY_PRESET="quality" ;;
         *)         _WIZ_QUALITY_PRESET="balanced" ;;
     esac
 
-    _WIZ_SUBTITLE_LANGS=$(ui_input \
+    _WIZ_SUBTITLE_LANGS=$(ui_input_validated \
         "Subtitle languages (comma-separated, e.g. english,spanish,french)" \
-        "${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}")
+        "${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}" \
+        validate_subtitle_langs)
+    # ui_input_validated echoes the raw input (the validator only returns 0/1),
+    # so lowercase the accepted value here: Bazarr's LANG_MAP lookup is
+    # case-sensitive over lowercase keys, and the value reaches config.yml
+    # verbatim. ${,,} folds casing only (commas/spaces untouched; wizard_apply.py
+    # strips per-token whitespace) — not validity, but the DEMO/non-TTY
+    # short-circuit returns the literal 'english' default, so nothing invalid
+    # can slip through unvalidated.
+    _WIZ_SUBTITLE_LANGS="${_WIZ_SUBTITLE_LANGS,,}"
 
     local indexer_default="no"
     if [[ "${_WIZ_PUBLIC_INDEXERS_ENABLED:-${_WIZ_PREV_PUBLIC_INDEXERS:-false}}" == "true" ]]; then
@@ -680,8 +687,8 @@ _stage1_collect_image_channel() {
     esac
 
     channel_choice=$(UI_CHOOSE_DEFAULT_INDEX=$default_index ui_choose "Choose how MediaStack should update container images:" \
-        "Stable — recommended tested image digests from this MediaStack repo." \
-        "Latest — advanced upstream image tags, newest available from registries.")
+        "Stable - recommended tested image digests from this MediaStack repo." \
+        "Latest - advanced upstream image tags, newest available from registries.")
     case "$channel_choice" in
         Latest*) _WIZ_IMAGE_CHANNEL="latest" ;;
         *)       _WIZ_IMAGE_CHANNEL="stable" ;;
@@ -719,9 +726,9 @@ _stage1_collect_qbit() {
     # for qBittorrent to bind?"), not a forwarding check. ss-based bind
     # detection is reliable regardless of hairpin NAT / public IP detection.
     if net_is_port_locally_bound "$_WIZ_TORRENT_PORT"; then
-        ui_log warn "Port ${_WIZ_TORRENT_PORT} is already in use by another process — qBittorrent will fail to bind. Pick a different port or free this one."
+        ui_log warn "Port ${_WIZ_TORRENT_PORT} is already in use by another process - qBittorrent will fail to bind. Pick a different port or free this one."
     else
-        ui_log info "Port ${_WIZ_TORRENT_PORT}: available — public reachability will be verified after qBittorrent starts in Stage 1."
+        ui_log info "Port ${_WIZ_TORRENT_PORT}: available - public reachability will be verified after qBittorrent starts in Stage 1."
     fi
 }
 
@@ -757,8 +764,8 @@ _stage1_confirm() {
         "$(ui_kv 'Image channel' "${_WIZ_IMAGE_CHANNEL:-stable}")" \
         "$(ui_kv 'Storage' "${_WIZ_STORAGE_MODE:-local} at ${_WIZ_DATA_DIR:-/data} (${_WIZ_STORAGE_APP_WIRING:-managed} app wiring)")" \
         "$(ui_kv 'Indexer preset' "${_WIZ_PUBLIC_INDEXERS_ENABLED:-false}")" \
-        "$(ui_kv 'Time' '5–7 minutes on first run')" \
-        "$(ui_kv 'Access' 'no public access — LAN only')" \
+        "$(ui_kv 'Time' '5-7 minutes on first run')" \
+        "$(ui_kv 'Access' 'no public access - LAN only')" \
         "$(ui_kv 'Result' 'Working media server on your LAN')"
 
     _STAGE1_CONFIRM_ACTION=$(ui_choose "Proceed with Stage 1 installation?" \
@@ -769,6 +776,8 @@ _stage1_confirm() {
 
 _stage1_install() {
     log_info "Stage 1: installing your media server..."
+    # Global read by setup.sh::main() to decide post-install steps, not here.
+    # shellcheck disable=SC2034
     WIZARD_RAN_INSTALL=true
 
     _wizard_apply_settings \
@@ -803,7 +812,7 @@ _stage1_install() {
         (( scaled_min_free > 20 )) && scaled_min_free=20
         if [[ "$scaled_min_free" != "20" ]]; then
             sed -i "s/^min_free_space_gb:.*/min_free_space_gb: ${scaled_min_free}    # auto-scaled by wizard from ${data_free_gb}GB free/" "$SCRIPT_DIR/config.yml"
-            log_info "Auto-scaled min_free_space_gb to ${scaled_min_free}GB (10% of ${data_free_gb}GB available — was hardcoded 20GB)."
+            log_info "Auto-scaled min_free_space_gb to ${scaled_min_free}GB (10% of ${data_free_gb}GB available - was hardcoded 20GB)."
         fi
     fi
 
@@ -850,12 +859,12 @@ _stage1_install() {
             probe_ok=true
             log_ok "Jellyfin admin user authenticated at http://${_ENV_HOST_ADDRESS}:8096"
         else
-            log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set — configure.sh may have left services half-configured. Check 'docker compose logs jellyfin' and re-run setup.sh."
+            log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set - configure.sh may have left services half-configured. Check 'docker compose logs jellyfin' and re-run setup.sh."
         fi
     elif curl --max-time 5 -fsS "http://${_ENV_HOST_ADDRESS}:8096/health" >/dev/null 2>&1; then
         # Fallback only — JELLYFIN_API_KEY missing means configure.sh did
         # not reach the jellyfin step, so do not flip the marker.
-        log_warn "Jellyfin /health responded but JELLYFIN_API_KEY is empty — admin user was not created. Check 'docker compose logs jellyfin' and re-run setup.sh."
+        log_warn "Jellyfin /health responded but JELLYFIN_API_KEY is empty - admin user was not created. Check 'docker compose logs jellyfin' and re-run setup.sh."
     else
         log_warn "Jellyfin didn't respond at http://${_ENV_HOST_ADDRESS}:8096/health within 5s. Check container logs: docker compose logs jellyfin"
     fi
@@ -864,7 +873,7 @@ _stage1_install() {
         sed -i 's/^STAGE_1_COMPLETE=$/STAGE_1_COMPLETE=1/' "$SCRIPT_DIR/.env"
         log_ok "Stage 1 complete (STAGE_1_COMPLETE=1)"
     else
-        log_warn "Stage 1 marker NOT set — re-run setup.sh after fixing"
+        log_warn "Stage 1 marker NOT set - re-run setup.sh after fixing"
     fi
 
     print_access_info

@@ -260,6 +260,22 @@ validate_nfs_host "nas host"; rc=$?
 assert_eq "1" "$rc" "validate_nfs_host: rejects whitespace"
 
 reset_warn
+validate_nfs_host "999.999.999.999"; rc=$?
+assert_eq "1" "$rc" "validate_nfs_host: rejects IPv4 octet over 255"
+
+reset_warn
+validate_nfs_host "192.168.1"; rc=$?
+assert_eq "1" "$rc" "validate_nfs_host: rejects incomplete IPv4"
+
+reset_warn
+validate_nfs_host "synology"; rc=$?
+assert_eq "0" "$rc" "validate_nfs_host: accepts single-label hostname"
+
+reset_warn
+validate_nfs_host "10.0.08.5"; rc=$?
+assert_eq "0" "$rc" "validate_nfs_host: accepts leading-zero octet (base-10, not octal)"
+
+reset_warn
 validate_nfs_export "/exports/mediastack"; rc=$?
 assert_eq "0" "$rc" "validate_nfs_export: accepts absolute export path"
 
@@ -391,6 +407,118 @@ if [[ -d /usr/share/zoneinfo/Etc ]]; then
     validate_timezone "Etc"; rc=$?
     assert_eq "1" "$rc" "validate_timezone (WR-03): rejects bare directory (Etc)"
 fi
+
+# ---------------------------------------------------------------------------
+# Subtitle languages (#11) — reject typo'd / unsupported / empty input so
+# Bazarr never silently ends up with zero languages. Validator lowercases each
+# token internally to check, so capitalised input is accepted (the stage1 call
+# site stores the lowercased value).
+# ---------------------------------------------------------------------------
+reset_warn
+validate_subtitle_langs "english"; rc=$?
+assert_eq "0" "$rc" "validate_subtitle_langs: accepts a single supported language"
+assert_eq "0" "$WARN_COUNT" "validate_subtitle_langs: valid input emits no warn"
+
+reset_warn
+validate_subtitle_langs "english,spanish,french"; rc=$?
+assert_eq "0" "$rc" "validate_subtitle_langs: accepts a comma list of supported languages"
+
+reset_warn
+validate_subtitle_langs "English, SPANISH"; rc=$?
+assert_eq "0" "$rc" "validate_subtitle_langs: accepts mixed-case (case-insensitive)"
+
+reset_warn
+validate_subtitle_langs "english,"; rc=$?
+assert_eq "0" "$rc" "validate_subtitle_langs: accepts a trailing comma (empty token skipped)"
+
+reset_warn
+validate_subtitle_langs "klingon"; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: rejects an unsupported language"
+assert_eq "1" "$WARN_COUNT" "validate_subtitle_langs: unsupported warns once"
+assert_contains "$LAST_WARN" "klingon" "validate_subtitle_langs: warn names the bad token"
+assert_contains "$LAST_WARN" "Supported" "validate_subtitle_langs: warn lists the supported set"
+
+reset_warn
+validate_subtitle_langs "englsih"; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: rejects a typo'd language"
+
+reset_warn
+validate_subtitle_langs "english,klingon"; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: rejects when one token of several is bad"
+assert_contains "$LAST_WARN" "klingon" "validate_subtitle_langs: warn names only the bad token"
+
+reset_warn
+validate_subtitle_langs ""; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: rejects empty input"
+assert_eq "1" "$WARN_COUNT" "validate_subtitle_langs: empty warns once"
+
+reset_warn
+validate_subtitle_langs ",,,"; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: rejects commas-only (zero real tokens)"
+
+reset_warn
+validate_subtitle_langs "   "; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: rejects whitespace-only input"
+
+reset_warn
+validate_subtitle_langs "english spanish"; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: rejects space-separated (one bad token, only comma splits)"
+
+# Whole-word membership: a substring of a supported key must NOT pass.
+reset_warn
+validate_subtitle_langs "dan"; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs: 'dan' does not match 'danish'"
+
+# Drift guard: the validator's supported set must equal Bazarr's LANG_MAP keys.
+# Extract the 19 keys with an anchored grep (matches '    'english':    {'code2'),
+# which avoids the unrelated quoted tokens elsewhere in the file (code2/code3/en).
+LANG_MAP_KEYS=$(grep -oP "^\s+'\K[a-z]+(?=':\s+\{'code2')" \
+    "$REPO_ROOT/scripts/services/bazarr/main.sh")
+LANG_MAP_COUNT=$(printf '%s\n' "$LANG_MAP_KEYS" | grep -c .)
+assert_eq "19" "$LANG_MAP_COUNT" "validate_subtitle_langs (drift): LANG_MAP has 19 keys"
+while IFS= read -r _key; do
+    [[ -z "$_key" ]] && continue
+    reset_warn
+    validate_subtitle_langs "$_key"; rc=$?
+    assert_eq "0" "$rc" "validate_subtitle_langs (drift): accepts LANG_MAP key '$_key'"
+done <<< "$LANG_MAP_KEYS"
+
+# Bidirectional set-equality: the validator's own `supported` set must equal the
+# LANG_MAP keys exactly — both directions. The per-key loop above only proves the
+# validator accepts every LANG_MAP key (superset); this also catches a future
+# EXTRA entry in validators.sh that LANG_MAP lacks, which would silently
+# reintroduce the zero-language drop for that word.
+LANG_MAP_SET=$(printf '%s\n' "$LANG_MAP_KEYS" | sort -u | paste -sd, -)
+VALIDATOR_SET=$(grep -oP 'local supported="\K[^"]+' \
+    "$REPO_ROOT/scripts/lib/validators.sh" | tr ' ' '\n' | sort -u | paste -sd, -)
+assert_eq "$LANG_MAP_SET" "$VALIDATOR_SET" \
+    "validate_subtitle_langs (drift): validator set == LANG_MAP keys exactly (both directions)"
+
+reset_warn
+validate_subtitle_langs "zzznotalang"; rc=$?
+assert_eq "1" "$rc" "validate_subtitle_langs (drift): rejects a non-LANG_MAP sentinel"
+
+# ---------------------------------------------------------------------------
+# MB/s speed-limit validator (qBittorrent DL/UL; #50). Distinct from the Mbps
+# validators: same grammar, unit-correct "MB/s" copy. 0 = unlimited.
+# ---------------------------------------------------------------------------
+for ok in "0" "5" "1.5" "100" "0.5"; do
+    reset_warn
+    validate_mb_per_sec "$ok"; rc=$?
+    assert_eq "0" "$rc" "validate_mb_per_sec: accepts '$ok'"
+    assert_eq "0" "$WARN_COUNT" "validate_mb_per_sec: '$ok' emits no warn"
+done
+
+for bad in "" "abc" "1.2.3" "5mb" "-1" "1," "1 "; do
+    reset_warn
+    validate_mb_per_sec "$bad"; rc=$?
+    assert_eq "1" "$rc" "validate_mb_per_sec: rejects '$bad'"
+    assert_eq "1" "$WARN_COUNT" "validate_mb_per_sec: '$bad' warns once"
+done
+
+reset_warn
+validate_mb_per_sec "x"; rc=$?
+assert_contains "$LAST_WARN" "MB/s" "validate_mb_per_sec: warn copy says MB/s (not Mbps)"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

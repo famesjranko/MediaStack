@@ -675,14 +675,14 @@ done
 
 gpu_env_calls=()
 verify_calls=()
-runtime_calls=0
+runtime_count=0
 configure_calls=0
 probe_calls=0
 summary_calls=0
 ui_choose() { printf '%s\n' "Retry verification"; }
 ui_log() { :; }
 stage3_set_gpu_env() { gpu_env_calls+=("$1:$2:$3:$4"); STAGE_3_GPU_ENCODER="$4"; }
-_stage3_apply_runtime_override() { runtime_calls=$((runtime_calls + 1)); return 0; }
+_stage3_apply_runtime_override() { runtime_count=$((runtime_count + 1)); return 0; }
 stage3_probe_capabilities() { probe_calls=$((probe_calls + 1)); return 0; }
 _stage3_configure_jellyfin() { configure_calls=$((configure_calls + 1)); return 0; }
 _stage3_verify_jellyfin_encoding() { return 0; }
@@ -695,12 +695,12 @@ _stage3_configure_intel
 assert_contains "${verify_calls[*]}" "intel:qsv" "S3-08: Intel hardware flow tries QSV first"
 assert_contains "${verify_calls[*]}" "intel:vaapi" "S3-08: Intel hardware flow tries VAAPI after QSV fails"
 assert_contains "${gpu_env_calls[*]}" "intel:complete:intel:vaapi" "S3-08: Intel VAAPI fallback can mark hardware transcoding complete"
-assert_eq "4" "$runtime_calls" "S3-08: Intel fallback applies runtime for three QSV attempts plus VAAPI"
+assert_eq "4" "$runtime_count" "S3-08: Intel fallback applies runtime for three QSV attempts plus VAAPI"
 assert_eq "4" "$probe_calls" "S3-08: Intel fallback probes capabilities for each hardware attempt"
 assert_eq "4" "$configure_calls" "S3-08: Intel fallback configures Jellyfin for each hardware attempt"
 assert_eq "1" "$summary_calls" "S3-08: Intel VAAPI fallback prints final summary once"
 unset -f ui_choose ui_log stage3_set_gpu_env _stage3_apply_runtime_override stage3_probe_capabilities _stage3_configure_jellyfin _stage3_verify_jellyfin_encoding stage3_verify_transcode_evidence print_final_summary
-unset gpu_env_calls verify_calls runtime_calls probe_calls configure_calls summary_calls
+unset gpu_env_calls verify_calls runtime_count probe_calls configure_calls summary_calls
 
 source "$REPO_ROOT/scripts/services/jellyfin/main.sh"
 api_fetch_post_body=""

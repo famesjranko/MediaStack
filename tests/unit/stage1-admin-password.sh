@@ -34,7 +34,14 @@ openssl() {
     command openssl "$@"
 }
 
+# Admin username + email still use ui_input_validated; just echo their defaults.
 ui_input_validated() {
+    printf '%s\n' "${2:-}"
+}
+
+# The admin PASSWORD is now collected via the masked ui_password_validated wrapper
+# (issue #6) rather than ui_input_validated — capture its offered default here.
+ui_password_validated() {
     local prompt="$1"
     local default="$2"
 

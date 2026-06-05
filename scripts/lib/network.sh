@@ -162,10 +162,10 @@ net_port_status_label() {
     local port="$1"
     local status="${_NET_PORT_STATUS[$port]:-unknown}"
     case "$status" in
-        open)             echo -e "\033[0;32m✓ open\033[0m" ;;
-        closed)           echo -e "\033[1;33m✗ closed\033[0m" ;;
-        udp-unverifiable) echo -e "\033[0;90mUDP (unverifiable)\033[0m" ;;
-        *)                echo -e "\033[0;90m? unknown\033[0m" ;;
+        open)             echo -e "${GREEN}${_G_CHECK} open${NC}" ;;
+        closed)           echo -e "${YELLOW}${_G_CROSS} closed${NC}" ;;
+        udp-unverifiable) echo -e "${GRAY}UDP (unverifiable)${NC}" ;;
+        *)                echo -e "${GRAY}? unknown${NC}" ;;
     esac
 }
 

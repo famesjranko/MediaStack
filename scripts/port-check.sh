@@ -44,7 +44,7 @@ checks_fail=0
 checks_skip=0
 
 check_pass() { echo -e "  ${GREEN}[PASS]${NC} $1"; checks_pass=$((checks_pass + 1)); }
-check_fail() { echo -e "  ${RED}[FAIL]${NC} $1${2:+  — $2}"; checks_fail=$((checks_fail + 1)); }
+check_fail() { echo -e "  ${RED}[FAIL]${NC} $1${2:+  - $2}"; checks_fail=$((checks_fail + 1)); }
 check_skip() { echo -e "  ${YELLOW}[SKIP]${NC} $1${2:+  ($2)}"; checks_skip=$((checks_skip + 1)); }
 
 resolve_host_ip() {
@@ -66,7 +66,7 @@ if net_detect_public_ip; then
     public_ip="$_NET_PUBLIC_IP"
     log_info "Public IP: $public_ip"
 else
-    log_warn "Could not detect public IP — skipping DNS comparison"
+    log_warn "Could not detect public IP - skipping DNS comparison"
 fi
 
 # -----------------------------------------------------------------------------
@@ -76,7 +76,7 @@ if $has_domain; then
     for host in "${service_hosts[@]}"; do
         resolved_ip=$(resolve_host_ip "$host")
         if [[ -n "$resolved_ip" ]]; then
-            log_info "DNS: $host → $resolved_ip"
+            log_info "DNS: $host -> $resolved_ip"
             if [[ -n "$public_ip" ]]; then
                 if [[ "$resolved_ip" == "$public_ip" ]]; then
                     check_pass "DNS $host matches public IP ($public_ip)"
@@ -87,13 +87,13 @@ if $has_domain; then
                 check_skip "DNS $host vs public IP comparison" "could not detect public IP"
             fi
         else
-            check_fail "DNS resolution for $host" "$host does not resolve — add a wildcard *.${DOMAIN} record or separate service A records"
+            check_fail "DNS resolution for $host" "$host does not resolve - add a wildcard *.${DOMAIN} record or separate service A records"
         fi
     done
 
     apex_ip=$(resolve_host_ip "$DOMAIN")
     if [[ -n "$apex_ip" ]]; then
-        log_info "Optional apex DNS: $DOMAIN → $apex_ip"
+        log_info "Optional apex DNS: $DOMAIN -> $apex_ip"
     else
         log_info "Optional apex DNS: $DOMAIN is not required; MediaStack uses jellyfin.$DOMAIN and jellyseerr.$DOMAIN."
     fi
@@ -132,15 +132,15 @@ elif [[ -n "$public_ip" ]]; then
     case $(net_check_tcp_port_external 80; echo "rc:$?") in
         rc:0) check_pass "TCP 80 (router forwarding)" ;;
         rc:1) check_fail "TCP 80 (router forwarding)" "no response on $public_ip:80" ;;
-        rc:3) check_fail "TCP 80 (router forwarding)" "$public_ip:80 reachable from internet, but traffic does NOT land on this host — router is forwarding 80 to a different LAN device" ;;
-        rc:4) check_skip "TCP 80 (router forwarding)" "probed open, but verification skipped — port already bound by another service. Stop that service briefly to re-test" ;;
+        rc:3) check_fail "TCP 80 (router forwarding)" "$public_ip:80 reachable from internet, but traffic does NOT land on this host - router is forwarding 80 to a different LAN device" ;;
+        rc:4) check_skip "TCP 80 (router forwarding)" "probed open, but verification skipped - port already bound by another service. Stop that service briefly to re-test" ;;
         *)    check_skip "TCP 80 (router forwarding)" "could not bind listener or external probe service unreachable" ;;
     esac
     case $(net_check_tcp_port_external 443; echo "rc:$?") in
         rc:0) check_pass "TCP 443 (router forwarding)" ;;
         rc:1) check_fail "TCP 443 (router forwarding)" "no response on $public_ip:443" ;;
-        rc:3) check_fail "TCP 443 (router forwarding)" "$public_ip:443 reachable from internet, but traffic does NOT land on this host — router is forwarding 443 to a different LAN device" ;;
-        rc:4) check_skip "TCP 443 (router forwarding)" "probed open, but verification skipped — port already bound by another service. Stop that service briefly to re-test" ;;
+        rc:3) check_fail "TCP 443 (router forwarding)" "$public_ip:443 reachable from internet, but traffic does NOT land on this host - router is forwarding 443 to a different LAN device" ;;
+        rc:4) check_skip "TCP 443 (router forwarding)" "probed open, but verification skipped - port already bound by another service. Stop that service briefly to re-test" ;;
         *)    check_skip "TCP 443 (router forwarding)" "could not bind listener or external probe service unreachable" ;;
     esac
 else
@@ -155,8 +155,8 @@ if [[ -n "$public_ip" ]]; then
     case $(net_check_tcp_port_external "$TORRENT_PORT"; echo "rc:$?") in
         rc:0) check_pass "TCP $TORRENT_PORT (qBittorrent)" ;;
         rc:1) check_fail "TCP $TORRENT_PORT (qBittorrent)" "no response on $public_ip:$TORRENT_PORT (external probe)" ;;
-        rc:3) check_fail "TCP $TORRENT_PORT (qBittorrent)" "$public_ip:$TORRENT_PORT reachable from internet, but traffic does NOT land on this host — router is forwarding $TORRENT_PORT to a different LAN device" ;;
-        rc:4) check_skip "TCP $TORRENT_PORT (qBittorrent)" "probed open, but verification skipped — port already bound by another service (qBittorrent itself, presumably). Stop it briefly to re-test" ;;
+        rc:3) check_fail "TCP $TORRENT_PORT (qBittorrent)" "$public_ip:$TORRENT_PORT reachable from internet, but traffic does NOT land on this host - router is forwarding $TORRENT_PORT to a different LAN device" ;;
+        rc:4) check_skip "TCP $TORRENT_PORT (qBittorrent)" "probed open, but verification skipped - port already bound by another service (qBittorrent itself, presumably). Stop it briefly to re-test" ;;
         *)    check_skip "TCP $TORRENT_PORT (qBittorrent)" "external port-check service unreachable" ;;
     esac
 else
@@ -166,9 +166,9 @@ fi
 # UDP — WireGuard; can't reliably probe externally, check container status
 wg_status=$(docker inspect --format '{{.State.Status}}' wireguard 2>/dev/null || echo "")
 if [[ "$wg_status" == "running" ]]; then
-    check_pass "UDP $WG_PORT (WireGuard) — container running (external probe not possible)"
+    check_pass "UDP $WG_PORT (WireGuard) - container running (external probe not possible)"
 elif [[ -z "$wg_status" ]]; then
-    check_skip "UDP $WG_PORT (WireGuard)" "WireGuard not installed yet — re-run after setup.sh --remote"
+    check_skip "UDP $WG_PORT (WireGuard)" "WireGuard not installed yet - re-run after setup.sh --remote"
 else
     check_fail "UDP $WG_PORT (WireGuard)" "container status: $wg_status"
 fi
@@ -207,10 +207,10 @@ if [[ $checks_fail -gt 0 || $checks_skip -gt 0 ]]; then
     fwd_lines=(
         "Forward these ports to $local_ip in your router:"
         ""
-        "  TCP+UDP ${TORRENT_PORT} → $local_ip   (qBittorrent peer connections — always required)"
-        "  TCP 80      → $local_ip   (Let's Encrypt + HTTP redirect — only if using a domain)"
-        "  TCP 443     → $local_ip   (HTTPS — Jellyfin, Jellyseerr — only if using a domain)"
-        "  UDP ${WG_PORT}   → $local_ip   (WireGuard VPN — only if using remote access)"
+        "  TCP+UDP ${TORRENT_PORT} -> $local_ip   (qBittorrent peer connections - always required)"
+        "  TCP 80      -> $local_ip   (Let's Encrypt + HTTP redirect - only if using a domain)"
+        "  TCP 443     -> $local_ip   (HTTPS - Jellyfin, Jellyseerr - only if using a domain)"
+        "  UDP ${WG_PORT}   -> $local_ip   (WireGuard VPN - only if using remote access)"
     )
     ui_box "Required Port Forwards" "${fwd_lines[@]}"
 fi

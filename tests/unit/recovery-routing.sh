@@ -37,6 +37,8 @@ order_text() {
 
 reset_route_state() {
     ORDER=()
+    # Fixture consumed by the sourced product code under test.
+    # shellcheck disable=SC2034
     CONFIGURE_ENV=()
     unset STAGE_1_COMPLETE REMOTE_WEB_STATE JELLYFIN_GPU
     unset STAGE_3_GPU_STATE STAGE_3_GPU_VENDOR STAGE_3_GPU_ENCODER
@@ -131,6 +133,7 @@ if ! type show_existing_install_menu >/dev/null 2>&1; then
 fi
 
 PRODUCTION_DETECT_EXISTING_INSTALL_DEF=$(declare -f detect_existing_install)
+PRODUCTION_NUKE_DEF=$(declare -f nuke_existing_install)
 PRODUCTION_REPAIR_DDNS_DEF=$(declare -f repair_ddns_updater_config_permissions)
 PRODUCTION_STAGE3_PENDING_DEF=$(declare -f stage3_pending_nvidia_reboot_same_boot)
 PRODUCTION_STAGE3_PROMPT_DEF=$(declare -f stage3_prompt_pending_nvidia_reboot)
@@ -364,8 +367,19 @@ else
 fi
 
 if ! is_pending_helper show_existing_install_menu; then
-    ui_box() { record ui_box; }
+    ui_box() {
+        record ui_box
+        # Capture the box body (intro + "Current setup:" feature-state block) so
+        # tests can assert the re-entry menu surfaces current state. The intro
+        # title is $1; the remaining args are content lines.
+        if [[ -n "${BOX_CAPTURE:-}" ]]; then
+            shift
+            printf '%s\n' "$@" > "$BOX_CAPTURE"
+        fi
+    }
     ui_choose() {
+        # Recording hook for debugging; not asserted.
+        # shellcheck disable=SC2034
         MENU_PROMPT="$1"
         shift
         printf '%s\n' "$*" > "$MENU_CAPTURE"
@@ -380,31 +394,80 @@ if ! is_pending_helper show_existing_install_menu; then
     seed_env "unchecked" "none" "skipped"
     GPU_TYPE="intel"
     MENU_CAPTURE="$SCRIPT_DIR/menu-options"
-    MENU_CHOICE="Retry remote access"
+    BOX_CAPTURE="$SCRIPT_DIR/menu-box"
+    MENU_CHOICE="Add remote access"
+    MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
     show_existing_install_menu >/dev/null 2>&1; rc=$?
     MENU_OPTIONS=$(cat "$MENU_CAPTURE")
+    MENU_BOX=$(cat "$BOX_CAPTURE")
     assert_eq "0" "$rc" "REC-04: remote menu action returns helper status"
     assert_eq "completed" "$RECOVERY_MENU_ACTION" "REC-04: remote menu action sets RECOVERY_MENU_ACTION=completed"
+    assert_eq "completed" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-04: successful sub-action records 'completed' for the strict launcher capstone"
+    unset MEDIASTACK_LAUNCHER_RESULT
     assert_order_has "run_remote_recovery" "REC-04: remote menu action dispatches to run_remote_recovery"
     assert_order_lacks "nuke_existing_install" "REC-04: remote menu action does not wipe"
-    assert_contains "$MENU_OPTIONS" "Retry remote access" "REC-04: menu shows retry remote when unchecked"
-    assert_contains "$MENU_OPTIONS" "Configure hardware transcoding" "REC-04: menu shows transcoding when GPU is fresh"
+    assert_contains "$MENU_OPTIONS" "Add remote access" "REC-04: menu shows add remote when unchecked"
+    assert_contains "$MENU_OPTIONS" "Add hardware transcoding" "REC-04: menu shows transcoding when GPU is fresh"
+
+    # REC-06: the re-entry menu surfaces the CURRENT state of every offered
+    # feature in the intro box (issue #39), reusing the print_final_summary
+    # labels. Index safety: this state must live in the printed box, NOT as a
+    # ui_choose option (a status line consuming a selection index would break
+    # the position-based PTY drivers wizard-ui-recovery-continue/-wipe-guard).
+    assert_contains "$MENU_BOX" "Current setup:" "REC-06: re-entry box shows a Current setup status block"
+    assert_contains "$MENU_BOX" "Remote access: not configured" "REC-06: box reports remote-access state (unchecked -> not configured)"
+    assert_contains "$MENU_BOX" "Hardware transcoding: skipped -- software transcoding" "REC-06: box reports transcoding state from STAGE_3_GPU_STATE"
+    if [[ "$MENU_OPTIONS" == *"Current setup"* || "$MENU_OPTIONS" == *"Remote access:"* || "$MENU_OPTIONS" == *"Hardware transcoding:"* ]]; then
+        fail "REC-06: feature-state text must NOT be a ui_choose option (index safety)" "$MENU_OPTIONS"
+    else
+        pass "REC-06: feature-state text is not a selectable ui_choose option (index safety)"
+    fi
+    # Index safety: the full selectable option list (ui_choose args) must be
+    # byte-identical to pre-change order, so the position-based PTY drivers keep
+    # working. ui_choose joins args with a single space (see its stub above).
+    assert_eq "Add remote access Add hardware transcoding Continue without changes Wipe everything and start fresh Abort" "$MENU_OPTIONS" "REC-06: selectable option order is unchanged (state block did not add a ui_choose item)"
+    unset BOX_CAPTURE
+
+    # REC-06: exact replay of the wizard-ui-recovery-continue PTY fixture state
+    # (REMOTE_WEB_STATE empty, GPU none) — the driver sends "2" expecting
+    # "Continue without changes". Confirm the state block did not shift it and
+    # only the offered (remote) feature gets a status line.
+    reset_route_state
+    seed_script_dir "menu-state-continue-index"
+    seed_env "" "none" ""
+    GPU_TYPE="none"
+    MENU_CAPTURE="$SCRIPT_DIR/menu-options"
+    BOX_CAPTURE="$SCRIPT_DIR/menu-box"
+    MENU_CHOICE="Continue without changes"
+    show_existing_install_menu >/dev/null 2>&1; rc=$?
+    MENU_OPTIONS=$(cat "$MENU_CAPTURE")
+    MENU_BOX=$(cat "$BOX_CAPTURE")
+    assert_eq "0" "$rc" "REC-06: continue path returns 0 in PTY fixture state"
+    assert_eq "continue" "$RECOVERY_MENU_ACTION" "REC-06: PTY fixture state -> Continue at position 2 dispatches continue"
+    assert_eq "Add remote access Continue without changes Wipe everything and start fresh Abort" "$MENU_OPTIONS" "REC-06: PTY fixture state keeps Continue at position 2 (recovery-continue driver sends 2)"
+    assert_contains "$MENU_BOX" "Remote access: not configured" "REC-06: PTY fixture state shows offered remote feature state"
+    if [[ "$MENU_BOX" == *"Hardware transcoding:"* ]]; then
+        fail "REC-06: no transcoding status line when GPU absent (not offered)" "$MENU_BOX"
+    else
+        pass "REC-06: no transcoding status line when GPU absent (state shown only for offered features)"
+    fi
+    unset BOX_CAPTURE
 
     reset_route_state
     seed_script_dir "menu-transcoding-action"
     seed_env "ready" "none" "skipped"
     GPU_TYPE="amd"
     MENU_CAPTURE="$SCRIPT_DIR/menu-options"
-    MENU_CHOICE="Configure hardware transcoding"
+    MENU_CHOICE="Add hardware transcoding"
     show_existing_install_menu >/dev/null 2>&1; rc=$?
     MENU_OPTIONS=$(cat "$MENU_CAPTURE")
     assert_eq "0" "$rc" "REC-04: transcoding menu action returns helper status"
     assert_eq "completed" "$RECOVERY_MENU_ACTION" "REC-04: transcoding menu action sets RECOVERY_MENU_ACTION=completed"
     assert_order_has "run_transcoding_recovery" "REC-04: transcoding menu action dispatches to run_transcoding_recovery"
-    if [[ "$MENU_OPTIONS" == *"Retry remote access"* ]]; then
-        fail "REC-04: menu hides retry remote when REMOTE_WEB_STATE=ready" "$MENU_OPTIONS"
+    if [[ "$MENU_OPTIONS" == *"Add remote access"* ]]; then
+        fail "REC-04: menu hides add remote when REMOTE_WEB_STATE=ready" "$MENU_OPTIONS"
     else
-        pass "REC-04: menu hides retry remote when REMOTE_WEB_STATE=ready"
+        pass "REC-04: menu hides add remote when REMOTE_WEB_STATE=ready"
     fi
 
     reset_route_state
@@ -416,10 +479,13 @@ if ! is_pending_helper show_existing_install_menu; then
     stage3_pending_nvidia_reboot_same_boot() { return 0; }
     stage3_prompt_pending_nvidia_reboot() { record stage3_prompt_pending_nvidia_reboot; return 0; }
     print_final_summary() { record print_final_summary; }
+    MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
     show_existing_install_menu >/dev/null 2>&1; rc=$?
     MENU_OPTIONS=$(cat "$MENU_CAPTURE")
     assert_eq "0" "$rc" "REC-04: pending NVIDIA reboot menu action returns 0"
     assert_eq "completed" "$RECOVERY_MENU_ACTION" "REC-04: pending NVIDIA reboot menu action sets RECOVERY_MENU_ACTION=completed"
+    assert_eq "reboot-pending" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-04: deferred reboot records 'reboot-pending', not a flat 'completed'"
+    unset MEDIASTACK_LAUNCHER_RESULT
     assert_contains "$MENU_OPTIONS" "Reboot to finish hardware transcoding" "REC-04: menu shows pending NVIDIA reboot action"
     assert_order_has "print_final_summary" "REC-04: pending NVIDIA reboot action prints final summary"
     assert_order_has "stage3_prompt_pending_nvidia_reboot" "REC-04: pending NVIDIA reboot action dispatches final reboot gate"
@@ -432,12 +498,14 @@ if ! is_pending_helper show_existing_install_menu; then
     seed_env "skipped" "none" "skipped"
     GPU_TYPE="intel"
     MENU_CAPTURE="$SCRIPT_DIR/menu-options"
-    MENU_CHOICE="Retry remote access"
+    MENU_CHOICE="Add remote access"
     REMOTE_RECOVERY_RC=33
+    MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
     show_existing_install_menu >/dev/null 2>&1; rc=$?
     assert_eq "33" "$rc" "REC-04: failed add-stage menu action propagates helper status"
     assert_eq "completed" "$RECOVERY_MENU_ACTION" "REC-04: failed add-stage preserves RECOVERY_MENU_ACTION=completed"
-    unset REMOTE_RECOVERY_RC
+    assert_eq "" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-04: failed sub-action writes NO token → launcher shows the real error"
+    unset MEDIASTACK_LAUNCHER_RESULT REMOTE_RECOVERY_RC
 
     reset_route_state
     seed_script_dir "menu-continue-action"
@@ -445,9 +513,12 @@ if ! is_pending_helper show_existing_install_menu; then
     GPU_TYPE="intel"
     MENU_CAPTURE="$SCRIPT_DIR/menu-options"
     MENU_CHOICE="Continue without changes"
+    MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
     show_existing_install_menu >/dev/null 2>&1; rc=$?
     assert_eq "0" "$rc" "REC-04: continue menu action returns 0"
     assert_eq "continue" "$RECOVERY_MENU_ACTION" "REC-04: continue menu action sets RECOVERY_MENU_ACTION=continue"
+    assert_eq "unchanged" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-04: continue records 'unchanged' for the launcher capstone"
+    unset MEDIASTACK_LAUNCHER_RESULT
 
     reset_route_state
     seed_script_dir "menu-wipe-action"
@@ -466,9 +537,12 @@ if ! is_pending_helper show_existing_install_menu; then
     GPU_TYPE="intel"
     MENU_CAPTURE="$SCRIPT_DIR/menu-options"
     MENU_CHOICE="Abort"
+    MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
     show_existing_install_menu >/dev/null 2>&1; rc=$?
     assert_eq "1" "$rc" "REC-04: abort menu action returns non-zero"
     assert_eq "abort" "$RECOVERY_MENU_ACTION" "REC-04: abort menu action sets RECOVERY_MENU_ACTION=abort"
+    assert_eq "aborted" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-04: submenu Abort records 'aborted' for the launcher capstone"
+    unset MEDIASTACK_LAUNCHER_RESULT
 else
     skip "REC-04: show_existing_install_menu action transport pending implementation"
 fi
@@ -538,9 +612,50 @@ detect_existing_install() {
     RECOVERY_MENU_ACTION=""
     return 0
 }
+MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
 main >/dev/null 2>&1; rc=$?
 assert_eq "0" "$rc" "REC-04: main after successful wipe-cleared action continues setup"
 assert_order_has "run_wizard" "REC-04: main after successful wipe-cleared action reaches run_wizard"
+assert_eq "completed" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-05: completed install records 'completed' so the strict launcher reports success"
+unset MEDIASTACK_LAUNCHER_RESULT
+
+# ---------------------------------------------------------------------------
+# REC-05: launcher capstone honesty (issue #4). The day-2 launcher runs setup.sh
+# as a child and reads a one-word outcome token (MEDIASTACK_LAUNCHER_RESULT) so
+# "user backed out" never renders as "completed successfully" and a deliberate
+# abort never renders as an error. Here we drive the REAL recovery exit points
+# (not the wholesale stubs above) and assert the token they leave behind. The
+# `exit 0` paths run in a subshell so they don't tear down the test process.
+# ---------------------------------------------------------------------------
+
+# Non-DESTROY at the wipe guard must record 'aborted' (declined wipe), NOT leave
+# the launcher to read the bare exit 0 as a successful destroy.
+eval "${PRODUCTION_NUKE_DEF/nuke_existing_install/production_nuke_existing_install}"
+reset_route_state
+seed_script_dir "nuke-declined-destroy"
+seed_env "ready" "none" "complete"
+ui_input() { printf '%s\n' "destroy please"; }
+MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
+( production_nuke_existing_install ) >/dev/null 2>&1; nuke_rc=$?
+assert_eq "0" "$nuke_rc" "REC-05: non-DESTROY wipe guard exits 0 (declined)"
+assert_eq "aborted" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-05: declined wipe guard records 'aborted', not a false success"
+assert_eq "yes" "$([[ -f "$SCRIPT_DIR/.env" ]] && echo yes || echo no)" "REC-05: declined wipe guard preserves .env"
+unset MEDIASTACK_LAUNCHER_RESULT
+
+# Top-level "Abort" at the first three-way prompt must record 'aborted' too —
+# it is a different function (detect_existing_install) with its own exit 0.
+eval "${PRODUCTION_DETECT_EXISTING_INSTALL_DEF/detect_existing_install/production_detect_existing_install}"
+reset_route_state
+seed_script_dir "detect-toplevel-abort"
+seed_env "ready" "none" "complete"
+mkdir -p "$SCRIPT_DIR/config/ddns-updater"
+printf '{}\n' > "$SCRIPT_DIR/config/ddns-updater/config.json"
+ui_choose() { printf '%s\n' "Abort"; }
+MEDIASTACK_LAUNCHER_RESULT="$SCRIPT_DIR/launcher-result"
+( production_detect_existing_install ) >/dev/null 2>&1; detect_rc=$?
+assert_eq "0" "$detect_rc" "REC-05: top-level Abort exits 0"
+assert_eq "aborted" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "REC-05: top-level Abort records 'aborted' for the launcher capstone"
+unset MEDIASTACK_LAUNCHER_RESULT
 
 scenario_end "$CURRENT_SCENARIO"
 summary

@@ -86,7 +86,7 @@ wizard_ui_stage1_local_write_steps() {
         stage1_continue_detected 1 \
         stage1_admin_username ENTER \
         stage1_admin_email owner@lan.test \
-        stage1_admin_password ENTER \
+        stage1_admin_password MaskMe-Secret-Pw123 \
         stage1_storage_location 1 \
         stage1_data_directory /tmp/ms-wizard-local-data \
         stage1_bazarr ENTER \
@@ -133,4 +133,14 @@ run_scenario() {
     assert_eq "/tmp/ms-wizard-local-data/.mediastack-storage-ready" "$(env_get STORAGE_SENTINEL)" "wizard-ui stage1 local: local sentinel default"
     assert_eq "false" "$(env_get BAZARR_ENABLED)" "wizard-ui stage1 local: Bazarr disabled by default"
     assert_eq "false" "$(env_get SMB_ENABLED)" "wizard-ui stage1 local: SMB disabled by prompt"
+
+    # Issue #6: the admin password is collected via the masked ui_password_validated.
+    # Positive control — the typed value was accepted and persisted:
+    assert_eq "MaskMe-Secret-Pw123" "$(env_get JELLYFIN_ADMIN_PASSWORD)" "wizard-ui stage1 local: typed admin password persisted"
+    # Masking proof — the typed value must NOT be echoed into the terminal transcript
+    # (it would appear here under the old read -rp; read -rsp suppresses it).
+    case "$transcript" in
+        *MaskMe-Secret-Pw123*) fail "AUDIT: stage1 admin password is masked (not echoed to terminal scrollback)" "typed password leaked into transcript" ;;
+        *)                     pass "AUDIT: stage1 admin password is masked (not echoed to terminal scrollback)" ;;
+    esac
 }

@@ -167,6 +167,19 @@ def rebuild_section(header_title, header_comment, body):
     return "\n".join(lines)
 
 
+# The Jackett indexers section header/comment — shared by the full preset apply
+# and the day-2 indexers-only apply so the two cannot drift.
+INDEXERS_SECTION_TITLE = "Jackett Indexers"
+INDEXERS_SECTION_COMMENT = [
+    "Public releases ship with no indexers enabled by default. Add only the",
+    "indexers you are legally allowed to use, then re-run ./scripts/configure.sh.",
+    "The setup wizard can enable an example public-tracker preset, and the same",
+    "example lives at config/examples/public-indexers.yml.",
+    "",
+    "Format: id: description (description is for humans only)",
+]
+
+
 def apply_preset(config_text, preset, languages, public_indexers_enabled,
                  public_indexers):
     """Replace wizard-controlled sections."""
@@ -175,15 +188,8 @@ def apply_preset(config_text, preset, languages, public_indexers_enabled,
     replacements = [
         (
             "indexers",
-            "Jackett Indexers",
-            [
-                "Public releases ship with no indexers enabled by default. Add only the",
-                "indexers you are legally allowed to use, then re-run ./scripts/configure.sh.",
-                "The setup wizard can enable an example public-tracker preset, and the same",
-                "example lives at config/examples/public-indexers.yml.",
-                "",
-                "Format: id: description (description is for humans only)",
-            ],
+            INDEXERS_SECTION_TITLE,
+            INDEXERS_SECTION_COMMENT,
             render_indexers(public_indexers_enabled, public_indexers),
         ),
         (
@@ -233,6 +239,47 @@ def apply_preset(config_text, preset, languages, public_indexers_enabled,
     return config_text
 
 
+def apply_indexers_only(config_text, enabled, indexers):
+    """Rewrite ONLY the Jackett indexers section of config.yml.
+
+    Unlike apply_preset (which rewrites indexers + quality + custom-formats +
+    subtitles together, keyed off the chosen preset/languages), this touches
+    nothing else — so the day-2 launcher can flip public indexers on/off without
+    clobbering the user's quality profile or subtitle languages.
+    """
+    span = find_section_span(config_text, "indexers")
+    if span is None:
+        print("warning: section 'indexers' not found in config.yml",
+              file=sys.stderr)
+        return config_text
+    replacement = rebuild_section(
+        INDEXERS_SECTION_TITLE,
+        INDEXERS_SECTION_COMMENT,
+        render_indexers(enabled, indexers),
+    )
+    return config_text[: span[0]] + replacement + config_text[span[1]:]
+
+
+def resolve_public_indexers(file_arg):
+    """Resolve and load the canonical public-indexer list; exit on error."""
+    indexers_file = file_arg
+    if indexers_file is None:
+        indexers_file = os.path.normpath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "config", "examples", "public-indexers.yml",
+        ))
+    try:
+        indexers = load_public_indexers(indexers_file)
+    except FileNotFoundError:
+        print(f"error: indexer list not found: {indexers_file}",
+              file=sys.stderr)
+        sys.exit(1)
+    if not indexers:
+        print(f"error: no indexers found in {indexers_file}", file=sys.stderr)
+        sys.exit(1)
+    return indexers
+
+
 def apply_bitrate_limit(config_text, limit):
     if limit is None:
         return config_text
@@ -280,8 +327,9 @@ def main():
         description="Apply a quality preset to config.yml"
     )
     parser.add_argument(
-        "--preset", required=True,
-        help="Preset name (compact, balanced, quality)",
+        "--preset",
+        help="Preset name (compact, balanced, quality). "
+             "Required unless --indexers-only is given.",
     )
     parser.add_argument(
         "--languages", default="english",
@@ -300,6 +348,12 @@ def main():
         help="Enable the example public-tracker indexer preset",
     )
     parser.add_argument(
+        "--indexers-only", choices=("true", "false"), default=None,
+        help="Day-2 toggle: rewrite ONLY the indexers section of config.yml and "
+             "exit, leaving quality/subtitle config untouched. --preset is "
+             "ignored in this mode.",
+    )
+    parser.add_argument(
         "--presets-file", default=None,
         help="Path to presets.yml (default: same dir as this script)",
     )
@@ -309,6 +363,25 @@ def main():
              "(default: config/examples/public-indexers.yml)",
     )
     args = parser.parse_args()
+
+    # Day-2 "Features" toggle: rewrite ONLY the indexers section and exit. The
+    # launcher uses this so flipping public indexers on/off post-install never
+    # clobbers the user's quality profile or subtitle languages (apply_preset
+    # rewrites those alongside indexers).
+    if args.indexers_only is not None:
+        enabled = args.indexers_only == "true"
+        indexers = resolve_public_indexers(args.public_indexers_file) if enabled else []
+        with open(args.config) as f:
+            config_text = f.read()
+        config_text = apply_indexers_only(config_text, enabled, indexers)
+        with open(args.config, "w") as f:
+            f.write(config_text)
+        print("Public indexer preset: "
+              f"{'enabled' if enabled else 'disabled'} (indexers only)")
+        return
+
+    if args.preset is None:
+        parser.error("--preset is required unless --indexers-only is given")
 
     presets_file = args.presets_file
     if presets_file is None:
@@ -333,22 +406,7 @@ def main():
     public_indexers_enabled = args.public_indexers == "true"
     public_indexers = []
     if public_indexers_enabled:
-        indexers_file = args.public_indexers_file
-        if indexers_file is None:
-            indexers_file = os.path.normpath(os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "..", "..", "config", "examples", "public-indexers.yml",
-            ))
-        try:
-            public_indexers = load_public_indexers(indexers_file)
-        except FileNotFoundError:
-            print(f"error: --public-indexers true but indexer list not found: "
-                  f"{indexers_file}", file=sys.stderr)
-            sys.exit(1)
-        if not public_indexers:
-            print(f"error: no indexers found in {indexers_file}",
-                  file=sys.stderr)
-            sys.exit(1)
+        public_indexers = resolve_public_indexers(args.public_indexers_file)
 
     config_text = apply_preset(
         config_text, preset, languages, public_indexers_enabled,

@@ -113,7 +113,7 @@ touch config/jellyfin/log/log_.log config/npm/data/logs/default-host_.log config
 
 # Is this service stripped via MS_TEST_STRIP_SERVICES?
 svc_stripped() {
-    local _s=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
+    local _s; _s=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
     [[ "$_s" == *" $1 "* ]]
 }
 

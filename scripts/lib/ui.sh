@@ -75,6 +75,15 @@ ui_password() {
     _ui_password_impl "$@"
 }
 
+# Prompt for MASKED password input with validator-driven re-prompt — the masked
+# sibling of ui_input_validated. Use for any secret the user types (admin password,
+# DDNS password) so keystrokes and the default are never echoed into scrollback.
+# Usage: result=$(ui_password_validated "Prompt" "default" validate_fn [demo_default])
+# Same DEMO/UI_DEMO short-circuit and validator contract as ui_input_validated.
+ui_password_validated() {
+    _ui_password_validated_impl "$@"
+}
+
 # Prompt for yes/no confirmation
 # Usage: ui_confirm "Enable Bazarr?" && echo "yes" || echo "no"
 # Optional second arg: default (yes|no), defaults to "no"

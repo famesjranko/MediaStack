@@ -382,7 +382,7 @@ run_stage2() {
 
     _stage2_seed_wizard_defaults
 
-    ui_banner "MediaStack -- Stage 2: Remote Access" "HTTPS + WireGuard in 3-5 minutes"
+    ui_banner "MediaStack - Stage 2: Remote Access" "HTTPS + WireGuard in 3-5 minutes"
 
     while true; do
         local offer_action
@@ -430,9 +430,17 @@ run_stage2() {
     done
 }
 
+# Trim leading/trailing whitespace (e.g. from a pasted credential).
+_stage2_trim_ws() {
+    local v="$1"
+    v="${v#"${v%%[![:space:]]*}"}"
+    printf '%s' "${v%"${v##*[![:space:]]}"}"
+}
+
+# The remote-access offer is a yes/no gate, not a data-collection step, so it
+# carries no [n/n] counter; the real steps below are numbered [1/5]..[5/5].
 _stage2_offer() {
     {
-        ui_section 1 6 "Remote access"
         ui_box "Remote access is not configured yet" \
             "Remote access lets you use Jellyfin at https://jellyfin.<your-domain>." \
             "It also gives you a WireGuard VPN for admin access." \
@@ -446,7 +454,6 @@ _stage2_offer() {
 }
 
 _stage2_tell_me_more() {
-    ui_section 1 6 "Remote access"
     ui_log info "You will need a domain, DNS records, and router forwards for TCP 80 and 443."
     ui_log info "Dynu is recommended because the free tier supports wildcard records."
     ui_log info "Let's Encrypt proves the domain reaches this box before HTTPS is enabled."
@@ -479,7 +486,7 @@ _stage2_dns_status_message() {
 }
 
 _stage2_collect_domain() {
-    ui_section 2 6 "Domain + DDNS"
+    ui_section 1 5 "Domain + DDNS"
 
     # Walk a non-technical user through getting a free hostname if they
     # don't already have a domain. Dynu is what we recommend because:
@@ -490,40 +497,40 @@ _stage2_collect_domain() {
     # NoIP, DuckDNS, etc.) they skip this and enter it directly.
     local has_domain
     has_domain=$(ui_choose "Do you already have a domain name (or a free DDNS hostname like yourname.mywire.org)?" \
-        "Yes — I have one" \
-        "No — walk me through getting a free one (Dynu)")
+        "Yes - I have one" \
+        "No - walk me through getting a free one (Dynu)")
     local came_from_dynu_walkthrough="false"
     if [[ "$has_domain" == "No"* ]]; then
         came_from_dynu_walkthrough="true"
         cat <<'COPY'
 
-  ──────────────────────────────────────────────────────────────────────
+  ----------------------------------------------------------------------
    Get a free hostname from Dynu (takes ~3 minutes, no credit card)
-  ──────────────────────────────────────────────────────────────────────
+  ----------------------------------------------------------------------
 
    1. Open https://www.dynu.com/en-US in your browser
    2. Click "Sign Up" (top-right) and create a free account
-        — pick a USERNAME and PASSWORD; note them, you'll need both
-   3. After login: Control Panel → "DDNS Services" → "Add New Service"
+        - pick a USERNAME and PASSWORD; note them, you'll need both
+   3. After login: Control Panel -> "DDNS Services" -> "Add New Service"
    4. Pick a hostname:  e.g.  yourname.mywire.org
-        (mywire.org / freeddns.org / loseyourip.com — any work)
-   5. Save. That's it — no other settings to configure on Dynu's side.
+        (mywire.org / freeddns.org / loseyourip.com - any work)
+   5. Save. That's it - no other settings to configure on Dynu's side.
 
    You will need three values:
-        • the full hostname           (e.g.  yourname.mywire.org)
-        • your Dynu account USERNAME  (the one you signed up with)
-        • your Dynu account PASSWORD  (the one you signed up with)
+        * the full hostname           (e.g.  yourname.mywire.org)
+        * your Dynu account USERNAME  (the one you signed up with)
+        * your Dynu account PASSWORD  (the one you signed up with)
 
    When you have those three values, come back to this terminal.
 
    (Optional security upgrade: Dynu lets you set a separate "IP Update
-    Password" for the API — that also works here, but isn't required.)
+    Password" for the API - that also works here, but isn't required.)
 
-  ──────────────────────────────────────────────────────────────────────
+  ----------------------------------------------------------------------
 
 COPY
         if ! ui_confirm "Done? Ready to enter your hostname + Dynu credentials?" "yes"; then
-            ui_log info "No problem — re-run ./setup.sh --remote when you're ready."
+            ui_log info "No problem - re-run ./setup.sh --remote when you're ready."
             _stage2_skip_https
             return 1
         fi
@@ -568,6 +575,9 @@ COPY
         # the user; only fall through to the manual menu after 2 minutes.
         if [[ "$ddns_pushed" == "true" && $retry_count -lt 12 ]]; then
             retry_count=$((retry_count + 1))
+            if (( retry_count == 1 )); then
+                ui_log info "This is normal - public DNS can take 1-2 minutes to update after a new hostname. Setup is waiting, not stuck."
+            fi
             ui_log info "Waiting 10s for Dynu propagation (attempt ${retry_count}/12)..."
             sleep 10
             continue
@@ -611,7 +621,11 @@ _stage2_offer_ddns() {
 
     local ddns_user ddns_pw
     ddns_user=$(ui_input_validated "Dynu account username" "${_WIZ_DDNS_USER:-}" validate_ddns_username)
-    ddns_pw=$(_stage2_password_validated "Dynu account password (or IP Update Password if you set one)" "${_WIZ_DDNS_PW:-}" validate_ddns_password)
+    ddns_pw=$(ui_password_validated "Dynu account password (or IP Update Password if you set one)" "${_WIZ_DDNS_PW:-}" validate_ddns_password)
+    # Strip whitespace pasted from a password manager: Dynu creds never contain
+    # surrounding spaces, but a stray trailing space silently fails auth (badauth).
+    ddns_user=$(_stage2_trim_ws "$ddns_user")
+    ddns_pw=$(_stage2_trim_ws "$ddns_pw")
 
     local dynu_state
     dynu_state=$(stage2_dynu_preflight "$_WIZ_DOMAIN" "$ddns_user" "$ddns_pw") || true
@@ -641,23 +655,8 @@ _stage2_offer_ddns() {
     return 1
 }
 
-_stage2_password_validated() {
-    local prompt="$1"
-    local default="$2"
-    local validator_fn="$3"
-    local result
-
-    while true; do
-        result=$(ui_password "$prompt" "$default")
-        if "$validator_fn" "$result"; then
-            printf '%s\n' "$result"
-            return 0
-        fi
-    done
-}
-
 _stage2_port_gate() {
-    ui_section 3 6 "Router ports"
+    ui_section 2 5 "Router ports"
     ui_log info "This check runs from your home network. If your router does not support hairpin NAT, closed results can be ambiguous."
 
     # Auto-retry the port probe a few times before bothering the user.
@@ -674,12 +673,12 @@ _stage2_port_gate() {
                 if (( attempt == 1 )); then
                     ui_log ok "TCP ports 80 and 443 appear reachable from this host."
                 else
-                    ui_log ok "TCP ports 80 and 443 appear reachable (took ${attempt} attempts — first was likely transient)."
+                    ui_log ok "TCP ports 80 and 443 appear reachable (took ${attempt} attempts - first was likely transient)."
                 fi
                 return 0
             fi
             if (( attempt < 3 )); then
-                ui_log info "Port probe ${attempt}/3 returned ${port_state} — retrying in 5s..."
+                ui_log info "Port probe ${attempt}/3 returned ${port_state} - retrying in 5s..."
                 sleep 5
             fi
         done
@@ -722,15 +721,15 @@ _stage2_port_gate() {
 }
 
 _stage2_collect_wireguard() {
-    ui_section 4 6 "WireGuard"
+    ui_section 3 5 "WireGuard"
 
     # WireGuard endpoint = the same hostname users already entered for
-    # HTTPS in [2/6] Domain + DDNS. Asking again is friction for zero
+    # HTTPS in [1/5] Domain + DDNS. Asking again is friction for zero
     # value (one DDNS hostname covers both HTTPS and the VPN endpoint).
     # Power users who want a separate WG hostname can override WG_HOST
     # in .env after install.
     _WIZ_WG_HOST="${_WIZ_DOMAIN:-$_WIZ_WG_HOST}"
-    ui_log info "WireGuard endpoint: ${_WIZ_WG_HOST} (using your domain — override WG_HOST in .env if you need a different one)."
+    ui_log info "WireGuard endpoint: ${_WIZ_WG_HOST} (using your domain - override WG_HOST in .env if you need a different one)."
 
     _WIZ_WG_PORT=$(ui_input_validated \
         "WireGuard UDP port" \
@@ -751,9 +750,9 @@ _stage2_collect_wireguard() {
     esac
     tier_choice=$(UI_CHOOSE_DEFAULT_INDEX="$tier_default_index" ui_choose \
         "VPN access level for your admin device" \
-        "Full LAN (recommended) — reach every device on your home network" \
-        "Server only — reach this MediaStack box (all ports, including SSH)" \
-        "Containers only — reach MediaStack apps (no host services or other LAN devices)")
+        "Full LAN (recommended) - reach every device on your home network" \
+        "Server only - reach this MediaStack box (all ports, including SSH)" \
+        "Containers only - reach MediaStack apps (no host services or other LAN devices)")
     case "$tier_choice" in
         Full*) tier="full-lan" ;;
         Server*) tier="server" ;;
@@ -767,7 +766,7 @@ _stage2_collect_wireguard() {
     # going; the user can fix HOST_ADDRESS in .env later.
     _WIZ_WG_SERVER_LAN_IP="${HOST_ADDRESS:-${_WIZ_WG_SERVER_LAN_IP:-localhost}}"
     if [[ "$_WIZ_WG_SERVER_LAN_IP" == "localhost" || "$_WIZ_WG_SERVER_LAN_IP" == "127.0.0.1" ]]; then
-        ui_log warn "HOST_ADDRESS is '$_WIZ_WG_SERVER_LAN_IP' — VPN peers will not be able to reach this box until you set a real LAN IP in .env."
+        ui_log warn "HOST_ADDRESS is '$_WIZ_WG_SERVER_LAN_IP' - VPN peers will not be able to reach this box until you set a real LAN IP in .env."
     fi
 
     # Full LAN tier needs the actual LAN CIDR; auto-detect and let the user
@@ -820,7 +819,7 @@ print(ipaddress.IPv4Network(sys.argv[1], strict=False))
 }
 
 _stage2_collect_jellyfin_remote_bitrate() {
-    ui_section 5 6 "Jellyfin remote streaming"
+    ui_section 4 5 "Jellyfin remote streaming"
 
     # Jellyfin's RemoteClientBitrateLimit is a PER-STREAM cap (not a global
     # aggregate). We surface a reference table so the user can pick their
@@ -830,12 +829,7 @@ _stage2_collect_jellyfin_remote_bitrate() {
     # counts, computed at 70% of detected upload bandwidth.
     local upload_mbps="${_NET_UL_MBPS:-}"
     if [[ -z "$upload_mbps" || ! "$upload_mbps" =~ ^[0-9]+$ ]]; then
-        upload_mbps=$(ui_input "Your upload bandwidth in Mbps (used for the recommendation table)" "100")
-        if ! [[ "$upload_mbps" =~ ^[0-9]+$ ]]; then
-            ui_log warn "Couldn't parse upload bandwidth; leaving Jellyfin remote bitrate unlimited."
-            _WIZ_JELLYFIN_BITRATE=0
-            return 0
-        fi
+        upload_mbps=$(ui_input_validated "Your upload bandwidth in Mbps (used for the recommendation table)" "100" validate_mbps_whole)
     else
         ui_log info "Detected upload bandwidth: ${upload_mbps} Mbps."
     fi
@@ -848,7 +842,7 @@ _stage2_collect_jellyfin_remote_bitrate() {
     echo "    4K H.264           50-100 Mbps"
     echo
     echo "  Recommended per-viewer cap (45% of upload, capped to keep your home"
-    echo "  network responsive — Jellyfin won't try to use the whole line):"
+    echo "  network responsive - Jellyfin won't try to use the whole line):"
     # Compute table values + suggested-default in one python pass.
     # Heuristic: usable = upload * 0.45; raw = usable / viewers; clamp [2, max_cap]
     #   max_cap (1-2 viewers): 8 if upload>=250, 7 if >=100, else 6
@@ -872,27 +866,27 @@ def compute_cell(upload, viewers):
         solo = usable
         if solo >= 2:
             return f"{int(min(max_cap, solo))} (1 viewer)"
-        return "—"
+        return "-"
     if raw < 1.5:
-        return "—"
+        return "-"
     return str(max(2, min(max_cap, math.ceil(raw))))
 
 upload_speeds = [10, 20, 40, 100, 250, 500]
 columns = [(2, "1-2 viewers"), (4, "3-4 viewers"), (6, "5+ viewers")]
-print("  ┌──────────┬──────────────┬─────────────┬────────────┐", file=sys.stderr)
-print("  │  Upload  │ {:<12s} │ {:<11s} │ {:<10s} │".format(*[c[1] for c in columns]), file=sys.stderr)
-print("  ├──────────┼──────────────┼─────────────┼────────────┤", file=sys.stderr)
+print("  +----------+--------------+-------------+------------+", file=sys.stderr)
+print("  |  Upload  | {:<12s} | {:<11s} | {:<10s} |".format(*[c[1] for c in columns]), file=sys.stderr)
+print("  +----------+--------------+-------------+------------+", file=sys.stderr)
 for up in upload_speeds:
     cells = [compute_cell(up, c[0]) for c in columns]
-    print("  │ {:<8s} │ {:<12s} │ {:<11s} │ {:<10s} │".format(f"{up} Mbps", *cells), file=sys.stderr)
-print("  └──────────┴──────────────┴─────────────┴────────────┘", file=sys.stderr)
+    print("  | {:<8s} | {:<12s} | {:<11s} | {:<10s} |".format(f"{up} Mbps", *cells), file=sys.stderr)
+print("  +----------+--------------+-------------+------------+", file=sys.stderr)
 
 # Default = recommendation for user's upload at 4 viewers (most common case).
-# Strip the "(1 viewer)" annotation if present and fall back to "0" on "—".
+# Strip the "(1 viewer)" annotation if present and fall back to "0" on "-".
 default_cell = compute_cell(int(os.environ["UPLOAD"]), 4)
-if default_cell == "—":
+if default_cell == "-":
     default_cell = compute_cell(int(os.environ["UPLOAD"]), 2)
-    if default_cell == "—" or "(1 viewer)" in default_cell:
+    if default_cell == "-" or "(1 viewer)" in default_cell:
         default_cell = "0"
     else:
         default_cell = default_cell.split()[0]
@@ -903,18 +897,18 @@ PY
 )
     echo
 
+    # Defensive: the validated prompt trusts its default on the DEMO/non-TTY
+    # path, so the default MUST be a valid number. The python heredoc always
+    # prints one; guard anyway so a future change can't feed an invalid default
+    # into the re-prompt loop.
+    [[ "$suggested_default" =~ ^[0-9]+(\.[0-9]+)?$ ]] || suggested_default="0"
     local custom
-    custom=$(ui_input "Per-viewer cap in Mbps (decimals OK, e.g. 3.5 or 7.0; 0 = unlimited)" "$suggested_default")
-    if [[ "$custom" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-        _WIZ_JELLYFIN_BITRATE="$custom"
-    else
-        ui_log warn "Couldn't parse '${custom}' as a number — leaving unlimited."
-        _WIZ_JELLYFIN_BITRATE=0
-    fi
+    custom=$(ui_input_validated "Per-viewer cap in Mbps (decimals OK, e.g. 3.5 or 7.0; 0 = unlimited)" "$suggested_default" validate_mbps_decimal)
+    _WIZ_JELLYFIN_BITRATE="$custom"
 }
 
 _stage2_confirm() {
-    ui_section 6 6 "Confirm install"
+    ui_section 5 5 "Confirm install"
     ui_box "Stage 2: Install Plan" \
         "$(ui_kv 'Domain' "$_WIZ_DOMAIN")" \
         "$(ui_kv 'HTTPS' "jellyfin.${_WIZ_DOMAIN}, jellyseerr.${_WIZ_DOMAIN}")" \

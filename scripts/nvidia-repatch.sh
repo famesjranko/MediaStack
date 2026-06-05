@@ -50,7 +50,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
 fi
 
 if [[ "$NVIDIA_DRIVER_MODE" != "unlock" && "$FORCE" != "1" ]]; then
-    echo "NVIDIA_DRIVER_MODE='${NVIDIA_DRIVER_MODE:-standard}' — this system is not using the"
+    echo "NVIDIA_DRIVER_MODE='${NVIDIA_DRIVER_MODE:-standard}' - this system is not using the"
     echo "patch-managed (Unlock NVENC) driver, so there is nothing to repatch."
     echo "Standard/existing drivers are maintained by apt and must not be patched."
     echo "Re-run with --force only if you deliberately want to patch this driver."

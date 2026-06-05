@@ -71,8 +71,9 @@ image pulled and staged but is **not started** — the change applies the next t
 
 Every apply regenerates `docker-compose.override.yml` (preserving GPU/mem/NAS settings), runs the
 storage guard, and recreates only the touched service (no `--remove-orphans`). "latest" follows the
-**compose tag**, so ADR-24 pins hold: `npm:2`/`uptime-kuma:2` stay within major 2, `wireguard`
-cannot move. The lock file is never edited by this path.
+**compose tag**, so ADR-24 pins hold: `npm:2`/`uptime-kuma:2`/`wireguard:15` stay within their
+pinned major — floating WireGuard pulls the newest 15.x but never v14 or a future v16. The lock
+file is never edited by this path.
 
 ## `./mediastack` → Manage hardware transcoding
 

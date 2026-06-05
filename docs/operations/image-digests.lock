@@ -18,5 +18,5 @@ ddns-updater	qmcgaw/ddns-updater:latest	sha256:9313e1c31f366c89dc0819e5eff85576c
 uptime-kuma	louislam/uptime-kuma:2	sha256:91e963bfda569ba115206e843febb446f473ab525add4e08b2b9e3beffa16985	2026-06-01T06:49:06Z	scenario:fresh-install
 beszel	henrygd/beszel:latest	sha256:a849ad80814b6a1a3be665304dcace5d4854b3bed7bde4dd1227e8ce1b82d477	2026-06-01T06:49:06Z	scenario:fresh-install
 beszel-agent	henrygd/beszel-agent:alpine	sha256:c6e925e00784b90eab68e2b813e4c722cf185f378d77e1129a97c064ca5fa7e4	2026-06-01T06:49:06Z	scenario:fresh-install
-wireguard	ghcr.io/wg-easy/wg-easy:15.3.0	sha256:93bbd593e07bab98d02807a28770ac87ab6c48818e319e68c1f66561feb99876	2026-06-01T06:49:06Z	scenario:wireguard
+wireguard	ghcr.io/wg-easy/wg-easy:15	sha256:93bbd593e07bab98d02807a28770ac87ab6c48818e319e68c1f66561feb99876	2026-06-01T06:49:06Z	scenario:wireguard
 autoheal	willfarrell/autoheal:latest	sha256:2bdbf136634db083cac4b68132dcdbb0589b8b3dc05d49f0c3d63e9656a8b9c4	2026-06-01T06:49:06Z	compose-only

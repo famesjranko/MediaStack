@@ -16,7 +16,7 @@
 set -uo pipefail   # NOT -e: a failed diagnostic must not kill the loop.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 
 # Front-door root check. setup.sh refuses root via check_not_root, but only
 # after dispatch — better to fail fast here so a `sudo ./mediastack` doesn't
@@ -33,13 +33,19 @@ fi
 # Set MEDIASTACK_NONINTERACTIVE=1 to drive the launcher from a piped script
 # (mirrors setup.sh's MEDIASTACK_NONINTERACTIVE behavior).
 if [[ ! -t 0 && "${MEDIASTACK_NONINTERACTIVE:-0}" != "1" ]]; then
-    echo "./mediastack is interactive — set MEDIASTACK_NONINTERACTIVE=1 to pipe input." >&2
+    echo "./mediastack is interactive - set MEDIASTACK_NONINTERACTIVE=1 to pipe input." >&2
     exit 2
 fi
 
 source "$SCRIPT_DIR/scripts/lib/common.sh"
 source "$SCRIPT_DIR/scripts/lib/ui.sh"
 source "$SCRIPT_DIR/scripts/lib/network.sh"
+# Input validators (e.g. validate_mb_per_sec for the day-2 bandwidth action);
+# pure function defs, shared with the wizard stages.
+source "$SCRIPT_DIR/scripts/lib/validators.sh"
+# Shared _build_profile_args — the single source of truth for the compose
+# --profile set, also used by the installer (scripts/setup/stack.sh).
+source "$SCRIPT_DIR/scripts/lib/profiles.sh"
 source "$SCRIPT_DIR/scripts/setup/storage.sh"
 
 # Source .env if it exists, so STAGE_1_COMPLETE / DOMAIN / JELLYFIN_GPU /
@@ -89,30 +95,12 @@ _docker_reachable() {
     command -v docker &>/dev/null && docker info &>/dev/null 2>&1
 }
 
-# Build the --profile args matching the user's .env-declared configuration.
-# Mirrors _build_profile_args in scripts/setup/stack.sh:7 — kept inline here
-# so the launcher doesn't need to source the heavy stack module. The launcher
-# already sourced .env at startup, so live-env vars are authoritative.
-# Usage: _ms_profile_args ARRAY_NAME
-_ms_profile_args() {
-    local -n _arr=$1
-    _arr=()
-    [[ "${BAZARR_ENABLED:-false}" == "true" ]] && _arr+=(--profile subtitles)
-    [[ "${AUTOHEAL_ENABLED:-true}" != "false" ]] && _arr+=(--profile autoheal)
-    if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then
-        _arr+=(--profile proxy)
-    fi
-    if [[ -n "${WG_INIT_PASSWORD:-}" ]]; then
-        _arr+=(--profile remote)
-    fi
-}
-
 _compose_running_summary() {
     # Echoes "running/total" on success. Returns 1 when no containers exist for
     # this compose project. Counts include all .env-declared profiles, not just
     # default — otherwise npm/bazarr/wireguard/autoheal would be invisible.
     local profiles=()
-    _ms_profile_args profiles
+    _build_profile_args profiles
     local total running
     total=$(docker compose "${profiles[@]}" ps --format '{{.Name}}' 2>/dev/null | wc -l)
     running=$(docker compose "${profiles[@]}" ps --filter 'status=running' --format '{{.Name}}' 2>/dev/null | wc -l)
@@ -152,7 +140,7 @@ render_banner() {
         lines+=("$public_ip_line")
     fi
 
-    ui_box "MediaStack — Turnkey Media Server" "${lines[@]}"
+    ui_box "MediaStack - Turnkey Media Server" "${lines[@]}"
 }
 
 # =============================================================================
@@ -212,7 +200,7 @@ diag_dns_check() {
     if ! command -v dig &>/dev/null; then
         ui_log error "dig is not installed (bind9-dnsutils package)."
         ui_log info "Install it with:  sudo apt-get install -y bind9-dnsutils"
-        ui_log info "Or run option 1 (Install MediaStack) — setup.sh installs it automatically."
+        ui_log info "Or run option 1 (Install MediaStack) - setup.sh installs it automatically."
         return 0
     fi
 
@@ -222,7 +210,7 @@ diag_dns_check() {
     local domain
     domain=$(ui_input "Domain to check (e.g. example.com)" "$default_domain")
     if [[ -z "$domain" ]]; then
-        ui_log warn "No domain provided — nothing to check."
+        ui_log warn "No domain provided - nothing to check."
         return 0
     fi
 
@@ -237,7 +225,7 @@ diag_dns_check() {
         _MS_PUBLIC_IP="$public_ip"
         _MS_PUBLIC_IP_CHECKED=1
     else
-        ui_log error "Could not detect public IP — DNS comparison cannot run."
+        ui_log error "Could not detect public IP - DNS comparison cannot run."
         return 0
     fi
 
@@ -249,7 +237,7 @@ diag_dns_check() {
 
     case "$result" in
         ok)
-            ui_log ok "DNS looks good — both subdomains resolve to your public IP."
+            ui_log ok "DNS looks good - both subdomains resolve to your public IP."
             ;;
         no-a)
             ui_log error "Missing A-records: set jellyfin.${domain} and jellyseerr.${domain} to ${public_ip} at your DNS provider."
@@ -262,7 +250,7 @@ diag_dns_check() {
             ;;
         mismatch:*)
             local got="${result#mismatch:}"
-            ui_log error "DNS mismatch — subdomain resolves to ${got}, but your public IP is ${public_ip}. Update the A-record (or wait for DDNS propagation)."
+            ui_log error "DNS mismatch - subdomain resolves to ${got}, but your public IP is ${public_ip}. Update the A-record (or wait for DDNS propagation)."
             ;;
         *)
             ui_log warn "DNS classification: ${result} (rc=${rc})"
@@ -279,7 +267,7 @@ diag_public_ip() {
         _MS_PUBLIC_IP="$_NET_PUBLIC_IP"
         _MS_PUBLIC_IP_CHECKED=1
     else
-        ui_log error "Could not detect public IP — check your internet connection."
+        ui_log error "Could not detect public IP - check your internet connection."
     fi
 }
 
@@ -291,7 +279,7 @@ diag_status() {
     fi
 
     local profiles=()
-    _ms_profile_args profiles
+    _build_profile_args profiles
 
     # One-line summary above the raw ps table so users see stack health at a
     # glance — non-technical users get alarmed by raw "Restarting (1) Xs ago"
@@ -312,38 +300,120 @@ diag_status() {
     docker compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' 2>&1 || true
 }
 
+# Re-print the per-service access summary (URLs, logins, remote, ports) day-2 so a
+# returning user can recover their addresses/logins without re-running setup — the
+# same block print_access_info renders at the end of install. stack.sh isn't on the
+# launcher's source path, so source it lazily (exactly as diag_readiness sources
+# checks.sh/gpu.sh above); print_access_info needs only SCRIPT_DIR + .env + the
+# common.sh color vars, all already in scope. stack.sh has no top-level side effects,
+# and the `type ... ||` guard makes the source idempotent across repeat visits.
+#
+# Unlike the one-time install summary, this view is re-openable any time and may be
+# screen-shared or captured to a file, so the single shared admin password is masked
+# by default and only shown after an explicit opt-in reveal.
+action_access_info() {
+    type print_access_info &>/dev/null || source "$SCRIPT_DIR/scripts/setup/stack.sh"
+    print_access_info mask
+
+    local pw; pw=$(_access_admin_pw)
+    if [[ -n "$pw" ]]; then
+        echo ""
+        # Flush any buffered type-ahead first so a stray pre-typed keystroke can't
+        # auto-confirm revealing the shared credential. Interactive TTY only — a
+        # non-TTY caller's default ("no") already suppresses the reveal, and draining
+        # a pipe would eat input meant for later prompts.
+        if [[ -t 0 ]]; then
+            local _flush
+            read -rsd '' -t 0.01 _flush 2>/dev/null || true
+        fi
+        if ui_confirm "Reveal the admin password? (it is your single login for every service)" no; then
+            echo -e "  ${BOLD}Admin password:${NC}   ${GREEN}${pw}${NC}"
+            echo ""
+        fi
+    fi
+}
+
 # =============================================================================
 # Action wrappers (call existing scripts)
 # =============================================================================
 
 # Capstone summary printed after each action so the user gets an unambiguous
-# success/failure verdict, not just whatever raw output the script emitted.
+# verdict, not just whatever raw output the script emitted.
+#
+# A bare exit code can't tell a real wipe/reinstall apart from "user backed out"
+# (both exit 0) or a deliberate abort apart from a crash (both exit non-zero), so
+# _run_setup_return plumbs an outcome token out of setup.sh:
+#   completed → genuine success    aborted → deliberate abort
+#   unchanged → nothing changed    (empty) → setup.sh said nothing
+# For STRICT actions (install / wipe) success must be AFFIRMED by a `completed`
+# token: a bare exit 0 with no token means the wizard was aborted before
+# finishing (e.g. quit a Stage-1 prompt after a wipe), so we must NOT call that
+# "completed successfully". Non-strict actions (remote / transcoding / port-check
+# / update) keep the simple rc-based verdict.
 _show_action_result() {
-    local rc="$1" label="$2"
+    local rc="$1" label="$2" outcome="${3:-}" strict="${4:-0}"
     echo ""
-    if (( rc == 0 )); then
-        ui_log ok "${label} completed successfully."
-    else
-        ui_log error "${label} exited with code ${rc}."
+    case "$outcome" in
+        completed)      ui_log ok    "${label} completed successfully." ;;
+        reboot-pending) ui_log warn  "Reboot to finish — hardware transcoding activates after you reboot." ;;
+        aborted)        ui_log info  "${label} aborted — no changes were made." ;;
+        unchanged)      ui_log info  "No changes were made." ;;
+        *)
+            if (( rc != 0 )); then
+                ui_log error "${label} exited with code ${rc}."
+            elif (( strict )); then
+                ui_log warn "${label} did not complete — nothing was finished. Re-run when you're ready."
+            else
+                ui_log ok "${label} completed successfully."
+            fi
+            ;;
+    esac
+}
+
+# Run a setup.sh entry point, then RETURN the user to the launcher menu — do NOT
+# `exec setup.sh` (that replaces the launcher and drops the user to a bare shell
+# when setup.sh finishes). After it completes, re-launch the launcher fresh via
+# `exec "$0"` so the banner/menus reflect the new state from a clean .env read:
+# an install/add may set many vars, and a wipe may REMOVE .env entirely — a
+# conditional in-place re-source can neither reflect a removed .env nor unset
+# vars the new .env dropped, but a fresh process start reads it from scratch (or
+# correctly falls back to the pre-install menu). If setup.sh reboots the host the
+# call never returns, which is fine.
+# _run_setup_return <strict> <label> [setup.sh args...]
+# <strict>=1 for actions whose ONLY good outcome is a finished install (install /
+# wipe); =0 for add-on actions where a bare exit 0 genuinely means success.
+_run_setup_return() {
+    local strict="$1" label="$2"; shift 2
+    local rc=0 outcome="" result_file=""
+    # setup.sh reports its real outcome (completed / aborted / unchanged) by
+    # writing a one-word token to this file; without it the launcher can only
+    # guess from the exit code. No-op for direct setup.sh runs (var unset). If
+    # mktemp itself fails, a strict action with a bare exit 0 falls back to "did
+    # not complete" — a safe under-claim, never a false "completed".
+    result_file=$(mktemp 2>/dev/null) || result_file=""
+    [[ -n "$result_file" ]] && export MEDIASTACK_LAUNCHER_RESULT="$result_file"
+    "$SCRIPT_DIR/setup.sh" "$@" || rc=$?
+    if [[ -n "$result_file" ]]; then
+        [[ -s "$result_file" ]] && outcome=$(<"$result_file")
+        rm -f "$result_file"
+        unset MEDIASTACK_LAUNCHER_RESULT
     fi
+    _show_action_result "$rc" "$label" "$outcome" "$strict"
+    pause_for_menu
+    exec "$SCRIPT_DIR/mediastack"
 }
 
 action_install()    {
-    ui_log warn "About to run the full installer (~5–10 min, requires sudo)."
-    local confirm=""
-    read -rp "  Continue? [Y/n]: " confirm || :
-    # Accept n/N/no/No/NO/nope/etc, with optional leading whitespace so
-    # "  n" doesn't fall through and install. Empty input lowercases to
-    # empty (doesn't match ^[[:space:]]*n) so the [Y] default proceeds.
-    [[ "${confirm,,}" =~ ^[[:space:]]*n ]] && return 0
-    exec "$SCRIPT_DIR/setup.sh"
+    ui_confirm "Run the full installer now (~5-10 min, uses sudo)?" no || return 0
+    _run_setup_return 1 "Install"
 }
-action_remote()     { exec "$SCRIPT_DIR/setup.sh" --remote; }
-action_transcode()  { exec "$SCRIPT_DIR/setup.sh" --transcoding; }
-# Wipe-and-reinstall: setup.sh's detect_existing_install path shows the
-# recovery menu which already has a "Wipe everything and start fresh" item
-# gated by a DESTROY-typed confirm. Reuse it.
-action_wipe()       { exec "$SCRIPT_DIR/setup.sh"; }
+action_remote()     { _run_setup_return 0 "Add remote access" --remote; }
+action_transcode()  { _run_setup_return 0 "Hardware transcoding" --transcoding; }
+# Wipe-and-reinstall: setup.sh's detect_existing_install path shows the recovery
+# menu which already has a "Wipe everything and start fresh" item gated by a
+# DESTROY-typed confirm. Reuse it (and return to the launcher afterwards). Strict:
+# the only honest "success" is a finished reinstall, affirmed by setup.sh.
+action_wipe()       { _run_setup_return 1 "Wipe / reinstall"; }
 
 action_port_check() {
     local rc=0
@@ -375,12 +445,14 @@ action_configure() {
         fi
     done
     if (( ${#missing[@]} > 0 )); then
-        ui_log warn "Stack is not fully running — configure.sh would wait 90s per missing service."
+        ui_log warn "Stack is not fully running - configure.sh would wait 90s per missing service."
         ui_log info "Not running: ${missing[*]}"
-        ui_log info "Start the stack first:  Manage stack → Start all services"
+        ui_log info "Start the stack first:  Manage stack -> Start all services"
         pause_for_menu
         return 0
     fi
+    ui_log info "This adds services newly enabled in config.yml. Already-configured services are detected and skipped, not changed."
+    ui_log info "To change a running service's settings, use that service's own web UI."
     local rc=0
     "$SCRIPT_DIR/scripts/configure.sh" || rc=$?
     _show_action_result "$rc" "Re-run configuration"
@@ -403,7 +475,12 @@ action_stack_stop() {
     local ids
     ids=$(docker compose ps -q 2>/dev/null || true)
     if [[ -z "$ids" ]]; then
-        ui_log info "No MediaStack services are running — nothing to stop."
+        ui_log info "No MediaStack services are running - nothing to stop."
+        pause_for_menu
+        return 0
+    fi
+    if ! ui_confirm "Stop all MediaStack services now?" no; then
+        ui_log info "Left services running."
         pause_for_menu
         return 0
     fi
@@ -411,10 +488,13 @@ action_stack_stop() {
     # Pass profile args so optional services (npm, bazarr, wireguard, autoheal)
     # actually stop. `--profile all` is a literal name, not a wildcard, so
     # without explicit profile args those containers survive `down`.
+    # No --remove-orphans: the profile set is now disk-fresh (shared
+    # _build_profile_args), so plain `down` stops exactly the selected services
+    # without risking removal of containers that look orphaned to a stale profile.
     local profiles=()
-    _ms_profile_args profiles
+    _build_profile_args profiles
     local rc=0
-    docker compose "${profiles[@]}" down --remove-orphans 2>&1 || rc=$?
+    docker compose "${profiles[@]}" down 2>&1 || rc=$?
     _show_action_result "$rc" "Stop stack"
     pause_for_menu
 }
@@ -429,7 +509,7 @@ action_stack_start() {
     # Pass profile args so optional services (npm, bazarr, wireguard, autoheal)
     # come back up — not just default-profile ones.
     local profiles=()
-    _ms_profile_args profiles
+    _build_profile_args profiles
     local rc=0
     docker compose "${profiles[@]}" up -d 2>&1 || rc=$?
     _show_action_result "$rc" "Start stack"
@@ -446,7 +526,7 @@ action_stack_logs() {
     # receives it via the process group and exits cleanly.
     trap '' INT
     local profiles=()
-    _ms_profile_args profiles
+    _build_profile_args profiles
     docker compose "${profiles[@]}" logs -f --tail=200 2>&1 || true
     trap 'echo; echo "  Goodbye."; exit 0' INT
     echo ""
@@ -458,9 +538,16 @@ action_stack_logs() {
 # Submenus
 # =============================================================================
 
-# "Add a feature" submenu — only shows items that are actually addable.
-# Caller checks at least one is available before invoking.
-submenu_add_feature() {
+# Echo "ON"/"OFF" for a boolean .env flag (default false) — for toggle labels.
+_feature_state() { [[ "${1:-false}" == "true" ]] && echo "ON" || echo "OFF"; }
+
+# "Features" submenu — add or toggle the optional, reversible features day-2.
+# The three state toggles (subtitles / file sharing / indexers) are always
+# available; the remote-access "Add" entry self-hides once configured (recovery
+# predicate). Hardware transcoding is deliberately NOT offered here — the
+# always-present top-level "Manage hardware transcoding (GPU)" item is its single
+# home for both first-time add and later change, so there is no second path.
+submenu_features() {
     clear
     render_banner
     local options=()
@@ -468,20 +555,196 @@ submenu_add_feature() {
     if recovery_menu_remote_available; then
         options+=("Add remote access (HTTPS, domain, WireGuard)")
     fi
-    if recovery_menu_transcoding_available; then
-        options+=("Add hardware transcoding (GPU)")
-    fi
+    options+=("Subtitles (Bazarr): $(_feature_state "${BAZARR_ENABLED:-false}")")
+    options+=("File sharing (SMB): $(_feature_state "${SMB_ENABLED:-false}")")
+    options+=("Search indexers: $(_feature_state "${PUBLIC_INDEXERS_ENABLED:-false}")")
+    options+=("Adjust bandwidth limits (qBittorrent)")
     options+=("Back")
 
     echo ""
     local choice
-    choice=$(ui_choose "Add which feature?" "${options[@]}")
+    choice=$(ui_choose "Manage features & settings:" "${options[@]}")
 
     case "$choice" in
         "Add remote access"*)        action_remote ;;
-        "Add hardware transcoding"*) action_transcode ;;
+        "Subtitles (Bazarr):"*)      action_toggle_bazarr ;;
+        "File sharing (SMB):"*)      action_toggle_smb ;;
+        "Search indexers:"*)         action_toggle_indexers ;;
+        "Adjust bandwidth limits"*)  action_adjust_bandwidth ;;
         *)                           return 0 ;;
     esac
+}
+
+# --- Feature toggles --------------------------------------------------------
+# Each flips its .env flag, does the work, then _reload_env so the next render
+# reflects the new state. Add-only invariant: turning a feature OFF stops or
+# disables it; it NEVER deletes user data (volumes, bind-mounts, host files).
+
+action_toggle_bazarr() {
+    echo ""
+    if ! _docker_reachable; then
+        ui_log warn "Docker isn't reachable - start the stack first."
+        pause_for_menu; return 0
+    fi
+    local rc=0
+    if [[ "${BAZARR_ENABLED:-false}" == "true" ]]; then
+        ui_confirm "Turn OFF subtitles (Bazarr)? Your subtitle settings are kept." no || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var BAZARR_ENABLED false
+        _reload_env
+        ui_log info "Stopping Bazarr (its ./config/bazarr settings are preserved)..."
+        # Literal --profile subtitles: the flag is required for compose to see
+        # the service, and _build_profile_args no longer yields it post-flip.
+        # rm -sf stops + removes only the container; the bind-mount survives.
+        docker compose --profile subtitles rm -sf bazarr 2>&1 || rc=$?
+        _show_action_result "$rc" "Disable subtitles (Bazarr)"
+    else
+        ui_confirm "Turn ON subtitles (Bazarr) for automatic subtitle downloads?" yes || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var BAZARR_ENABLED true
+        _reload_env
+        ui_log info "Enabling Bazarr..."
+        _regenerate_override
+        local profiles=()
+        _build_profile_args profiles
+        docker compose "${profiles[@]}" up -d bazarr 2>&1 || rc=$?
+        if (( rc == 0 )); then
+            "$SCRIPT_DIR/scripts/configure.sh" --only bazarr || rc=$?
+        fi
+        _show_action_result "$rc" "Enable subtitles (Bazarr)"
+    fi
+    pause_for_menu
+}
+
+action_toggle_smb() {
+    echo ""
+    local rc=0
+    if [[ "${SMB_ENABLED:-false}" == "true" ]]; then
+        ui_confirm "Turn OFF the host file share (SMB)? Your files are NOT deleted." no || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var SMB_ENABLED false
+        _reload_env
+        ui_log info "Removing the MediaStack SMB share (uses sudo; your files are untouched)..."
+        # shellcheck disable=SC1091
+        source "$SCRIPT_DIR/scripts/setup/hardening.sh"
+        setup_samba || rc=$?
+        _show_action_result "$rc" "Disable file sharing (SMB)"
+    else
+        ui_log info "Share your media over the network so other devices can browse it."
+        local scope_choice
+        scope_choice=$(ui_choose "What should the SMB share expose?" \
+            "Media only (recommended)" \
+            "Full system (everything on this box)" \
+            "Cancel")
+        local scope=""
+        case "$scope_choice" in
+            "Media only"*)  scope="data" ;;
+            "Full system"*) scope="system" ;;
+            *)              ui_log info "No change."; pause_for_menu; return 0 ;;
+        esac
+        _set_env_var SMB_ENABLED true
+        _set_env_var SMB_SHARE_SCOPE "$scope"
+        _reload_env
+        ui_log info "Configuring the SMB share (uses sudo)..."
+        # shellcheck disable=SC1091
+        source "$SCRIPT_DIR/scripts/setup/hardening.sh"
+        setup_samba || rc=$?
+        _show_action_result "$rc" "Enable file sharing (SMB)"
+    fi
+    pause_for_menu
+}
+
+action_toggle_indexers() {
+    echo ""
+    if ! _docker_reachable; then
+        ui_log warn "Docker isn't reachable - start the stack first."
+        pause_for_menu; return 0
+    fi
+    local rc=0
+    local wiz="$SCRIPT_DIR/scripts/setup/wizard_apply.py"
+    if [[ "${PUBLIC_INDEXERS_ENABLED:-false}" == "true" ]]; then
+        ui_confirm "Stop configuring public indexers? Existing ones stay in Jackett." no || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var PUBLIC_INDEXERS_ENABLED false
+        _reload_env
+        python3 "$wiz" --indexers-only false --config "$SCRIPT_DIR/config.yml" || rc=$?
+        ui_log info "Indexers already added stay configured in Jackett / Sonarr / Radarr -"
+        ui_log info "remove them from the Jackett web UI if you no longer want them."
+        _show_action_result "$rc" "Disable public indexers"
+    else
+        ui_log info "This sets config.yml's indexer list to the bundled example preset"
+        ui_log info "(any indexers you hand-added to config.yml will be overwritten)."
+        ui_confirm "Add the example public search indexers so Sonarr/Radarr can find releases?" yes || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var PUBLIC_INDEXERS_ENABLED true
+        _reload_env
+        ui_log info "Adding public indexers to config.yml..."
+        python3 "$wiz" --indexers-only true --config "$SCRIPT_DIR/config.yml" || rc=$?
+        if (( rc == 0 )); then
+            ui_log info "Wiring indexers into Jackett, Sonarr and Radarr..."
+            "$SCRIPT_DIR/scripts/configure.sh" --only jackett,sonarr,radarr || rc=$?
+        fi
+        _show_action_result "$rc" "Enable public indexers"
+    fi
+    pause_for_menu
+}
+
+# Guided day-2 adjust of qBittorrent download/upload speed limits (MB/s; the knob
+# the wizard set once at install). Reuses the SAME input path as Stage 1
+# (ui_input_validated + validate_mb_per_sec, "MB/s" copy) and applies live through
+# the product's own qBittorrent API helper (qbt_set_speed_limits) — the limits are
+# NOT container env, so a recreate would not change them. Apply-first / persist-on-
+# success: .env is only rewritten once the live apply succeeds, so .env never drifts
+# ahead of the daemon. Non-TTY safe: the current value is sanitized to a valid number
+# before use, so an EOF returns a validator-passing default (no re-prompt loop) and
+# "no change" exits before any API call.
+action_adjust_bandwidth() {
+    echo ""
+    if ! _docker_reachable; then
+        ui_log warn "Docker isn't reachable - start the stack first."
+        pause_for_menu; return 0
+    fi
+    if ! _service_is_running qbittorrent; then
+        ui_log warn "qBittorrent isn't running - start the stack first."
+        pause_for_menu; return 0
+    fi
+
+    # A hand-edited .env can hold a non-numeric value; ${x:-0} only defaults on
+    # empty, so a stale "10mb"/"5 " would become the prompt default and a non-TTY
+    # EOF would re-prompt forever (the default never validates). Sanitize to a
+    # valid number first, and say so.
+    local cur_dl="${QBT_DL_LIMIT:-0}" cur_ul="${QBT_UL_LIMIT:-0}"
+    validate_mb_per_sec "$cur_dl" 2>/dev/null || { ui_log warn "Stored download limit '${cur_dl}' isn't a valid MB/s number; using 0 (unlimited)."; cur_dl=0; }
+    validate_mb_per_sec "$cur_ul" 2>/dev/null || { ui_log warn "Stored upload limit '${cur_ul}' isn't a valid MB/s number; using 0 (unlimited)."; cur_ul=0; }
+    ui_log info "qBittorrent speed limits in MB/s (0 = unlimited). Press Enter to keep a value."
+    ui_log info "Current: download ${cur_dl} MB/s, upload ${cur_ul} MB/s."
+
+    local new_dl new_ul
+    new_dl=$(ui_input_validated "Download limit (MB/s, 0 = unlimited)" "$cur_dl" validate_mb_per_sec)
+    new_ul=$(ui_input_validated "Upload limit (MB/s, 0 = unlimited)" "$cur_ul" validate_mb_per_sec)
+
+    if [[ "$new_dl" == "$cur_dl" && "$new_ul" == "$cur_ul" ]]; then
+        ui_log info "No change."; pause_for_menu; return 0
+    fi
+    ui_confirm "Apply download ${new_dl} MB/s / upload ${new_ul} MB/s to qBittorrent now?" yes || {
+        ui_log info "No change."; pause_for_menu; return 0; }
+
+    # Source the product's qBittorrent module on demand (the launcher does not load
+    # it at startup); the guard makes a repeat visit idempotent.
+    type qbt_set_speed_limits &>/dev/null || source "$SCRIPT_DIR/scripts/services/qbittorrent/main.sh"
+
+    ui_log info "Applying new speed limits to qBittorrent..."
+    local rc=0
+    qbt_set_speed_limits "$new_dl" "$new_ul" || rc=$?
+    if (( rc == 0 )); then
+        # Persist only after the live apply succeeds, so .env stays in lock-step
+        # with the running daemon (a future configure run trusts these values).
+        _set_env_var QBT_DL_LIMIT "$new_dl"
+        _set_env_var QBT_UL_LIMIT "$new_ul"
+        _reload_env
+    fi
+    _show_action_result "$rc" "Adjust bandwidth limits"
+    pause_for_menu
 }
 
 submenu_manage_stack() {
@@ -509,14 +772,14 @@ submenu_diagnostics() {
     echo ""
     local choice
     choice=$(ui_choose "Diagnostics:" \
-        "Show public IP" \
         "Check domain DNS" \
+        "Show public IP" \
         "System readiness check" \
         "Back")
 
     case "$choice" in
-        "Show public IP"*)    diag_public_ip; pause_for_menu ;;
         "Check domain DNS"*)  diag_dns_check; pause_for_menu ;;
+        "Show public IP"*)    diag_public_ip; pause_for_menu ;;
         "System readiness"*)  diag_readiness; pause_for_menu ;;
         *)                    return 0 ;;
     esac
@@ -573,7 +836,7 @@ _regenerate_override() {
 _image_policy_state_file() { printf '%s\n' "$SCRIPT_DIR/config/state/image-policy.tsv"; }
 
 _image_policy_header() {
-    echo "# MediaStack per-service image policy — managed by 'Manage updates' (ADR-30)."
+    echo "# MediaStack per-service image policy - managed by 'Manage updates' (ADR-30)."
     echo "# Format: service<TAB>stable|latest. Absent row = follow global IMAGE_CHANNEL."
 }
 
@@ -606,17 +869,29 @@ _clear_service_policy() {
     mv "$tmp" "$file"
 }
 
-# Rewrite a KEY=value line in .env (append if absent). Value here has no '='.
+# Rewrite a KEY=value line in .env (append if absent), single-quoted and via an
+# atomic replace, by reusing the one hardened .env writer in common.sh — the same
+# code path save_api_key uses. An unquoted value with a space or shell metachar
+# would otherwise be mis-parsed on the launcher's next `set -a; source .env`.
 _set_env_var() {
-    local key="$1" val="$2" file="$SCRIPT_DIR/.env" tmp
+    local key="$1" val="$2" file="$SCRIPT_DIR/.env" status
     [[ -f "$file" ]] || return 1
-    tmp=$(mktemp)
-    awk -v k="$key" -v v="$val" '
-        $0 ~ "^" k "=" { print k "=" v; done = 1; next }
-        { print }
-        END { if (!done) print k "=" v }
-    ' "$file" > "$tmp"
-    mv "$tmp" "$file"
+    if ! status=$(_env_write_kv "$file" "$key" "$val"); then
+        _env_write_kv_warn "$key" "$status"
+        return 1
+    fi
+}
+
+# Re-read .env into the environment after a day-2 mutation so the banner and
+# feature-state labels reflect the change without re-exec'ing the launcher (a
+# re-exec would re-run the real launcher and hit the root-EUID guard under the
+# sourced test harness). Profile args are already read disk-fresh elsewhere.
+_reload_env() {
+    [[ -f "$SCRIPT_DIR/.env" ]] || return 0
+    set -a
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/.env"
+    set +a
 }
 
 # Lightweight readiness poll after a single-service recreate (no http.sh needed).
@@ -648,16 +923,19 @@ _service_is_running() {
 # is currently running. A stopped/exited service is left stopped: the new image is
 # staged and applies next time the stack starts. Never starts a stopped service.
 _recreate_service() {
-    local svc="$1" done_msg="$2" pflag
-    pflag=$(_service_profile_flag "$svc")
-    # shellcheck disable=SC2086
-    docker compose $pflag pull "$svc" 2>&1 || ui_log warn "Pull reported an issue; using cached image."
+    local svc="$1" done_msg="$2"
+    # Profile flag(s) as a proper array — matches the `${profiles[@]}` pattern
+    # used everywhere else (and _build_profile_args) and removes the
+    # word-splitting hazard of an unquoted $pflag. read -ra on an empty string
+    # yields an empty array, so a profile-less service passes no extra args.
+    local pflag=()
+    read -ra pflag <<< "$(_service_profile_flag "$svc")"
+    docker compose "${pflag[@]}" pull "$svc" 2>&1 || ui_log warn "Pull reported an issue; using cached image."
     if ! _service_is_running "$svc"; then
-        ui_log info "${svc} is stopped — the new image is staged and applies next time it starts."
+        ui_log info "${svc} is stopped - the new image is staged and applies next time it starts."
         return 0
     fi
-    # shellcheck disable=SC2086
-    if docker compose $pflag up -d "$svc" 2>&1; then
+    if docker compose "${pflag[@]}" up -d "$svc" 2>&1; then
         _wait_service_running "$svc"
         ui_log ok "$done_msg"
     else
@@ -670,19 +948,32 @@ _recreate_service() {
 # on Stable (re-pins to the advanced lock); an upstream update on a Stable
 # install floats the service to its compose tag (sticky, outside the baseline).
 _apply_service_update() {
-    local svc="$1" status="${2:-}"
-    if [[ "$svc" == "wireguard" ]]; then
-        ui_log warn "Updating WireGuard restarts remote access and may disconnect VPN clients."
-        ui_log info "Run this from your LAN / local console if you rely on WireGuard for access."
-        ui_confirm "Update WireGuard now?" no || { ui_log info "Skipped WireGuard."; return 0; }
-    fi
+    local svc="$1" status="${2:-}" skip_confirm="${3:-}"
     local g="${IMAGE_CHANNEL:-stable}"; g="${g,,}"
     # Float to the upstream tag only for an upstream (ahead-of-tested) update on a
     # Stable install. A tested-Stable update applies in-channel (no policy change).
-    local sl="${status,,}"
-    if [[ "$g" == "stable" && "$sl" == *upstream* ]]; then
+    local sl="${status,,}" is_float=0
+    [[ "$g" == "stable" && "$sl" == *upstream* ]] && is_float=1
+    if [[ "$svc" == "wireguard" ]]; then
+        ui_log warn "Updating WireGuard restarts remote access and may disconnect VPN clients."
+        ui_log info "Run this from your LAN / local console if you rely on WireGuard for access."
+        (( is_float )) && ui_log warn "It also moves WireGuard to its Upstream tag, outside the tested Stable baseline."
+        ui_confirm "Update WireGuard now?" no || { ui_log info "Skipped WireGuard."; return 0; }
+        # That single confirm already covers the float consent for WireGuard, so
+        # don't re-prompt in the float branch below.
+        skip_confirm=1
+    fi
+    if (( is_float )); then
+        # Floating drops this service off the tested Stable baseline, so confirm
+        # first - unless the caller already gathered consent (the "Update all"
+        # path, and the WireGuard branch above, pass skip_confirm to avoid a
+        # double-prompt).
+        if [[ "$skip_confirm" != "1" ]]; then
+            ui_log warn "This moves ${svc} to its Upstream tag, outside the tested Stable baseline."
+            ui_confirm "Float ${svc} to Upstream and update?" no || { ui_log info "Left ${svc} on tested Stable."; return 0; }
+        fi
         _set_service_policy "$svc" latest
-        ui_log info "${svc}: now tracking its Upstream tag — outside the tested Stable baseline."
+        ui_log info "${svc}: now tracking its Upstream tag - outside the tested Stable baseline."
     elif [[ "$g" == "stable" ]]; then
         ui_log info "${svc}: applying the tested Stable update."
     fi
@@ -733,7 +1024,7 @@ _render_update_table() {
         esac
         printf '  %-13s %-18s %b%s%b\n' "$svc" "$label" "$color" "$status" "$NC"
     done <<<"$tsv"
-    (( has_manual )) && printf '  %s\n' "* manual override — not following the default channel"
+    (( has_manual )) && printf '  %s\n' "* manual override - not following the default channel"
 }
 
 _menu_update_selected() {
@@ -773,9 +1064,9 @@ _menu_update_all() {
     done <<<"$tsv"
     if (( ${#svcs[@]} == 0 )); then
         if (( tested_pending )); then
-            ui_log info "Only tested Stable updates are pending — use 'Pull tested Stable updates'."
+            ui_log info "Only tested Stable updates are pending - use 'Pull tested Stable updates'."
         elif (( wg_updatable )); then
-            ui_log info "Only WireGuard has an update — use 'Update a service' to update it explicitly."
+            ui_log info "Only WireGuard has an update - use 'Update a service' to update it explicitly."
         else
             ui_log info "No upstream updates available."
         fi
@@ -785,12 +1076,14 @@ _menu_update_all() {
     ui_log warn "About to update ${#svcs[@]} service(s) to their Upstream tag."
     ui_log info "May use images not yet accepted in the tested Stable record."
     ui_log info "Services: ${svcs[*]}"
-    (( wg_updatable )) && ui_log info "WireGuard is excluded (remote access) — update it explicitly if needed."
+    (( wg_updatable )) && ui_log info "WireGuard is excluded (remote access) - update it explicitly if needed."
     ui_confirm "Proceed?" no || { ui_log info "Cancelled."; pause_for_menu; return 0; }
     local s st
     for s in "${svcs[@]}"; do
         st=$(awk -F '\t' -v k="$s" '$1 == k { print $4 }' <<<"$tsv")
-        _apply_service_update "$s" "$st"
+        # skip_confirm=1: the bulk "Proceed?" above already covered these floats,
+        # so don't re-prompt per service inside _apply_service_update.
+        _apply_service_update "$s" "$st" 1
     done
     pause_for_menu
 }
@@ -844,7 +1137,7 @@ submenu_manage_updates() {
     render_banner
     echo ""
     if ! _docker_reachable; then
-        ui_log warn "Docker isn't reachable — cannot check for image updates."
+        ui_log warn "Docker isn't reachable - cannot check for image updates."
         pause_for_menu
         return 0
     fi
@@ -900,35 +1193,34 @@ menu_pre() {
         "Check domain DNS"*)           diag_dns_check; pause_for_menu ;;
         "Show my public IP"*)          diag_public_ip; pause_for_menu ;;
         "Quit"*)                       echo; echo "  Goodbye."; exit 0 ;;
-        *)                             ;;  # unrecognized choice — re-render menu
+        *)                             ;;  # unrecognized choice - re-render menu
     esac
 }
 
 menu_post() {
-    # Determine whether "Add a feature" should appear at all.
-    local show_add_feature=0
-    if recovery_menu_remote_available \
-        || recovery_menu_transcoding_available; then
-        show_add_feature=1
-    fi
-
     # The port-check parenthetical only honestly applies once a real domain
     # is configured — pre-Stage-2 the script can only probe TCP 6881.
     local pc_label="Test port forwarding (router config)"
     if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then
         pc_label="Test port forwarding (DNS, ports, HTTP)"
     fi
+    # Options are grouped by how often a day-2 user reaches for them, most
+    # frequent first (reorder only — no visible band headers; a header as a
+    # ui_choose item would consume a selection index and shift the position-based
+    # PTY drivers). "View access info" MUST stay at index 1 (PTY + unit asserts).
     local options=(
+        # Band 1 — at-a-glance / check-in
+        "View access info (URLs, logins, remote, ports)"
         "Show service status"
         "$pc_label"
-        "Manage updates (status, per-service, channel)"
-        "Manage hardware transcoding (GPU)"
-        "Re-run configuration (apply config.yml changes)"
-        "Diagnostics (public IP, DNS, readiness)"
-    )
-    (( show_add_feature == 1 )) && options+=("Add a feature")
-    options+=(
+        # Band 2 — routine management
         "Manage stack (stop, start, logs)"
+        "Manage updates (status, per-service, channel)"
+        "Features (subtitles, file sharing, indexers)"
+        "Manage hardware transcoding (GPU)"
+        # Band 3 — occasional / setup / destructive
+        "Re-run configuration to add new services"
+        "Diagnostics (public IP, DNS, readiness)"
         "Wipe and reinstall (destructive)"
         "Quit"
     )
@@ -938,17 +1230,18 @@ menu_post() {
     choice=$(ui_choose "What would you like to do?" "${options[@]}")
 
     case "$choice" in
+        "View access info"*)      action_access_info; pause_for_menu ;;
         "Show service status"*)   diag_status; pause_for_menu ;;
         "Test port forwarding"*)  action_port_check ;;
         "Manage updates"*)        submenu_manage_updates ;;
         "Manage hardware transcoding"*) submenu_manage_hardware ;;
         "Re-run configuration"*)  action_configure ;;
         "Diagnostics"*)           submenu_diagnostics ;;
-        "Add a feature"*)         submenu_add_feature ;;
+        "Features"*)              submenu_features ;;
         "Manage stack"*)          submenu_manage_stack ;;
         "Wipe and reinstall"*)    action_wipe ;;
         "Quit"*)                  echo; echo "  Goodbye."; exit 0 ;;
-        *)                        ;;  # unrecognized choice — re-render menu
+        *)                        ;;  # unrecognized choice - re-render menu
     esac
 }
 
@@ -965,6 +1258,17 @@ pause_for_menu() {
 main() {
     # Ctrl-C at the top level exits cleanly.
     trap 'echo; echo "  Goodbye."; exit 0' INT
+
+    # Non-interactive (piped) driver only: ui_choose SIGTERMs the process group
+    # when its stdin runs dry (it loops menus forever, so a subshell exit alone
+    # can't stop it). Map that group-kill to a distinct, documented exit code so
+    # a wrapper can tell "input exhausted" apart from a generic kill (143) or a
+    # real failure. Interactive runs never hit ui_choose EOF, so this trap is
+    # installed only when MEDIASTACK_NONINTERACTIVE=1 and leaves the TTY default
+    # SIGTERM disposition untouched.
+    if [[ "${MEDIASTACK_NONINTERACTIVE:-0}" == "1" ]]; then
+        trap 'echo "  No more input on stdin - exiting non-interactive session." >&2; exit '"${UI_EXIT_INPUT_EXHAUSTED:-3}"'' TERM
+    fi
 
     while true; do
         clear 2>/dev/null || printf '\033[2J\033[H'

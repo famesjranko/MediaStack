@@ -47,17 +47,17 @@ run_scenario() {
     wg_dir_stat=$(dind_exec "stat -c '%u:%g %a' config/wireguard" | tr -d '\r\n')
     assert_eq "1000:1000 755" "$wg_dir_stat" "WireGuard config dir mirrors non-root setup ownership"
 
-    # Default run asserts the v15.3.0 pin; under a candidate-image override
+    # Default run asserts the major-15 pin; under a candidate-image override
     # (MS_TEST_IMAGE_OVERRIDES) this becomes a tag-propagation check instead, so
     # a valid candidate isn't failed before its behavior is exercised.
     local expected_image
-    expected_image=$(ms_test_image wireguard "ghcr.io/wg-easy/wg-easy:15.3.0")
+    expected_image=$(ms_test_image wireguard "ghcr.io/wg-easy/wg-easy:15")
     image_tag=$(dind_exec "docker compose --profile remote config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"services\"][\"wireguard\"][\"image\"])'" | tr -d '\r\n')
-    if [[ "$expected_image" == "ghcr.io/wg-easy/wg-easy:15.3.0" ]]; then
-        if [[ "$image_tag" =~ ^ghcr\.io/wg-easy/wg-easy:15\.3\.0(@sha256:[0-9a-f]{64})?$ ]]; then
-            pass "WireGuard image pinned to v15.3.0"
+    if [[ "$expected_image" == "ghcr.io/wg-easy/wg-easy:15" ]]; then
+        if [[ "$image_tag" =~ ^ghcr\.io/wg-easy/wg-easy:15(@sha256:[0-9a-f]{64})?$ ]]; then
+            pass "WireGuard image pinned to the major-15 line"
         else
-            fail "WireGuard image pinned to v15.3.0" "actual='$image_tag'"
+            fail "WireGuard image pinned to the major-15 line" "actual='$image_tag'"
         fi
     else
         assert_eq "$expected_image" "$image_tag" "WireGuard candidate image override propagated to compose"

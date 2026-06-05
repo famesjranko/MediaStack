@@ -32,6 +32,8 @@ ui_log() {
 }
 reset_warn() {
     WARN_COUNT=0
+    # Recording hook for debugging; not asserted.
+    # shellcheck disable=SC2034
     LAST_WARN=""
 }
 
@@ -42,7 +44,8 @@ cat >"$TMP_ROOT/cloudflare-ips-v4.txt" <<'EOF'
 198.51.100.0/24
 EOF
 export STAGE2_CLOUDFLARE_IPS_FILE="$TMP_ROOT/cloudflare-ips-v4.txt"
-export STAGE2_CLOUDFLARE_IPS_TEXT="$(cat "$TMP_ROOT/cloudflare-ips-v4.txt")"
+STAGE2_CLOUDFLARE_IPS_TEXT="$(cat "$TMP_ROOT/cloudflare-ips-v4.txt")"
+export STAGE2_CLOUDFLARE_IPS_TEXT
 
 dig() {
     local query=""

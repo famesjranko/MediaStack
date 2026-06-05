@@ -2,6 +2,26 @@
 # 1. qBittorrent — login, set preferences, seed categories
 # =============================================================================
 
+# qBittorrent v5.x returns HTTP 200 with body "Fails." for bad passwords, so we
+# check the response body, not just the HTTP status. Hoisted to module scope so
+# both configure_qbittorrent (first-run/re-run auth, incl. the temp-password
+# fallback) and the day-2 qbt_set_speed_limits re-auth share one implementation.
+_qbt_login() {
+    local jar="$1" url="$2" username="$3" password="$4" resp body http_code
+    resp=$(curl -s -c "$jar" -w "\n%{http_code}" "$url/api/v2/auth/login" \
+        --data-urlencode "username=$username" \
+        --data-urlencode "password=$password" 2>/dev/null) || return 1
+    http_code=$(echo "$resp" | tail -1)
+    body=$(echo "$resp" | sed '$d')
+    [[ "$body" == "Ok." || ( "$http_code" == "204" && -z "$body" ) ]]
+}
+
+# MB/s (megabytes) -> bytes/s for the qBittorrent API. Shared so the 1048576
+# conversion lives in exactly one place (configure_qbittorrent + qbt_set_speed_limits).
+_qbt_mb_to_bytes() {
+    MB="$1" python3 -c "import os; print(int(float(os.environ['MB']) * 1048576))"
+}
+
 configure_qbittorrent() {
     echo ""
     echo -e "${BOLD}Configuring qBittorrent...${NC}"
@@ -10,23 +30,11 @@ configure_qbittorrent() {
     local jar authed="" target_pw="${JELLYFIN_ADMIN_PASSWORD:-}" target_user="${JELLYFIN_ADMIN_USER:-admin}"
     jar=$(mktemp)
 
-    # qBittorrent v5.x returns HTTP 200 with body "Fails." for bad passwords,
-    # so we must check the response body, not just the HTTP status.
-    _qbt_login() {
-        local username="$1" password="$2" resp body http_code
-        resp=$(curl -s -c "$jar" -w "\n%{http_code}" "$qbt_url/api/v2/auth/login" \
-            --data-urlencode "username=$username" \
-            --data-urlencode "password=$password" 2>/dev/null) || return 1
-        http_code=$(echo "$resp" | tail -1)
-        body=$(echo "$resp" | sed '$d')
-        [[ "$body" == "Ok." || ( "$http_code" == "204" && -z "$body" ) ]]
-    }
-
     # Try shared admin password first (re-run / already unified)
     if [[ -n "$target_pw" ]]; then
-        if _qbt_login "$target_user" "$target_pw"; then
+        if _qbt_login "$jar" "$qbt_url" "$target_user" "$target_pw"; then
             authed="target"
-        elif [[ "$target_user" != "admin" ]] && _qbt_login "admin" "$target_pw"; then
+        elif [[ "$target_user" != "admin" ]] && _qbt_login "$jar" "$qbt_url" "admin" "$target_pw"; then
             authed="target"
         fi
     fi
@@ -55,7 +63,7 @@ print(password)
         local temp_pw attempt
         for attempt in $(seq 1 60); do
             temp_pw=$(_qbt_temp_password_from_logs)
-            if [[ -n "$temp_pw" ]] && _qbt_login "admin" "$temp_pw"; then
+            if [[ -n "$temp_pw" ]] && _qbt_login "$jar" "$qbt_url" "admin" "$temp_pw"; then
                 authed="temp"
                 break
             fi
@@ -67,9 +75,9 @@ print(password)
     if [[ -z "$authed" ]]; then
         local legacy_pw="${QBT_ADMIN_PASSWORD:-}"
         if [[ -n "$legacy_pw" ]]; then
-            if _qbt_login "$target_user" "$legacy_pw"; then
+            if _qbt_login "$jar" "$qbt_url" "$target_user" "$legacy_pw"; then
                 authed="legacy"
-            elif [[ "$target_user" != "admin" ]] && _qbt_login "admin" "$legacy_pw"; then
+            elif [[ "$target_user" != "admin" ]] && _qbt_login "$jar" "$qbt_url" "admin" "$legacy_pw"; then
                 authed="legacy"
             fi
         fi
@@ -102,8 +110,8 @@ print(password)
     [[ -n "${QBT_DL_LIMIT:-}" ]] && dl_limit_mb="$QBT_DL_LIMIT"
     [[ -n "${QBT_UL_LIMIT:-}" ]] && ul_limit_mb="$QBT_UL_LIMIT"
     local dl_limit ul_limit
-    dl_limit=$(python3 -c "print(int(float('${dl_limit_mb}') * 1048576))")
-    ul_limit=$(python3 -c "print(int(float('${ul_limit_mb}') * 1048576))")
+    dl_limit=$(_qbt_mb_to_bytes "$dl_limit_mb")
+    ul_limit=$(_qbt_mb_to_bytes "$ul_limit_mb")
 
     local prefs_json
     if $manual_storage; then
@@ -162,7 +170,7 @@ print(json.dumps({
     # defaults to username "admin"; MediaStack's access summary promises the
     # wizard admin username, so set both fields explicitly.
     if [[ -z "$target_pw" ]]; then
-        log_warn "JELLYFIN_ADMIN_PASSWORD not set — cannot set qBittorrent WebUI credentials"
+        log_warn "JELLYFIN_ADMIN_PASSWORD not set - cannot set qBittorrent WebUI credentials"
     else
         local auth_json
         auth_json=$(QBT_WEB_USER="$target_user" PW="$target_pw" \
@@ -247,4 +255,66 @@ print(cat.get("savePath", ""))
     done < <(cfg_qbt_categories)
 
     rm -f "$jar"
+}
+
+# =============================================================================
+# 2. qBittorrent — day-2 speed-limit adjust (focused; changes ONE setting)
+# =============================================================================
+#
+# Apply new download/upload speed limits to the LIVE qBittorrent daemon via the
+# API. The limits never reach the container as env (QBT_DL_LIMIT/QBT_UL_LIMIT are
+# not in docker-compose.yml) — they are set through setPreferences, so recreating
+# the container would NOT change them. Used by the ./mediastack "Adjust bandwidth
+# limits" action.
+#
+# Deliberately surgical (invariant #2 — no broad reconcile): POSTs ONLY dl_limit
+# and up_limit. setPreferences merges, so every other preference, the WebUI
+# credentials and the categories are left untouched. Re-uses _qbt_login and
+# _qbt_mb_to_bytes (no cfg_field/api_fetch dependency, so the launcher can source
+# this module standalone to reach it).
+#
+# Args: $1 download MB/s, $2 upload MB/s (0 = unlimited; validated by the caller).
+# Returns 0 on success, 1 on auth/apply failure.
+qbt_set_speed_limits() {
+    local dl_mb="$1" ul_mb="$2"
+    local qbt_url="http://localhost:8080"
+    local target_pw="${JELLYFIN_ADMIN_PASSWORD:-}" target_user="${JELLYFIN_ADMIN_USER:-admin}"
+
+    if [[ -z "$target_pw" ]]; then
+        log_warn "Cannot adjust qBittorrent limits: shared admin password (JELLYFIN_ADMIN_PASSWORD) is not set."
+        return 1
+    fi
+
+    local jar; jar=$(mktemp)
+    local authed=""
+    if _qbt_login "$jar" "$qbt_url" "$target_user" "$target_pw"; then
+        authed=1
+    elif [[ "$target_user" != "admin" ]] && _qbt_login "$jar" "$qbt_url" "admin" "$target_pw"; then
+        authed=1
+    fi
+    if [[ -z "$authed" ]]; then
+        log_warn "Could not authenticate with qBittorrent to adjust speed limits."
+        rm -f "$jar"; return 1
+    fi
+
+    local dl_limit ul_limit prefs_json
+    dl_limit=$(_qbt_mb_to_bytes "$dl_mb")
+    ul_limit=$(_qbt_mb_to_bytes "$ul_mb")
+    prefs_json=$(DL_LIMIT="$dl_limit" UP_LIMIT="$ul_limit" python3 -c '
+import os, json
+print(json.dumps({
+    "dl_limit": int(os.environ["DL_LIMIT"]),
+    "up_limit": int(os.environ["UP_LIMIT"]),
+}))')
+
+    local rc=0
+    if curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
+        --data-urlencode "json=$prefs_json" >/dev/null 2>&1; then
+        log_ok "qBittorrent speed limits updated: download ${dl_mb} MB/s, upload ${ul_mb} MB/s."
+    else
+        log_warn "Failed to apply qBittorrent speed limits."
+        rc=1
+    fi
+    rm -f "$jar"
+    return $rc
 }

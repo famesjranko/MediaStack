@@ -39,6 +39,29 @@ installs intentionally follow upstream tags.
 
 Exit code is non-zero if any hard assertion failed. `[SKIP]` lines never fail.
 
+## Linting
+
+`./tests/lint.sh` is the shell lint runner (shellcheck). Config and the curated
+false-positive suppressions live in `.shellcheckrc` (repo root), so the runner
+needs no special flags — and neither do you.
+
+```bash
+./tests/lint.sh                          # lint every tracked *.sh + mediastack
+./tests/lint.sh scripts/lib/validators.sh  # lint only the named file(s)
+./tests/lint.sh --severity=error         # only fail on errors (what CI gates on)
+```
+
+It prefers a native `shellcheck` and falls back to the `koalaman/shellcheck:stable`
+docker image, so it works with neither installed-but-docker, or shellcheck on PATH.
+CI runs `./tests/lint.sh --severity=error` in the "Static validation" job and fails
+the PR on any new shellcheck **error**.
+
+> **Version skew is real.** CI's native `shellcheck` and the pinned
+> `koalaman/shellcheck:stable` image are different versions that disagree on a few
+> codes (notably `SC2218`). A per-file/inline `# shellcheck disable=` can therefore
+> pass with the docker image yet still fail the CI gate — so suppress version-skewed
+> codes in `.shellcheckrc` (`disable=`), never inline. See the `SC2218` note there.
+
 ## Scenarios
 
 ### `smoke` — ~90 seconds
@@ -90,7 +113,7 @@ Stage 2 adds WireGuard/remote-access DinD scenarios:
 
 - `stage2-skip` proves the user can skip HTTPS setup, `REMOTE_WEB_STATE=skipped` is persisted, LAN URLs remain in Jellyfin/Homepage, and public NPM proxy hosts are not published.
 - `stage2-ready` proves the ready path with safe in-VM/Pebble ACME fixtures: NPM renders cert-backed hosts, Jellyfin HTTPS responds, and `REMOTE_WEB_STATE=ready` is written only after proxy/cert postconditions.
-- `wireguard` starts wg-easy v15 at the Full LAN tier with the `remote` profile, asserts the v15.3.0 image pin and bridge-network `.11` placement (ADR-23, ADR-28) plus the ADR-17 capability set, and verifies interface creation, Basic Auth on `/api/client`, peer creation via the v15 API, `wg-easy.db` persistence, NAT/MASQUERADE, and custom `WG_PORT` propagation end-to-end (compose binding, container listen-port, `wg0.conf`).
+- `wireguard` starts wg-easy v15 at the Full LAN tier with the `remote` profile, asserts the major-`15` image pin (digest-locked under stable) and bridge-network `.11` placement (ADR-23, ADR-28) plus the ADR-17 capability set, and verifies interface creation, Basic Auth on `/api/client`, peer creation via the v15 API, `wg-easy.db` persistence, NAT/MASQUERADE, and custom `WG_PORT` propagation end-to-end (compose binding, container listen-port, `wg0.conf`).
 - `wireguard-server`, `wireguard-containers`, `wireguard-streaming` cover the Server / Containers / Streaming access tiers (ADR-29). Each enables wg-easy's per-client firewall and verifies the tier's `firewallIps` shape persists through wg-easy's possibly-500-but-persisted mutation path (ADR-28). Server tier asserts the bare `/32` shape, Containers asserts the MediaStack port enumeration (51821 excluded), Streaming asserts the Jellyfin+Jellyseerr+Homepage triple.
 - Stage 2 distinguishes failed HTTPS attempts from intentional skips with `REMOTE_WEB_STATE=failed`; a failed LE gate keeps LAN/VPN usable and is retried by rerunning `./setup.sh --remote`, never by an automatic in-process retry.
 

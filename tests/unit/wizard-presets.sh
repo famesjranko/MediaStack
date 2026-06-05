@@ -285,5 +285,50 @@ assert_eq "none" "$(wizard_gpu_mapping 'CPU only (software transcoding)')" \
 assert_eq "none" "$(wizard_gpu_mapping 'something unexpected')" \
     "wizard GPU: unknown → none"
 
+# =========================================================================
+# --indexers-only — day-2 Features toggle: rewrites ONLY the indexers section,
+# leaving quality/subtitle/custom-format config byte-identical (no clobber).
+# =========================================================================
+# Start from a non-default state: compact preset + spanish subtitles, indexers on.
+config="$TMP_DIR/indexers-only.yml"
+cp "$CONFIG_SRC" "$config"
+python3 "$WIZARD" --preset compact --languages "english,spanish" \
+    --public-indexers true --config "$config" >/dev/null 2>&1
+
+# Snapshot the sections --indexers-only must NOT touch.
+before_quality=$(yaml_get "$config" "c['quality_profile']['name']")
+before_langs=$(yaml_get "$config" "c['bazarr']['languages']")
+before_cf=$(yaml_get "$config" "c['custom_formats']['No-RlsGroup']")
+
+# Disable indexers via the surgical mode.
+python3 "$WIZARD" --indexers-only false --config "$config" >/dev/null 2>&1
+assert_eq "0" "$(yaml_get "$config" "len(c['indexers'])")" \
+    "indexers-only false: indexer list cleared"
+assert_eq "$before_quality" "$(yaml_get "$config" "c['quality_profile']['name']")" \
+    "indexers-only false: quality profile untouched"
+assert_eq "$before_langs" "$(yaml_get "$config" "c['bazarr']['languages']")" \
+    "indexers-only false: subtitle languages untouched"
+assert_eq "$before_cf" "$(yaml_get "$config" "c['custom_formats']['No-RlsGroup']")" \
+    "indexers-only false: custom formats untouched"
+
+# Re-enable indexers via the surgical mode.
+python3 "$WIZARD" --indexers-only true --config "$config" >/dev/null 2>&1
+assert_eq "13" "$(yaml_get "$config" "len(c['indexers'])")" \
+    "indexers-only true: indexer preset re-applied"
+assert_eq "$before_quality" "$(yaml_get "$config" "c['quality_profile']['name']")" \
+    "indexers-only true: quality profile still untouched"
+assert_eq "$before_langs" "$(yaml_get "$config" "c['bazarr']['languages']")" \
+    "indexers-only true: subtitle languages still untouched"
+
+# --indexers-only ignores --preset entirely (does not require or apply it).
+config="$TMP_DIR/indexers-only-nopreset.yml"
+cp "$CONFIG_SRC" "$config"
+if python3 "$WIZARD" --indexers-only true --config "$config" >/dev/null 2>&1; then
+    assert_eq "13" "$(yaml_get "$config" "len(c['indexers'])")" \
+        "indexers-only: works with no --preset given"
+else
+    fail "indexers-only: works with no --preset given" "exited non-zero"
+fi
+
 scenario_end "$CURRENT_SCENARIO"
 summary

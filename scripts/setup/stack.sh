@@ -4,27 +4,14 @@
 # Sourced by setup.sh. Depends on $SCRIPT_DIR and scripts/lib/common.sh
 # being loaded by the caller.
 
-_build_profile_args() {
-    local -n _profiles=$1
-    _profiles=()
-    if [[ "${BAZARR_ENABLED:-false}" == "true" ]]; then
-        _profiles+=(--profile subtitles)
-    fi
-    if [[ "${AUTOHEAL_ENABLED:-true}" != "false" ]]; then
-        _profiles+=(--profile autoheal)
-    fi
-    local domain="" wg_init_pw=""
-    if [[ -f "$SCRIPT_DIR/.env" ]]; then
-        domain=$(grep -oP '^DOMAIN=\K.*' "$SCRIPT_DIR/.env" | tr -d "'" | tr -d '"')
-        wg_init_pw=$(grep -oP "^WG_INIT_PASSWORD='\\K[^']+" "$SCRIPT_DIR/.env" 2>/dev/null || true)
-    fi
-    if [[ -n "$domain" && "$domain" != "example.com" ]]; then
-        _profiles+=(--profile proxy)
-    fi
-    if [[ -n "$wg_init_pw" ]]; then
-        _profiles+=(--profile remote)
-    fi
-}
+# Shared docker-compose profile-arg builder (_build_profile_args), also used by
+# the ./mediastack launcher so the day-2 menu's stop/start/status always targets
+# the same profile set the installer used. Resolved relative to this file so
+# every sourcer (setup.sh and the unit/scenario tests) finds it regardless of CWD.
+_STACK_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/profiles.sh
+source "$_STACK_HELPER_DIR/lib/profiles.sh"
+unset _STACK_HELPER_DIR
 
 _stack_env_get() {
     local key="$1"
@@ -405,7 +392,7 @@ PY
 }
 
 pull_images() {
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     local profiles=()
     _build_profile_args profiles
     local image_channel="${IMAGE_CHANNEL:-stable}"
@@ -427,11 +414,11 @@ pull_images() {
     fi
 
     if (( total > 0 && present == total )); then
-        log_ok "All ${total} images already present locally — skipping pull"
+        log_ok "All ${total} images already present locally - skipping pull"
         if [[ "$image_channel" == "latest" ]]; then
-            log_info "Latest channel selected — run ./scripts/update.sh to refresh upstream tags."
+            log_info "Latest channel selected - run ./scripts/update.sh to refresh upstream tags."
         else
-            log_info "Stable channel selected — update MediaStack, then run ./scripts/update.sh to pull newer tested digests."
+            log_info "Stable channel selected - update MediaStack, then run ./scripts/update.sh to pull newer tested digests."
         fi
         return 0
     elif (( present > 0 && present < total )); then
@@ -459,9 +446,9 @@ pull_images() {
     log_warn "Continuing with cached images (if any). Services with missing images will not start."
     log_info "You can retry manually later: docker compose ${profiles[*]} pull --policy missing"
     if [[ "$image_channel" == "latest" ]]; then
-        log_info "Latest channel selected — retry with ./scripts/update.sh when registry access recovers."
+        log_info "Latest channel selected - retry with ./scripts/update.sh when registry access recovers."
     else
-        log_info "Stable channel selected — retry after updating MediaStack or restoring registry access."
+        log_info "Stable channel selected - retry after updating MediaStack or restoring registry access."
     fi
     return 0
 }
@@ -730,7 +717,7 @@ SETTINGS
 
 start_stack() {
     log_info "Starting MediaStack..."
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     if declare -F storage_guard_before_start >/dev/null; then
         storage_guard_before_start
     fi
@@ -886,6 +873,48 @@ print('missing\\t' + ' '.join(missing))
     log_warn "Some services may still be starting. Check: docker compose ps"
 }
 
+# Map REMOTE_WEB_STATE -> a human label. Single source of truth for the Stage 2
+# row in print_final_summary AND the recovery re-entry menu's "Current setup"
+# block, so the two never drift. Reads $1 (defaults to $REMOTE_WEB_STATE).
+remote_state_label() {
+    local remote_state="${1-${REMOTE_WEB_STATE:-}}"
+    case "$remote_state" in
+        ready) printf 'ready' ;;
+        skipped) printf 'skipped -- run ./setup.sh --remote to retry' ;;
+        failed) printf 'failed -- run ./setup.sh --remote to retry' ;;
+        unchecked|"") printf 'not configured' ;;
+        *) printf 'not configured' ;;
+    esac
+}
+
+# Map STAGE_3_GPU_STATE (+ STAGE_3_GPU_VENDOR) -> a human label. Single source of
+# truth for the Hardware-transcoding row in print_final_summary AND the recovery
+# re-entry menu's "Current setup" block. Reads $1/$2 (default to the env vars).
+transcoding_state_label() {
+    local gpu_state="${1-${STAGE_3_GPU_STATE:-}}"
+    local gpu_vendor="${2-${STAGE_3_GPU_VENDOR:-}}"
+    case "$gpu_state" in
+        complete)
+            case "$gpu_vendor" in
+                intel) printf 'complete (intel qsv)' ;;
+                amd) printf 'complete (amd vaapi)' ;;
+                nvidia) printf 'complete (nvidia nvenc)' ;;
+                *) printf 'complete' ;;
+            esac
+            ;;
+        pending)
+            if [[ "$gpu_vendor" == "nvidia" ]]; then
+                printf 'pending reboot -- NVIDIA finalization queued'
+            else
+                printf 'not configured'
+            fi
+            ;;
+        skipped) printf 'skipped -- software transcoding' ;;
+        fallback) printf 'fallback -- software transcoding' ;;
+        *) printf 'not configured' ;;
+    esac
+}
+
 print_final_summary() {
     if ! type ui_kv >/dev/null 2>&1; then
         ui_kv() { printf '%s: %s' "$1" "$2"; }
@@ -900,6 +929,11 @@ print_final_summary() {
     local lan_ip
     lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     lan_ip="${lan_ip:-${HOST_ADDRESS:-localhost}}"
+    # No routable IP detected - the Homepage/Jellyfin LAN rows fall back to loopback,
+    # which only works on this box. Flag it so the box below carries a caveat instead
+    # of silently presenting local-only links as if a phone/TV could reach them.
+    local lan_local_only=false
+    [[ "$lan_ip" == "localhost" ]] && lan_local_only=true
 
     local domain="${DOMAIN:-}"
     local remote_state="${REMOTE_WEB_STATE:-}"
@@ -910,35 +944,11 @@ print_final_summary() {
     local stage1_label="not configured"
     [[ "${STAGE_1_COMPLETE:-}" == "1" ]] && stage1_label="complete"
 
-    local stage2_label="not configured"
-    case "$remote_state" in
-        ready) stage2_label="ready" ;;
-        skipped) stage2_label="skipped -- run ./setup.sh --remote to retry" ;;
-        failed) stage2_label="failed -- run ./setup.sh --remote to retry" ;;
-        unchecked|"") stage2_label="not configured" ;;
-        *) stage2_label="not configured" ;;
-    esac
+    local stage2_label
+    stage2_label="$(remote_state_label "$remote_state")"
 
-    local transcoding_label="not configured"
-    case "${STAGE_3_GPU_STATE:-}" in
-        complete)
-            case "${STAGE_3_GPU_VENDOR:-}" in
-                intel) transcoding_label="complete (intel qsv)" ;;
-                amd) transcoding_label="complete (amd vaapi)" ;;
-                nvidia) transcoding_label="complete (nvidia nvenc)" ;;
-                *) transcoding_label="complete" ;;
-            esac
-            ;;
-        pending)
-            if [[ "${STAGE_3_GPU_VENDOR:-}" == "nvidia" ]]; then
-                transcoding_label="pending reboot -- NVIDIA finalization queued"
-            else
-                transcoding_label="not configured"
-            fi
-            ;;
-        skipped) transcoding_label="skipped -- software transcoding" ;;
-        fallback) transcoding_label="fallback -- software transcoding" ;;
-    esac
+    local transcoding_label
+    transcoding_label="$(transcoding_state_label "${STAGE_3_GPU_STATE:-}" "${STAGE_3_GPU_VENDOR:-}")"
 
     local homepage="http://${lan_ip}:3000"
     local jellyfin_lan="http://${lan_ip}:8096"
@@ -970,12 +980,46 @@ print_final_summary() {
         printf 'MediaStack setup complete\n'
         printf '%s\n' "${rows[@]}"
     fi
+
+    # Loopback fallback: the Homepage/Jellyfin LAN rows above only work on this box.
+    # Spell that out so a headless-server user doesn't read them as phone/TV links.
+    if $lan_local_only; then
+        echo ""
+        echo -e "  ${YELLOW}LAN IP not detected - the localhost links above only work ON this machine.${NC}"
+        echo -e "  ${YELLOW}Assign a static LAN IP (or set HOST_ADDRESS in .env), then re-run setup for${NC}"
+        echo -e "  ${YELLOW}phone/TV-reachable links.${NC}"
+    fi
 }
 
+# Echo the stored admin password (the single shared credential reused across every
+# service) from .env, or nothing if unset. Single source of truth for the access
+# summary's password line and the launcher's day-2 "reveal" so the two never drift,
+# and so both always reflect the on-disk value rather than a possibly-stale env var.
+_access_admin_pw() {
+    [[ -f "$SCRIPT_DIR/.env" ]] || return 0
+    grep -oP "^JELLYFIN_ADMIN_PASSWORD='\\K[^']+" "$SCRIPT_DIR/.env" 2>/dev/null || true
+}
+
+# print_access_info [mask]
+#   mask — render the admin password as a hidden placeholder instead of the value.
+#   The one-time install summary calls this with no arg (shows the value, so the user
+#   can save it). The re-openable day-2 launcher view passes `mask`, then offers an
+#   explicit opt-in reveal — the shared credential should not be re-printed on screen
+#   (or captured to a file) every time someone opens the menu.
 print_access_info() {
+    local mask_secret=false
+    [[ "${1:-}" == "mask" ]] && mask_secret=true
     local lan_ip
     lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    lan_ip="${lan_ip:-localhost}"
+    # Mirror print_final_summary: honour an explicit HOST_ADDRESS from .env before
+    # giving up to the loopback fallback, so a headless box with HOST_ADDRESS set
+    # still renders routable URLs.
+    lan_ip="${lan_ip:-${HOST_ADDRESS:-localhost}}"
+    # When detection failed and we fell back to loopback, every ${u}:PORT row below
+    # only works ON this machine. Flag it so we can print a caveat the headless-box
+    # user won't otherwise connect to the earlier Stage 1 "LAN IP not detected" warning.
+    local lan_local_only=false
+    [[ "$lan_ip" == "localhost" ]] && lan_local_only=true
 
     local u="http://${lan_ip}"
     local admin="${JELLYFIN_ADMIN_USER:-admin}"
@@ -986,13 +1030,18 @@ print_access_info() {
     local admin_pw=""
     local domain=""
     local remote_state=""
+    local wg_init_pw=""
     local jellyfin_gpu="${JELLYFIN_GPU:-none}"
     local stage3_state="${STAGE_3_GPU_STATE:-}"
     local public_indexers_enabled="${PUBLIC_INDEXERS_ENABLED:-false}"
+    admin_pw=$(_access_admin_pw)
     if [[ -f "$SCRIPT_DIR/.env" ]]; then
-        admin_pw=$(grep -oP "^JELLYFIN_ADMIN_PASSWORD='\\K[^']+" "$SCRIPT_DIR/.env" 2>/dev/null || true)
         domain=$(grep -oP '^DOMAIN=\K.*' "$SCRIPT_DIR/.env" | tr -d "'" | tr -d '"')
         remote_state=$(grep -oP '^REMOTE_WEB_STATE=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "'" | tr -d '"' || true)
+        # WireGuard is gated on WG_INIT_PASSWORD alone, independent of DOMAIN (see
+        # _build_profile_args' --profile remote) — so this drives the wg-easy admin
+        # line below regardless of whether HTTPS/domain remote access was set up.
+        wg_init_pw=$(grep -oP "^WG_INIT_PASSWORD='\\K[^']+" "$SCRIPT_DIR/.env" 2>/dev/null || true)
         jellyfin_gpu=$(grep -oP '^JELLYFIN_GPU=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "'" | tr -d '"' || true)
         stage3_state=$(grep -oP '^STAGE_3_GPU_STATE=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "'" | tr -d '"' || true)
         public_indexers_enabled=$(grep -oP '^PUBLIC_INDEXERS_ENABLED=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "'" | tr -d '"' || true)
@@ -1009,13 +1058,17 @@ print_access_info() {
     fi
 
     echo ""
-    echo -e "${CYAN}═════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}$(_g_repeat 65 "$_G_DH")${NC}"
     echo -e "${BOLD}  MediaStack is running!${NC}"
-    echo -e "${CYAN}═════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}$(_g_repeat 65 "$_G_DH")${NC}"
     echo ""
     echo -e "  ${BOLD}Admin user:${NC}       ${GREEN}${admin}${NC}"
     if [[ -n "$admin_pw" ]]; then
-        echo -e "  ${BOLD}Admin password:${NC}   ${GREEN}${admin_pw}${NC}"
+        if $mask_secret; then
+            echo -e "  ${BOLD}Admin password:${NC}   ${YELLOW}(hidden — confirm the reveal prompt to show it)${NC}"
+        else
+            echo -e "  ${BOLD}Admin password:${NC}   ${GREEN}${admin_pw}${NC}"
+        fi
     fi
     echo -e "  ${BOLD}Admin email:${NC}      ${GREEN}${email}${NC}"
     if [[ "${STORAGE_MODE:-local}" == "nas" ]]; then
@@ -1025,28 +1078,48 @@ print_access_info() {
             echo -e "  ${BOLD}Storage:${NC}          ${GREEN}NAS (${STORAGE_NFS_HOST:-unknown}:${STORAGE_NFS_EXPORT:-unknown})${NC}"
         fi
     elif [[ "${STORAGE_APP_WIRING:-managed}" == "manual" ]]; then
-        echo -e "  ${BOLD}Storage:${NC}          ${YELLOW}manual — app storage paths were not auto-configured${NC}"
+        echo -e "  ${BOLD}Storage:${NC}          ${YELLOW}manual - app storage paths were not auto-configured${NC}"
     fi
     echo ""
+    # Every service below logs in with the single shared admin password shown (or, in the
+    # masked day-2 view, revealable) at the top of this screen. Point each row's LOGIN at it
+    # rather than the bare word "password", which a non-technical user can misread as a
+    # literal value to type. Mode-aware so the masked view never implies a value is on screen.
+    local cred_hint="(admin password above)"
+    $mask_secret && cred_hint="(your admin password)"
+    if $lan_local_only; then
+        echo -e "  ${YELLOW}LAN IP not detected - the http://localhost URLs below only work ON this machine.${NC}"
+        echo -e "  ${YELLOW}Assign a static LAN IP (or set HOST_ADDRESS in .env), then re-run setup to get${NC}"
+        echo -e "  ${YELLOW}phone/TV-reachable links.${NC}"
+        echo ""
+    fi
     echo -e "  ${BOLD}SERVICE          URL                     LOGIN${NC}"
-    echo -e "  ${CYAN}─────────────────────────────────────────────────────────────${NC}"
+    echo -e "  ${CYAN}$(_g_repeat 61 "$_G_H")${NC}"
     echo -e "  Homepage         ${u}:3000     ${GREEN}no login${NC}"
-    echo -e "  Jellyfin         ${u}:8096     ${GREEN}${admin} / password${NC}"
-    echo -e "  Sonarr           ${u}:8989     ${GREEN}${admin} / password${NC}"
-    echo -e "  Radarr           ${u}:7878     ${GREEN}${admin} / password${NC}"
-    echo -e "  qBittorrent      ${u}:8080     ${GREEN}${admin} / password${NC}"
-    echo -e "  Jackett          ${u}:9117     ${GREEN}password only${NC}"
-    echo -e "  Jellyseerr       ${u}:5055     ${GREEN}${admin} / password${NC}"
-    echo -e "  Portainer        ${u}:9000     ${GREEN}${admin} / password${NC}"
+    echo -e "  Jellyfin         ${u}:8096     ${GREEN}${admin} / ${cred_hint}${NC}"
+    echo -e "  Sonarr           ${u}:8989     ${GREEN}${admin} / ${cred_hint}${NC}"
+    echo -e "  Radarr           ${u}:7878     ${GREEN}${admin} / ${cred_hint}${NC}"
+    echo -e "  qBittorrent      ${u}:8080     ${GREEN}${admin} / ${cred_hint}${NC}"
+    echo -e "  Jackett          ${u}:9117     ${GREEN}${cred_hint/%)/, no username)}${NC}"
+    echo -e "  Jellyseerr       ${u}:5055     ${GREEN}${admin} / ${cred_hint}${NC}"
+    echo -e "  Portainer        ${u}:9000     ${GREEN}${admin} / ${cred_hint}${NC}"
     if [[ "${BAZARR_ENABLED:-false}" == "true" ]]; then
-        echo -e "  Bazarr           ${u}:6767     ${GREEN}${admin} / password${NC}"
+        echo -e "  Bazarr           ${u}:6767     ${GREEN}${admin} / ${cred_hint}${NC}"
     fi
-    echo -e "  Uptime Kuma      ${u}:3001     ${GREEN}${admin} / password${NC}"
-    echo -e "  Beszel           ${u}:8090     ${GREEN}${email} / password${NC}"
+    echo -e "  Uptime Kuma      ${u}:3001     ${GREEN}${admin} / ${cred_hint}${NC}"
+    echo -e "  Beszel           ${u}:8090     ${GREEN}${email} / ${cred_hint}${NC}"
     if $has_domain; then
-        echo -e "  NPM Admin        ${u}:81       ${GREEN}${email} / password${NC}"
+        echo -e "  NPM Admin        ${u}:81       ${GREEN}${email} / ${cred_hint}${NC}"
     fi
     echo ""
+
+    # WireGuard is a LAN-reachable admin service whenever the remote profile is up
+    # (gated on WG_INIT_PASSWORD, not on having a domain) — its wg-easy UI is the
+    # only place to download VPN client configs / QR codes, so surface it here.
+    if [[ -n "$wg_init_pw" ]]; then
+        echo -e "  ${BOLD}WireGuard VPN${NC}    ${u}:51821     ${GREEN}admin UI — get VPN client configs / QR here${NC}"
+        echo ""
+    fi
 
     if [[ "$stage3_state" == "complete" && "$jellyfin_gpu" != "none" ]]; then
         echo -e "  ${GREEN}GPU: ${jellyfin_gpu} transcoding enabled${NC}"
@@ -1061,23 +1134,25 @@ print_access_info() {
             smb_share_name="MediaStackSystem"
             smb_share_path="/"
         fi
-        echo -e "  ${GREEN}SMB share: \\\\${lan_ip}\\${smb_share_name} → ${smb_share_path}${NC}"
+        echo -e "  ${GREEN}SMB share: \\\\${lan_ip}\\${smb_share_name} -> ${smb_share_path}${NC}"
         echo "  Connect with admin credentials from any device on your network"
         echo ""
     fi
 
     if [[ "$public_indexers_enabled" != "true" ]]; then
-        echo -e "  ${YELLOW}No search indexers configured${NC} — Sonarr/Radarr can't find releases yet."
+        echo -e "  ${YELLOW}No search indexers configured${NC} - Sonarr/Radarr can't find releases yet."
         echo "  Add them: copy entries from config/examples/public-indexers.yml into"
-        echo "  config.yml, then run ./scripts/configure.sh (re-runs are safe — already-"
-        echo "  configured services are skipped, never overwritten). Manage anytime: ./mediastack"
+        echo "  config.yml, then run ./scripts/configure.sh (re-runs are safe - already-"
+        echo "  configured services are skipped, never overwritten)."
+        echo "  Or enable them anytime from the launcher:"
+        echo "    ./mediastack -> Features (subtitles, file sharing, indexers) -> Search indexers"
         echo ""
     fi
 
     if $has_domain; then
-        echo -e "${CYAN}─────────────────────────────────────────────────────────────────${NC}"
+        echo -e "${CYAN}$(_g_repeat 65 "$_G_H")${NC}"
         echo -e "  ${BOLD}REMOTE ACCESS${NC}"
-        echo -e "${CYAN}─────────────────────────────────────────────────────────────────${NC}"
+        echo -e "${CYAN}$(_g_repeat 65 "$_G_H")${NC}"
         echo ""
         if $remote_ready; then
             echo -e "  ${BOLD}Jellyfin${NC}         https://jellyfin.${domain}"
@@ -1092,23 +1167,23 @@ print_access_info() {
         echo ""
     fi
 
-    echo -e "${CYAN}─────────────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}$(_g_repeat 65 "$_G_H")${NC}"
     echo -e "  ${BOLD}PORT FORWARDING${NC}"
-    echo -e "${CYAN}─────────────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}$(_g_repeat 65 "$_G_H")${NC}"
     echo ""
     echo "  Forward these ports to ${lan_ip} in your router:"
     echo ""
-    echo "  TCP+UDP ${torrent_port}$(printf '%*s' $((6 - ${#torrent_port})) '')→ ${lan_ip}   (qBittorrent peer connections)"
+    echo "  TCP+UDP $(printf '%-6s' "$torrent_port")-> ${lan_ip}   (qBittorrent peer connections)"
     if $has_domain; then
-        echo "  TCP 80        → ${lan_ip}   (Let's Encrypt + HTTP redirect)"
-        echo "  TCP 443       → ${lan_ip}   (HTTPS — Jellyfin, Jellyseerr)"
-        echo "  UDP ${wg_port}$(printf '%*s' $((6 - ${#wg_port})) '')→ ${lan_ip}   (WireGuard VPN)"
+        echo "  TCP 80        -> ${lan_ip}   (Let's Encrypt + HTTP redirect)"
+        echo "  TCP 443       -> ${lan_ip}   (HTTPS - Jellyfin, Jellyseerr)"
+        echo "  UDP $(printf '%-6s' "$wg_port")-> ${lan_ip}   (WireGuard VPN)"
     fi
     echo ""
 
-    echo -e "${CYAN}─────────────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}$(_g_repeat 65 "$_G_H")${NC}"
     echo -e "  ${BOLD}GETTING STARTED${NC}"
-    echo -e "${CYAN}─────────────────────────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}$(_g_repeat 65 "$_G_H")${NC}"
     echo ""
     echo "  Open Homepage:    ${u}:3000"
     echo ""
@@ -1128,5 +1203,5 @@ print_access_info() {
         echo "  To enable remote access (HTTPS, VPN), run setup.sh again."
         echo ""
     fi
-    echo -e "${CYAN}═════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}$(_g_repeat 65 "$_G_DH")${NC}"
 }

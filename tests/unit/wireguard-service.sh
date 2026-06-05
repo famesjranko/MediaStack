@@ -73,7 +73,7 @@ reset_fixture() {
 # Minimal v15 curl mock. Routes by URL and method, captures POST bodies for
 # assertions. Honors Basic Auth (-u user:pass), not session cookies.
 curl() {
-    local arg method="GET" url="" body_arg="" want_body=false want_code=false output_file=""
+    local arg method="GET" url="" body_arg="" want_code=false output_file=""
     local prev=""
     for arg in "$@"; do
         case "$prev" in

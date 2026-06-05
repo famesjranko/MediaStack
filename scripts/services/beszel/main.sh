@@ -15,7 +15,7 @@ configure_beszel() {
     local admin_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
 
     if [[ -z "$admin_email" || -z "$admin_pw" ]]; then
-        log_warn "Admin credentials not set — skipping Beszel"
+        log_warn "Admin credentials not set - skipping Beszel"
         return 0
     fi
 
@@ -33,13 +33,13 @@ print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_P
 
     auth_resp=$(curl -sS -X POST "$hub_url/api/collections/users/auth-with-password" \
         -H "Content-Type: application/json" \
-        -d "$auth_body" -w "\n%{http_code}" 2>/dev/null) || { log_warn "Beszel hub not reachable — skipping"; return 0; }
+        -d "$auth_body" -w "\n%{http_code}" 2>/dev/null) || { log_warn "Beszel hub not reachable - skipping"; return 0; }
 
     local auth_code="${auth_resp##*$'\n'}"
     auth_resp="${auth_resp%$'\n'*}"
 
     if [[ ! "$auth_code" =~ ^2 ]]; then
-        log_warn "Beszel auth failed (HTTP $auth_code) — hub may still be initializing"
+        log_warn "Beszel auth failed (HTTP $auth_code) - hub may still be initializing"
         return 0
     fi
 

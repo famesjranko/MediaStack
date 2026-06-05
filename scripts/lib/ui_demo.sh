@@ -10,6 +10,11 @@
 #   ./setup.sh --demo fast         # minimal delays (CI/screenshots)
 
 export UI_DEMO=1
+# The demo is for reviewing presentation and capturing screenshots, often through
+# a pipe (non-TTY) or with NO_COLOR set — force the full colour + glyph render so
+# it always looks the way a capable terminal would show it.
+export UI_FORCE_COLOR=1
+export UI_FORCE_GLYPHS=1
 
 _demo_pause() {
     if [[ "${DEMO_MODE:-auto}" == "interactive" ]]; then
@@ -38,12 +43,7 @@ run_demo() {
         export UI_DEMO_DELAY="1.5"
     fi
 
-    echo ""
-    echo "  ┌─────────────────────────────────────────────┐"
-    printf '  │  %-43s│\n' "UI Demo Mode"
-    printf '  │  %-43s│\n' "Mode: ${mode}"
-    echo "  └─────────────────────────────────────────────┘"
-    echo ""
+    ui_box "UI Demo Mode" "Mode: ${mode}"
     _demo_delay 1
 
     # --- Banner ---
@@ -69,7 +69,7 @@ run_demo() {
     ui_section 2 9 "Configuring Jackett"
     ui_log ok "1337x added"
     ui_log ok "RARBG added"
-    ui_log skip "TorrentGalaxy — already exists"
+    ui_log skip "TorrentGalaxy - already exists"
     ui_progress 2 9 "steps complete"
     _demo_pause
 
@@ -163,7 +163,7 @@ run_demo() {
     ui_log info "  Fix: edit in Sonarr UI or rebuild (docker compose down -v && ./setup.sh --full)"
     echo ""
     ui_log warn "Root folder '/data/media/movies' has extra entry '/mnt/external/movies'"
-    ui_log info "  Not in config.yml — added manually?"
+    ui_log info "  Not in config.yml - added manually?"
     _demo_pause
 
     # --- Full progress bar sequence ---
@@ -192,7 +192,7 @@ run_demo() {
     ui_log ok "Port 6881: open"
     ui_log ok "Port 80: open"
     ui_log warn "Port 443: closed (needs router forwarding)"
-    ui_log info "Port 51820: UDP — cannot verify from inside network"
+    ui_log info "Port 51820: UDP - cannot verify from inside network"
     ui_log info "Hairpin NAT caveat: ports may appear closed when tested from the same network."
     ui_log ok "Discovery complete"
     _demo_pause
@@ -209,10 +209,10 @@ run_demo() {
     ui_section 2 5 "Media Quality"
     local quality_demo
     quality_demo=$(ui_choose "How should MediaStack balance quality vs file size?" \
-        "Compact  — Smaller files, WEB sources. ~2-4 GB/movie." \
-        "Balanced — Recommended. All sources, 720p-1080p. ~4-8 GB/movie." \
-        "Quality  — Best at 1080p, includes Remux. ~6-15 GB/movie.")
-    ui_log ok "Media quality: ${quality_demo%%  —*}"
+        "Compact  - Smaller files, WEB sources. ~2-4 GB/movie." \
+        "Balanced - Recommended. All sources, 720p-1080p. ~4-8 GB/movie." \
+        "Quality  - Best at 1080p, includes Remux. ~6-15 GB/movie.")
+    ui_log ok "Media quality: ${quality_demo%%  -*}"
 
     ui_section 3 5 "Subtitles"
     if ui_confirm "Enable automatic subtitle downloads?" "no"; then
@@ -225,7 +225,7 @@ run_demo() {
     ui_log ok "Streaming limit: unlimited"
 
     ui_section 5 5 "Port Forwarding"
-    ui_box "Required Port Forwards → 192.168.1.50" \
+    ui_box "Required Port Forwards -> 192.168.1.50" \
         "  TCP 80       Let's Encrypt + HTTP redirect" \
         "  TCP 443      HTTPS (Jellyfin, Jellyseerr)" \
         "  TCP+UDP 6881 qBittorrent peer connections" \
@@ -240,7 +240,7 @@ run_demo() {
         "Streaming       No limit" \
         "Port forwards   TCP 80, 443, 6881 + UDP 6881, 51820" \
         "" \
-        "─── Network ───" \
+        "--- Network ---" \
         "Download speed  120 Mbps" \
         "Upload speed    40 Mbps" \
         "Public IP       203.0.113.42" \

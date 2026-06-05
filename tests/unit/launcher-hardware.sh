@@ -10,6 +10,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=../lib/assert.sh
 source "$REPO_ROOT/tests/lib/assert.sh"
+# Read by tests/lib/assert.sh for failure labels.
+# shellcheck disable=SC2034
 CURRENT_SCENARIO="launcher-hardware"
 echo -e "${CYAN}${BOLD}▶ scenario: launcher-hardware${NC}"
 

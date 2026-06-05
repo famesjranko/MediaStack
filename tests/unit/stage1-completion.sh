@@ -39,7 +39,7 @@ output=$(print_access_info)
 assert_contains "$output" "http://" "stage1-completion: prints LAN URL base"
 assert_contains "$output" ":8096" "stage1-completion: includes Jellyfin LAN URL"
 assert_contains "$output" "Portainer        http://" "stage1-completion: includes Portainer URL"
-assert_contains "$output" "mediaadmin / password" "stage1-completion: Portainer uses wizard admin username"
+assert_contains "$output" "mediaadmin / (admin password above)" "stage1-completion: Portainer login uses wizard admin username + points at the admin password"
 assert_contains "$output" "You can stop here. Your media server works on the LAN." "stage1-completion: completion message"
 assert_contains "$output" "To enable remote access (HTTPS, VPN), run setup.sh again." "stage1-completion: retry hint"
 
@@ -49,6 +49,8 @@ DOMAIN=example.com
 JELLYFIN_GPU=none
 STAGE_3_GPU_STATE=
 EOF
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 GPU_TYPE="nvidia"
 output=$(print_access_info)
 if [[ "$output" == *"GPU: nvidia transcoding enabled"* ]]; then

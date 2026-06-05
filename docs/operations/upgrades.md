@@ -117,6 +117,6 @@ Columns parsed by the unit test use strict tokens; **do not put `|` inside any c
 | sonarr | latest | stable | scenario:fresh-install | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh | ADR-24 |
 | unpackerr | latest | n/a | compose-only | compose-only | ADR-24 |
 | uptime-kuma | major:2 | major-gated | scenario:fresh-install | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime_kuma.sh | ADR-14, ADR-24 |
-| wireguard | exact-patch | unstable | scenario:wireguard | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios | ADR-24, ADR-28, ADR-29 |
+| wireguard | major:15 | unstable | scenario:wireguard | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios | ADR-24, ADR-28, ADR-29 |
 
 <!-- upgrades-manifest:end -->

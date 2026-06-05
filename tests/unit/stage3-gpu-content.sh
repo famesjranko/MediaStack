@@ -21,6 +21,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=../lib/assert.sh
 source "$REPO_ROOT/tests/lib/assert.sh"
+# Read by tests/lib/assert.sh for failure labels.
+# shellcheck disable=SC2034
 CURRENT_SCENARIO="stage3-gpu-content"
 echo -e "${CYAN}${BOLD}▶ scenario: stage3-gpu-content${NC}"
 
@@ -39,7 +41,11 @@ TMPDIR_WORK=$(mktemp -d)
 SCRIPT_DIR="$TMPDIR_WORK"
 trap 'rm -rf "$TMPDIR_WORK"' EXIT
 
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 HOST_MEMORY_MB=4096
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 IMAGE_CHANNEL=latest
 
 # Extract the jellyfin: top-level service block from a generated override.

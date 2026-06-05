@@ -41,7 +41,7 @@ print(json.dumps({"Username": os.environ["ADMIN_USER"], "Password": os.environ["
         # If Portainer returned anything other than 404 (e.g. init timeout),
         # restart it to reset the 5-minute admin creation window.
         if [[ "$check_http" != "404" ]]; then
-            log_info "Portainer init window expired (HTTP $check_http) — restarting..."
+            log_info "Portainer init window expired (HTTP $check_http) - restarting..."
             docker restart portainer >/dev/null 2>&1
             wait_for_service "Portainer" "$portainer_url"
         fi

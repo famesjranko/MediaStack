@@ -15,7 +15,7 @@ detect_gpu() {
     GPU_TYPE="none"
 
     if ! command -v lspci &>/dev/null; then
-        log_warn "lspci not found (install pciutils) — cannot detect GPU"
+        log_warn "lspci not found (install pciutils) - cannot detect GPU"
         return
     fi
 
@@ -116,6 +116,9 @@ check_secure_boot() {
 # binding. lsmod alone is insufficient — the installer checks sysfs.
 nouveau_is_active() {
     lsmod 2>/dev/null | grep -q '^nouveau ' && return 0
+    # `ls -l` is intentional: we match the driver symlink TARGET (-> .../nouveau),
+    # which a filename glob cannot inspect.
+    # shellcheck disable=SC2010
     ls -l /sys/bus/pci/devices/*/driver 2>/dev/null | grep -q 'nouveau' && return 0
     return 1
 }
@@ -142,11 +145,11 @@ try_unload_nouveau() {
     sudo modprobe -r nouveau drm_kms_helper drm 2>/dev/null || true
 
     if ! nouveau_is_active; then
-        log_ok "Nouveau unloaded — no reboot required for driver install"
+        log_ok "Nouveau unloaded - no reboot required for driver install"
         return 0
     fi
 
-    log_info "Nouveau still active (bound to GPU) — driver install requires a reboot"
+    log_info "Nouveau still active (bound to GPU) - driver install requires a reboot"
     return 1
 }
 
@@ -247,7 +250,7 @@ _resolve_nvidia_driver() {
     elif [[ "$_compat_result" == "current" ]]; then
         log_ok "GPU is supported by driver ${_driver_ver}"
     else
-        log_warn "Could not verify GPU compatibility — proceeding with ${_driver_ver}"
+        log_warn "Could not verify GPU compatibility - proceeding with ${_driver_ver}"
     fi
 
     _run_file="${_nvidia_tmp}/NVIDIA-Linux-x86_64-${_driver_ver}.run"
@@ -409,7 +412,7 @@ install_nvidia_drivers() {
             return 1
         fi
         if nouveau_is_active; then
-            log_error "Nouveau is still active after reboot — blacklist may have failed"
+            log_error "Nouveau is still active after reboot - blacklist may have failed"
             log_warn "Falling back to software transcoding"
             GPU_TYPE="none"
             sudo rm -rf "$_nvidia_tmp" 2>/dev/null || true
@@ -444,7 +447,7 @@ install_nvidia_drivers() {
     sb_state=$(check_secure_boot)
     case "$sb_state" in
         enabled)
-            log_error "Secure Boot is enabled — the NVIDIA kernel module will not load."
+            log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
             log_error "Fix one of the following, then re-run setup.sh:"
             log_error "  (a) disable Secure Boot in UEFI firmware settings, OR"
             log_error "  (b) enroll a Machine Owner Key to sign the nvidia module (advanced)."
@@ -456,7 +459,7 @@ install_nvidia_drivers() {
             log_ok "Secure Boot is disabled"
             ;;
         unavailable)
-            log_warn "mokutil not found; cannot verify Secure Boot state — proceeding (driver may fail to load if SB is on)"
+            log_warn "mokutil not found; cannot verify Secure Boot state - proceeding (driver may fail to load if SB is on)"
             ;;
     esac
 
@@ -497,7 +500,7 @@ install_nvidia_drivers() {
     # either abort (without --no-nouveau-check) or compile-then-rollback
     # (with it). Cache the .run and reboot instead.
     if nouveau_is_active; then
-        log_warn "Nouveau is still bound to the GPU — caching driver for post-reboot install"
+        log_warn "Nouveau is still bound to the GPU - caching driver for post-reboot install"
         if ! cat > "$_nvidia_tmp/pending" <<EOF
 _driver_ver='${_driver_ver}'
 _run_file='${_run_file}'
@@ -650,7 +653,7 @@ prepare_nvidia_debian_to_unlock() {
         return 1
     fi
     NEEDS_REBOOT=true
-    log_warn "Loaded NVIDIA modules are still active — reboot required before installing the patch-managed driver"
+    log_warn "Loaded NVIDIA modules are still active - reboot required before installing the patch-managed driver"
     return 0
 }
 
@@ -660,21 +663,21 @@ prepare_nvidia_debian_to_unlock() {
 # candidate that can. No hard-coded version numbers. Echoes the apt-get install
 # argument list (may begin with "-t <release>") for install_nvidia_drivers_apt().
 _resolve_debian_nvidia_driver() {
-    local _pkgs="nvidia-driver firmware-misc-nonfree"
+    local _pkg_args="nvidia-driver firmware-misc-nonfree"
     local _codename
     _codename=$(_debian_codename)
 
     local _cand
     _cand=$(_apt_candidate_version "nvidia-driver" "")
     if [[ -z "$_cand" || -z "$_codename" ]]; then
-        printf '%s' "$_pkgs"
+        printf '%s' "$_pkg_args"
         return 0
     fi
 
     local _pci_id=""
     _pci_id=$(lspci -nn 2>/dev/null | grep -i 'nvidia' | grep -oP '\[10de:\K\w+' | head -1) || true
     if [[ -z "$_pci_id" ]]; then
-        printf '%s' "$_pkgs"
+        printf '%s' "$_pkg_args"
         return 0
     fi
 
@@ -682,7 +685,7 @@ _resolve_debian_nvidia_driver() {
     local _normal_compat
     _normal_compat=$(_check_nvidia_compat "${_cand%%-*}" "$_pci_id" 2>/dev/null) || _normal_compat=""
     if [[ "$_normal_compat" == "current" ]]; then
-        printf '%s' "$_pkgs"
+        printf '%s' "$_pkg_args"
         return 0
     fi
 
@@ -694,13 +697,13 @@ _resolve_debian_nvidia_driver() {
         local _bp_compat
         _bp_compat=$(_check_nvidia_compat "${_bp_cand%%-*}" "$_pci_id" 2>/dev/null) || _bp_compat=""
         if [[ "$_bp_compat" == "current" ]]; then
-            log_info "GPU needs a newer driver — selecting ${_codename}-backports"
-            printf '%s' "-t ${_codename}-backports $_pkgs"
+            log_info "GPU needs a newer driver - selecting ${_codename}-backports"
+            printf '%s' "-t ${_codename}-backports $_pkg_args"
             return 0
         fi
     fi
 
-    printf '%s' "$_pkgs"
+    printf '%s' "$_pkg_args"
 }
 
 # Standard mode: install the Debian-packaged NVIDIA driver (NO nvidia-patch).
@@ -729,7 +732,7 @@ install_nvidia_drivers_apt() {
     sb_state=$(check_secure_boot)
     case "$sb_state" in
         enabled)
-            log_error "Secure Boot is enabled — the NVIDIA kernel module will not load."
+            log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
             log_error "Disable Secure Boot in UEFI, or enroll a Machine Owner Key (advanced), then re-run setup.sh."
             log_warn  "Falling back to software transcoding; GPU acceleration will not be configured."
             GPU_TYPE="none"
@@ -739,7 +742,7 @@ install_nvidia_drivers_apt() {
             log_ok "Secure Boot is disabled"
             ;;
         unavailable)
-            log_warn "mokutil not found; cannot verify Secure Boot state — proceeding (driver may fail to load if SB is on)"
+            log_warn "mokutil not found; cannot verify Secure Boot state - proceeding (driver may fail to load if SB is on)"
             ;;
     esac
 
@@ -786,10 +789,14 @@ install_nvidia_drivers_apt() {
         return 1
     fi
 
+    # Read by env_gen.sh / stage3.sh / nvidia-repatch.sh, not within gpu.sh.
+    # shellcheck disable=SC2034
     NVIDIA_DRIVER_MODE="standard"
     # The Debian package blacklists nouveau and builds the module via DKMS, but a
     # reboot is needed to swap nouveau->nvidia before nvidia-smi works.
     if nouveau_is_active || ! { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; }; then
+        # Read by stage3.sh reboot gating, not within gpu.sh.
+        # shellcheck disable=SC2034
         NEEDS_REBOOT=true
         log_ok "Debian NVIDIA driver installed (reboot required to load the kernel module)"
     fi
@@ -926,8 +933,8 @@ install_amd_drivers() {
 # to ride out the transient window. "unknown" means the daemon could not be
 # queried — NOT that the runtime is absent; callers must treat the two differently.
 _nvidia_docker_runtime_state() {
-    local attempt keys
-    for attempt in 1 2 3 4; do
+    local keys
+    for _ in 1 2 3 4; do
         if keys="$(docker info --format '{{range $k, $v := .Runtimes}}{{$k}} {{end}}' 2>/dev/null)" \
             && [[ -n "$keys" ]]; then
             case " $keys " in

@@ -143,6 +143,25 @@ choice=$(printf '9\n' | UI_DEMO=0 UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Pick one:
 assert_eq "Balanced" "$choice" "ui_choose: invalid input uses visible default"
 
 # =========================================================================
+# Test 0b: ui_choose on a piped EOF (no default) is diagnosable.
+# =========================================================================
+# A non-interactive driver whose input runs dry hits ui_choose's EOF branch:
+# it SIGTERMs the process group to stop the looping parent. A parent that
+# installs the documented non-interactive TERM trap must exit with the distinct
+# UI_EXIT_INPUT_EXHAUSTED (3) — not a generic SIGTERM (143) — and must NOT hang.
+# This mirrors mediastack:main / setup.sh:main without depending on either.
+eof_rc=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
+  source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+  trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
+  choice=$(ui_choose "Pick one:" "A" "B" "C" </dev/null)
+  echo "REACHED_PAST_CHOOSE=$choice"     # must NOT print — group-kill took us
+' </dev/null >/dev/null 2>&1; echo "$?")
+assert_eq "3" "$eof_rc" "ui_choose: piped EOF maps to distinct exit code (input exhausted, not 143)"
+if [[ "$eof_rc" == "124" ]]; then
+    fail "ui_choose: piped EOF must not hang (timeout fired)"
+fi
+
+# =========================================================================
 # Test 1: detect_env sets expected variables
 # =========================================================================
 detect_env
@@ -151,6 +170,8 @@ assert_eq "Etc/UTC" "$_ENV_TZ" "detect_env: timezone from shimmed timedatectl"
 assert_eq "$(id -u)" "$_ENV_PUID" "detect_env: PUID matches id -u"
 assert_eq "$(id -g)" "$_ENV_PGID" "detect_env: PGID matches id -g"
 [[ -n "$_ENV_HOST_ADDRESS" ]]
+# Intentional: capture the [[ ]] boolean exit status.
+# shellcheck disable=SC2319
 if [[ $? -eq 0 ]]; then
     pass "detect_env: HOST_ADDRESS is non-empty"
 else
@@ -160,13 +181,69 @@ fi
 # =========================================================================
 # Test 2: Full wizard in UI_DEMO=1 mode
 # =========================================================================
-# UI_DEMO returns first option / default for all prompts
-run_wizard >/dev/null 2>&1
+# UI_DEMO returns first option / default for all prompts. Stdin is closed
+# (</dev/null) so the run is reliably non-TTY, which also lets us assert that
+# the Stage-order orientation note (gated on [[ -t 0 ]]) stays silent off-TTY.
+wizard_out_file="$TMP_DIR/wizard_test2_output.txt"
+run_wizard </dev/null >"$wizard_out_file" 2>&1
 wizard_rc=$?
+wizard_out=$(cat "$wizard_out_file")
 
 assert_eq "0" "$wizard_rc" "run_wizard: exits 0 in demo mode"
 assert_eq "1" "$RUN_STAGE2_COUNT" "run_wizard: normal interactive path routes to Stage 2"
 assert_eq "1" "$RUN_STAGE3_COUNT" "run_wizard: normal interactive path routes to hardware transcoding add-on"
+
+# #8: the stage-order orientation note is interactive-only; a non-TTY run must
+# stay byte-stable so scripted/CI output is unchanged.
+if [[ "$wizard_out" == *"Core media server is ready"* ]]; then
+    fail "run_wizard: stage-order note suppressed on non-TTY" "note leaked into non-TTY output"
+else
+    pass "run_wizard: stage-order note suppressed on non-TTY"
+fi
+
+# =========================================================================
+# Test 2b: wizard run-path UX guards (#8 stage-order note, #9 interrupt trap)
+# =========================================================================
+# Source-text guard so a future edit can't silently delete the orientation
+# copy (declare -f strips comments but keeps the strings + the TTY guard).
+run_wizard_src=$(declare -f run_wizard)
+assert_contains "$run_wizard_src" "Core media server is ready" "run_wizard: stage-order orientation copy present"
+assert_contains "$run_wizard_src" "-t 0" "run_wizard: orientation note is TTY-gated"
+
+# #9: the interrupt handler + its install must live in setup.sh, and the install
+# must be gated on an interactive TTY (adjacent lines) so non-TTY CI / piped /
+# post-reboot signal handling is unchanged.
+setup_src=$(cat "$REPO_ROOT/setup.sh")
+assert_contains "$setup_src" "_setup_on_interrupt()" "setup.sh: interrupt handler defined"
+# Whitespace-normalised so the guard check survives reindentation but still
+# proves the trap install sits directly inside an interactive-TTY block.
+setup_src_norm=$(printf '%s' "$setup_src" | tr -s '[:space:]' ' ')
+assert_contains "$setup_src_norm" "if [[ -t 0 ]]; then trap '_setup_on_interrupt' INT TERM" "setup.sh: interrupt trap gated on an interactive TTY"
+
+# #9 leak guard: sourcing setup.sh must NOT install an INT trap (the install
+# lives inside main(), which the BASH_SOURCE==\$0 guard keeps from running).
+leaked_int=$(bash -c "source '$REPO_ROOT/setup.sh' >/dev/null 2>&1; trap -p INT" 2>/dev/null)
+if [[ -z "$leaked_int" ]]; then
+    pass "setup.sh: sourcing installs no INT trap (no leak into sourced shells)"
+else
+    fail "setup.sh: sourcing installs no INT trap" "leaked: $leaked_int"
+fi
+
+# #9 enabler: the background ui_spin must RESTORE the caller's INT trap, not
+# reset it to default — otherwise the interrupt handler is wiped after the
+# first spinner. UI_DEMO=0 forces the real background-process branch.
+_saved_ui_demo="$UI_DEMO"
+UI_DEMO=0
+trap 'echo SENTINEL_INT_TRAP' INT
+ui_spin "trap-preservation probe" true >/dev/null 2>&1
+spin_int_after=$(trap -p INT)
+trap - INT
+UI_DEMO="$_saved_ui_demo"
+if [[ "$spin_int_after" == *"SENTINEL_INT_TRAP"* ]]; then
+    pass "ui_spin: restores caller's INT trap instead of clearing it"
+else
+    fail "ui_spin: restores caller's INT trap instead of clearing it" "got: ${spin_int_after:-<empty>}"
+fi
 
 # =========================================================================
 # Test 3: .env was written with correct structure

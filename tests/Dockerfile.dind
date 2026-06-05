@@ -49,6 +49,15 @@ RUN apt-get update && \
 # `docker rm -fv` so these don't pile up.
 VOLUME /var/lib/docker
 
+# Pin a UTF-8 locale + a real TERM so the wizard PTY scenarios exercise the
+# glyph + colour render path (term_caps.sh:_glyphs_enabled / _color_enabled).
+# bookworm-slim leaves LANG unset (-> C) and TERM unset, which would silently
+# downgrade every scenario to the ASCII fallback. C.UTF-8 is a glibc built-in
+# (no `locales` package needed). The ASCII path is covered by the unit test
+# tests/unit/ui-ascii-fallback.sh. Placed late so it doesn't bust the apt cache.
+ENV LANG=C.UTF-8 \
+    TERM=xterm-256color
+
 COPY dind-entrypoint.sh /usr/local/bin/dind-entrypoint.sh
 RUN chmod +x /usr/local/bin/dind-entrypoint.sh
 

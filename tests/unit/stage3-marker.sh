@@ -154,7 +154,7 @@ confirm_calls=0
 reboot_calls=0
 ui_box() { :; }
 ui_choose() { printf '%s\n' "${STAGE3_TEST_REBOOT_CHOICE:-Reboot manually later}"; }
-ui_confirm() { confirm_calls=$((confirm_calls + 1)); }
+ui_confirm() { confirm_calls=$((confirm_calls + 1)); return "${STAGE3_TEST_CONFIRM_RC:-0}"; }
 schedule_post_reboot() { schedule_calls=$((schedule_calls + 1)); }
 install_post_reboot_banner() { banner_calls=$((banner_calls + 1)); }
 print_reboot_notice() { notice_calls=$((notice_calls + 1)); }
@@ -185,6 +185,21 @@ assert_eq "1" "$banner_calls" "FIN-02: reboot-now option installs post-reboot ba
 assert_eq "1" "$notice_calls" "FIN-02: reboot-now option prints reboot notice"
 assert_eq "1" "$confirm_calls" "FIN-02: reboot-now option asks for final confirmation"
 assert_eq "1" "$reboot_calls" "FIN-02: reboot-now option invokes reboot"
+
+# Decline at the final confirm: a typed "no" must NOT reboot, but resume is still
+# armed (schedule/banner/notice already ran). Locks in the reboot-honours-no fix.
+schedule_calls=0
+banner_calls=0
+notice_calls=0
+confirm_calls=0
+reboot_calls=0
+STAGE3_TEST_REBOOT_CHOICE="Reboot now"
+STAGE3_TEST_CONFIRM_RC=1
+stage3_prompt_nvidia_reboot >/dev/null 2>&1
+assert_eq "1" "$confirm_calls" "FIN-02: reboot-now then decline still asks for confirmation"
+assert_eq "0" "$reboot_calls"  "FIN-02: reboot-now then decline does NOT reboot"
+assert_eq "1" "$notice_calls"  "FIN-02: reboot-now then decline still prints reboot notice"
+unset STAGE3_TEST_CONFIRM_RC
 
 scenario_end "$CURRENT_SCENARIO"
 summary

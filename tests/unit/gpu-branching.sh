@@ -19,6 +19,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=../lib/assert.sh
 source "$REPO_ROOT/tests/lib/assert.sh"
+# Read by tests/lib/assert.sh for failure labels.
+# shellcheck disable=SC2034
 CURRENT_SCENARIO="gpu-branching"
 echo -e "${CYAN}${BOLD}▶ scenario: gpu-branching${NC}"
 
@@ -473,7 +475,7 @@ assert_contains "${INSTALL_ERROR_MESSAGES[*]}" "Failed to install NVIDIA contain
 unset -f curl sudo
 
 curl() {
-    local last_arg="${@: -1}"
+    local last_arg="${*: -1}"
     case "$last_arg" in
         */gpgkey)
             printf '%s\n' "fake-key"
@@ -514,7 +516,7 @@ command() {
     builtin command "$@"
 }
 curl() {
-    local last_arg="${@: -1}"
+    local last_arg="${*: -1}"
     case "$last_arg" in
         */gpgkey)
             printf '%s\n' "fake-key"
@@ -576,7 +578,7 @@ nvidia-smi() {
     esac
 }
 curl() {
-    local last_arg="${@: -1}"
+    local last_arg="${*: -1}"
     case "$last_arg" in
         */gpgkey)
             printf '%s\n' "fake-key"
@@ -901,6 +903,8 @@ unset -f apt-cache sudo _debian_codename _debian_version_id
 unset _bp_cap _bp_line
 
 # --- Mode chooser default is Standard (patch never default) non-interactively ---
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 UI_DEMO=1
 mode_default=$(_stage3_choose_nvidia_mode 2>/dev/null)
 assert_eq "standard" "$mode_default" "_stage3_choose_nvidia_mode: non-interactive default is Standard, never Unlock"

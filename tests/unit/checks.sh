@@ -15,6 +15,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # shellcheck source=../lib/assert.sh
 source "$REPO_ROOT/tests/lib/assert.sh"
+# Read by tests/lib/assert.sh for failure labels.
+# shellcheck disable=SC2034
 CURRENT_SCENARIO="checks"
 echo -e "${CYAN}${BOLD}▶ scenario: checks${NC}"
 
@@ -356,7 +358,10 @@ docker() { :; }   # never called in this branch
 unset EXISTING_INSTALL_DETECTED
 detect_existing_install; rc=$?
 assert_eq "0" "$rc" "detect_existing_install: .env absent → returns 0 (CR-01: no-install path is rc=0)"
-[[ ! -f "$_ui_sentinel" ]]; ui_not_called=$?
+[[ ! -f "$_ui_sentinel" ]]
+# Intentional: capture the [[ ]] boolean exit status.
+# shellcheck disable=SC2319
+ui_not_called=$?
 assert_eq "0" "$ui_not_called" "detect_existing_install: .env absent → ui_choose NOT called"
 assert_eq "false" "$EXISTING_INSTALL_DETECTED" "detect_existing_install: .env absent → EXISTING_INSTALL_DETECTED=false"
 rm -rf "$_tmpdir"
@@ -374,7 +379,10 @@ docker() { :; }
 unset EXISTING_INSTALL_DETECTED
 detect_existing_install; rc=$?
 assert_eq "0" "$rc" "detect_existing_install: .env empty → returns 0 (CR-01)"
-[[ ! -f "$_ui_sentinel" ]]; ui_not_called=$?
+[[ ! -f "$_ui_sentinel" ]]
+# Intentional: capture the [[ ]] boolean exit status.
+# shellcheck disable=SC2319
+ui_not_called=$?
 assert_eq "0" "$ui_not_called" "detect_existing_install: .env empty → ui_choose NOT called"
 assert_eq "false" "$EXISTING_INSTALL_DETECTED" "detect_existing_install: .env empty → EXISTING_INSTALL_DETECTED=false"
 rm -rf "$_tmpdir"
@@ -396,7 +404,10 @@ docker() { :; }
 unset EXISTING_INSTALL_DETECTED
 detect_existing_install; rc=$?
 assert_eq "0" "$rc" "detect_existing_install: incomplete Stage 1 evidence → returns 0"
-[[ ! -f "$_ui_sentinel" ]]; ui_not_called=$?
+[[ ! -f "$_ui_sentinel" ]]
+# Intentional: capture the [[ ]] boolean exit status.
+# shellcheck disable=SC2319
+ui_not_called=$?
 assert_eq "0" "$ui_not_called" "detect_existing_install: incomplete Stage 1 evidence → ui_choose NOT called"
 assert_eq "false" "$EXISTING_INSTALL_DETECTED" "detect_existing_install: incomplete Stage 1 evidence → EXISTING_INSTALL_DETECTED=false"
 rm -rf "$_tmpdir"
@@ -413,7 +424,7 @@ mkdir -p "$_tmpdir/config/ddns-updater"
 printf '{}' > "$_tmpdir/config/ddns-updater/config.json"
 ui_choose() { echo "Use existing install"; }
 docker() { :; }
-show_existing_install_menu() { RECOVERY_MENU_ACTION=continue; return 0; }
+show_existing_install_menu() { RECOVERY_MENU_ACTION="continue"; return 0; }
 EXISTING_INSTALL_DETECTED=""
 detect_existing_install
 rc=$?
@@ -460,11 +471,14 @@ docker() {
     fi
 }
 ui_choose() { : > "$_ui_sentinel"; echo "Use existing install"; }
-show_existing_install_menu() { RECOVERY_MENU_ACTION=continue; return 0; }
+show_existing_install_menu() { RECOVERY_MENU_ACTION="continue"; return 0; }
 EXISTING_INSTALL_DETECTED=""
 detect_existing_install
 rc=$?
-[[ -f "$_ui_sentinel" ]]; ui_was_called=$?
+[[ -f "$_ui_sentinel" ]]
+# Intentional: capture the [[ ]] boolean exit status.
+# shellcheck disable=SC2319
+ui_was_called=$?
 assert_eq "0" "$ui_was_called" "detect_existing_install: jellyfin container → ui_choose called"
 assert_eq "0" "$rc" "detect_existing_install: jellyfin container + Use existing → return 0"
 rm -rf "$_tmpdir"
@@ -483,7 +497,10 @@ ui_choose() { : > "$_ui_sentinel"; echo "Abort"; }
 unset EXISTING_INSTALL_DETECTED
 detect_existing_install; rc=$?
 assert_eq "0" "$rc" "detect_existing_install: no ddns + no jellyfin → returns 0 (CR-01)"
-[[ ! -f "$_ui_sentinel" ]]; ui_not_called=$?
+[[ ! -f "$_ui_sentinel" ]]
+# Intentional: capture the [[ ]] boolean exit status.
+# shellcheck disable=SC2319
+ui_not_called=$?
 assert_eq "0" "$ui_not_called" "detect_existing_install: no ddns + no jellyfin → ui_choose NOT called"
 assert_eq "false" "$EXISTING_INSTALL_DETECTED" "detect_existing_install: no ddns + no jellyfin → EXISTING_INSTALL_DETECTED=false"
 rm -rf "$_tmpdir"
@@ -584,7 +601,7 @@ source "$REPO_ROOT/scripts/setup/checks.sh"
 preview_out=$(_print_destroy_preview)
 assert_contains "$preview_out" "Docker containers and named volumes" "_print_destroy_preview: lists Docker containers/volumes"
 assert_contains "$preview_out" ".env (your secrets file" "_print_destroy_preview: lists .env"
-assert_contains "$preview_out" "data/ — your media library" "_print_destroy_preview: PRESERVES data/ explicitly"
+assert_contains "$preview_out" "data/ - your media library" "_print_destroy_preview: PRESERVES data/ explicitly"
 assert_contains "$preview_out" "Pre-seeded configs tracked in git" "_print_destroy_preview: PRESERVES git-tracked configs"
 assert_contains "$preview_out" "This will DELETE:" "_print_destroy_preview: DELETE header present"
 assert_contains "$preview_out" "This will PRESERVE:" "_print_destroy_preview: PRESERVE header present"

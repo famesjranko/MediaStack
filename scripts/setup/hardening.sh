@@ -35,8 +35,8 @@ detect_ssh_server_ports() {
     local server_port
 
     if [[ -n "${SSH_CONNECTION:-}" ]]; then
-        local client_ip client_port server_ip rest
-        read -r client_ip client_port server_ip server_port rest <<< "$SSH_CONNECTION"
+        # Only the 4th field (server_port) is needed; the rest go to throwaway `_`.
+        read -r _ _ _ server_port _ <<< "$SSH_CONNECTION"
         ufw_add_unique_port ports "$server_port"
     fi
 
@@ -94,10 +94,12 @@ ufw_valid_ip_literal() {
 }
 
 detect_active_ssh_client() {
-    local client_ip client_port server_ip server_port rest
+    local client_ip server_port
 
     [[ -n "${SSH_CONNECTION:-}" ]] || return 0
-    read -r client_ip client_port server_ip server_port rest <<< "$SSH_CONNECTION"
+    # SSH_CONNECTION = "<client_ip> <client_port> <server_ip> <server_port>"; only
+    # the client IP and server port are used, the rest go to throwaway `_`.
+    read -r client_ip _ _ server_port _ <<< "$SSH_CONNECTION"
     ufw_valid_ip_literal "$client_ip" || return 0
     ufw_valid_port "$server_port" || return 0
 
@@ -177,7 +179,7 @@ setup_ufw() {
     sudo ufw allow 443/tcp >/dev/null          # HTTPS
     # Configurable ports (TORRENT_PORT, WG_PORT) are opened by
     # setup_ufw_service_ports() after the wizard sets their values.
-    sudo ufw allow from 172.16.0.0/12 to any port 45876 proto tcp >/dev/null  # Beszel hub→agent (Docker bridge→host)
+    sudo ufw allow from 172.16.0.0/12 to any port 45876 proto tcp >/dev/null  # Beszel hub->agent (Docker bridge->host)
 
     sudo ufw --force enable >/dev/null
 
@@ -286,7 +288,7 @@ setup_unattended_upgrades() {
     log_info "Configuring automatic security updates..."
 
     sudo tee "$auto_conf" >/dev/null <<'EOF'
-// MediaStack — automatic security updates
+// MediaStack - automatic security updates
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
@@ -363,7 +365,7 @@ verify_gpu_runtime() {
 
     local daemon_json="/etc/docker/daemon.json"
     if [[ ! -f "$daemon_json" ]]; then
-        log_warn "daemon.json missing — attempting nvidia-ctk runtime configure..."
+        log_warn "daemon.json missing - attempting nvidia-ctk runtime configure..."
         sudo nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
         sudo systemctl restart docker 2>/dev/null || true
         return
@@ -383,7 +385,7 @@ sys.exit(1)
     if [[ "$has_nvidia" == "yes" ]]; then
         log_ok "NVIDIA Docker runtime registered in daemon.json"
     else
-        log_warn "NVIDIA runtime missing from daemon.json — attempting auto-repair..."
+        log_warn "NVIDIA runtime missing from daemon.json - attempting auto-repair..."
         sudo nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
         sudo systemctl restart docker 2>/dev/null || true
     fi
@@ -446,7 +448,13 @@ setup_hardening() {
 #     abort — and a subsequent SMB_ENABLED=true install reuses the same path
 SAMBA_INCLUDE_FILE="/etc/samba/smb.conf.d/mediastack.conf"
 SAMBA_MAIN_CONF="/etc/samba/smb.conf"
-SAMBA_INCLUDE_MARKER="# MEDIASTACK include — managed by setup.sh"
+# Idempotency keys off the functional `include = <path>` line — a filesystem
+# path that is byte-stable and never reformatted — NOT a decorative comment
+# marker, whose punctuation is a fragile grep target (an em-dash in the old
+# marker silently broke detection when it was "tidied"). The include line is
+# derived inline from SAMBA_INCLUDE_FILE at the point of use (so it tracks the
+# current path); the comment below is written for humans only and is never matched.
+SAMBA_INCLUDE_MARKER="# MEDIASTACK include - managed by setup.sh"
 
 setup_samba() {
     if [[ "${SMB_ENABLED:-false}" != "true" ]]; then
@@ -456,7 +464,7 @@ setup_samba() {
         # so we leave it there — re-enabling SMB later just rewrites the
         # include file at the same path.
         if [[ -f "$SAMBA_INCLUDE_FILE" ]]; then
-            log_info "SMB_ENABLED=false — removing MediaStack samba config..."
+            log_info "SMB_ENABLED=false - removing MediaStack samba config..."
             sudo rm -f "$SAMBA_INCLUDE_FILE"
             sudo systemctl reload smbd >/dev/null 2>&1 || true
             log_ok "MediaStack samba config removed (user samba config preserved)"
@@ -485,7 +493,7 @@ setup_samba() {
             share_path="${DATA_DIR:-/data}"
             ;;
         *)
-            log_warn "Unknown SMB_SHARE_SCOPE='$smb_scope' — using data-only share"
+            log_warn "Unknown SMB_SHARE_SCOPE='$smb_scope' - using data-only share"
             smb_scope="data"
             share_name="Media"
             share_comment="MediaStack data directory"
@@ -493,12 +501,15 @@ setup_samba() {
             ;;
     esac
 
+    # The functional, byte-stable idempotency marker: the include line itself.
+    local include_line="include = $SAMBA_INCLUDE_FILE"
+
     # Idempotency: include file present AND include line present in main conf.
     # If the requested scope differs from an existing generated include, warn
     # and leave it alone. Re-runs must not silently rewrite host file-sharing
     # scope behind the user's back.
     if [[ -f "$SAMBA_INCLUDE_FILE" ]] \
-        && sudo grep -Fxq "$SAMBA_INCLUDE_MARKER" "$SAMBA_MAIN_CONF" 2>/dev/null; then
+        && sudo grep -Fxq "$include_line" "$SAMBA_MAIN_CONF" 2>/dev/null; then
         if sudo grep -Fxq "[$share_name]" "$SAMBA_INCLUDE_FILE" 2>/dev/null \
             && sudo grep -Fxq "   path = $share_path" "$SAMBA_INCLUDE_FILE" 2>/dev/null; then
             log_skip "Samba already configured"
@@ -549,13 +560,13 @@ setup_samba() {
 EOF
 
     # Idempotently add the include line to main smb.conf (append-only — never
-    # overwrite). The marker comment makes the line easy to find in the
-    # user's file even if other tools rearrange it.
+    # overwrite). Detection keys on the `include = <path>` line itself, so the
+    # human-readable comment written above it is decorative and never matched.
     if [[ ! -f "$SAMBA_MAIN_CONF" ]]; then
         sudo install -m 0644 /dev/null "$SAMBA_MAIN_CONF"
     fi
-    if ! sudo grep -Fxq "$SAMBA_INCLUDE_MARKER" "$SAMBA_MAIN_CONF"; then
-        printf '\n%s\ninclude = %s\n' "$SAMBA_INCLUDE_MARKER" "$SAMBA_INCLUDE_FILE" \
+    if ! sudo grep -Fxq "$include_line" "$SAMBA_MAIN_CONF"; then
+        printf '\n%s\n%s\n' "$SAMBA_INCLUDE_MARKER" "$include_line" \
             | sudo tee -a "$SAMBA_MAIN_CONF" >/dev/null
     fi
 
@@ -568,5 +579,5 @@ EOF
     sudo ufw allow from 192.168.0.0/16 to any port 445 proto tcp comment 'SMB (LAN)' >/dev/null 2>&1
     sudo ufw reload >/dev/null 2>&1
 
-    log_ok "SMB share configured: \\\\<server-ip>\\${share_name} → ${share_path}"
+    log_ok "SMB share configured: \\\\<server-ip>\\${share_name} -> ${share_path}"
 }

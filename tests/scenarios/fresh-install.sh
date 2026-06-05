@@ -79,7 +79,7 @@ PYEOF
     # ------------------------------------------------------------------
     # 1. Bring up the default profile (with Pebble ACME override for NPM).
     # ------------------------------------------------------------------
-    local _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
+    local _strip; _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
     local compose_cmd="docker compose --profile proxy --profile autoheal up -d"
     if [[ "$_strip" != *" npm "* ]]; then
         npm_acme_override

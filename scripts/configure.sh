@@ -23,7 +23,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 
 # Load .env
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
@@ -94,9 +94,9 @@ _should_configure() {
 
 main() {
     echo -e "${CYAN}"
-    echo "  ╔══════════════════════════════════════════╗"
-    echo "  ║    MediaStack Auto-Configuration         ║"
-    echo "  ╚══════════════════════════════════════════╝"
+    echo "  ${_G_DTL}$(_g_repeat 42 "$_G_DH")${_G_DTR}"
+    echo "  ${_G_DV}    MediaStack Auto-Configuration         ${_G_DV}"
+    echo "  ${_G_DBL}$(_g_repeat 42 "$_G_DH")${_G_DBR}"
     echo -e "${NC}"
     log_info "Reading config from: config.yml"
     if storage_is_manual; then
@@ -175,7 +175,7 @@ main() {
         if storage_is_manual; then
             log_skip "Jellyseerr setup skipped (manual app wiring)"
         else
-            sleep 3  # Jellyfin may have just restarted — let auth endpoints stabilise
+            sleep 3  # Jellyfin may have just restarted - let auth endpoints stabilise
             configure_jellyseerr
         fi
     fi
@@ -236,14 +236,14 @@ main() {
     fi
 
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
     echo -e "${GREEN}${BOLD}  Auto-configuration complete!${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
     echo ""
     echo "  To change settings later, edit config.yml and re-run:"
     echo "    ./scripts/configure.sh"
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
 }
 
 main

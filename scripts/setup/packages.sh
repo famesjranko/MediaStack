@@ -12,7 +12,7 @@ install_base_packages() {
     # leave packages half-configured, which makes the install below fail with "Unmet
     # dependencies" and no path forward for a non-technical user. Harmless no-op when healthy.
     if ! sudo apt-get check >/dev/null 2>&1; then
-        log_warn "Inconsistent package state detected — repairing (dpkg --configure -a + apt --fix-broken)..."
+        log_warn "Inconsistent package state detected - repairing (dpkg --configure -a + apt --fix-broken)..."
         sudo dpkg --configure -a >/dev/null 2>&1 || true
         sudo apt-get install -f -y -qq >/dev/null 2>&1 || true
     fi
@@ -27,7 +27,7 @@ install_base_packages() {
     if ! command -v speedtest-cli &>/dev/null; then
         sudo apt-get install -y -qq speedtest-cli >/dev/null 2>&1 \
             || pip3 install speedtest-cli >/dev/null 2>&1 \
-            || log_warn "Could not install speedtest-cli — speed test will be unavailable"
+            || log_warn "Could not install speedtest-cli - speed test will be unavailable"
     fi
 }
 
@@ -52,7 +52,7 @@ refresh_docker_group_membership() {
     # Apply group membership immediately for this script session
     if getent group docker >/dev/null 2>&1 && ! groups | grep -qw docker; then
         log_warn "Docker group membership requires new session. Re-running with newgrp..."
-        exec sg docker -c "$0 $*"
+        exec sg docker -c "$0"
     fi
 }
 

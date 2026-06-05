@@ -582,7 +582,7 @@ services:
   # WireGuard (wg-easy) - VPN with Web UI (remote access profile)
   # ---------------------------------------------------------------------------
   wireguard:
-    image: ghcr.io/wg-easy/wg-easy:15.3.0
+    image: ghcr.io/wg-easy/wg-easy:15
     container_name: wireguard
     profiles:
       - remote

@@ -357,5 +357,67 @@ assert_eq "0" "$live_fail_count" "qBittorrent live assertion emits no failures f
 assert_contains "$live_out" $'PASS\tstep 1 qBittorrent: shared admin credentials authenticate' "qBittorrent live assertion checks shared admin login"
 assert_contains "$live_out" $'PASS\tstep 1 qBittorrent: category radarr save path' "qBittorrent live assertion checks managed categories"
 
+# ---------------------------------------------------------------------------
+# Day-2 qbt_set_speed_limits (#50): focused, single-setting live apply.
+# Re-auths with the shared admin creds (NOT the temp password) and POSTs ONLY
+# dl_limit/up_limit — invariant #2 (no broad reconcile). A fresh curl mock that
+# accepts the shared creds; the file-wide mock only blesses the temp password.
+# ---------------------------------------------------------------------------
+: > "$CURL_LOG"
+LOG_OK_MESSAGES=()
+LOG_WARN_MESSAGES=()
+curl() {
+    local arg is_login=false
+    for arg in "$@"; do
+        printf '%s\t' "$arg" >> "$CURL_LOG"
+        [[ "$arg" == *"/api/v2/auth/login" ]] && is_login=true
+    done
+    printf '\n' >> "$CURL_LOG"
+    if $is_login; then printf '%s\n%s\n' "Ok." "200"; return 0; fi
+    return 0   # setPreferences success
+}
+
+qbt_set_speed_limits 5 2
+day2_rc=$?
+assert_eq "0" "$day2_rc" "qbt_set_speed_limits: returns success on apply"
+
+day2_log="$(cat "$CURL_LOG")"
+assert_contains "$day2_log" $'--data-urlencode\tusername=mediaadmin' "qbt_set_speed_limits: re-auths with the shared admin username"
+ok_log=$(printf '%s\n' "${LOG_OK_MESSAGES[@]}")
+assert_contains "$ok_log" "qBittorrent speed limits updated" "qbt_set_speed_limits: logs success"
+
+# The setPreferences payload must carry ONLY dl_limit + up_limit (no save_path,
+# web_ui_*, max_ratio, categories) and convert MB/s -> bytes/s correctly.
+day2_payload=$(python3 - "$CURL_LOG" <<'PY'
+import json, sys
+for raw in open(sys.argv[1], encoding="utf-8"):
+    fields = raw.rstrip("\n").split("\t")
+    if not any("/api/v2/app/setPreferences" in f for f in fields):
+        continue
+    for i, f in enumerate(fields[:-1]):
+        if f == "--data-urlencode" and fields[i + 1].startswith("json="):
+            payload = json.loads(fields[i + 1][len("json="):])
+            print(",".join(sorted(payload.keys())))
+            print(payload.get("dl_limit", ""))
+            print(payload.get("up_limit", ""))
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+)
+mapfile -t day2_lines <<< "$day2_payload"
+assert_eq "dl_limit,up_limit" "${day2_lines[0]:-}" "qbt_set_speed_limits: posts ONLY dl_limit + up_limit (invariant #2)"
+assert_eq "5242880" "${day2_lines[1]:-}" "qbt_set_speed_limits: download 5 MB/s -> 5242880 bytes/s"
+assert_eq "2097152" "${day2_lines[2]:-}" "qbt_set_speed_limits: upload 2 MB/s -> 2097152 bytes/s"
+
+setpref_calls=$(grep -c '/api/v2/app/setPreferences' "$CURL_LOG" 2>/dev/null || true)
+assert_eq "1" "$setpref_calls" "qbt_set_speed_limits: a single setPreferences call (no broad reconcile)"
+
+# Missing shared password -> warn + non-zero, no API traffic.
+: > "$CURL_LOG"
+LOG_OK_MESSAGES=()
+LOG_WARN_MESSAGES=()
+( JELLYFIN_ADMIN_PASSWORD="" qbt_set_speed_limits 3 1 ); noauth_rc=$?
+assert_eq "1" "$noauth_rc" "qbt_set_speed_limits: fails when shared admin password is unset"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

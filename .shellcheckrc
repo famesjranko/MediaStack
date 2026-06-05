@@ -1,0 +1,35 @@
+# MediaStack shellcheck configuration.
+#
+# Read automatically by shellcheck (and by tests/lint.sh), so the repo-specific
+# flags live in one tracked place — nobody has to remember `-s bash -x`. See
+# issue #31 for the full rationale and the per-code assessment.
+
+# Most shell files here are shebang-less sourced libraries and wizard stages
+# (line 1 is a banner comment), so assume bash rather than erroring SC2148 on
+# every one of them.
+shell=bash
+
+# Follow `# shellcheck source=...` directives so sourced helpers are analysed
+# in the context of their caller (replaces the old `-x` flag).
+external-sources=true
+
+# Curated false-positive suppressions. Each is architectural noise, not a bug:
+#   SC2329 — "function never invoked": sourced-library functions are called from
+#            OTHER files shellcheck did not load. Inherent to the module layout.
+#   SC2218 — "function only defined later": the mirror image of SC2329 — unit
+#            harnesses deliberately call a product function before a later
+#            `source`/mock (re)defines it (often to assert production source
+#            order). Whether shellcheck resolves the real definition depends on
+#            its version's source-following, so leaving this on makes the gate
+#            non-reproducible (CI's native shellcheck and the pinned docker image
+#            disagree). Product code is SC2218-clean; only the test mocks trip it.
+#            Verified: docker :stable (0.11.0) fires SC2218 AND honors an inline
+#            `# shellcheck disable=SC2218`; CI's native shellcheck disagrees, so a
+#            per-file/inline disable can pass locally yet still fail the CI gate —
+#            suppress version-skewed codes HERE (globally), never inline.
+#   SC1091 — "not following": the runtime-generated ./.env and other sourced
+#            files are absent at lint time. Expected.
+#   SC1090 — "can't follow non-constant source": dynamic `source "$VAR"` paths.
+#   SC2016 — "expressions don't expand in single quotes": intentional inside awk
+#            and jq program strings (e.g. awk '{print $1}').
+disable=SC2329,SC2218,SC1091,SC1090,SC2016
