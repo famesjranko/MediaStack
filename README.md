@@ -11,7 +11,7 @@ Turnkey media server for home networks. One command takes bare Debian to a fully
 <!-- stable-image-badges:start -->
 [![Images: Stable default](https://img.shields.io/badge/Images-Stable%20default-2ea44f?logo=docker&logoColor=white)](docs/operations/image-digests.lock)
 [![Stable refs: 19 pinned](https://img.shields.io/badge/Stable%20refs-19%20pinned-0969da)](docs/operations/image-digests.lock)
-[![Accepted: 2026-06-01](https://img.shields.io/badge/Accepted-2026--06--01-6f42c1)](docs/operations/image-updates.md)
+[![Accepted: 2026-06-08](https://img.shields.io/badge/Accepted-2026--06--08-6f42c1)](docs/operations/image-updates.md)
 [![Latest: upstream tags](https://img.shields.io/badge/Latest-upstream%20tags-f9a825)](docker-compose.yml)
 <!-- stable-image-badges:end -->
 
