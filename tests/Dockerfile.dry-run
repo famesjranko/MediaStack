@@ -1,0 +1,40 @@
+# Minimal image for the `--dry-run` UI explorer (scripts/lib/dry_run.sh).
+#
+# NOT a DinD image: the dry-run runs the real wizard/launcher flow with every
+# side effect stubbed, so it needs no dockerd, no privilege, and no network.
+# It only needs bash + python3 (+ PyYAML for config parsing) + procps (free) and
+# a non-root user (the launcher refuses to run as root — mediastack:24). Stays on
+# Debian to match production's distro, same rationale as tests/Dockerfile.dind.
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        bash \
+        python3 \
+        python3-yaml \
+        procps \
+        ca-certificates \
+        grep \
+        sed && \
+    rm -rf /var/lib/apt/lists/*
+
+# Non-root user so the real EUID guards (mediastack:24, check_not_root) pass
+# without being stripped — the same approach the real --remote scenario uses
+# (tests/scenarios/remote-after-skip.sh). The dry-run core writes its stub
+# binaries to ~/bin and runs entirely as this user; no root step is needed.
+RUN useradd -m -s /bin/bash mstest
+
+# Sandbox sentinel. The dry-run stubs refuse to run — and the entry scripts refuse
+# to skip launching the container — unless this marker file is present. It is baked
+# into THIS image only, so a stray MS_* env var on a real host (bare metal or any
+# other container) can never run the no-op stubs against a real repo. This is the
+# trust signal, not an env var (which could be set accidentally).
+RUN install -m 0444 /dev/null /etc/ms-dry-run-sandbox
+
+# A UTF-8 locale + real TERM so the glyph + colour render path is exercised
+# (term_caps.sh), matching tests/Dockerfile.dind.
+ENV LANG=C.UTF-8 \
+    TERM=xterm-256color
+
+USER mstest
+WORKDIR /home/mstest/MediaStack

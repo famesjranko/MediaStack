@@ -66,7 +66,8 @@ df() {
 }
 
 _WIZ_DATA_DIR=/tmp/ms-stage1-ordering
-_WIZ_QUALITY_PRESET=balanced
+_WIZ_QUALITY_RESOLUTION=1080p
+_WIZ_QUALITY_SIZE=balanced
 _WIZ_SUBTITLE_LANGS=english
 _ENV_HOST_ADDRESS=127.0.0.1
 

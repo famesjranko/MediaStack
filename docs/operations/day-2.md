@@ -91,6 +91,32 @@ Actions:
 - **Reboot to finish hardware transcoding** — appears when an NVIDIA finalize marker is
   waiting on the current boot.
 
+## `./mediastack` → Features & settings → Change quality profile
+
+The launcher's post-install **"Change quality profile (resolution & size)"** action (under
+**Features & settings**) re-picks the quality cell after install — the day-2 counterpart of the
+wizard's two-prompt quality step — without re-running the whole wizard or hand-editing `config.yml`.
+
+Flow:
+
+1. **Guards** — Docker reachable and **both Sonarr and Radarr running** (a split rename across the two
+   apps is avoided by requiring both up front).
+2. **Pick** — the same two-axis picker the wizard uses (`scripts/lib/quality_select.sh`): resolution
+   ceiling, then size envelope. The current cell is pre-selected.
+3. **No-change / confirm** — re-picking the current cell short-circuits. Otherwise you are warned that
+   raising the ceiling or size makes Sonarr/Radarr **re-search and upgrade existing media** (extra
+   downloads and disk), and asked to confirm (default: no).
+4. **Apply** — `wizard_apply.py --quality-only` rewrites **only** the three quality sections of
+   `config.yml` (quality profile, definitions, custom formats); indexers, subtitles and bandwidth are
+   left untouched.
+5. **Re-push** — `configure.sh --only sonarr,radarr` with `QP_RENAME_FROM` set to the old profile
+   name, so `configure_quality_profile` **renames the existing profile in place** (same profile id)
+   instead of creating a duplicate. Existing series/movies follow the change automatically and **no
+   orphaned profile is left behind**.
+
+If you renamed the quality profile yourself in the Sonarr/Radarr UI (so the live name no longer matches
+`config.yml`), the re-push refuses to create a duplicate and warns instead — rename it back, or rebuild.
+
 ## `scripts/nvidia-repatch.sh`
 
 Repatch wrapper for after NVIDIA driver updates — relevant **only in Unlock NVENC mode** (`NVIDIA_DRIVER_MODE=unlock`). Standard (Debian-managed) and `existing` installs are not patched and are maintained by apt, so the script is a no-op there with guidance (override with `--force`). See ADR-31.
@@ -122,7 +148,7 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
 **Caveats:**
 
 - **qBittorrent** (Step 1) short-circuits on re-runs because the temp password no longer exists (`configure_qbittorrent()` auth-fallback logic). Editing `qbittorrent.max_ratio` in `config.yml` will NOT push to a running instance.
-- **Quality profile edits** are name-keyed. If you change `quality_profile.name` in `config.yml`, configure.sh creates a *new* profile alongside the old one. You must delete the old one manually via Sonarr/Radarr UI and switch existing series to the new profile.
+- **Quality profile edits** are name-keyed. If you hand-edit `quality_profile.name` in `config.yml` and run `configure.sh`, it creates a *new* profile alongside the old one (you must delete the old one manually and re-point existing series). To change the quality cell **without** orphaning the profile, use the launcher's **Features & settings → Change quality profile** action instead — it renames the profile in place (see above).
 - **Removed indexers** stay registered. Delete via Jackett UI manually.
 
 ### Config changes that require container restart

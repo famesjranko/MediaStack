@@ -148,6 +148,24 @@ print(f"  removed: {' '.join(removed) if removed else '(none found)'}")
 PYEOF
 }
 
+# Reset the DinD to a clean slate WITHOUT tearing down the DinD itself or its
+# loaded images. Used by run.sh's --reset-between so a whole battery of
+# scenarios can share one DinD (paying the image sideload once) while each still
+# starts pristine. Removes every container, then prunes anonymous volumes and
+# custom networks, then restores a clean repo copy — undoing any scenario that
+# stubbed scripts/configure.sh, wrote .env, or generated runtime config (the
+# config/ bind-mount sources live under the repo dir). Images are left intact,
+# so no re-pull / re-sideload happens.
+dind_reset() {
+    echo -e "${BLUE}[dind]${NC} reset: clearing containers/volumes/networks + restoring repo (images kept)"
+    # Prune runs while /root/MediaStack still exists (dind_exec sets it as CWD).
+    dind_exec 'ids=$(docker ps -aq); [ -n "$ids" ] && docker rm -f $ids >/dev/null 2>&1; true' || true
+    dind_exec 'docker volume prune -f >/dev/null 2>&1; docker network prune -f >/dev/null 2>&1; true' || true
+    dind_exec "rm -rf /root/MediaStack" || true
+    dind_copy_repo
+    dind_strip_services
+}
+
 # Resolve the image ref for a service, honoring a test-only override.
 # Reads MS_TEST_IMAGE_OVERRIDES ("svc=ref" pairs, comma or space separated).
 # Used host-side for code paths that launch an image OUTSIDE compose (e.g. the

@@ -131,6 +131,7 @@ Generator: /project-stack (audit of existing codebase)
 ./scripts/update.sh --prune
 
 # Day-2 per-service updates: ./mediastack → "Manage updates" (status, per-service, channel; ADR-30)
+# Day-2 change quality profile: ./mediastack → "Features & settings" → "Change quality profile" (resolution × size, renamed in place, no orphan)
 # Per-service update-availability scan (table / TSV):
 python3 scripts/image-drift.py --status
 python3 scripts/image-drift.py --status-tsv

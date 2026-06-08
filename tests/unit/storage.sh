@@ -572,7 +572,7 @@ unset NFS_COMMON_ATTEMPTS
 ui_log() { :; }
 ui_choose() {
     RESOLVE_PROMPTS=$((RESOLVE_PROMPTS + 1))
-    printf '%s\n' "Use a new mediastack/ subfolder on this NAS — Recommended."
+    printf '%s\n' "Use a new mediastack/ subfolder on this NAS (recommended)"
 }
 storage_ensure_nfs_common() { return 0; }
 storage_mount_nfs() { return 0; }
@@ -872,7 +872,7 @@ ui_choose() {
     case "${1:-}" in
         "Where should MediaStack"*) printf '%s\n' "Local disk" ;;
         "SMB needs TCP port 445"*) printf '%s\n' "Retry port check" ;;
-        "Choose SMB share scope:"*) printf '%s\n' "Full system (/): advanced admin access to the whole server." ;;
+        "Choose SMB share scope:"*) printf '%s\n' "Full system (/) - advanced admin access to the whole server." ;;
         *) printf '%s\n' "${2:-}" ;;
     esac
 }

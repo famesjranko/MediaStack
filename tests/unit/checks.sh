@@ -597,14 +597,22 @@ source "$REPO_ROOT/scripts/setup/checks.sh"
 # invoking the function so even an unshimmed `rm -f "$SCRIPT_DIR/.env"`
 # cannot harm a real file.
 
-# Test 1: _print_destroy_preview emits all D-21 locked phrases.
+# Test 1: _print_destroy_preview emits the #97-corrected DELETE/PRESERVE phrases.
 preview_out=$(_print_destroy_preview)
-assert_contains "$preview_out" "Docker containers and named volumes" "_print_destroy_preview: lists Docker containers/volumes"
+assert_contains "$preview_out" "Docker containers (compose" "_print_destroy_preview: lists Docker containers (destroy command)"
 assert_contains "$preview_out" ".env (your secrets file" "_print_destroy_preview: lists .env"
 assert_contains "$preview_out" "data/ - your media library" "_print_destroy_preview: PRESERVES data/ explicitly"
+assert_contains "$preview_out" "config/ - all service settings" "_print_destroy_preview: #97 — PRESERVES config/ (survives down -v)"
+assert_contains "$preview_out" "clear ./config" "_print_destroy_preview: #97 — notes how to truly start clean"
 assert_contains "$preview_out" "Pre-seeded configs tracked in git" "_print_destroy_preview: PRESERVES git-tracked configs"
 assert_contains "$preview_out" "This will DELETE:" "_print_destroy_preview: DELETE header present"
 assert_contains "$preview_out" "This will PRESERVE:" "_print_destroy_preview: PRESERVE header present"
+# #97: the phantom "named volumes" DELETE wording is gone — docker-compose.yml
+# declares no top-level volumes, so 'down -v' removes nothing on disk and the
+# old phrase misled users into expecting a clean slate. Non-tautological: the
+# pre-#97 body contained "Docker containers and named volumes".
+named_vol_negative=$(printf '%s' "$preview_out" | grep -c 'named volume' || true)
+assert_eq "0" "$named_vol_negative" "_print_destroy_preview: #97 — phantom 'named volumes' phrasing is gone"
 # WR-04: the misleading DELETE-bullet wording "config/ runtime-generated
 # files (gitignored — re-rendered on next setup)" was removed because
 # nuke_existing_install does not delete config/.

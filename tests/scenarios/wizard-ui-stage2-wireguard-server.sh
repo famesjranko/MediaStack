@@ -18,7 +18,7 @@ run_scenario() {
         remote_offer 1 \
         stage2_have_domain 1 \
         stage2_hostname demo.mywire.org \
-        stage2_use_dynu n \
+        stage2_static_ip 2 \
         stage2_wg_port ENTER \
         stage2_vpn_level 2 \
         stage2_upload_bw ENTER \

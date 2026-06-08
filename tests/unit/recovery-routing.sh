@@ -416,7 +416,7 @@ if ! is_pending_helper show_existing_install_menu; then
     # the position-based PTY drivers wizard-ui-recovery-continue/-wipe-guard).
     assert_contains "$MENU_BOX" "Current setup:" "REC-06: re-entry box shows a Current setup status block"
     assert_contains "$MENU_BOX" "Remote access: not configured" "REC-06: box reports remote-access state (unchecked -> not configured)"
-    assert_contains "$MENU_BOX" "Hardware transcoding: skipped -- software transcoding" "REC-06: box reports transcoding state from STAGE_3_GPU_STATE"
+    assert_contains "$MENU_BOX" "Hardware transcoding: skipped - software transcoding" "REC-06: box reports transcoding state from STAGE_3_GPU_STATE"
     if [[ "$MENU_OPTIONS" == *"Current setup"* || "$MENU_OPTIONS" == *"Remote access:"* || "$MENU_OPTIONS" == *"Hardware transcoding:"* ]]; then
         fail "REC-06: feature-state text must NOT be a ui_choose option (index safety)" "$MENU_OPTIONS"
     else

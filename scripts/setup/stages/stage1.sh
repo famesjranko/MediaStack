@@ -141,7 +141,8 @@ _demo_stage1_noninteractive() {
     log_info "DEMO: data=${_WIZ_DATA_DIR} torrent=${_WIZ_TORRENT_PORT} pw_source=${password_source}"
 
     _wizard_apply_settings \
-        "${_WIZ_QUALITY_PRESET:-balanced}" \
+        "${_WIZ_QUALITY_RESOLUTION:-1080p}" \
+        "${_WIZ_QUALITY_SIZE:-balanced}" \
         "${_WIZ_SUBTITLE_LANGS:-english}" \
         "0" \
         "${_WIZ_PUBLIC_INDEXERS_ENABLED:-false}"
@@ -153,7 +154,9 @@ _stage1_show_system() {
     hostname_value=$(hostname)
     os_value=$(awk -F= '/^PRETTY_NAME=/ {gsub(/"/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null || echo "unknown")
     docker_value=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')
-    ram_value=$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')
+    # Report total RAM in GB (one decimal) so it matches the preflight RAM check
+    # and the free-RAM warning, which both use GB — never `free -h`'s mixed Gi/Mi.
+    ram_value=$(awk '/^MemTotal:/ {printf "%.1f GB", $2/1024/1024}' /proc/meminfo 2>/dev/null)
     root_free=$(df -BG / 2>/dev/null | awk 'NR==2 {print $4}')
     data_path=$(_resolve_data_partition)
     data_free=$(df -BG "$data_path" 2>/dev/null | awk 'NR==2 {print $4}')
@@ -165,13 +168,13 @@ _stage1_show_system() {
         "$(ui_kv 'OS' "$os_value")" \
         "$(ui_kv 'Docker version' "${docker_value:-unknown}")" \
         "$(ui_kv 'RAM total' "${ram_value:-unknown}")" \
-        "$(ui_kv 'GPU' "${GPU_TYPE:-none}")" \
+        "$(ui_kv 'GPU' "$(gpu_brand_label "${GPU_TYPE:-none}")")" \
         "$(ui_kv 'Timezone' "${_ENV_TZ:-Etc/UTC}")" \
         "$(ui_kv 'Disk free' "/=${root_free:-unknown} | ${data_path}=${data_free:-unknown}")"
 
     local tz_default action
     tz_default="${_WIZ_TZ:-${_WIZ_PREV_TZ:-${_ENV_TZ:-Etc/UTC}}}"
-    action=$(ui_choose "Continue with these detected values?" \
+    action=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Continue with these detected values?" \
         "Continue" \
         "Override timezone" \
         "Abort")
@@ -193,7 +196,7 @@ _stage1_show_system() {
 _stage1_collect_admin() {
     ui_section 1 6 "Admin identity"
 
-    local email_default password_default
+    local email_default
     _WIZ_ADMIN_USER=$(ui_input_validated \
         "Admin username" \
         "${_WIZ_ADMIN_USER:-${_WIZ_PREV_USER:-admin}}" \
@@ -208,29 +211,35 @@ _stage1_collect_admin() {
         "$email_default" \
         validate_admin_email)
 
-    password_default="${_WIZ_ADMIN_PW:-${_WIZ_PREV_PW:-}}"
-    if [[ -z "$password_default" || "$password_default" == "changeme" || "$password_default" == *\'* || ${#password_default} -lt 12 ]]; then
-        # WR-08: NEVER fall back to a hard-coded literal. The previous code
-        # silently shipped 'GeneratedPassword123' as the default for every
-        # service if openssl rand failed (rare on --full but possible on
-        # Debian-minimal hosts where openssl was never installed). validators
-        # would happily accept it. Result: universal default credential for
-        # Jellyfin, Sonarr, Radarr, qBittorrent, NPM, Portainer, wg-easy,
-        # Beszel — any LAN attacker owns the entire stack.
-        # Match the _demo_stage1_noninteractive path, which already hard-fails
-        # in this branch with a clear remediation.
-        if ! password_default=$(openssl rand -base64 16 2>/dev/null); then
-            log_error "openssl rand failed and no admin password is set."
-            log_error "Install openssl: sudo apt-get install -y openssl"
-            exit 1
-        fi
+    # WR-08 / #95: NEVER auto-generate the shared admin credential. It is the single
+    # password for Jellyfin/Sonarr/Radarr/qBittorrent/Portainer/etc, so the user must
+    # set it themselves — there is NO default (a bare Enter is rejected by the
+    # validator), which means the install can never proceed on a password the user did
+    # not choose. The value is validated against the strictest service floor
+    # (validate_admin_password: >=12 chars, no single quote — Portainer's minimum) and
+    # confirmed by re-entry. Both reads are masked (ui_password = read -rsp), so the
+    # secret never lands in terminal scrollback. Non-TTY input exhaustion is handled by
+    # ui_password_validated's #93 guard: an empty default rejected twice yields a clean
+    # UI_EXIT_INPUT_EXHAUSTED, so the confirm loop below can never spin off a TTY.
+    if [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]]; then
+        # Simulation / non-interactive walk-through only (--demo / UI_DEMO=1); a real
+        # --full install never reaches this branch. A valid placeholder keeps the demo
+        # flow moving without prompting. (The DEMO=1 non-interactive INSTALLER uses
+        # _demo_stage1_noninteractive and never calls this function.)
+        _WIZ_ADMIN_PW="DemoAdminPassword123"
+    else
+        local pw confirm
+        while true; do
+            pw=$(ui_password_validated \
+                "Admin password (min 12 chars, no single quotes)" \
+                "" \
+                validate_admin_password)
+            confirm=$(ui_password "Confirm admin password" "")
+            [[ "$pw" == "$confirm" ]] && break
+            ui_log warn "Passwords did not match - please try again."
+        done
+        _WIZ_ADMIN_PW="$pw"
     fi
-    # Masked input: the admin password is the single shared credential for the whole
-    # stack — never echo keystrokes (or the generated default) into terminal scrollback.
-    _WIZ_ADMIN_PW=$(ui_password_validated \
-        "Admin password" \
-        "$password_default" \
-        validate_admin_password)
 }
 
 _stage1_collect_storage() {
@@ -241,8 +250,8 @@ _stage1_collect_storage() {
     if [[ "${_WIZ_STORAGE_MODE:-local}" != "local" ]]; then
         local_default="${_WIZ_PREV_DATA_DIR:-/data}"
     fi
-    storage_choice=$(ui_choose "Where should MediaStack store media and downloads?" \
-        "Local disk (${local_default}) - Recommended for most users." \
+    storage_choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Where should MediaStack store media and downloads?" \
+        "Local disk (${local_default}) (recommended)" \
         "Network/NAS storage (NFS) - MediaStack manages mount checks and service protection." \
         "Advanced manual storage - install apps but skip app-level storage wiring." \
         "Quit installer")
@@ -302,9 +311,9 @@ _stage1_collect_storage() {
                 if validate_smb_port 445; then
                     _WIZ_SMB_ENABLED="true"
                     local smb_scope_choice
-                    smb_scope_choice=$(ui_choose "Choose SMB share scope:" \
-                        "Media files only (${_WIZ_DATA_DIR}) - Recommended for most users." \
-                        "Full system (/): advanced admin access to the whole server.")
+                    smb_scope_choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Choose SMB share scope:" \
+                        "Media files only (${_WIZ_DATA_DIR}) (recommended)" \
+                        "Full system (/) - advanced admin access to the whole server.")
                     case "$smb_scope_choice" in
                         "Full system"*) _WIZ_SMB_SHARE_SCOPE="system" ;;
                         *)               _WIZ_SMB_SHARE_SCOPE="data" ;;
@@ -544,7 +553,7 @@ _stage1_resolve_nonstandard_nas_root() {
     local reason="$1"
     local choice
     choice=$(ui_choose "How should MediaStack handle this NAS share?" \
-        "Use a new mediastack/ subfolder on this NAS - Recommended." \
+        "Use a new mediastack/ subfolder on this NAS (recommended)" \
         "Use local storage instead" \
         "Advanced manual storage" \
         "Quit installer")
@@ -635,23 +644,31 @@ _stage1_final_nas_preflight() {
 _stage1_collect_quality() {
     ui_section 3 6 "Library quality + subtitles"
 
-    # Three preset tiers from scripts/setup/presets.yml. Keep the visual order
-    # from smallest to largest, but default to Balanced as the recommended tier.
-    local preset_choice
-    preset_choice=$(UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Choose how much storage to spend per movie/show:" \
-        "Compact (~2-4 GB/movie) - Smaller files, good quality. Best for limited storage." \
-        "Balanced (~4-8 GB/movie) - Recommended for most users." \
-        "Quality (~6-15 GB/movie) - Best quality at 1080p. Larger files.")
-    case "$preset_choice" in
-        Compact*)  _WIZ_QUALITY_PRESET="compact" ;;
-        Quality*)  _WIZ_QUALITY_PRESET="quality" ;;
-        *)         _WIZ_QUALITY_PRESET="balanced" ;;
-    esac
+    # Two orthogonal axes (resolution → size), menus built dynamically from
+    # scripts/setup/presets.yml. Shared with the day-2 launcher so the two can't
+    # drift. Defaults to 1080p Balanced (the recommended cell). If the menu can't
+    # be read, keep any prior selection or fall back to 1080p/balanced rather
+    # than aborting the wizard.
+    if ! quality_select_pick _WIZ_QUALITY_RESOLUTION _WIZ_QUALITY_SIZE \
+        "${_WIZ_QUALITY_RESOLUTION:-1080p}" "${_WIZ_QUALITY_SIZE:-balanced}"; then
+        _WIZ_QUALITY_RESOLUTION="${_WIZ_QUALITY_RESOLUTION:-1080p}"
+        _WIZ_QUALITY_SIZE="${_WIZ_QUALITY_SIZE:-balanced}"
+    fi
 
-    _WIZ_SUBTITLE_LANGS=$(ui_input_validated \
-        "Subtitle languages (comma-separated, e.g. english,spanish,french)" \
-        "${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}" \
-        validate_subtitle_langs)
+    # Only ask for subtitle languages when Bazarr is enabled (#100): the value
+    # feeds render_bazarr alone, so prompting after the user declined Bazarr asks
+    # for something inert and contradicts the choice just made. When Bazarr is
+    # off, keep a stored default so a later `./setup.sh` that enables Bazarr still
+    # has a sensible language list. _WIZ_BAZARR_ENABLED is set in
+    # _stage1_collect_storage, which always runs before this section.
+    if [[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]]; then
+        _WIZ_SUBTITLE_LANGS=$(ui_input_validated \
+            "Subtitle languages (comma-separated, e.g. english,spanish,french)" \
+            "${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}" \
+            validate_subtitle_langs)
+    else
+        _WIZ_SUBTITLE_LANGS="${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}"
+    fi
     # ui_input_validated echoes the raw input (the validator only returns 0/1),
     # so lowercase the accepted value here: Bazarr's LANG_MAP lookup is
     # case-sensitive over lowercase keys, and the value reaches config.yml
@@ -763,7 +780,7 @@ _stage1_confirm() {
         "$(ui_kv 'Images' "${image_count:-0}")" \
         "$(ui_kv 'Image channel' "${_WIZ_IMAGE_CHANNEL:-stable}")" \
         "$(ui_kv 'Storage' "${_WIZ_STORAGE_MODE:-local} at ${_WIZ_DATA_DIR:-/data} (${_WIZ_STORAGE_APP_WIRING:-managed} app wiring)")" \
-        "$(ui_kv 'Indexer preset' "${_WIZ_PUBLIC_INDEXERS_ENABLED:-false}")" \
+        "$(ui_kv 'Indexer preset' "$([[ "${_WIZ_PUBLIC_INDEXERS_ENABLED:-false}" == "true" ]] && echo enabled || echo disabled)")" \
         "$(ui_kv 'Time' '5-7 minutes on first run')" \
         "$(ui_kv 'Access' 'no public access - LAN only')" \
         "$(ui_kv 'Result' 'Working media server on your LAN')"
@@ -781,7 +798,8 @@ _stage1_install() {
     WIZARD_RAN_INSTALL=true
 
     _wizard_apply_settings \
-        "${_WIZ_QUALITY_PRESET:-balanced}" \
+        "${_WIZ_QUALITY_RESOLUTION:-1080p}" \
+        "${_WIZ_QUALITY_SIZE:-balanced}" \
         "${_WIZ_SUBTITLE_LANGS:-english}" \
         "0" \
         "${_WIZ_PUBLIC_INDEXERS_ENABLED:-false}"

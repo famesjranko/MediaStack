@@ -1,0 +1,71 @@
+# tests/scenarios/api-matrix.sh — DinD API-matrix test layer.
+#
+# Once the API-bearing services are up, drive their configuration APIs DIRECTLY
+# (reusing the product renderers) through a matrix of states and assert each one
+# lands live — amortizing a single bring-up across many in-place API tests.
+# Unlike the configure.sh path (idempotent, warn-on-drift), this mutates the
+# live API across states, so it can prove the full parameter space.
+#
+# Modules live under tests/api-matrix/<service>.sh and are sourced + called here:
+#   - quality        Sonarr/Radarr quality profiles (resolution x size cells,
+#                    in-place PUT-rename) — the render->API contract.
+#   - quality-rename Day-2 "change quality profile" (#71): seed cell A, change to
+#                    cell B with QP_RENAME_FROM, assert in-place rename (same id,
+#                    new scores, no orphan) through the PRODUCT configurators.
+# Add qbittorrent / jackett / jellyfin / jellyseerr modules the same way; each new
+# day-2 action that mutates a service API gets a module here.
+#
+# Wall-time budget: ~3-5 min (only Sonarr + Radarr are brought up).
+
+source tests/api-matrix/quality.sh
+source tests/api-matrix/quality-rename.sh
+
+run_scenario() {
+    # ------------------------------------------------------------------
+    # 0. Prep: data dirs, config dirs, .env
+    # ------------------------------------------------------------------
+    dind_exec "mkdir -p /tmp/ms-data/media/tv /tmp/ms-data/media/movies /tmp/ms-data/torrents && chown -R 1000:1000 /tmp/ms-data"
+    create_config_dirs_in_dind
+    dind_exec "cp .env.example .env"
+
+    env_set TZ Etc/UTC
+    env_set PUID 1000
+    env_set PGID 1000
+    env_set DATA_DIR /tmp/ms-data
+    env_set HOST_ADDRESS 127.0.0.1
+    env_set JELLYFIN_GPU none
+    env_set BAZARR_ENABLED false
+
+    # ------------------------------------------------------------------
+    # 1. Bring up ONLY Sonarr + Radarr (the quality matrix needs nothing else)
+    # ------------------------------------------------------------------
+    dind_exec "docker compose up -d sonarr radarr"
+    [[ $? -eq 0 ]] && pass "api-matrix: compose up sonarr radarr" || fail "api-matrix: compose up sonarr radarr"
+
+    for svc in sonarr radarr; do
+        wait_healthy "$svc" 360 \
+            && pass "api-matrix: $svc healthy" \
+            || fail "api-matrix: $svc healthy"
+    done
+
+    # ------------------------------------------------------------------
+    # 2. API keys (written by each app on first start)
+    # ------------------------------------------------------------------
+    local sonarr_key radarr_key
+    sonarr_key=$(get_api_key_from_xml "config/sonarr/config.xml")
+    radarr_key=$(get_api_key_from_xml "config/radarr/config.xml")
+    [[ -n "$sonarr_key" ]] && pass "api-matrix: Sonarr API key" || fail "api-matrix: Sonarr API key"
+    [[ -n "$radarr_key" ]] && pass "api-matrix: Radarr API key" || fail "api-matrix: Radarr API key"
+
+    # ------------------------------------------------------------------
+    # 3. Module test-1: quality profiles (Sonarr + Radarr)
+    # ------------------------------------------------------------------
+    [[ -n "$sonarr_key" ]] && matrix_quality sonarr "http://localhost:8989/api/v3" "$sonarr_key"
+    [[ -n "$radarr_key" ]] && matrix_quality radarr "http://localhost:7878/api/v3" "$radarr_key"
+
+    # ------------------------------------------------------------------
+    # 4. Module test-2: day-2 in-place rename (#71) through the product path
+    # ------------------------------------------------------------------
+    [[ -n "$sonarr_key" ]] && matrix_quality_rename sonarr "http://localhost:8989/api/v3" "$sonarr_key"
+    [[ -n "$radarr_key" ]] && matrix_quality_rename radarr "http://localhost:7878/api/v3" "$radarr_key"
+}

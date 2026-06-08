@@ -39,6 +39,50 @@ installs intentionally follow upstream tags.
 
 Exit code is non-zero if any hard assertion failed. `[SKIP]` lines never fail.
 
+## Exploring the UI safely — `--dry-run`
+
+`./mediastack --dry-run` and `./setup.sh --dry-run` walk the **real** setup wizard
+and day-2 launcher — every menu, prompt, branch, and banner — as a **genuine
+no-op**: any action that would change the system instead prints `DRY-RUN: would …`
+and does nothing. Use it to find/verify wizard + launcher UX warts in minutes
+instead of a slow DinD scenario or a destructive install.
+
+```bash
+./mediastack --dry-run          # explore the day-2 launcher menus
+./setup.sh   --dry-run          # explore the wizard (Stage 1 → 2 → 3)
+./setup.sh   --dry-run --remote # explore the remote-access recovery flow
+```
+
+It is **container-isolated** for safety: the flow runs inside a throwaway,
+non-privileged, `--network none` container as a non-root user, with the repo
+**copied in** (never bind-mounted read-write). So even a missed stub cannot touch
+the host, reach the network, or start a service — the dev host stays untouched.
+(`--ui-preview` is an alias. Docker is required; the slim image builds once.)
+
+Distinct from `./setup.sh --demo` (`UI_DEMO=1`), which short-circuits every prompt
+to showcase the UI **components**. `--dry-run` runs the real **branching flow**.
+
+**Explore any pathway** with the simulate-as knobs (the wizard auto-detects
+hardware/state, so these pick which branch you walk; each defaults sensibly):
+
+```bash
+MS_DRYRUN_GPU=intel   ./setup.sh --dry-run   # nvidia | intel | amd | none → Stage 3 branch
+MS_DRYRUN_INSTALLED=0 ./mediastack --dry-run # 0=fresh (pre-install menu), 1=installed (default)
+```
+
+Scripted transcript (the same flow the unit test drives, under a PTY so the
+non-TTY validated-input prompts don't hang):
+
+```bash
+printf '%s\n' '[{"expect":"What would you like to do"},{"send":"11\n"}]' > /tmp/steps.json
+python3 tests/lib/wizard_pty.py --command './mediastack --dry-run' --steps /tmp/steps.json \
+    --cwd "$PWD" --raw-log /tmp/raw.log --plain-log /tmp/plain.log --expect-exit 0
+```
+
+The driver + fidelity stubs live in `scripts/lib/dry_run.sh`; `tests/unit/dry-run.sh`
+asserts the safety invariants (no bind mount, `--network none`, non-root,
+recursion guard) and walks the launcher when Docker is available.
+
 ## Linting
 
 `./tests/lint.sh` is the shell lint runner (shellcheck). Config and the curated
@@ -162,6 +206,25 @@ depend on. The DinD `fresh-install` scenario calls this same script through
 `tests/assertions/qbittorrent.sh`; real-host/GCP-style host checks can run it
 directly or over SSH.
 
+### `api-matrix` — direct-API matrix layer
+
+```bash
+./tests/run.sh api-matrix
+```
+
+Services configured through their HTTP APIs (Sonarr, Radarr, qBittorrent,
+Jackett, Jellyfin, Jellyseerr) get a dedicated layer: `tests/scenarios/api-matrix.sh`
+brings up only the services a module needs, then drives those config APIs
+**directly** through a matrix of states, asserting each lands live — one bring-up,
+many cheap in-place API tests. Unlike `configure.sh` (idempotent, warn-on-drift,
+proves only the default point), it covers the full parameter space, so it's the
+surface for new API-driven features, day-2 re-push actions, and backfilling
+existing ones. Modules live in `tests/api-matrix/<service>.sh` and reuse the
+product renderers + `api_*` helpers. test-1 (`quality`) loops the six
+resolution×size cells in place on Sonarr + Radarr (and underpins the #71 day-2
+change-quality action). Image-backed local gate, not in CI. See
+[`docs/testing/README.md`](../docs/testing/README.md#api-matrix-layer) for the full write-up and how to add a module.
+
 ### Stage 1 wizard UI scenarios
 
 The `wizard-ui-stage1-*` scenarios drive real Stage 1 wizard prompts through a
@@ -265,6 +328,12 @@ Not every test needs DinD. Pure-bash units — function-level checks that can ru
 
 ```bash
 ./tests/unit/gpu-branching.sh
+```
+
+`./tests/unit.sh` runs the whole host tier in one shot — static validation (shell syntax, shellcheck, `py_compile`, compose render) **plus** every `tests/unit/*.sh` below — and is the exact tier CI's PR check runs. Mirroring `tests/lint.sh`, it is the single source of truth invoked identically by developers, agents, and CI. Unlike the individual units it needs the docker CLI (compose render + the pinned shellcheck image), so it is not a "no Docker" runner.
+
+```bash
+./tests/unit.sh        # static validation + every unit test (what CI runs)
 ```
 
 Current units:

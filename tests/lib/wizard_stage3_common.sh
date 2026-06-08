@@ -35,21 +35,11 @@ sed -i \
 
 source ./setup.sh
 
-sudo() { \"\$@\"; }
-cat > scripts/configure.sh <<'CONFIGURE'
-#!/usr/bin/env bash
-exit 0
-CONFIGURE
-chmod +x scripts/configure.sh
-curl() { return 0; }
-docker() {
-    if [[ \"\${1:-}\" == \"--version\" ]]; then echo \"Docker version 27.0.1, build wizard\"; return 0; fi
-    return 0
-}
-openssl() {
-    if [[ \"\${1:-}\" == \"rand\" ]]; then echo GeneratedWizardPassword123; return 0; fi
-    command openssl \"\$@\"
-}
+# Shared external-command stubs live in one place — tests/lib/wizard_stub_common.sh.
+# Stage 3 shares only the core set (sudo/curl/docker/openssl + a no-op configure.sh);
+# the GPU machinery below stays stage-specific.
+source tests/lib/wizard_stub_common.sh
+ms_stub_core
 reboot() { log_info \"stub reboot (suppressed)\"; }
 detect_host_memory() { HOST_MEMORY_MB=16000; }
 generate_override() { printf 'services: {}\\n' > docker-compose.override.yml; }

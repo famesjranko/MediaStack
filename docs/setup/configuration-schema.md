@@ -26,15 +26,16 @@ Fallback Torznab category IDs for Sonarr/Radarr indexer registration.
 
 ### `quality_profile`
 
-> See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for the actual file-size and format-score numbers across all three presets.
+> See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for the actual file-size and format-score numbers across all cells, the resolution × size model, and the SD floor.
 
-Shared between Sonarr and Radarr. The setup wizard (`scripts/setup/wizard.sh`) writes this section based on the user's chosen quality tier. Three presets are defined in `scripts/setup/presets.yml`:
+Shared between Sonarr and Radarr. The setup wizard (`scripts/setup/wizard.sh`) **composes** this section from a `(resolution × size)` cell the user picks — a resolution (the ceiling) × a size (the file-size envelope). The profile name is `"{resolution} {size}"` (e.g. `1080p Balanced`, the shipped default). The **authoring** model lives in `scripts/setup/presets.yml` (three top-level maps: `quality_ids`, `resolutions`, `sizes`) and is composed by `scripts/setup/wizard_apply.py:compose_cell`; the `config.yml` **output shape below is unchanged** from the old single-preset model, so the renderer (`render/*.py`) is untouched.
 
-| Preset | Profile name | Cutoff | Qualities | Approx size |
-|--------|-------------|--------|-----------|-------------|
-| Compact | `WEB-720p/1080p` | 1001 (WEB 720p) | WEB 720p only (5, 14) | ~2-4 GB/movie |
-| Balanced | `HD-720p/1080p` | 1002 (WEB 1080p) | All 720p+1080p HDTV/WEB/Bluray (no Remux) | ~4-8 GB/movie |
-| Quality | `HQ-1080p` | 1002 (WEB 1080p) | 1080p + 720p fallback (no Remux) | ~6-15 GB/movie |
+| | Compact | Balanced | Large |
+|---|---|---|---|
+| **720p** (cutoff 1001) | `720p Compact` | `720p Balanced` | `720p Large` |
+| **1080p** (cutoff 1002) | `1080p Compact` | `1080p Balanced` (default) | `1080p Large` |
+
+Each cell enables every tier from the **SD floor** (SDTV/DVD/480p) up to the resolution's ceiling, all sources; the cutoff (a WEB group) stops upgrades at the ceiling, so SD/720p are fallbacks that upgrade away. The size axis sets only the per-tier bounds + scores (source-agnostic).
 
 | Field | Meaning |
 |-------|---------|
@@ -50,20 +51,22 @@ Consumed by `configure_quality_profile` (`scripts/lib/arr/main.sh`, with Python 
 
 ### `quality_definitions`
 
-> See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for the per-preset bounds tables.
+> See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for the per-size bounds tables.
 
-Per-tier file-size bounds (MB per minute of runtime — Sonarr per episode, Radarr per movie). Overrides Sonarr/Radarr's stock defaults, which are loose enough to let in both 400 MB cam rips and 25 GB bloat releases. Values calibrated to deliver each preset's advertised size based on real-world 1080p WEB-DL/Bluray ranges — not the TRaSH max-quality values, which target much larger files.
+Per-tier file-size bounds (MB per minute of runtime — Sonarr per episode, Radarr per movie). Overrides Sonarr/Radarr's stock defaults, which are loose enough to let in both 400 MB cam rips and 25 GB bloat releases. Values come from the chosen **size** axis (`compact ≈ 0.7×`, `balanced 1.0×`, `large ≈ 1.2×`), masked to the resolution's enabled tiers — calibrated to real-world WEB-DL/Bluray ranges, not the TRaSH max-quality values, which target much larger files.
 
-Structure: `quality_definitions.{sonarr,radarr}.<QualityName>: { min, preferred, max }`. Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive): `HDTV-720p`, `WEBDL-1080p`, `Bluray-1080p`, etc. Tiers not listed keep their upstream defaults. Delete or comment the whole section to opt out entirely.
+Structure: `quality_definitions.{sonarr,radarr}.<QualityName>: { min, preferred, max }`. Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive): `SDTV`, `WEBDL-480p`, `HDTV-720p`, `WEBDL-1080p`, `Bluray-1080p`, etc. Tiers not listed keep their upstream defaults. Delete or comment the whole section to opt out entirely.
 
-Example (Balanced preset):
+Example (`1080p Balanced`, SD floor → 1080p):
 ```yaml
 quality_definitions:
   sonarr:
+    SDTV:         { min: 1.0,  preferred: 8.0,  max: 25.0 }   # SD floor
     HDTV-720p:    { min: 12.0, preferred: 30.0, max: 50.0 }
     WEBDL-1080p:  { min: 12.0, preferred: 45.0, max: 75.0 }
     Bluray-1080p: { min: 30.0, preferred: 60.0, max: 90.0 }
   radarr:
+    SDTV:         { min: 1.0,  preferred: 8.0,  max: 25.0 }   # SD floor
     WEBDL-1080p:  { min: 4.0,  preferred: 50.0, max: 80.0 }
     Bluray-1080p: { min: 10.0, preferred: 65.0, max: 90.0 }
 ```
@@ -90,7 +93,7 @@ custom_formats:
 
 Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/main.sh`) during steps 3 and 4. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
 
-The setup wizard writes preset-appropriate scores via `wizard_apply.py`. Per-preset values are defined in `scripts/setup/presets.yml` under the `custom_format_scores` key.
+The setup wizard writes size-appropriate scores via `wizard_apply.py`. Per-size values are defined in `scripts/setup/presets.yml` under each size's `custom_format_scores` key.
 
 ### `min_free_space_gb`
 

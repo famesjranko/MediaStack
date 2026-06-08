@@ -207,12 +207,15 @@ run_demo() {
     ui_log ok "Transcoding: $gpu_demo"
 
     ui_section 2 5 "Media Quality"
-    local quality_demo
-    quality_demo=$(ui_choose "How should MediaStack balance quality vs file size?" \
-        "Compact  - Smaller files, WEB sources. ~2-4 GB/movie." \
-        "Balanced - Recommended. All sources, 720p-1080p. ~4-8 GB/movie." \
-        "Quality  - Best at 1080p, includes Remux. ~6-15 GB/movie.")
-    ui_log ok "Media quality: ${quality_demo%%  -*}"
+    local resolution_demo size_demo
+    resolution_demo=$(UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Choose the maximum video resolution:" \
+        "720p  - Smaller library, lower bandwidth." \
+        "1080p - Full HD. Recommended for most users.")
+    size_demo=$(UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Choose how much storage to spend per movie/show:" \
+        "Compact  - Smaller files. ~2-4 GB/movie." \
+        "Balanced - Recommended. ~4-8 GB/movie." \
+        "Large    - Largest files, best quality. ~6-15 GB/movie.")
+    ui_log ok "Media quality: ${resolution_demo%% *} ${size_demo%% *}"
 
     ui_section 3 5 "Subtitles"
     if ui_confirm "Enable automatic subtitle downloads?" "no"; then

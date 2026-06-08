@@ -141,8 +141,8 @@ The setup script configures services through their HTTP APIs so the stack is usa
 |:--------|:---------------------|
 | **qBittorrent** | Download paths, categories (`tv-sonarr`, `radarr`), speed limits, queueing |
 | **Jackett** | FlareSolverr URL, admin password, configured indexers from `config.yml` |
-| **Sonarr** | Root folder, qBittorrent download client, HD-720p/1080p quality profile, per-tier file-size bounds, naming conventions, optional Torznab indexers |
-| **Radarr** | Same as Sonarr for movies; Remux excluded across all presets, see [`docs/reference/quality-bounds.md`](docs/reference/quality-bounds.md) |
+| **Sonarr** | Root folder, qBittorrent download client, `1080p Balanced` quality profile (resolution × size; pick in the wizard), per-tier file-size bounds, naming conventions, optional Torznab indexers |
+| **Radarr** | Same as Sonarr for movies; Remux excluded across all cells, see [`docs/reference/quality-bounds.md`](docs/reference/quality-bounds.md) |
 | **Bazarr** | Connected to Sonarr + Radarr, English language profile *(subtitles profile only)* |
 | **Jellyfin** | Admin account, Movies + TV Shows libraries, hardware transcoding based on hardware probes |
 | **Jellyseerr** | Connected to Jellyfin + Sonarr + Radarr, admin approval required, per-user request quotas |
@@ -201,7 +201,7 @@ Homepage is the day-to-day front door on your LAN. It links to Jellyfin, Jellyse
 - qBittorrent categories, paths, and limits
 
 > [!NOTE]
-> The HD-720p/1080p quality profile is created but not set as the per-show default. Sonarr/Radarr default each new series/movie to "Any"; change this in Settings > Profiles if you want a different default.
+> The quality profile you pick (default `1080p Balanced`) is created but not set as the per-show default. Sonarr/Radarr default each new series/movie to "Any"; change this in Settings > Profiles if you want a different default.
 
 > [!IMPORTANT]
 > MediaStack ships with no public trackers enabled by default. Add indexers only where you have the legal right to use them. The optional preset is available through the setup wizard and as `config/examples/public-indexers.yml`.

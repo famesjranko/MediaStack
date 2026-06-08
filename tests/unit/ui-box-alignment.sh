@@ -73,5 +73,22 @@ widths="$(printf '%s\n' "$box" | grep -E '│|╭|╰' | while IFS= read -r l; d
 distinct="$(printf '%s\n' "$widths" | grep -c .)"
 assert_eq "1" "$distinct" "ui_box+ui_kv: all box lines render at one visible width (F-005)"
 
+# --- #102: the two longest summary keys align their value column with shorter rows ---
+# 'Hardware transcoding' (final summary, stack.sh) and 'Remote streaming cap' (Stage 2
+# confirm, stage2.sh) are 20 visible chars — the longest keys ui_kv renders. A key pad
+# below 20 pushed their value 2 columns right of every shorter row. Grade the value
+# column independently: render against a sentinel value, strip ANSI with the perl oracle
+# (NOT the function under test), and count the visible chars before the sentinel.
+_ui_kv_value_col() {
+    local stripped prefix
+    stripped="$(printf '%b' "$(_ui_kv_impl "$1" 'SENTINEL')" | perl -CS -pe 's/\e\[[0-9:;<=>?]*[ -\/]*[@-~]//g; s/\R//g')"
+    prefix="${stripped%%SENTINEL*}"
+    printf '%s' "${#prefix}"
+}
+assert_eq "$(_ui_kv_value_col 'Homepage')" "$(_ui_kv_value_col 'Hardware transcoding')" \
+    "ui_kv: 'Hardware transcoding' (20c) value column aligns with shorter rows (#102)"
+assert_eq "$(_ui_kv_value_col 'Domain')" "$(_ui_kv_value_col 'Remote streaming cap')" \
+    "ui_kv: 'Remote streaming cap' (20c) value column aligns with shorter rows (#102)"
+
 echo -e "${CYAN}◀ ui-box-alignment done${NC}"
 summary

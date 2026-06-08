@@ -110,7 +110,7 @@ source "$REPO_ROOT/scripts/setup/wizard.sh"
 
 _stage1_install() {
     if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
-        _wizard_apply_settings "balanced" "english" "0"
+        _wizard_apply_settings "1080p" "balanced" "english" "0"
     fi
     return 0
 }
@@ -136,10 +136,10 @@ GPU_TYPE="none"
 # =========================================================================
 # Test 0: ui_choose supports non-first visible defaults
 # =========================================================================
-choice=$(printf '\n' | UI_DEMO=0 UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Pick one:" "Compact" "Balanced" "Quality")
+choice=$(printf '\n' | UI_DEMO=0 UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Pick one:" "Compact" "Balanced" "Large")
 assert_eq "Balanced" "$choice" "ui_choose: blank input uses visible default"
 
-choice=$(printf '9\n' | UI_DEMO=0 UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Pick one:" "Compact" "Balanced" "Quality")
+choice=$(printf '9\n' | UI_DEMO=0 UI_CHOOSE_DEFAULT_INDEX=2 ui_choose "Pick one:" "Compact" "Balanced" "Large")
 assert_eq "Balanced" "$choice" "ui_choose: invalid input uses visible default"
 
 # =========================================================================
@@ -160,6 +160,64 @@ assert_eq "3" "$eof_rc" "ui_choose: piped EOF maps to distinct exit code (input 
 if [[ "$eof_rc" == "124" ]]; then
     fail "ui_choose: piped EOF must not hang (timeout fired)"
 fi
+
+# =========================================================================
+# Test 0c: ui_input_validated / ui_password_validated on a piped EOF (issue #93).
+# =========================================================================
+# The validated-input siblings of Test 0b. When the offered default fails its
+# validator and stdin is exhausted (non-TTY), the re-prompt loop must NOT spin
+# forever: it detects the exhausted stream (the default rejected twice) and
+# SIGTERMs the process group, exactly like ui_choose. A parent with the documented
+# TERM trap exits UI_EXIT_INPUT_EXHAUSTED (3) — never 124 (hang) or 143 (generic
+# kill). Real validators that reject empty (validate_admin_email,
+# validate_ddns_password) drive the genuine #93 trigger end to end. (timeout runs
+# the probe in its own process group, so the group-kill cannot reach this runner.)
+for _v93 in \
+    "ui_input_validated|validate_admin_email" \
+    "ui_password_validated|validate_ddns_password"; do
+    _fn93="${_v93%%|*}"; _val93="${_v93##*|}"
+    rc93=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
+      source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+      source "'"$REPO_ROOT"'/scripts/lib/validators.sh"
+      trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
+      out=$('"$_fn93"' "Required field" "" '"$_val93"' </dev/null)
+      echo "REACHED_PAST_PROMPT=$out"     # must NOT print — group-kill took us
+    ' </dev/null >/dev/null 2>&1; echo "$?")
+    assert_eq "3" "$rc93" "$_fn93: non-TTY input exhaustion maps to exit 3 (not looping/143)"
+    if [[ "$rc93" == "124" ]]; then
+        fail "$_fn93: non-TTY input exhaustion must not hang (timeout fired)"
+    fi
+done
+unset _v93 _fn93 _val93 rc93
+
+# Counterpart to Test 0c: the exhaustion guard is a real EOF detector, NOT a blunt
+# off-TTY kill. A non-TTY driver that sends a default-equal (blank) line and THEN a
+# valid value must recover and return the valid value — the two-strike latch must
+# not fire while usable input is still queued. This locks out a regression to a
+# one-strike latch or a bare `[[ -t 0 ]]` guard (both would kill on the blank line).
+got93=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
+  source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+  source "'"$REPO_ROOT"'/scripts/lib/validators.sh"
+  trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
+  printf "\na@b.co\n" | ui_input_validated "Email" "" validate_admin_email
+' 2>/dev/null)
+assert_eq "a@b.co" "$got93" "ui_input_validated: non-TTY blank-then-valid returns the valid value (latch does not fire early)"
+unset got93
+
+# Second counterpart: the latch must be CONSECUTIVE, not sticky. A non-TTY driver
+# that interleaves a default-equal (blank) line, a DISTINCT invalid line, another
+# blank, and then a valid value must still return the valid value — a distinct line
+# resets the streak. A sticky latch (armed once, never reset) would kill on the
+# SECOND, non-adjacent blank and never reach the valid line. This pins the exhaustion
+# detector to "default rejected twice in a row" rather than "default ever rejected".
+got93b=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
+  source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+  source "'"$REPO_ROOT"'/scripts/lib/validators.sh"
+  trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
+  printf "\nnotanemail\n\na@b.co\n" | ui_input_validated "Email" "" validate_admin_email
+' 2>/dev/null)
+assert_eq "a@b.co" "$got93b" "ui_input_validated: non-TTY interleaved default/distinct/default/valid recovers (latch is consecutive, not sticky)"
+unset got93b
 
 # =========================================================================
 # Test 1: detect_env sets expected variables
@@ -297,13 +355,10 @@ assert_eq "/data/torrents" "$(env_val UNPACKERR_TORRENT_PATHS)" ".env: managed U
 # Demo mode returns blank for domain prompt → should be example.com placeholder
 assert_eq "example.com" "$(env_val DOMAIN)" ".env: DOMAIN placeholder when blank"
 
-# Password should be non-empty (auto-generated)
-pw=$(env_val JELLYFIN_ADMIN_PASSWORD)
-if [[ -n "$pw" && "$pw" != "changeme" ]]; then
-    pass ".env: admin password auto-generated"
-else
-    fail ".env: admin password auto-generated" "got '$pw'"
-fi
+# Password is the UI_DEMO walk-through placeholder. #95: the admin password is NEVER
+# auto-generated — _stage1_collect_admin requires a user-set + confirmed value on a
+# real install, and uses a fixed valid placeholder only under the UI_DEMO/--demo guard.
+assert_eq "DemoAdminPassword123" "$(env_val JELLYFIN_ADMIN_PASSWORD)" ".env: admin password is the UI_DEMO placeholder (#95: user-set, never auto-generated)"
 
 # File permissions
 perms=$(stat -c '%a' "$TMP_DIR/.env")
@@ -328,7 +383,7 @@ else:
 assert_eq "true" "$(yaml_get "c.get('wizard_completed', False)")" "config.yml: wizard_completed marker"
 
 # Stage 1 writes the balanced LAN baseline
-assert_eq "HD-720p/1080p" "$(yaml_get "c['quality_profile']['name']")" "config.yml: balanced preset applied"
+assert_eq "1080p Balanced" "$(yaml_get "c['quality_profile']['name']")" "config.yml: 1080p Balanced applied"
 
 # =========================================================================
 # Test 4b: custom Unpackerr path survives safe .env quoting
@@ -615,12 +670,12 @@ assert_eq "true" "$(env_val_from "$TMP_DIR_DEMO/.env" BAZARR_ENABLED)" "DEMO=1: 
 assert_eq "true" "$(env_val_from "$TMP_DIR_DEMO/.env" SMB_ENABLED)" "DEMO=1: pre-seeded SMB enabled preserved"
 assert_eq "system" "$(env_val_from "$TMP_DIR_DEMO/.env" SMB_SHARE_SCOPE)" "DEMO=1: pre-seeded SMB scope preserved"
 assert_eq "" "$(env_val_from "$TMP_DIR_DEMO/.env" WG_INIT_PASSWORD)" "DEMO=1: Stage 1 leaves WireGuard init password empty"
-assert_eq "HD-720p/1080p" "$(python3 -c "
+assert_eq "1080p Balanced" "$(python3 -c "
 import yaml
 with open('$TMP_DIR_DEMO/config.yml') as f:
     c = yaml.safe_load(f)
 print(c['quality_profile']['name'])
-")" "DEMO=1: balanced preset applied"
+")" "DEMO=1: 1080p Balanced applied"
 
 demo_pw=$(env_val_from "$TMP_DIR_DEMO/.env" JELLYFIN_ADMIN_PASSWORD)
 if [[ "$demo_pw" == "GeneratedDemoPassword123" ]]; then
@@ -680,7 +735,7 @@ ui_confirm() {
 validate_smb_port() { return 0; }
 ui_choose() {
     printf '%s\n' "${1:-}" > "$SMB_SCOPE_PROMPT_FILE"
-    echo "Full system (/): advanced admin access to the whole server."
+    echo "Full system (/) - advanced admin access to the whole server."
 }
 
 _WIZ_DATA_DIR=""

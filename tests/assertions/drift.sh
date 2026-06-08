@@ -25,7 +25,7 @@ PY
     echo "  (re-run WARN lines)"
     echo "$rerun_warns" | sed 's/^/    /' | head -20
 
-    assert_contains "$rerun_warns" "quality profile 'HD-720p/1080p' differs from config.yml" "drift re-run: quality profile WARN"
+    assert_contains "$rerun_warns" "quality profile '1080p Balanced' differs from config.yml" "drift re-run: quality profile WARN"
     assert_contains "$rerun_warns" "Sonarr qBittorrent category differs from config.yml" "drift re-run: Sonarr download-client WARN"
     assert_contains "$rerun_warns" "Jellyfin library 'Movies' path differs from config.yml" "drift re-run: Jellyfin library WARN"
 

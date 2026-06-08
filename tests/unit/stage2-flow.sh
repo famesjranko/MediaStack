@@ -339,6 +339,7 @@ ui_password() {
 ui_choose() {
     case "$1" in
         Do\ you*) printf 'Yes\n' ;;
+        Does\ your*) printf 'No - my IP changes (dynamic)\n' ;;  # #94 static/dynamic gate: dynamic -> reach Dynu preflight
         Remote*) printf 'Skip HTTPS for now\n' ;;
         *) printf 'Skip HTTPS for now\n' ;;
     esac
@@ -419,6 +420,30 @@ else
     pass "AUDIT: install after bad Dynu auth does not write DDNS config.json"
 fi
 unset DDNS_USERNAME DDNS_PASSWORD
+
+# #94: a static-IP / self-managed-DNS user picks "Yes" (option 2) at the new
+# static-vs-dynamic gate and skips DDNS entirely — no Dynu preflight, nothing
+# persistable, and _WIZ_USES_DDNS records the skip so the DNS-failure menu later
+# hides "Re-enter Dynu credentials". (Redefines ui_choose for this block only; the
+# remaining tests stub _stage2_collect_domain, so the override does not leak.)
+reset_stage2_ddns_prompt_stubs
+STATIC_IP_PREFLIGHT_CALLED=0
+ui_choose() {
+    case "$1" in
+        Does\ your*) printf 'Yes - static IP, or I keep my own DNS updated (skip DDNS)\n' ;;
+        *) printf 'Skip HTTPS for now\n' ;;
+    esac
+}
+stage2_dynu_preflight() { STATIC_IP_PREFLIGHT_CALLED=1; printf 'ok\n'; }
+_WIZ_USES_DDNS="true"
+if _stage2_offer_ddns "false" >/dev/null 2>&1; then
+    fail "S2-94: static-IP choice skips DDNS (offer returns non-zero)"
+else
+    pass "S2-94: static-IP choice skips DDNS (offer returns non-zero)"
+fi
+assert_eq "0" "$STATIC_IP_PREFLIGHT_CALLED" "S2-94: static-IP choice does not call the Dynu preflight"
+assert_eq "false" "$_WIZ_USES_DDNS" "S2-94: static-IP choice records _WIZ_USES_DDNS=false (menu hides Re-enter Dynu)"
+assert_eq "false" "$_WIZ_DDNS_PREFLIGHT_OK" "S2-94: static-IP choice leaves DDNS creds unpersistable"
 
 seed_stage2_env_vars
 mkdir -p "$SCRIPT_DIR/scripts" "$TMP_ROOT/ddns-symlink-target"
@@ -514,7 +539,7 @@ fi
 
 assert_contains "$stage2_source" "run_stage2()" "04-04: run_stage2 controller exists"
 assert_contains "$stage2_source" "MediaStack - Stage 2: Remote Access" "04-04: Stage 2 banner title"
-assert_contains "$stage2_source" "HTTPS + WireGuard in 3-5 minutes" "04-04: Stage 2 banner subtitle"
+assert_contains "$stage2_source" "HTTPS + WireGuard in a few minutes (longer on first DNS setup)" "04-04: Stage 2 banner subtitle"
 assert_contains "$stage2_source" "_stage2_install()" "04-04: install function exists"
 assert_contains "$stage2_source" "MEDIASTACK_NPM_ATTEMPT_REMOTE=1 ./scripts/configure.sh --only npm,ddns-updater,wireguard" "04-05: NPM remote attempt is process-scoped"
 assert_contains "$stage2_source" "type ui_spin" "S2-16: Stage 2 remote attempt falls back when UI spinner is not loaded"

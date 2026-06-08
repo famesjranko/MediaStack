@@ -20,7 +20,7 @@ run_scenario() {
         remote_offer 1 \
         stage2_have_domain 1 \
         stage2_hostname demo.mywire.org \
-        stage2_use_dynu y \
+        stage2_static_ip 1 \
         stage2_dynu_username dynuuser \
         stage2_dynu_password dynupass123 \
         stage2_wg_port ENTER \

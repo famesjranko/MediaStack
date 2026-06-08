@@ -4,65 +4,21 @@
 # The scenario runs real prompts through a PTY and asserts both transcript UX
 # and generated storage state.
 
-# Self-contained scenario (invokes wizard_pty.py directly, no wizard_stage1_run_pty): pull in
-# only the side-effect-free shared step-builder. Sourcing wizard_stage1_common.sh would re-source
-# setup.sh (set -euo pipefail) into this shell, which this scenario deliberately avoids.
-source tests/lib/wizard_steps_common.sh
+# Reuses the shared Stage-1 fixture builders (wizard_stage1_common.sh) so the stub vocabulary
+# lives in one place (tests/lib/wizard_stub_common.sh). That source is side-effect-free in this
+# shell — its only top-level statement is `source wizard_steps_common.sh` (the step-builder); the
+# `source ./setup.sh` lives INSIDE the fixture heredoc, so it runs in the DinD container, not here.
+# This scenario still drives wizard_pty.py directly (keeping its own assertions) rather than via
+# wizard_stage1_run_pty.
+source tests/lib/wizard_stage1_common.sh
 
 wizard_ui_stage1_nas_retry_write_fixture() {
-    dind_exec "cat >/tmp/wizard-stage1-nas-retry.sh <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-cd /root/MediaStack
-rm -f .env /tmp/wizard-nas-mount-attempts
-mkdir -p /tmp/ms-wizard-nas-data config/ddns-updater
-
-source ./setup.sh
-
-sudo() { \"\$@\"; }
-cat > scripts/configure.sh <<'CONFIGURE'
-#!/usr/bin/env bash
-sed -i 's/^JELLYFIN_API_KEY=.*/JELLYFIN_API_KEY=wizard-nas-key/' .env
-exit 0
-CONFIGURE
-chmod +x scripts/configure.sh
-curl() { return 0; }
-docker() {
-    if [[ \"\${1:-}\" == \"--version\" ]]; then
-        echo \"Docker version 27.0.1, build wizard\"
-        return 0
-    fi
-    if [[ \"\${1:-}\" == \"compose\" ]]; then
-        case \" \$* \" in
-            *\" config --services \"*)
-                printf \"%s\\n\" jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer unpackerr flaresolverr uptime-kuma
-                return 0
-                ;;
-            *\" config --images \"*)
-                printf \"%s\\n\" image1 image2 image3 image4 image5 image6 image7 image8 image9 image10 image11
-                return 0
-                ;;
-        esac
-        return 0
-    fi
-    return 0
-}
-openssl() {
-    if [[ \"\${1:-}\" == \"rand\" ]]; then
-        echo GeneratedWizardPassword123
-        return 0
-    fi
-    command openssl \"\$@\"
-}
-timedatectl() { echo Etc/UTC; }
-free() { printf 'Mem: 16Gi 1Gi 15Gi 0Gi 0Gi 15Gi\n'; }
-net_detect_public_ip() { _NET_PUBLIC_IP=203.0.113.10; return 0; }
-net_run_speedtest() { _NET_DL_MBPS=120; _NET_UL_MBPS=40; return 0; }
-net_check_port_status() { _NET_PORT_STATUS[\"\$1\"]=closed; }
-net_is_port_locally_bound() { return 1; }
-validate_smb_port() { return 0; }
-findmnt() { return 1; }
-storage_ensure_nfs_common() { return 0; }
+    wizard_stage1_write_base_fixture "/tmp/wizard-stage1-nas-retry.sh" "wizard-nas-key"
+    # Reset the attempt counter, pre-create the NAS mountpoint, and override the base
+    # storage_mount_nfs stub so the first mount attempt fails and the retry succeeds.
+    dind_exec "cat >>/tmp/wizard-stage1-nas-retry.sh <<'BASH'
+rm -f /tmp/wizard-nas-mount-attempts
+mkdir -p /tmp/ms-wizard-nas-data
 storage_mount_nfs() {
     local attempts=0
     [[ -f /tmp/wizard-nas-mount-attempts ]] && attempts=\$(cat /tmp/wizard-nas-mount-attempts)
@@ -70,22 +26,8 @@ storage_mount_nfs() {
     printf '%s\n' \"\$attempts\" > /tmp/wizard-nas-mount-attempts
     (( attempts >= 2 ))
 }
-storage_preflight_nas() { return 0; }
-stop_existing_stack() { log_info \"stub stop_existing_stack\"; }
-create_data_dirs() { mkdir -p \"\${DATA_DIR:-/tmp/ms-wizard-nas-data}\"; log_info \"stub create_data_dirs\"; }
-create_config_dirs() { mkdir -p config/ddns-updater; log_info \"stub create_config_dirs\"; }
-generate_override() { printf 'services: {}\\n' > docker-compose.override.yml; log_info \"stub generate_override \$1\"; }
-storage_install_watchdog() { log_info \"stub storage_install_watchdog\"; }
-pull_images() { log_info \"stub pull_images\"; }
-start_stack() { log_info \"stub start_stack\"; }
-wait_all_healthy() { log_info \"stub wait_all_healthy\"; }
-print_access_info() { log_info \"stub print_access_info\"; }
-
-detect_env
-GPU_TYPE=none
-run_stage1
-BASH
-chmod +x /tmp/wizard-stage1-nas-retry.sh"
+BASH"
+    wizard_stage1_append_runner "/tmp/wizard-stage1-nas-retry.sh"
 }
 
 wizard_ui_stage1_nas_retry_write_steps() {
@@ -93,7 +35,8 @@ wizard_ui_stage1_nas_retry_write_steps() {
         stage1_continue_detected 1 \
         stage1_admin_username ENTER \
         stage1_admin_email owner@nas.test \
-        stage1_admin_password ENTER \
+        stage1_admin_password WizardAdminPw123 \
+        stage1_admin_password_confirm WizardAdminPw123 \
         stage1_storage_location 2 \
         stage1_nas_local_mountpoint /tmp/ms-wizard-nas-data \
         stage1_nas_host 127.0.0.1 \
@@ -104,8 +47,7 @@ wizard_ui_stage1_nas_retry_write_steps() {
         stage1_nas_share_empty NONE \
         stage1_bazarr ENTER \
         stage1_smb ENTER \
-        stage1_quality 1 \
-        stage1_subtitle_langs ENTER \
+        stage1_quality_resolution 1 stage1_quality_size 1 \
         stage1_indexers ENTER \
         stage1_image_channel 1 \
         stage1_qbt_download ENTER \

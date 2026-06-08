@@ -97,6 +97,10 @@ _stage2_seed_wizard_defaults() {
             _WIZ_DDNS_PREFLIGHT_OK="true"
         fi
     fi
+    # Whether the user opted into Dynu DDNS (dynamic IP) vs. skipped it (static IP
+    # or self-managed DNS). Set authoritatively by _stage2_offer_ddns; seeded here
+    # so the DNS-failure menu's "Re-enter Dynu credentials" guard is never unset.
+    _WIZ_USES_DDNS="true"
 }
 
 _stage2_preserve_stage1_marker() {
@@ -382,7 +386,7 @@ run_stage2() {
 
     _stage2_seed_wizard_defaults
 
-    ui_banner "MediaStack - Stage 2: Remote Access" "HTTPS + WireGuard in 3-5 minutes"
+    ui_banner "MediaStack - Stage 2: Remote Access" "HTTPS + WireGuard in a few minutes (longer on first DNS setup)"
 
     while true; do
         local offer_action
@@ -442,12 +446,12 @@ _stage2_trim_ws() {
 _stage2_offer() {
     {
         ui_box "Remote access is not configured yet" \
-            "Remote access lets you use Jellyfin at https://jellyfin.<your-domain>." \
+            "Remote access lets you use Jellyfin at https://jellyfin.media.yourdomain.com." \
             "It also gives you a WireGuard VPN for admin access." \
             "You need a domain and router forwards for TCP 80 and 443." \
             "You can skip this and keep LAN access."
     } >&2
-    ui_choose "Set up remote access now?" \
+    UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Set up remote access now?" \
         "Enable remote access" \
         "Skip for now" \
         "Tell me more"
@@ -537,7 +541,7 @@ COPY
     fi
 
     _WIZ_DOMAIN=$(ui_input_validated \
-        "Your hostname (e.g. yourname.mywire.org)" \
+        "Your domain or hostname (e.g. media.yourdomain.com)" \
         "${_WIZ_DOMAIN:-${_WIZ_PREV_DOMAIN:-}}" \
         validate_domain_name)
 
@@ -583,10 +587,19 @@ COPY
             continue
         fi
 
-        action=$(ui_choose "Remote access could not be verified. Fix DNS, then choose:" \
-            "Retry DNS check" \
-            "Re-enter Dynu credentials" \
-            "Skip HTTPS for now")
+        # Only offer "Re-enter Dynu credentials" when Dynu DDNS is actually in
+        # use. A static-IP / self-managed-DNS user has no Dynu creds to re-enter;
+        # they fix their own A record and retry (or skip).
+        if [[ "${_WIZ_USES_DDNS:-true}" == "true" ]]; then
+            action=$(ui_choose "Remote access could not be verified. Fix DNS, then choose:" \
+                "Retry DNS check" \
+                "Re-enter Dynu credentials" \
+                "Skip HTTPS for now")
+        else
+            action=$(ui_choose "Remote access could not be verified. Fix your DNS A record, then choose:" \
+                "Retry DNS check" \
+                "Skip HTTPS for now")
+        fi
         case "$action" in
             "Retry DNS check") continue ;;
             "Re-enter Dynu credentials")
@@ -607,17 +620,34 @@ COPY
 }
 
 _stage2_offer_ddns() {
-    # When the user came from the Dynu walkthrough, skip the redundant
-    # "Use Dynu?" question — they already set up Dynu, so go straight to
+    # When the user came from the Dynu walkthrough, skip the static/dynamic
+    # question — they already committed to Dynu DDNS, so go straight to
     # collecting credentials.
     local skip_offer="${1:-false}"
     if [[ "$skip_offer" != "true" ]]; then
-        ui_log info "Dynu is recommended because the free tier supports wildcard records."
-        if ! ui_confirm "Use Dynu DDNS for this domain?" "no"; then
+        # DDNS is only needed when the home IP changes. Static-IP users (and
+        # users who keep their own DNS updated) skip it entirely. Default to
+        # dynamic/DDNS interactively (residential ISPs almost always change IP);
+        # in demo/non-interactive mode default to skip so no live Dynu API call
+        # fires (mirrors _stage2_port_gate's demo-default idiom below).
+        local di=1
+        [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]] && di=2
+        ui_log info "Most home internet connections get a changing (dynamic) IP. If unsure, pick the first option - and make sure your Dynu account + domain are already set up."
+        local ip_kind
+        ip_kind=$(UI_CHOOSE_DEFAULT_INDEX="$di" ui_choose \
+            "Does your home internet have a static (unchanging) public IP?" \
+            "No - my IP changes (set up Dynu DDNS to keep ${_WIZ_DOMAIN} updated)" \
+            "Yes - static IP, or I keep my own DNS updated (skip DDNS)")
+        if [[ "$ip_kind" == "Yes"* ]]; then
+            _WIZ_USES_DDNS="false"
             _WIZ_DDNS_PREFLIGHT_OK="false"
+            ui_log info "Skipping DDNS. Point A records for jellyfin.${_WIZ_DOMAIN} and jellyseerr.${_WIZ_DOMAIN} at your public IP."
             return 1
         fi
     fi
+    # Reaching here means Dynu DDNS is in use: an interactive dynamic-IP choice,
+    # or the walkthrough / "Re-enter Dynu credentials" re-entry (skip_offer=true).
+    _WIZ_USES_DDNS="true"
 
     local ddns_user ddns_pw
     ddns_user=$(ui_input_validated "Dynu account username" "${_WIZ_DDNS_USER:-}" validate_ddns_username)
@@ -803,7 +833,7 @@ print(ipaddress.IPv4Network(sys.argv[1], strict=False))
         esac
     done <<< "$env_lines"
 
-    ui_log info "WireGuard admin login: ${_WIZ_ADMIN_USER} / your admin password."
+    ui_log info "WireGuard admin login: ${_WIZ_ADMIN_USER} / your admin password (the same one you set earlier)."
     case "$tier" in
         full-lan)
             ui_log info "Access level: Full LAN. Initial peer reaches ${_WIZ_WG_LAN_CIDR}. Add family peers in the wg-easy UI using the README templates."
@@ -826,7 +856,7 @@ _stage2_collect_jellyfin_remote_bitrate() {
     # own value rather than accept/reject a single recommendation. The
     # table covers (a) typical per-stream Mbps budgets at common quality
     # levels, and (b) per-viewer budget across plausible concurrent-viewer
-    # counts, computed at 70% of detected upload bandwidth.
+    # counts, computed at 45% of detected upload bandwidth.
     local upload_mbps="${_NET_UL_MBPS:-}"
     if [[ -z "$upload_mbps" || ! "$upload_mbps" =~ ^[0-9]+$ ]]; then
         upload_mbps=$(ui_input_validated "Your upload bandwidth in Mbps (used for the recommendation table)" "100" validate_mbps_whole)

@@ -12,9 +12,104 @@ import sys
 import yaml
 
 
-def load_presets(presets_path):
+def load_quality_model(presets_path):
+    """Load the resolution × size quality model (quality_ids/resolutions/sizes)."""
     with open(presets_path) as f:
-        return yaml.safe_load(f)["presets"]
+        return yaml.safe_load(f)
+
+
+def compose_cell(model, resolution_key, size_key):
+    """Compose a (resolution × size) cell into a flat preset-equivalent dict.
+
+    Returns the exact keys the render_* functions consume (profile_name,
+    cutoff_id, upgrade_allowed, sonarr/radarr_qualities, custom_format_scores,
+    quality_definitions) so config.yml's output shape — and the downstream
+    renderer — stay unchanged. The 2D model lives only here and in presets.yml.
+    """
+    quality_ids = model.get("quality_ids") or {}
+    resolutions = model.get("resolutions") or {}
+    sizes = model.get("sizes") or {}
+
+    if resolution_key not in resolutions:
+        raise KeyError(
+            f"unknown resolution '{resolution_key}'. "
+            f"Available: {', '.join(resolutions.keys())}")
+    if size_key not in sizes:
+        raise KeyError(
+            f"unknown size '{size_key}'. Available: {', '.join(sizes.keys())}")
+
+    res = resolutions[resolution_key]
+    size = sizes[size_key]
+    tiers = res.get("tiers") or []
+
+    def ids_for(app):
+        app_ids = quality_ids.get(app) or {}
+        out = []
+        for name in tiers:
+            if name not in app_ids:
+                raise KeyError(
+                    f"resolution '{resolution_key}' enables tier '{name}' but "
+                    f"quality_ids.{app} has no id for it (add it to presets.yml)")
+            out.append(app_ids[name])
+        return out
+
+    def defs_for(app):
+        app_bounds = (size.get("bounds") or {}).get(app) or {}
+        # Mask the (full) size bounds table down to this resolution's tiers,
+        # preserving the resolution's floor→ceiling tier order.
+        return {name: app_bounds[name] for name in tiers if name in app_bounds}
+
+    return {
+        "profile_name": f"{res['display_name']} {size['display_name']}",
+        "cutoff_id": res["cutoff_group"],
+        "upgrade_allowed": True,
+        "sonarr_qualities": ids_for("sonarr"),
+        "radarr_qualities": ids_for("radarr"),
+        "custom_format_scores": size.get("custom_format_scores", {}),
+        "quality_definitions": {
+            "sonarr": defs_for("sonarr"),
+            "radarr": defs_for("radarr"),
+        },
+    }
+
+
+def list_axes(model):
+    """Emit the resolution/size menu metadata for the shell picker as TSV.
+
+    Row types (authoring order in presets.yml is preserved = menu order):
+      RESOLUTION<TAB>key<TAB>display<TAB>description<TAB>
+      SIZE<TAB>key<TAB>display<TAB>description<TAB>
+      HINT<TAB>size_key<TAB>res_key<TAB>hint        (one per resolution x size)
+
+    The GB/movie size hint is a CELL (resolution x size) value, so it ships as
+    HINT rows rather than on the SIZE row — the picker can't know the chosen
+    resolution until after the resolution prompt. The hint sits in the 4th
+    (description) column on purpose: scripts/lib/quality_select.sh reads with
+    `IFS=$'\\t'`, and tab is IFS-whitespace, so an empty *interior* column would
+    collapse — a padded 5th column would never survive. Consumed only by
+    quality_select.sh; no YAML parsing in bash, single parse home here.
+    """
+    lines = []
+    for key, res in (model.get("resolutions") or {}).items():
+        lines.append("\t".join([
+            "RESOLUTION", key,
+            str(res.get("display_name", key)),
+            str(res.get("description", "")),
+            "",
+        ]))
+    for key, size in (model.get("sizes") or {}).items():
+        lines.append("\t".join([
+            "SIZE", key,
+            str(size.get("display_name", key)),
+            str(size.get("description", "")),
+            "",
+        ]))
+    # Per-cell GB hints. Guarded .get so a data-only future resolution without a
+    # size_hints block can't crash --list-axes; the picker just omits the hint.
+    for rkey, res in (model.get("resolutions") or {}).items():
+        for skey, hint in (res.get("size_hints") or {}).items():
+            lines.append("\t".join(["HINT", skey, rkey, str(hint)]))
+    return "\n".join(lines)
 
 
 def load_public_indexers(indexers_path):
@@ -179,6 +274,21 @@ INDEXERS_SECTION_COMMENT = [
     "Format: id: description (description is for humans only)",
 ]
 
+# The three quality section headers/comments — shared by the full preset apply
+# and the day-2 quality-only apply (issue #71) so the two cannot drift, exactly
+# as the indexers section is shared above.
+QUALITY_PROFILE_SECTION_TITLE = "Quality Profile"
+QUALITY_DEFINITIONS_SECTION_TITLE = "Quality Definitions — per-tier file-size bounds"
+CUSTOM_FORMATS_SECTION_TITLE = "Custom Formats — TRaSH Guides scoring"
+CUSTOM_FORMATS_SECTION_COMMENT = [
+    "Scores custom release attributes within a quality tier. Higher scores are",
+    "preferred; negative scores penalise. -10000 effectively blocks.",
+    "Set to 0 to disable a format's scoring (format still exists but is neutral).",
+    "Delete this section to skip custom format configuration entirely.",
+    "",
+    "Format definitions: scripts/lib/arr/custom_formats.yml",
+]
+
 
 def apply_preset(config_text, preset, languages, public_indexers_enabled,
                  public_indexers):
@@ -194,13 +304,13 @@ def apply_preset(config_text, preset, languages, public_indexers_enabled,
         ),
         (
             "quality_profile",
-            "Quality Profile",
+            QUALITY_PROFILE_SECTION_TITLE,
             [],
             render_quality_profile(preset),
         ),
         (
             "quality_definitions",
-            "Quality Definitions — per-tier file-size bounds",
+            QUALITY_DEFINITIONS_SECTION_TITLE,
             [],
             render_quality_definitions(preset),
         ),
@@ -215,15 +325,8 @@ def apply_preset(config_text, preset, languages, public_indexers_enabled,
     if cf_body is not None:
         replacements.insert(2, (
             "custom_formats",
-            "Custom Formats — TRaSH Guides scoring",
-            [
-                "Scores custom release attributes within a quality tier. Higher scores are",
-                "preferred; negative scores penalise. -10000 effectively blocks.",
-                "Set to 0 to disable a format's scoring (format still exists but is neutral).",
-                "Delete this section to skip custom format configuration entirely.",
-                "",
-                "Format definitions: scripts/lib/arr/custom_formats.yml",
-            ],
+            CUSTOM_FORMATS_SECTION_TITLE,
+            CUSTOM_FORMATS_SECTION_COMMENT,
             cf_body,
         ))
 
@@ -258,6 +361,56 @@ def apply_indexers_only(config_text, enabled, indexers):
         render_indexers(enabled, indexers),
     )
     return config_text[: span[0]] + replacement + config_text[span[1]:]
+
+
+def apply_quality_only(config_text, preset):
+    """Rewrite ONLY the three quality sections of config.yml (quality_profile,
+    quality_definitions, custom_formats) from a composed cell.
+
+    The day-2 "change quality profile" launcher action (issue #71) uses this so
+    re-picking resolution/size never clobbers the user's indexers, subtitle
+    languages, or remote-streaming bitrate (apply_preset rewrites those
+    alongside quality). Mirrors apply_indexers_only's single-purpose discipline,
+    extended to the three contiguous quality sections.
+
+    Each section is located independently by find_section_span against the
+    current text, so the order here does not matter — a missing section (e.g.
+    custom_formats absent because scores are empty) is warned and skipped, never
+    fatal.
+    """
+    replacements = [
+        (
+            "quality_profile",
+            QUALITY_PROFILE_SECTION_TITLE,
+            [],
+            render_quality_profile(preset),
+        ),
+        (
+            "quality_definitions",
+            QUALITY_DEFINITIONS_SECTION_TITLE,
+            [],
+            render_quality_definitions(preset),
+        ),
+    ]
+    cf_body = render_custom_formats(preset)
+    if cf_body is not None:
+        replacements.append((
+            "custom_formats",
+            CUSTOM_FORMATS_SECTION_TITLE,
+            CUSTOM_FORMATS_SECTION_COMMENT,
+            cf_body,
+        ))
+
+    for section_key, title, comment, body in replacements:
+        span = find_section_span(config_text, section_key)
+        if span is None:
+            print(f"warning: section '{section_key}' not found in config.yml",
+                  file=sys.stderr)
+            continue
+        replacement = rebuild_section(title, comment, body)
+        config_text = config_text[: span[0]] + replacement + config_text[span[1]:]
+
+    return config_text
 
 
 def resolve_public_indexers(file_arg):
@@ -327,9 +480,19 @@ def main():
         description="Apply a quality preset to config.yml"
     )
     parser.add_argument(
-        "--preset",
-        help="Preset name (compact, balanced, quality). "
-             "Required unless --indexers-only is given.",
+        "--resolution",
+        help="Resolution ceiling (e.g. 720p, 1080p). Required with --size "
+             "unless --indexers-only/--list-axes is given.",
+    )
+    parser.add_argument(
+        "--size",
+        help="Size envelope (compact, balanced, large). Required with "
+             "--resolution unless --indexers-only/--list-axes is given.",
+    )
+    parser.add_argument(
+        "--list-axes", action="store_true",
+        help="Print resolution/size menu metadata (TSV) for the wizard picker "
+             "and exit.",
     )
     parser.add_argument(
         "--languages", default="english",
@@ -350,8 +513,15 @@ def main():
     parser.add_argument(
         "--indexers-only", choices=("true", "false"), default=None,
         help="Day-2 toggle: rewrite ONLY the indexers section of config.yml and "
-             "exit, leaving quality/subtitle config untouched. --preset is "
-             "ignored in this mode.",
+             "exit, leaving quality/subtitle config untouched. Quality "
+             "selection is ignored in this mode.",
+    )
+    parser.add_argument(
+        "--quality-only", action="store_true",
+        help="Day-2 change: rewrite ONLY the quality sections (quality_profile, "
+             "quality_definitions, custom_formats) of config.yml from "
+             "--resolution/--size and exit, leaving indexers, subtitle "
+             "languages, and remote bitrate untouched.",
     )
     parser.add_argument(
         "--presets-file", default=None,
@@ -363,6 +533,17 @@ def main():
              "(default: config/examples/public-indexers.yml)",
     )
     args = parser.parse_args()
+
+    presets_file = args.presets_file
+    if presets_file is None:
+        presets_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "presets.yml"
+        )
+
+    # Emit the resolution/size menu metadata for the wizard picker and exit.
+    if args.list_axes:
+        print(list_axes(load_quality_model(presets_file)))
+        return
 
     # Day-2 "Features" toggle: rewrite ONLY the indexers section and exit. The
     # launcher uses this so flipping public indexers on/off post-install never
@@ -380,22 +561,39 @@ def main():
               f"{'enabled' if enabled else 'disabled'} (indexers only)")
         return
 
-    if args.preset is None:
-        parser.error("--preset is required unless --indexers-only is given")
+    # Day-2 "change quality profile": rewrite ONLY the three quality sections
+    # and exit. The launcher uses this so re-picking resolution/size post-install
+    # never clobbers the user's indexers, subtitle languages, or remote bitrate
+    # (apply_preset rewrites those alongside quality).
+    if args.quality_only:
+        if args.resolution is None or args.size is None:
+            parser.error("--quality-only requires --resolution and --size")
+        model = load_quality_model(presets_file)
+        try:
+            preset = compose_cell(model, args.resolution, args.size)
+        except KeyError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+        with open(args.config) as f:
+            config_text = f.read()
+        config_text = apply_quality_only(config_text, preset)
+        with open(args.config, "w") as f:
+            f.write(config_text)
+        print(f"Applied quality profile '{preset['profile_name']}' "
+              f"({args.resolution} x {args.size}) — quality sections only")
+        return
 
-    presets_file = args.presets_file
-    if presets_file is None:
-        presets_file = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "presets.yml"
-        )
+    if args.resolution is None or args.size is None:
+        parser.error("--resolution and --size are required unless "
+                     "--indexers-only or --list-axes is given")
 
-    presets = load_presets(presets_file)
-    if args.preset not in presets:
-        print(f"error: unknown preset '{args.preset}'. "
-              f"Available: {', '.join(presets.keys())}", file=sys.stderr)
+    model = load_quality_model(presets_file)
+    try:
+        preset = compose_cell(model, args.resolution, args.size)
+    except KeyError as e:
+        print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    preset = presets[args.preset]
     languages = [lang.strip() for lang in args.languages.split(",") if lang.strip()]
     if not languages:
         languages = ["english"]
@@ -418,7 +616,8 @@ def main():
     with open(args.config, "w") as f:
         f.write(config_text)
 
-    print(f"Applied preset '{args.preset}' ({preset['profile_name']})")
+    print(f"Applied quality profile '{preset['profile_name']}' "
+          f"({args.resolution} x {args.size})")
     if languages:
         print(f"Subtitle languages: {', '.join(languages)}")
     print(

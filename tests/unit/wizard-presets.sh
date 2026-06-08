@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Unit test — wizard_apply.py preset application
+# Unit test — wizard_apply.py resolution × size composition
 # =============================================================================
-# Verifies that each preset correctly modifies config.yml without damaging
-# untouched sections, and that the idempotency marker is set.
+# Verifies that each (resolution × size) cell correctly composes config.yml
+# without damaging untouched sections, and that the idempotency marker is set.
+# The composition mechanism lives in wizard_apply.py:compose_cell; the data is
+# scripts/setup/presets.yml (quality_ids/resolutions/sizes).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,15 +20,16 @@ CONFIG_SRC="$REPO_ROOT/config.yml"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Helper: apply preset and parse result
+# Helper: compose a (resolution × size) cell and return the rendered config path.
 apply_and_parse() {
-    local preset="$1"
-    local languages="${2:-english}"
-    local public_indexers="${3:-false}"
-    local config="$TMP_DIR/${preset}.yml"
+    local resolution="$1"
+    local size="$2"
+    local languages="${3:-english}"
+    local public_indexers="${4:-false}"
+    local config="$TMP_DIR/${resolution}-${size}.yml"
     cp "$CONFIG_SRC" "$config"
     python3 "$WIZARD" \
-        --preset "$preset" \
+        --resolution "$resolution" --size "$size" \
         --languages "$languages" \
         --public-indexers "$public_indexers" \
         --config "$config" >/dev/null 2>&1
@@ -50,134 +53,150 @@ else:
 }
 
 # =========================================================================
-# Compact preset
+# 720p Compact — smallest cell. Enabled set is the SD floor + all 720p sources
+# (the size is source-agnostic: compact no longer means "WEB only").
 # =========================================================================
-config=$(apply_and_parse compact "english,spanish")
+config=$(apply_and_parse 720p compact "english,spanish")
 
-assert_eq "WEB-720p/1080p" \
+assert_eq "720p Compact" \
     "$(yaml_get "$config" "c['quality_profile']['name']")" \
-    "compact: profile name"
+    "720p compact: profile name"
 
 assert_eq "1001" \
     "$(yaml_get "$config" "c['quality_profile']['cutoff_id']")" \
-    "compact: cutoff_id"
+    "720p compact: cutoff_id (WEB 720p)"
 
-assert_eq "[5, 14]" \
+# yaml_get sorts numerically, so this asserts the enabled SET (not file order, not
+# upgrade path): SDTV1 DVD2 HDTV-720p4 WEBDL-720p5 Bluray-720p6 WEBDL-480p8 WEBRip-480p12 Bluray-480p13 WEBRip-720p14
+assert_eq "[1, 2, 4, 5, 6, 8, 12, 13, 14]" \
     "$(yaml_get "$config" "c['quality_profile']['sonarr_qualities']")" \
-    "compact: sonarr qualities (WEB 720p only)"
+    "720p compact: sonarr qualities (SD floor → 720p, all sources)"
 
-assert_eq "[5, 14]" \
+# Radarr differs from Sonarr only in Bluray-480p (20 not 13).
+assert_eq "[1, 2, 4, 5, 6, 8, 12, 14, 20]" \
     "$(yaml_get "$config" "c['quality_profile']['radarr_qualities']")" \
-    "compact: radarr qualities (WEB 720p only)"
+    "720p compact: radarr qualities (Bluray-480p=20, differs from Sonarr's 13)"
 
 assert_eq "20.0" \
     "$(yaml_get "$config" "c['quality_definitions']['sonarr']['WEBDL-720p']['preferred']")" \
-    "compact: sonarr WEBDL-720p preferred tightened to ~1 GB/ep"
+    "720p compact: sonarr WEBDL-720p preferred (carried from old compact)"
+
+# SD floor is present in the masked bounds table.
+assert_eq "6.0" \
+    "$(yaml_get "$config" "c['quality_definitions']['sonarr']['SDTV']['preferred']")" \
+    "720p compact: SD floor bound present (SDTV)"
+
+# Bounds masked to the resolution: no 1080p tiers in a 720p cell.
+assert_eq "None" \
+    "$(yaml_get "$config" "c['quality_definitions']['sonarr'].get('WEBDL-1080p')")" \
+    "720p compact: 1080p bounds masked out"
 
 assert_eq '["english", "spanish"]' \
     "$(yaml_get "$config" "c['bazarr']['languages']")" \
-    "compact: bazarr languages"
+    "720p compact: bazarr languages"
 
 assert_eq "true" \
     "$(yaml_get "$config" "c['wizard_completed']")" \
-    "compact: wizard_completed marker"
+    "720p compact: wizard_completed marker"
 
 assert_eq "0" \
     "$(yaml_get "$config" "c['custom_formats']['x264']")" \
-    "compact: x264 score is 0 (codec-neutral)"
+    "compact size: x264 score is 0 (codec-neutral)"
 
 assert_eq "0" \
     "$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")" \
-    "compact: x265 score is 0 (codec-neutral)"
+    "compact size: x265 score is 0 (codec-neutral)"
 
 assert_eq "-10" \
     "$(yaml_get "$config" "c['custom_formats']['No-RlsGroup']")" \
-    "compact: No-RlsGroup light penalty"
+    "compact size: No-RlsGroup light penalty"
 
 # =========================================================================
-# Balanced preset — should match shipped defaults
+# 1080p Balanced — the recommended cell (effect-equivalent of the old
+# "balanced": carries ADR-25's 720p/1080p values, plus the SD floor).
 # =========================================================================
-config=$(apply_and_parse balanced)
+config=$(apply_and_parse 1080p balanced)
 
-assert_eq "HD-720p/1080p" \
+assert_eq "1080p Balanced" \
     "$(yaml_get "$config" "c['quality_profile']['name']")" \
-    "balanced: profile name matches default"
+    "1080p balanced: profile name"
 
 assert_eq "1002" \
     "$(yaml_get "$config" "c['quality_profile']['cutoff_id']")" \
-    "balanced: cutoff_id matches default"
+    "1080p balanced: cutoff_id (WEB 1080p)"
 
-assert_eq "[3, 4, 5, 6, 7, 9, 14, 15]" \
+# Full ladder: SD floor + 720p + 1080p sources.
+assert_eq "[1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15]" \
     "$(yaml_get "$config" "c['quality_profile']['sonarr_qualities']")" \
-    "balanced: sonarr qualities"
+    "1080p balanced: sonarr qualities (SD floor → 1080p)"
 
-assert_eq "[3, 4, 5, 6, 7, 9, 14, 15]" \
+assert_eq "[1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 14, 15, 20]" \
     "$(yaml_get "$config" "c['quality_profile']['radarr_qualities']")" \
-    "balanced: radarr qualities (no Remux — dropped for size control)"
+    "1080p balanced: radarr qualities (no Remux — dropped for size control)"
 
 assert_eq "30.0" \
     "$(yaml_get "$config" "c['quality_definitions']['sonarr']['HDTV-720p']['preferred']")" \
-    "balanced: sonarr HDTV-720p preferred sized for ~1.4 GB/ep"
+    "1080p balanced: sonarr HDTV-720p preferred carried from ADR-25"
 
 assert_eq "50.0" \
     "$(yaml_get "$config" "c['quality_definitions']['radarr']['WEBDL-1080p']['preferred']")" \
-    "balanced: radarr WEBDL-1080p preferred sized for ~5.5 GB/movie"
+    "1080p balanced: radarr WEBDL-1080p preferred carried from ADR-25"
 
 assert_eq "10" \
     "$(yaml_get "$config" "c['custom_formats']['x264']")" \
-    "balanced: x264 score is 10"
+    "balanced size: x264 score is 10"
 
 assert_eq "-25" \
     "$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")" \
-    "balanced: x265 score is -25"
+    "balanced size: x265 score is -25"
 
 assert_eq "-10000" \
     "$(yaml_get "$config" "c['custom_formats']['BR-DISK']")" \
-    "balanced: BR-DISK blocks"
+    "balanced size: BR-DISK blocks"
 
 # =========================================================================
-# Quality preset
+# 1080p Large — best non-Remux 1080p (the old "quality", renamed Large).
 # =========================================================================
-config=$(apply_and_parse quality "english,french")
+config=$(apply_and_parse 1080p large "english,french")
 
-assert_eq "HQ-1080p" \
+assert_eq "1080p Large" \
     "$(yaml_get "$config" "c['quality_profile']['name']")" \
-    "quality: profile name"
+    "1080p large: profile name"
 
-assert_eq "[3, 4, 5, 6, 7, 9, 14, 15]" \
+assert_eq "[1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15]" \
     "$(yaml_get "$config" "c['quality_profile']['sonarr_qualities']")" \
-    "quality: sonarr qualities (1080p + 720p fallback, no Remux)"
+    "1080p large: sonarr qualities (same ladder as balanced, larger envelope)"
 
-assert_eq "[3, 4, 5, 6, 7, 9, 14, 15]" \
+assert_eq "[1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 14, 15, 20]" \
     "$(yaml_get "$config" "c['quality_profile']['radarr_qualities']")" \
-    "quality: radarr qualities (1080p + 720p fallback, no Remux)"
+    "1080p large: radarr qualities"
 
 assert_eq "55.0" \
     "$(yaml_get "$config" "c['quality_definitions']['radarr']['WEBDL-1080p']['preferred']")" \
-    "quality: radarr WEBDL-1080p preferred sized for ~6 GB/movie (real 1080p WEB)"
+    "1080p large: radarr WEBDL-1080p preferred carried from old quality"
 
 assert_eq '["english", "french"]' \
     "$(yaml_get "$config" "c['bazarr']['languages']")" \
-    "quality: bazarr languages"
+    "1080p large: bazarr languages"
 
 assert_eq "-50" \
     "$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")" \
-    "quality: x265 strong penalty"
+    "large size: x265 strong penalty"
 
 assert_eq "5" \
     "$(yaml_get "$config" "c['custom_formats']['Repack/Proper']")" \
-    "quality: Repack/Proper always 5"
+    "large size: Repack/Proper always 5"
 
 # =========================================================================
-# Untouched sections preserved across all presets
+# Untouched sections preserved across cells
 # =========================================================================
-config=$(apply_and_parse compact)
+config=$(apply_and_parse 720p compact)
 
 assert_eq "0" \
     "$(yaml_get "$config" "len(c['indexers'])")" \
     "public defaults: indexer preset disabled"
 
-config=$(apply_and_parse compact english true)
+config=$(apply_and_parse 720p compact english true)
 
 assert_eq "13" \
     "$(yaml_get "$config" "len(c['indexers'])")" \
@@ -210,10 +229,10 @@ assert_eq "15" \
 # =========================================================================
 # Idempotency: re-running on already-applied config
 # =========================================================================
-config=$(apply_and_parse compact)
-python3 "$WIZARD" --preset quality --languages "english" --config "$config" >/dev/null 2>&1
+config=$(apply_and_parse 720p compact)
+python3 "$WIZARD" --resolution 1080p --size large --languages "english" --config "$config" >/dev/null 2>&1
 
-assert_eq "HQ-1080p" \
+assert_eq "1080p Large" \
     "$(yaml_get "$config" "c['quality_profile']['name']")" \
     "idempotency: second apply overwrites first"
 
@@ -222,13 +241,26 @@ assert_eq "true" \
     "idempotency: marker still true after re-apply"
 
 # =========================================================================
-# Invalid preset
+# Invalid selections
 # =========================================================================
 cp "$CONFIG_SRC" "$TMP_DIR/invalid.yml"
-if python3 "$WIZARD" --preset nonexistent --config "$TMP_DIR/invalid.yml" 2>/dev/null; then
-    fail "invalid preset: should exit non-zero"
+if python3 "$WIZARD" --resolution nonexistent --size balanced --config "$TMP_DIR/invalid.yml" 2>/dev/null; then
+    fail "invalid resolution: should exit non-zero"
 else
-    pass "invalid preset: exits non-zero"
+    pass "invalid resolution: exits non-zero"
+fi
+
+if python3 "$WIZARD" --resolution 1080p --size nonexistent --config "$TMP_DIR/invalid.yml" 2>/dev/null; then
+    fail "invalid size: should exit non-zero"
+else
+    pass "invalid size: exits non-zero"
+fi
+
+# --resolution without --size (and vice versa) is an error.
+if python3 "$WIZARD" --resolution 1080p --config "$TMP_DIR/invalid.yml" 2>/dev/null; then
+    fail "missing --size: should exit non-zero"
+else
+    pass "missing --size: exits non-zero"
 fi
 
 # =========================================================================
@@ -236,7 +268,7 @@ fi
 # =========================================================================
 config="$TMP_DIR/bitrate.yml"
 cp "$CONFIG_SRC" "$config"
-python3 "$WIZARD" --preset balanced --languages english --bitrate-limit 8 --config "$config" >/dev/null 2>&1
+python3 "$WIZARD" --resolution 1080p --size balanced --languages english --bitrate-limit 8 --config "$config" >/dev/null 2>&1
 assert_eq "8" \
     "$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")" \
     "bitrate: limit set to 8"
@@ -247,12 +279,12 @@ else
     fail "bitrate: inline comment preserved" "comment stripped after apply"
 fi
 
-python3 "$WIZARD" --preset balanced --languages english --bitrate-limit 20 --config "$config" >/dev/null 2>&1
+python3 "$WIZARD" --resolution 1080p --size balanced --languages english --bitrate-limit 20 --config "$config" >/dev/null 2>&1
 assert_eq "20" \
     "$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")" \
     "bitrate: re-apply changes value to 20"
 
-python3 "$WIZARD" --preset balanced --languages english --bitrate-limit 0 --config "$config" >/dev/null 2>&1
+python3 "$WIZARD" --resolution 1080p --size balanced --languages english --bitrate-limit 0 --config "$config" >/dev/null 2>&1
 assert_eq "0" \
     "$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")" \
     "bitrate: 0 means unlimited"
@@ -289,10 +321,10 @@ assert_eq "none" "$(wizard_gpu_mapping 'something unexpected')" \
 # --indexers-only — day-2 Features toggle: rewrites ONLY the indexers section,
 # leaving quality/subtitle/custom-format config byte-identical (no clobber).
 # =========================================================================
-# Start from a non-default state: compact preset + spanish subtitles, indexers on.
+# Start from a non-default state: 720p compact + spanish subtitles, indexers on.
 config="$TMP_DIR/indexers-only.yml"
 cp "$CONFIG_SRC" "$config"
-python3 "$WIZARD" --preset compact --languages "english,spanish" \
+python3 "$WIZARD" --resolution 720p --size compact --languages "english,spanish" \
     --public-indexers true --config "$config" >/dev/null 2>&1
 
 # Snapshot the sections --indexers-only must NOT touch.
@@ -320,14 +352,79 @@ assert_eq "$before_quality" "$(yaml_get "$config" "c['quality_profile']['name']"
 assert_eq "$before_langs" "$(yaml_get "$config" "c['bazarr']['languages']")" \
     "indexers-only true: subtitle languages still untouched"
 
-# --indexers-only ignores --preset entirely (does not require or apply it).
-config="$TMP_DIR/indexers-only-nopreset.yml"
+# --indexers-only ignores quality selection entirely (does not require it).
+config="$TMP_DIR/indexers-only-noquality.yml"
 cp "$CONFIG_SRC" "$config"
 if python3 "$WIZARD" --indexers-only true --config "$config" >/dev/null 2>&1; then
     assert_eq "13" "$(yaml_get "$config" "len(c['indexers'])")" \
-        "indexers-only: works with no --preset given"
+        "indexers-only: works with no resolution/size given"
 else
-    fail "indexers-only: works with no --preset given" "exited non-zero"
+    fail "indexers-only: works with no resolution/size given" "exited non-zero"
+fi
+
+# =========================================================================
+# --quality-only — day-2 "Change quality profile": rewrites ONLY the three
+# quality sections (quality_profile + quality_definitions + custom_formats),
+# leaving indexers, subtitle languages and remote bitrate byte-identical.
+# =========================================================================
+# Raw byte text of a config.yml section, via the product's own span finder, so
+# "untouched" means byte-identical (not just equal parsed values).
+qonly_section_text() {
+    REPO="$REPO_ROOT" python3 - "$1" "$2" <<'PY'
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["REPO"], "scripts", "setup"))
+import wizard_apply as w
+text = open(sys.argv[1]).read()
+span = w.find_section_span(text, sys.argv[2])
+sys.stdout.write(text[span[0]:span[1]] if span else "<missing>")
+PY
+}
+
+# Seed a non-default state: 1080p balanced, spanish subtitles, indexers ON,
+# a custom remote bitrate — every axis --quality-only must NOT touch.
+config="$TMP_DIR/quality-only.yml"
+cp "$CONFIG_SRC" "$config"
+python3 "$WIZARD" --resolution 1080p --size balanced --languages "english,spanish" \
+    --public-indexers true --bitrate-limit 25 --config "$config" >/dev/null 2>&1
+
+before_indexers_text=$(qonly_section_text "$config" "indexers")
+before_bazarr_text=$(qonly_section_text "$config" "bazarr")
+before_bitrate=$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")
+before_qname=$(yaml_get "$config" "c['quality_profile']['name']")
+before_x265=$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")
+
+# Change cell: 1080p balanced -> 720p large (resolution AND size both move).
+python3 "$WIZARD" --quality-only --resolution 720p --size large --config "$config" >/dev/null 2>&1
+
+# Quality sections changed to the new cell.
+assert_eq "720p Large" "$(yaml_get "$config" "c['quality_profile']['name']")" \
+    "quality-only: profile name recomposed to '720p Large'"
+assert_eq "1001" "$(yaml_get "$config" "c['quality_profile']['cutoff_id']")" \
+    "quality-only: cutoff_id follows 720p ceiling (1001)"
+assert_eq "-50" "$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")" \
+    "quality-only: custom-format scores follow the large size (-50)"
+[[ "$before_qname" != "720p Large" ]] \
+    && pass "quality-only: profile name actually changed (was '$before_qname')" \
+    || fail "quality-only: profile name actually changed" "still '$before_qname'"
+[[ "$before_x265" != "-50" ]] \
+    && pass "quality-only: x265 score actually changed (was '$before_x265')" \
+    || fail "quality-only: x265 score actually changed" "still '$before_x265'"
+
+# Everything else byte-identical.
+assert_eq "$before_indexers_text" "$(qonly_section_text "$config" "indexers")" \
+    "quality-only: indexers section byte-identical"
+assert_eq "$before_bazarr_text" "$(qonly_section_text "$config" "bazarr")" \
+    "quality-only: bazarr/subtitle section byte-identical"
+assert_eq "$before_bitrate" "$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")" \
+    "quality-only: remote bitrate (bandwidth) untouched"
+
+# --quality-only requires both axes (errors without them, like the wizard).
+config="$TMP_DIR/quality-only-missing.yml"
+cp "$CONFIG_SRC" "$config"
+if python3 "$WIZARD" --quality-only --config "$config" >/dev/null 2>&1; then
+    fail "quality-only: errors without --resolution/--size" "exited zero"
+else
+    pass "quality-only: errors without --resolution/--size"
 fi
 
 scenario_end "$CURRENT_SCENARIO"

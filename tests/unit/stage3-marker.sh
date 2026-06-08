@@ -183,23 +183,10 @@ stage3_prompt_nvidia_reboot >/dev/null 2>&1
 assert_eq "1" "$schedule_calls" "FIN-02: reboot-now option schedules post-reboot resume"
 assert_eq "1" "$banner_calls" "FIN-02: reboot-now option installs post-reboot banner"
 assert_eq "1" "$notice_calls" "FIN-02: reboot-now option prints reboot notice"
-assert_eq "1" "$confirm_calls" "FIN-02: reboot-now option asks for final confirmation"
+# The "Reboot now?" menu is the single reboot gate (#100): choosing "Reboot now"
+# arms the resume hooks and reboots directly, with no redundant second ui_confirm.
+assert_eq "0" "$confirm_calls" "FIN-02: reboot-now is the single gate (#100) - no redundant second confirm"
 assert_eq "1" "$reboot_calls" "FIN-02: reboot-now option invokes reboot"
-
-# Decline at the final confirm: a typed "no" must NOT reboot, but resume is still
-# armed (schedule/banner/notice already ran). Locks in the reboot-honours-no fix.
-schedule_calls=0
-banner_calls=0
-notice_calls=0
-confirm_calls=0
-reboot_calls=0
-STAGE3_TEST_REBOOT_CHOICE="Reboot now"
-STAGE3_TEST_CONFIRM_RC=1
-stage3_prompt_nvidia_reboot >/dev/null 2>&1
-assert_eq "1" "$confirm_calls" "FIN-02: reboot-now then decline still asks for confirmation"
-assert_eq "0" "$reboot_calls"  "FIN-02: reboot-now then decline does NOT reboot"
-assert_eq "1" "$notice_calls"  "FIN-02: reboot-now then decline still prints reboot notice"
-unset STAGE3_TEST_CONFIRM_RC
 
 scenario_end "$CURRENT_SCENARIO"
 summary

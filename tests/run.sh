@@ -9,6 +9,11 @@
 #   ./tests/run.sh --keep <name>      # leave DinD running on failure
 #   ./tests/run.sh --no-cache <name>  # skip mirror + host sideload (forces fresh pulls)
 #   ./tests/run.sh --no-preload <name> # skip host image sideload
+#   ./tests/run.sh --reset-between a b c # reset DinD state (containers/volumes/
+#       networks + repo) between scenarios, so unrelated scenarios can share one
+#       DinD without state bleed. Images are sideloaded once, not per scenario.
+#       Used by tests/battery.sh. Default off (a plain multi-scenario run shares
+#       one DinD with no reset, as before).
 #
 # Env:
 #   MS_TEST_STRIP_SERVICES=homepage,npm,fail2ban   # strip these services from
@@ -34,12 +39,14 @@ MS_TEST_NO_CACHE="${MS_TEST_NO_CACHE:-0}"
 MS_TEST_SKIP_PRELOAD="${MS_TEST_SKIP_PRELOAD:-0}"
 MS_TEST_STRIP_SERVICES="${MS_TEST_STRIP_SERVICES:-}"
 MS_TEST_IMAGE_OVERRIDES="${MS_TEST_IMAGE_OVERRIDES:-}"
+MS_TEST_RESET_BETWEEN="${MS_TEST_RESET_BETWEEN:-0}"
 SCENARIOS=()
 for arg in "$@"; do
     case "$arg" in
         --keep)     KEEP_ON_FAIL=1 ;;
         --no-cache) MS_TEST_NO_CACHE=1 ;;
         --no-preload) MS_TEST_SKIP_PRELOAD=1 ;;
+        --reset-between) MS_TEST_RESET_BETWEEN=1 ;;
         -h|--help)
             sed -n '2,/^$/p' "$0"
             exit 0 ;;
@@ -48,7 +55,7 @@ for arg in "$@"; do
     esac
 done
 [[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke)
-export KEEP_ON_FAIL MS_TEST_NO_CACHE MS_TEST_SKIP_PRELOAD MS_TEST_STRIP_SERVICES MS_TEST_IMAGE_OVERRIDES
+export KEEP_ON_FAIL MS_TEST_NO_CACHE MS_TEST_SKIP_PRELOAD MS_TEST_STRIP_SERVICES MS_TEST_IMAGE_OVERRIDES MS_TEST_RESET_BETWEEN
 
 # Fail fast (before any DinD work) if a service is both image-overridden and
 # stripped — the candidate would be silently removed with the stripped service,
@@ -139,7 +146,14 @@ fi
 # Source scenarios in the current shell so their pass/fail updates to the
 # shared counters persist. A `return 1` from run_scenario just returns from
 # the function — the loop moves on to the next scenario.
+_ran_one=0
 for s in "${SCENARIOS[@]}"; do
+    # --reset-between: restore a pristine DinD before every scenario after the
+    # first, so a scenario that doesn't reset itself can't inherit prior state.
+    if (( _ran_one )) && [[ "$MS_TEST_RESET_BETWEEN" == "1" ]]; then
+        dind_reset
+    fi
+    _ran_one=1
     scenario_begin "$s"
     unset -f run_scenario 2>/dev/null || true
     # shellcheck disable=SC1090

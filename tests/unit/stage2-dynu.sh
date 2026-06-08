@@ -34,7 +34,16 @@ for token in badauth nohost abuse notfqdn numhost dnserr 911; do
 done
 
 badauth_copy="$(stage2_dynu_validate_response "badauth" "message" 2>/dev/null)"
-assert_contains "$badauth_copy" "wrong IP-update password (not your account password -- your IP-update password from Dynu's IP Update Settings page)" "S2-07: Dynu badauth copy names IP-update password"
+# #94: the badauth message must name BOTH valid options (account password and the
+# Dynu 'IP Update Password') and must NOT contradict the credential prompt by
+# asserting the account password is wrong (the old 'not your account password').
+assert_contains "$badauth_copy" "account password" "S2-07: Dynu badauth copy accepts the account password as valid"
+assert_contains "$badauth_copy" "IP Update Password" "S2-07: Dynu badauth copy names the IP Update Password alternative"
+if [[ "$badauth_copy" == *"not your account password"* ]]; then
+    fail "S2-07: Dynu badauth copy must not contradict the prompt (no 'not your account password')"
+else
+    pass "S2-07: Dynu badauth copy does not contradict the credential prompt"
+fi
 
 curl() {
     printf '%s\n' "$*" >"$TMP_CURL_ARGS"

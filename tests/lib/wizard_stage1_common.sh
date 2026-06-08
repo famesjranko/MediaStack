@@ -13,72 +13,15 @@ mkdir -p config/ddns-updater
 
 source ./setup.sh
 
-sudo() { \"\$@\"; }
-cat > scripts/configure.sh <<CONFIGURE
-#!/usr/bin/env bash
-sed -i 's/^JELLYFIN_API_KEY=.*/JELLYFIN_API_KEY=$api_key/' .env
-exit 0
-CONFIGURE
-chmod +x scripts/configure.sh
-curl() { return 0; }
-docker() {
-    if [[ \"\${1:-}\" == \"--version\" ]]; then
-        echo \"Docker version 27.0.1, build wizard\"
-        return 0
-    fi
-    if [[ \"\${1:-}\" == \"compose\" ]]; then
-        case \" \$* \" in
-            *\" config --services \"*)
-                printf \"%s\\n\" jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer unpackerr flaresolverr uptime-kuma
-                return 0
-                ;;
-            *\" config --images \"*)
-                printf \"%s\\n\" image1 image2 image3 image4 image5 image6 image7 image8 image9 image10 image11
-                return 0
-                ;;
-        esac
-        return 0
-    fi
-    return 0
-}
-openssl() {
-    if [[ \"\${1:-}\" == \"rand\" ]]; then
-        echo GeneratedWizardPassword123
-        return 0
-    fi
-    command openssl \"\$@\"
-}
-timedatectl() { echo Etc/UTC; }
-free() { printf 'Mem: 16Gi 1Gi 15Gi 0Gi 0Gi 15Gi\n'; }
-# Report ample free space so validate_data_dir's <30GB \"Continue anyway?\" prompt
-# never fires — otherwise these UI-flow scenarios are non-deterministic, passing
-# only on hosts/runners with >30GB free on the data path (they hung on GitHub's
-# smaller-disk runners). >200G also skips the min_free auto-scale branch.
-df() { printf 'Filesystem 1G-blocks Used Avail Use%% Mounted on\n/dev/ms-test 500G 50G 450G 10%% /\n'; }
-net_detect_public_ip() { _NET_PUBLIC_IP=203.0.113.10; return 0; }
-net_run_speedtest() { _NET_DL_MBPS=120; _NET_UL_MBPS=40; return 0; }
-net_check_port_status() { _NET_PORT_STATUS[\"\$1\"]=closed; }
-net_is_port_locally_bound() { return 1; }
-validate_smb_port() { return 0; }
-findmnt() { return 1; }
-storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() { return 0; }
-storage_preflight_nas() { return 0; }
-stop_existing_stack() { log_info \"stub stop_existing_stack\"; }
-create_data_dirs() { mkdir -p \"\${DATA_DIR:-/tmp/ms-wizard-data}\"; log_info \"stub create_data_dirs\"; }
-create_config_dirs() {
-    mkdir -p config/ddns-updater
-    if declare -F clear_qbittorrent_managed_seed_for_manual_storage >/dev/null; then
-        clear_qbittorrent_managed_seed_for_manual_storage
-    fi
-    log_info \"stub create_config_dirs\"
-}
-generate_override() { printf 'services: {}\\n' > docker-compose.override.yml; log_info \"stub generate_override \$1\"; }
-storage_install_watchdog() { log_info \"stub storage_install_watchdog\"; }
-pull_images() { log_info \"stub pull_images\"; }
-start_stack() { log_info \"stub start_stack\"; }
-wait_all_healthy() { log_info \"stub wait_all_healthy\"; }
-print_access_info() { log_info \"stub print_access_info\"; }
+# Shared executor stubs (run-real-in-sandbox philosophy) live in one place —
+# tests/lib/wizard_stub_common.sh. Sourced here at fixture-run time, AFTER
+# setup.sh, so the stubs shadow the real functions.
+source tests/lib/wizard_stub_common.sh
+ms_stub_core $api_key
+ms_stub_common_env
+ms_stub_service_lifecycle
+ms_stub_stage1_storage
+ms_stub_stage1_install
 BASH
 chmod +x $fixture_path"
 }

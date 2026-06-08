@@ -1,98 +1,90 @@
 # Quality Bounds Reference
 
-Per-quality file-size bounds for each of MediaStack's three quality presets, in MB per minute of runtime (Sonarr per episode, Radarr per movie). Sonarr and Radarr ship with very loose defaults — a single grab can land a 25 GB bloat release at one extreme or a 400 MB cam rip at the other. These bounds tighten both ends. Values are calibrated to deliver the size each preset advertises, based on real-world 1080p WEB-DL (4-7 GB/movie), 1080p Bluray rip (8-12 GB/movie), and 720p WEB-DL (1.5-3 GB/movie) ranges — not the TRaSH max-quality values, which target much larger files.
+MediaStack composes a quality profile from two **orthogonal** axes — a **resolution** (the desired ceiling) × a **size** (the file-size envelope) — picked in the setup wizard and combined at apply time. The profile name is `"{resolution} {size}"`, e.g. `1080p Balanced`.
 
-Source of truth: [`scripts/setup/presets.yml`](../../scripts/setup/presets.yml). The setup wizard (`scripts/setup/wizard.sh`) writes the chosen preset into `config.yml`, and `configure.sh` then applies it to Sonarr/Radarr via API.
+Bounds are in **MB per minute** of runtime (Sonarr per episode, Radarr per movie). Sonarr and Radarr ship with very loose defaults — a single grab can land a 25 GB bloat release at one extreme or a 400 MB cam rip at the other. These bounds tighten both ends. Preferred sits in the middle of what real sources produce; max is a sane ceiling — **not** the TRaSH max-quality values, which target much larger files ([why](#why-these-bounds-and-not-trash-defaults)).
 
-## Presets at a glance
+Source of truth: [`scripts/setup/presets.yml`](../../scripts/setup/presets.yml) (`quality_ids` / `resolutions` / `sizes`). The wizard writes the chosen cell into `config.yml`; `configure.sh` then applies it to Sonarr/Radarr via API. The `config.yml` output shape is unchanged from the old single-preset model, so the renderer is untouched.
 
-| Preset | Profile name | Cutoff | Qualities enabled | Approx size |
-|---|---|---|---|---|
-| **Compact** | `WEB-720p/1080p` | WEB 720p | WEB 720p only (no 1080p, no HDTV/Bluray) | ~2-4 GB/movie |
-| **Balanced** | `HD-720p/1080p` | WEB 1080p | All 720p+1080p (HDTV/WEB/Bluray, no Remux) | ~4-8 GB/movie |
-| **Quality** | `HQ-1080p` | WEB 1080p | 1080p + 720p fallback (no Remux) | ~6-15 GB/movie |
+## The two axes
 
-Tiers not listed (480p, 2160p, Remux-720p, Remux-1080p) keep upstream Sonarr/Radarr defaults; **none are enabled in any profile**. Remux is intentionally excluded across all presets — it's a videophile feature (single grabs of 25-40 GB) that doesn't fit the home-server audience.
+**Resolution = the desired ceiling.** Pick **720p** or **1080p**. A resolution enables **every quality tier from the SD floor up to its ceiling**, all source types (SDTV/DVD/480p, then HDTV/WEBRip/WEBDL/Bluray at each resolution up to the ceiling), and sets the **cutoff** to its WEB group (720p → 1001, 1080p → 1002). Upgrades climb toward the ceiling and stop there.
 
-## Sonarr file-size bounds
+- **Best-available is automatic.** The renderer inherits each app's canonical worst→best quality ordering, so a 1080p release always outranks a 720p, which outranks SD. SD/720p are only ever **fallbacks** that get grabbed when nothing better exists yet, then **upgraded away** (the cutoff sits above them; `upgrade_allowed` is on). This is why enabling the SD floor doesn't make profiles "behave SD" — best-available always wins the initial grab, and the cutoff is above SD.
+- **SD floor.** Enabling SDTV/DVD/480p means an older or obscure title that only exists in SD is still grabbed (then upgraded if a better release appears later) instead of never being grabbed at all.
 
-Units: **MB per minute, per episode**.
+**Size = the file-size envelope only** — `compact` / `balanced` / `large`: per-tier min/preferred/max bounds + custom-format scores. It is **source-agnostic**: a size does not filter WEB vs HDTV/Bluray; every size includes the full tier ladder. `balanced` is the authored reference; `compact ≈ 0.7×` and `large ≈ 1.2×` its preferred/max (mins are the source floor, size-independent).
 
-### Compact
+## Cells at a glance
 
-| Quality | Min | Preferred | Max |
-|---|---:|---:|---:|
-| WEBDL-720p | 8.0 | 20.0 | 35.0 |
-| WEBRip-720p | 8.0 | 20.0 | 35.0 |
+| | Compact | Balanced | Large |
+|---|---|---|---|
+| **720p** (cutoff WEB 720p) | `720p Compact` ~1.5-3 GB/movie | `720p Balanced` ~2-4 GB/movie | `720p Large` ~3-5 GB/movie |
+| **1080p** (cutoff WEB 1080p) | `1080p Compact` ~2-4 GB/movie | `1080p Balanced` (default) ~4-8 GB/movie | `1080p Large` ~6-15 GB/movie |
 
-### Balanced
+Remux (Remux-720p/1080p, IDs 30+) is intentionally excluded from every cell — it's a videophile feature (25-40 GB single grabs) that doesn't fit the home-server audience. Users who want it can add it to `config.yml` post-wizard. Adding a **2160p / 4K** resolution is a pure data addition to `presets.yml` (a future epic) — see [Adding a resolution](#adding-a-resolution).
 
-| Quality | Min | Preferred | Max |
-|---|---:|---:|---:|
-| HDTV-720p | 12.0 | 30.0 | 50.0 |
-| WEBDL-720p | 10.0 | 30.0 | 50.0 |
-| WEBRip-720p | 10.0 | 30.0 | 50.0 |
-| Bluray-720p | 18.0 | 40.0 | 60.0 |
-| HDTV-1080p | 18.0 | 45.0 | 75.0 |
-| WEBDL-1080p | 12.0 | 45.0 | 75.0 |
-| WEBRip-1080p | 12.0 | 45.0 | 75.0 |
-| Bluray-1080p | 30.0 | 60.0 | 90.0 |
+## Size bounds — Compact (≈0.7× balanced)
 
-### Quality
+| Tier | Sonarr min/pref/max | Radarr min/pref/max |
+|---|---:|---:|
+| SDTV | 1.0 / 6.0 / 18.0 | 1.0 / 6.0 / 18.0 |
+| DVD | 2.0 / 8.0 / 21.0 | 2.0 / 8.0 / 21.0 |
+| WEBDL-480p | 1.0 / 6.0 / 18.0 | 1.0 / 6.0 / 18.0 |
+| WEBRip-480p | 1.0 / 6.0 / 18.0 | 1.0 / 6.0 / 18.0 |
+| Bluray-480p | 2.0 / 10.0 / 25.0 | 2.0 / 10.0 / 25.0 |
+| HDTV-720p | 12.0 / 21.0 / 35.0 | 2.0 / 17.5 / 35.0 |
+| WEBDL-720p | 8.0 / 20.0 / 35.0 | 2.0 / 22.0 / 37.0 |
+| WEBRip-720p | 8.0 / 20.0 / 35.0 | 2.0 / 22.0 / 37.0 |
+| Bluray-720p | 18.0 / 28.0 / 42.0 | 4.0 / 21.0 / 38.5 |
+| HDTV-1080p | 18.0 / 31.5 / 52.5 | 4.0 / 35.0 / 56.0 |
+| WEBDL-1080p | 12.0 / 31.5 / 52.5 | 4.0 / 35.0 / 56.0 |
+| WEBRip-1080p | 12.0 / 31.5 / 52.5 | 4.0 / 35.0 / 56.0 |
+| Bluray-1080p | 30.0 / 42.0 / 63.0 | 10.0 / 45.5 / 63.0 |
 
-| Quality | Min | Preferred | Max |
-|---|---:|---:|---:|
-| HDTV-720p | 12.0 | 30.0 | 55.0 |
-| WEBDL-720p | 10.0 | 30.0 | 55.0 |
-| WEBRip-720p | 10.0 | 30.0 | 55.0 |
-| Bluray-720p | 18.0 | 40.0 | 60.0 |
-| HDTV-1080p | 18.0 | 55.0 | 90.0 |
-| WEBDL-1080p | 12.0 | 55.0 | 85.0 |
-| WEBRip-1080p | 12.0 | 55.0 | 85.0 |
-| Bluray-1080p | 30.0 | 80.0 | 125.0 |
+## Size bounds — Balanced (1.0×, the authored reference)
 
-## Radarr file-size bounds
+| Tier | Sonarr min/pref/max | Radarr min/pref/max |
+|---|---:|---:|
+| SDTV | 1.0 / 8.0 / 25.0 | 1.0 / 8.0 / 25.0 |
+| DVD | 2.0 / 12.0 / 30.0 | 2.0 / 12.0 / 30.0 |
+| WEBDL-480p | 1.0 / 8.0 / 25.0 | 1.0 / 8.0 / 25.0 |
+| WEBRip-480p | 1.0 / 8.0 / 25.0 | 1.0 / 8.0 / 25.0 |
+| Bluray-480p | 2.0 / 14.0 / 35.0 | 2.0 / 14.0 / 35.0 |
+| HDTV-720p | 12.0 / 30.0 / 50.0 | 2.0 / 25.0 / 50.0 |
+| WEBDL-720p | 10.0 / 30.0 / 50.0 | 2.0 / 25.0 / 50.0 |
+| WEBRip-720p | 10.0 / 30.0 / 50.0 | 2.0 / 25.0 / 50.0 |
+| Bluray-720p | 18.0 / 40.0 / 60.0 | 4.0 / 30.0 / 55.0 |
+| HDTV-1080p | 18.0 / 45.0 / 75.0 | 4.0 / 50.0 / 80.0 |
+| WEBDL-1080p | 12.0 / 45.0 / 75.0 | 4.0 / 50.0 / 80.0 |
+| WEBRip-1080p | 12.0 / 45.0 / 75.0 | 4.0 / 50.0 / 80.0 |
+| Bluray-1080p | 30.0 / 60.0 / 90.0 | 10.0 / 65.0 / 90.0 |
 
-Units: **MB per minute, per movie**.
+## Size bounds — Large (≈1.2× balanced)
 
-### Compact
+| Tier | Sonarr min/pref/max | Radarr min/pref/max |
+|---|---:|---:|
+| SDTV | 1.0 / 10.0 / 30.0 | 1.0 / 10.0 / 30.0 |
+| DVD | 2.0 / 14.0 / 36.0 | 2.0 / 14.0 / 36.0 |
+| WEBDL-480p | 1.0 / 10.0 / 30.0 | 1.0 / 10.0 / 30.0 |
+| WEBRip-480p | 1.0 / 10.0 / 30.0 | 1.0 / 10.0 / 30.0 |
+| Bluray-480p | 2.0 / 17.0 / 42.0 | 2.0 / 17.0 / 42.0 |
+| HDTV-720p | 12.0 / 30.0 / 55.0 | 2.0 / 30.0 / 60.0 |
+| WEBDL-720p | 10.0 / 30.0 / 55.0 | 2.0 / 30.0 / 60.0 |
+| WEBRip-720p | 10.0 / 30.0 / 55.0 | 2.0 / 30.0 / 60.0 |
+| Bluray-720p | 18.0 / 40.0 / 60.0 | 4.0 / 40.0 / 65.0 |
+| HDTV-1080p | 18.0 / 55.0 / 90.0 | 4.5 / 55.0 / 90.0 |
+| WEBDL-1080p | 12.0 / 55.0 / 85.0 | 4.3 / 55.0 / 85.0 |
+| WEBRip-1080p | 12.0 / 55.0 / 85.0 | 4.3 / 55.0 / 85.0 |
+| Bluray-1080p | 30.0 / 80.0 / 125.0 | 10.0 / 85.0 / 125.0 |
 
-| Quality | Min | Preferred | Max |
-|---|---:|---:|---:|
-| WEBDL-720p | 2.0 | 22.0 | 37.0 |
-| WEBRip-720p | 2.0 | 22.0 | 37.0 |
-
-### Balanced
-
-| Quality | Min | Preferred | Max |
-|---|---:|---:|---:|
-| HDTV-720p | 2.0 | 25.0 | 50.0 |
-| WEBDL-720p | 2.0 | 25.0 | 50.0 |
-| WEBRip-720p | 2.0 | 25.0 | 50.0 |
-| Bluray-720p | 4.0 | 30.0 | 55.0 |
-| HDTV-1080p | 4.0 | 50.0 | 80.0 |
-| WEBDL-1080p | 4.0 | 50.0 | 80.0 |
-| WEBRip-1080p | 4.0 | 50.0 | 80.0 |
-| Bluray-1080p | 10.0 | 65.0 | 90.0 |
-
-### Quality
-
-| Quality | Min | Preferred | Max |
-|---|---:|---:|---:|
-| HDTV-720p | 2.0 | 30.0 | 60.0 |
-| WEBDL-720p | 2.0 | 30.0 | 60.0 |
-| WEBRip-720p | 2.0 | 30.0 | 60.0 |
-| Bluray-720p | 4.0 | 40.0 | 65.0 |
-| HDTV-1080p | 4.5 | 55.0 | 90.0 |
-| WEBDL-1080p | 4.3 | 55.0 | 85.0 |
-| WEBRip-1080p | 4.3 | 55.0 | 85.0 |
-| Bluray-1080p | 10.0 | 85.0 | 125.0 |
+A cell uses the rows for its resolution's tiers only — `720p Balanced` applies the SD-floor + 720p rows of the Balanced table; `1080p Balanced` applies the SD → 1080p rows. The 1080p rows of a 720p cell are simply not enabled.
 
 ## Custom format scores
 
-Higher = preferred. `-10000` is a hard block — releases matching that format never get grabbed. `BR-DISK` and `LQ` are hard-blocked across all presets.
+Higher = preferred. `-10000` is a hard block — releases matching that format never get grabbed. `BR-DISK` and `LQ` are hard-blocked across all sizes. Scores are per **size** (shared across resolutions).
 
-| Format | Compact | Balanced | Quality |
+| Format | Compact | Balanced | Large |
 |---|---:|---:|---:|
 | Repack/Proper | 5 | 5 | 5 |
 | x264 | 0 | 10 | 10 |
@@ -102,42 +94,57 @@ Higher = preferred. `-10000` is a hard block — releases matching that format n
 | No-RlsGroup | -10 | -25 | -25 |
 | Obfuscated | -10 | -25 | -25 |
 
-Compact is more permissive on missing-group / obfuscated releases (since smaller WEB releases more often lack standard group tags). Balanced and Quality both prefer x264 and penalize x265 — x265 is harder for some clients to direct-play. Quality penalizes x265 more aggressively because it stays at 1080p where x264 quality at higher bitrates is mature.
+Compact is more permissive on missing-group / obfuscated releases (smaller releases more often lack standard group tags). Balanced and Large both prefer x264 and penalize x265 — x265 is harder for some clients to direct-play. Large penalizes x265 more aggressively because it stays at 1080p where x264 quality at higher bitrates is mature.
 
-HDR / Dolby Vision custom formats are deliberately not added — the home-server audience targeted by this stack typically doesn't have HDR-capable playback gear, and HDR releases run 25-40% larger at the same nominal quality, working against the size-control goal.
+HDR / Dolby Vision custom formats are deliberately not added — the home-server audience typically doesn't have HDR-capable playback gear, and HDR releases run 25-40% larger at the same nominal quality, working against the size-control goal. (A 4K column would revisit this.)
 
 Format definitions (the regex conditions that match each format) are developer-managed in [`scripts/lib/arr/custom_formats.yml`](../../scripts/lib/arr/custom_formats.yml) — the scores above are what users tune.
 
 ## Why these bounds and not TRaSH defaults
 
-TRaSH Guides values target maximum-quality grabs. Their typical 1080p WEB-DL preferred is ~137 MB/min — at a 110-min movie that's a 15 GB file. Real Netflix/Amazon/Disney 1080p WEB-DL releases are 4-7 GB; setting preferred at the TRaSH default biases the system to over-bloated releases (or simply doesn't find anything close to "preferred" and falls back to the largest available). MediaStack's bounds put the preferred peak in the middle of what real 1080p sources actually produce, with max set as a sane ceiling.
+TRaSH Guides values target maximum-quality grabs. Their typical 1080p WEB-DL preferred is ~137 MB/min — at a 110-min movie that's a 15 GB file — and TRaSH leaves **preferred/max effectively unlimited** (≈1000 for Sonarr, ≈2000 for Radarr, both meaning "no cap") for **every** tier, SD floor included. Real Netflix/Amazon/Disney 1080p WEB-DL releases are 4-7 GB; setting preferred at the TRaSH default biases the system to over-bloated releases. MediaStack's bounds put the preferred peak in the middle of what real sources actually produce, with max as a sane ceiling. TRaSH **is** authoritative for the **mins** (the source floor, e.g. ~5 MB/min for SD) and for the custom-format scores — MediaStack's contribution is the per-band preferred/max envelope.
 
 Reference table for sanity-checking:
 
 | Source | 2-hour movie | 45-min episode |
 |---|---|---|
+| SD (SDTV/DVD/480p) | 0.5-2 GB | 0.1-0.5 GB |
 | 720p WEB-DL | 1.5-3 GB | 0.4-0.9 GB |
 | 1080p WEB-DL (Netflix/Amazon/Disney) | 4-7 GB | 1.0-2.5 GB |
 | 1080p Bluray x264 rip | 8-12 GB | 2.5-4 GB |
-| 1080p Bluray Remux | 25-40 GB | 8-15 GB |
+| 1080p Bluray Remux (excluded) | 25-40 GB | 8-15 GB |
 
 ## Changing the values
 
-**Switch presets** — re-run the wizard:
+**Switch cells, day-2 (recommended after install)** — from the launcher:
+
+```bash
+./mediastack   →  Features & settings  →  Change quality profile (resolution & size)
+```
+
+Re-pick a resolution, then a size. The launcher rewrites only the quality sections of `config.yml` (your indexers, subtitles and bandwidth are untouched) and re-pushes to Sonarr/Radarr. Because the profile name is `"{resolution} {size}"`, changing a cell renames the profile (`1080p Balanced` → `1080p Large`); the launcher renames the existing profile **in place** (same profile id), so your existing series/movies follow the change and **no orphaned profile is left behind**. You are warned first that raising the ceiling or size makes Sonarr/Radarr re-search and upgrade existing media (extra downloads and disk use).
+
+> Downgrading the resolution (e.g. 1080p → 720p) disables the higher tiers in the profile but leaves their **global** `quality_definitions` bounds in place — they are shared across all profiles and simply go unused by the narrower profile. This is expected, not a leak.
+
+**Switch cells during setup** — re-run the wizard:
 
 ```bash
 ./scripts/setup/wizard.sh
 ```
 
-Pick a different tier; the wizard rewrites `config.yml`. Then re-run `./configure.sh` to push the new bounds and scores to Sonarr/Radarr.
+Pick a resolution, then a size; the wizard rewrites `config.yml`. Then re-run `./configure.sh` to push the new bounds and scores to Sonarr/Radarr.
 
-**Hand-tune within a preset** — edit `config.yml` directly:
+**Hand-tune within a cell** — edit `config.yml` directly:
 
 - `quality_definitions.sonarr.<Quality>: { min, preferred, max }`
 - `quality_definitions.radarr.<Quality>: { min, preferred, max }`
 - `custom_formats.<Format>: <score>`
 
 Then re-run `./configure.sh`. The renderer (`scripts/lib/arr/render/quality_definitions.py`) reads live state via `GET /api/v3/qualitydefinition` and only `PUT`s tiers that differ from `config.yml`. If you've been editing values in the Sonarr/Radarr UI directly, expect a `log_warn` rather than a silent overwrite — re-runs surface drift but never auto-reconcile.
+
+## Adding a resolution
+
+Adding a 2160p / 4K column is a **pure data change** to `presets.yml`: a new `resolutions` block (tier names + `cutoff_group: 1003`), its numeric IDs in `quality_ids`, and (optionally) 2160p `bounds` rows in each size table — with **no** edit to `wizard_apply.py`, `stage1.sh`, or `render/*.py`. The wizard menus and composition pick it up automatically. (`tests/unit/wizard-composition.sh` proves this.) The policy reversals 4K forces — HDR/Dolby-Vision and Remux re-enablement, x265 scoring inverting to positive — are a deliberate follow-up; the structure here only has to leave them expressible as data.
 
 ## Upstream references
 

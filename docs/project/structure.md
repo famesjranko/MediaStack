@@ -37,7 +37,7 @@ scripts/
       stage2.sh                     Stage 2 remote-access collection/install controller
       stage3.sh                     Internal hardware transcoding controller, NVIDIA finalize marker helpers, post-reboot finalize helper
     wizard_apply.py                 Apply wizard preset to config.yml (preserves comments)
-    presets.yml                     Quality tier definitions (compact, balanced, quality)
+    presets.yml                     Quality model: resolution × size axes (composed at apply time)
     reboot.sh                       Post-reboot systemd service scheduling + cleanup
     hardening.sh                    OS hardening (UFW, sysctl, auto-updates) + optional SMB
     stack.sh                        Data/config dirs, compose up, health wait, access info

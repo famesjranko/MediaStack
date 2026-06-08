@@ -41,16 +41,16 @@ print("ok" if rc is True and rf is True else f"completed={rc} failed={rf}")' 2>/
     local sonarr_qp_id sonarr_qp_check
     sonarr_qp_id=$(echo "$sonarr_qp" | python3 -c "
 import sys,json
-try: print(next((str(p['id']) for p in json.load(sys.stdin) if p.get('name')=='HD-720p/1080p'),''))
+try: print(next((str(p['id']) for p in json.load(sys.stdin) if p.get('name')=='1080p Balanced'),''))
 except Exception: pass" 2>/dev/null)
     if [[ -n "$sonarr_qp_id" ]]; then
         sonarr_qp_check=$(dind_exec "curl -sf -H 'X-Api-Key: $SONARR_KEY' $sonarr_base/qualityprofile/$sonarr_qp_id" \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)
-        [[ "$sonarr_qp_check" == "HD-720p/1080p" ]] \
-            && pass "step 3 Sonarr: HD-720p/1080p quality profile" \
-            || fail "step 3 Sonarr: HD-720p/1080p quality profile" "id=$sonarr_qp_id check returned '$sonarr_qp_check'"
+        [[ "$sonarr_qp_check" == "1080p Balanced" ]] \
+            && pass "step 3 Sonarr: 1080p Balanced quality profile" \
+            || fail "step 3 Sonarr: 1080p Balanced quality profile" "id=$sonarr_qp_id check returned '$sonarr_qp_check'"
     else
-        fail "step 3 Sonarr: HD-720p/1080p quality profile" "no profile named HD-720p/1080p in list response"
+        fail "step 3 Sonarr: 1080p Balanced quality profile" "no profile named 1080p Balanced in list response"
     fi
 
     # Custom formats

@@ -151,7 +151,7 @@ fi
 # =========================================================================
 # format_scores.py — empty formatItems → empty status with put body
 # =========================================================================
-empty_status=$(echo '{"id":1,"name":"HD-720p/1080p","formatItems":[]}' | \
+empty_status=$(echo '{"id":1,"name":"1080p Balanced","formatItems":[]}' | \
     SCORES='{"Repack/Proper":5,"x264":10}' \
     FORMAT_MAP='{"Repack/Proper":1,"x264":2}' \
     python3 "$FS_RENDER" 2>/dev/null)
@@ -182,6 +182,65 @@ drift_status=$(echo '{"id":1,"name":"test","formatItems":[{"format":1,"name":"Re
     python3 "$FS_RENDER" 2>/dev/null)
 
 assert_eq "drift" "${drift_status%%$'\t'*}" "format_scores.py: different scores → drift"
+
+# =========================================================================
+# format_scores.py — sizes with a desired 0 score (e.g. compact) match on
+# re-run. Regression for #75: a live formatItem correctly scored 0 must not
+# read as drift, and the app's auto-added 0-score formats must be ignored.
+# =========================================================================
+zero_match=$(echo '{"id":1,"name":"720p Compact","formatItems":[{"format":1,"name":"Repack/Proper","score":5},{"format":2,"name":"x264","score":0},{"format":3,"name":"x265 (HD)","score":0},{"format":4,"name":"BR-DISK","score":-10000},{"format":99,"name":"App-Other","score":0}]}' | \
+    SCORES='{"Repack/Proper":5,"x264":0,"x265 (HD)":0,"BR-DISK":-10000}' \
+    FORMAT_MAP='{"Repack/Proper":1,"x264":2,"x265 (HD)":3,"BR-DISK":4}' \
+    python3 "$FS_RENDER" 2>/dev/null)
+
+assert_eq "match" "$zero_match" "format_scores.py: correctly-applied 0 scores → match (not drift) [#75]"
+
+# =========================================================================
+# format_scores.py — a genuine deviation on a 0-desired format is still drift,
+# carrying a non-empty diff. (The empty-diff false WARN itself is locked out by
+# the match-on-correctly-applied-0 cases — on the old code those drifted with an
+# empty detail; here we confirm a real deviation still reports its diff.)
+# =========================================================================
+zero_drift=$(echo '{"id":1,"name":"720p Compact","formatItems":[{"format":1,"name":"Repack/Proper","score":5},{"format":2,"name":"x264","score":50}]}' | \
+    SCORES='{"Repack/Proper":5,"x264":0}' \
+    FORMAT_MAP='{"Repack/Proper":1,"x264":2}' \
+    python3 "$FS_RENDER" 2>/dev/null)
+
+assert_eq "drift" "${zero_drift%%$'\t'*}" "format_scores.py: live non-zero vs desired 0 → drift [#75]"
+
+zero_drift_detail="${zero_drift#*$'\t'}"
+if [[ -n "$zero_drift_detail" ]]; then
+    pass "format_scores.py: drift carries a non-empty diff [#75]"
+else
+    fail "format_scores.py: drift carries a non-empty diff [#75]" "empty diff (the false-WARN bug)"
+fi
+
+# =========================================================================
+# format_scores.py — only the formats config.yml manages are compared. A live
+# format scored non-zero that config.yml does NOT manage (e.g. a user- or
+# app-scored LQ left on the profile) must be ignored, not read as drift —
+# configure.sh manages only the formats in SCORES/FORMAT_MAP. Pre-fix this
+# emitted a false drift WARN. Regression for #75.
+# =========================================================================
+unmanaged_live=$(echo '{"id":1,"name":"720p Compact","formatItems":[{"format":1,"name":"Repack/Proper","score":5},{"format":7,"name":"LQ","score":-30}]}' | \
+    SCORES='{"Repack/Proper":5}' \
+    FORMAT_MAP='{"Repack/Proper":1}' \
+    python3 "$FS_RENDER" 2>/dev/null)
+
+assert_eq "match" "$unmanaged_live" "format_scores.py: unmanaged live non-zero format ignored → match (not drift) [#75]"
+
+# =========================================================================
+# format_scores.py — a managed format with a desired 0 that is absent from the
+# live formatItems entirely (custom format not yet added to this profile) still
+# satisfies the desired 0 → match, not an empty-diff drift. Distinct from the
+# present-but-0 case above (absent → treated as 0). Regression for #75.
+# =========================================================================
+zero_absent=$(echo '{"id":1,"name":"720p Compact","formatItems":[{"format":1,"name":"Repack/Proper","score":5}]}' | \
+    SCORES='{"Repack/Proper":5,"x264":0}' \
+    FORMAT_MAP='{"Repack/Proper":1,"x264":2}' \
+    python3 "$FS_RENDER" 2>/dev/null)
+
+assert_eq "match" "$zero_absent" "format_scores.py: desired-0 format absent from live → match [#75]"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

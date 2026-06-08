@@ -347,19 +347,30 @@ detect_existing_install() {
 }
 
 _print_destroy_preview() {
-    # PRE-06 helper. Static literal block — D-21 lock (PRESERVED bullets
-    # are locked verbatim). DELETE bullets reflect the actual destroy
-    # commands per D-23 (down -v + rm .env, no git clean).
+    # PRE-06 helper. Static literal block. DELETE/PRESERVE text reflects the
+    # actual destroy commands per D-23 (down -v + rm .env + rm
+    # .nvidia-finalize-pending, no git clean): compose declares NO named
+    # volumes and config/ is a host bind mount, so BOTH data/ and config/
+    # survive 'down -v' and are listed under PRESERVE (#97 — the prior
+    # "named volumes" DELETE wording and the omission of config/ were
+    # factually wrong; D-21's verbatim-PRESERVE lock is superseded for this
+    # accuracy fix).
     # NO fixed-width padding; UTF-8 glyphs make byte-count padding drift.
     cat <<'PREVIEW'
 
 This will DELETE:
-  * Docker containers and named volumes (compose --profile '*' down -v)
-  * .env (your secrets file - passwords, API keys, domain)
+  * Docker containers (compose --profile '*' down -v)
+  * .env (your secrets file - passwords, API keys, domain) and internal setup markers
 
 This will PRESERVE:
   * data/ - your media library (bind mount, never touched by 'down -v')
+  * config/ - all service settings & databases (Jellyfin watch history,
+    Sonarr/Radarr/Bazarr DBs, qBittorrent, Jackett, NPM certs, WireGuard
+    device pairings) - bind mount, survives 'down -v'
   * Pre-seeded configs tracked in git (fail2ban filters, jackett ServerConfig, etc.)
+
+Reinstalling keeps your old settings. To start truly clean, clear ./config
+yourself first - this wipe deliberately does not.
 
 PREVIEW
 }

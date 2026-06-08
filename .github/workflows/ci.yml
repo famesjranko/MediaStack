@@ -41,31 +41,10 @@ jobs:
             exit 1
           fi
 
-      - name: Shell syntax
-        run: |
-          set -euo pipefail
-          git ls-files '*.sh' mediastack setup.sh | xargs bash -n
-
-      - name: Shellcheck (lint gate)
-        run: |
-          set -euo pipefail
-          # Regression gate: fail on any shellcheck WARNING or ERROR. Repo-specific
-          # flags and curated suppressions live in .shellcheckrc; tests/lint.sh pins
-          # the engine (0.11.0). ubuntu-latest's native shellcheck is older than the
-          # pin, so lint.sh runs the pinned koalaman/shellcheck docker image —
-          # byte-for-byte identical to the local gate.
-          ./tests/lint.sh --severity=warning
-
-      - name: Python syntax
-        run: |
-          set -euo pipefail
-          python3 -m py_compile \
-            scripts/image-drift.py \
-            scripts/setup/wizard_apply.py \
-            scripts/lib/arr/render/*.py \
-            tests/lib/wizard_pty.py
-
-      - name: Config and compose validation
+      - name: Config and workflow YAML validation
+        # Structural YAML lint for config.yml and the workflow files. Kept as a
+        # distinct step because tests/unit.sh does not parse workflow YAML (its
+        # compose render covers docker-compose.yml only).
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -75,42 +54,12 @@ jobs:
           for path in ["config.yml", *pathlib.Path(".github/workflows").glob("*.yml")]:
               yaml.safe_load(pathlib.Path(path).read_text())
           PY
-          cp .env.example .env
-          docker compose config --quiet
-          docker compose --profile proxy config --quiet
-          docker compose --profile remote config --quiet
-          docker compose --profile subtitles config --quiet
-          docker compose --profile autoheal config --quiet
-          docker compose --profile proxy --profile remote --profile subtitles --profile autoheal config --quiet
-          rm -f .env
 
-      - name: Run unit tests
-        run: |
-          set -uo pipefail
-          # Run the whole host unit suite (no Docker), not a curated subset, so
-          # every shipped unit test is actually exercised here. The private repo's
-          # PR gate runs the same loop; the only difference is the maintainer-only
-          # tests that never sync to this repo.
-          fail=0
-          for f in tests/unit/*.sh; do
-            name=$(basename "$f" .sh)
-            echo "::group::unit: $name"
-            # Per-test timeout so a stuck test (e.g. a non-TTY re-prompt loop that
-            # never reaches EOF) fails fast instead of hanging the job.
-            if timeout 300 bash "$f"; then
-              echo "::endgroup::"
-            else
-              rc=$?
-              echo "::endgroup::"
-              if (( rc == 124 )); then
-                echo "::error title=unit timed out::$name (exceeded 300s — likely a hang)"
-              else
-                echo "::error title=unit failed::$name"
-              fi
-              fail=1
-            fi
-          done
-          exit "$fail"
+      - name: Static validation + host unit tests
+        # Shell syntax, shellcheck, py_compile, compose render, and the host unit
+        # suite, behind one SSOT runner invoked identically by developers and CI.
+        # See tests/unit.sh.
+        run: ./tests/unit.sh
 
   wizard-ui:
     name: Wizard PTY scenarios (DinD, no service image pulls)
@@ -123,10 +72,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3-yaml
 
-      - name: Run wizard-ui scenarios (stubbed Docker, MS_TEST_SKIP_PRELOAD=1)
+      - name: Run image-free scenarios (stubbed Docker, MS_TEST_SKIP_PRELOAD=1)
         run: |
           set -uo pipefail
-          scenarios=$(ls tests/scenarios/wizard-ui-*.sh \
-            | xargs -n1 basename | sed 's/\.sh$//' | tr '\n' ' ')
+          # Image-free scenario set is the single source of truth in
+          # tests/ci-scenarios.sh; fail the step if it can't produce a set rather
+          # than let run.sh fall back to its image-pulling default.
+          scenarios=$(bash tests/ci-scenarios.sh) || { echo "ci-scenarios.sh failed" >&2; exit 1; }
+          [[ -n "${scenarios// }" ]] || { echo "ci-scenarios.sh produced no scenarios" >&2; exit 1; }
           echo "Running: $scenarios"
           MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $scenarios

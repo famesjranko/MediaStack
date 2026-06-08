@@ -43,7 +43,7 @@ chmod +x $fixture"
   {"expect": "What would you like to do\\?"},
   {"send": "6\n"},
   {"expect": "Manage features & settings"},
-  {"send": "4\n"},
+  {"send": "5\n"},
   {"expect": "Current: download 3 MB/s, upload 1 MB/s"},
   {"expect": "Download limit \\(MB/s"},
   {"send": "5\n"},

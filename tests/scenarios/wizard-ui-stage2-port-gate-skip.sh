@@ -24,7 +24,7 @@ BASH"
         remote_offer 1 \
         stage2_have_domain 1 \
         stage2_hostname demo.mywire.org \
-        stage2_use_dynu n \
+        stage2_static_ip 2 \
         stage2_router_forwarding@30 3
 
     wizard_stage2_run_pty "wizard-ui stage2 port gate skip" "$fixture" "$steps" "$plain_log" || return 1

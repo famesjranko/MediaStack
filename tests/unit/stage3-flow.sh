@@ -13,6 +13,10 @@ CURRENT_SCENARIO="stage3-flow"
 scenario_begin "$CURRENT_SCENARIO"
 
 [[ -f "$REPO_ROOT/scripts/setup/stages/stage3.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+# stack.sh defines gpu_brand_label, which _stage3_offer uses for the "Detected GPU"
+# box brand casing; source it so the offer test resolves the helper (production
+# always has stack.sh sourced via setup.sh).
+[[ -f "$REPO_ROOT/scripts/setup/stack.sh" ]] && source "$REPO_ROOT/scripts/setup/stack.sh"
 
 set +e
 set +u
@@ -47,7 +51,7 @@ if type _stage3_offer >/dev/null 2>&1; then
     ui_choose() { printf '%s\n' "Configure hardware transcoding"; }
     offer_answer="$(_stage3_offer 2>"$offer_stderr")"
     assert_eq "Configure hardware transcoding" "$offer_answer" "S3-01: offer stdout contains only selected answer"
-    assert_contains "$(cat "$offer_stderr")" "Detected GPU: nvidia" "S3-01: offer explains detected GPU outside captured answer"
+    assert_contains "$(cat "$offer_stderr")" "Detected GPU: NVIDIA" "S3-01: offer explains detected GPU outside captured answer"
     rm -f "$offer_stderr"
     unset -f ui_section ui_box ui_choose
     unset GPU_TYPE offer_answer offer_stderr

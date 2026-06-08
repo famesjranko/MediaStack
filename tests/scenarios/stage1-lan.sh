@@ -40,7 +40,8 @@ create_config_dirs
 generate_override none
 
 python3 \"\$SCRIPT_DIR/scripts/setup/wizard_apply.py\" \
-    --preset balanced \
+    --resolution 1080p \
+    --size balanced \
     --languages english \
     --bitrate-limit 0 \
     --config \"\$SCRIPT_DIR/config.yml\"

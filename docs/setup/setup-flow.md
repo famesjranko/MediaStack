@@ -27,7 +27,7 @@ Entry point for the entire project. Common modes:
 | `scripts/setup/stages/stage2.sh` | `run_stage2` | Remote access collection/install, `./setup.sh --remote` retry path |
 | `scripts/setup/stages/stage3.sh` | `run_stage3`, `run_hardware_transcoding_addon`, `stage3_finalize_nvidia` | Internal hardware transcoding engine, NVIDIA marker/reboot handoff, post-reboot finalize |
 | `scripts/setup/wizard_apply.py` | *(CLI)* | Apply wizard preset to config.yml (section-targeted replacement) |
-| `scripts/setup/presets.yml` | *(data)* | Quality tier definitions (compact, balanced, quality) |
+| `scripts/setup/presets.yml` | *(data)* | Quality model — `quality_ids` / `resolutions` / `sizes` axes |
 | `scripts/setup/reboot.sh` | `schedule_post_reboot`, `cleanup_post_reboot` | Systemd oneshot for post-reboot resume |
 | `scripts/setup/hardening.sh` | `setup_hardening`, `setup_ufw`, `setup_ufw_docker_rules`, `setup_unattended_upgrades`, `setup_sysctl_hardening`, `verify_gpu_runtime`, `setup_samba` | OS hardening + optional SMB |
 | `scripts/setup/stack.sh` | `create_data_dirs`, `create_config_dirs`, `start_stack`, `wait_for_healthy`, `print_access_info`, `print_final_summary` | Data/config dirs, stack lifecycle, setup summary |
@@ -216,8 +216,8 @@ If `.env` exists from an interrupted run, values are sourced as defaults so the 
 `DEMO=1 ./setup.sh ...` bypasses the interactive wizard entirely. This is intended for CI, scripted deploys, and remote-host verification where prompting is a liability, not a feature.
 
 - Pre-seed `.env` with any values you care about before running, especially `DOMAIN` and `NPM_ADMIN_EMAIL` for remote access.
-- If `JELLYFIN_ADMIN_PASSWORD` is absent, weak, or still `changeme`, the wizard generates a fresh password with `openssl rand -base64 16`. If `openssl` fails, setup hard-stops instead of falling back to a weak default.
-- Defaults are intentionally conservative and reproducible: `balanced` quality, `english` subtitles config, unlimited torrent speeds (`0`/`0`), SMB disabled unless pre-seeded on, and LAN-only mode unless a real domain + email are present.
+- If `JELLYFIN_ADMIN_PASSWORD` is absent, weak, or still `changeme`, this `DEMO=1` run generates a fresh password with `openssl rand -base64 16` (this auto-generate is the non-interactive `DEMO=1` path only — the interactive wizard never auto-generates; it requires a user-set, confirmed password). If `openssl` fails, setup hard-stops instead of falling back to a weak default.
+- Defaults are intentionally conservative and reproducible: `1080p Balanced` quality, `english` subtitles config, unlimited torrent speeds (`0`/`0`), SMB disabled unless pre-seeded on, and LAN-only mode unless a real domain + email are present.
 - In v15, wg-easy takes the plaintext admin password via `INIT_PASSWORD`; there is no separate hash-generation step. If the admin password is empty in `DEMO=1`, the run degrades safely to LAN-only mode by leaving `WG_INIT_PASSWORD=''` rather than starting wg-easy with no admin credential.
 
 `UI_DEMO=1` still exists, but it is a UI simulation mode for screenshots/tests that walks the normal wizard prompts with fake answers. It is not the same thing as `DEMO=1`.
@@ -228,15 +228,14 @@ wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env b
 
 After `/etc/wireguard/wg-easy.db` exists, `INIT_*` vars are inert. Subsequent wizard re-runs leave the in-container admin password unchanged; rotate it in the wg-easy UI instead. The configurator (`scripts/services/wireguard/main.sh`) detects this on its readiness probe and logs `[SKIP]` for an existing initial peer.
 
-### Quality presets
+### Quality model (resolution × size)
 
-Presets are defined in `scripts/setup/presets.yml`:
+The wizard asks two prompts — **resolution** (the ceiling) then **size** (the file-size envelope) — and composes a profile named `"{resolution} {size}"`. The model is defined in `scripts/setup/presets.yml` as three maps (`quality_ids`, `resolutions`, `sizes`); the menus are built dynamically from it, so adding a resolution is a data-only change.
 
-- **Compact** (`WEB-720p/1080p`): WEB 720p only (no 1080p, no HDTV/Bluray), cutoff WEB 720p (1001). ~2-4 GB/movie.
-- **Balanced** (`HD-720p/1080p`): All 720p+1080p (HDTV/WEB/Bluray, no Remux), cutoff WEB 1080p (1002). ~4-8 GB/movie. Matches the shipped `config.yml` defaults.
-- **Quality** (`HQ-1080p`): 1080p + 720p fallback (no Remux), cutoff WEB 1080p (1002), higher preferred sizes within real-1080p ranges. ~6-15 GB/movie.
+- **Resolution** — `720p` (cutoff WEB 720p / 1001) or `1080p` (cutoff WEB 1080p / 1002). Enables every tier from the **SD floor** (SDTV/DVD/480p) up to the ceiling, all sources; SD/720p are fallbacks that upgrade away.
+- **Size** — `Compact` (~0.7×), `Balanced` (1.0×, the shipped default), `Large` (~1.2×): per-tier bounds + custom-format scores, source-agnostic.
 
-Remux is intentionally excluded across all presets — single grabs of 25-40 GB don't fit the home-server audience. See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for full per-tier numbers.
+The default cell is **`1080p Balanced`**, which matches the shipped `config.yml`. Remux is intentionally excluded from every cell — single grabs of 25-40 GB don't fit the home-server audience. See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for full per-tier numbers and the cell grid.
 
 `wizard_apply.py` performs section-targeted replacement in `config.yml` — only the `quality_profile`, `quality_definitions`, and `bazarr` sections are rewritten; comments in all other sections are preserved. Adds `wizard_completed: true` as a wizard-progress marker. Subsequent runs of `setup.sh` skip the wizard only when this marker is present and `.env` also has `STAGE_1_COMPLETE=1`; if setup was interrupted before Stage 1 proved Jellyfin usable, the wizard resumes with the previous `.env` values as defaults.
 
@@ -281,7 +280,7 @@ The hardware transcoding engine writes these codec capability vars:
 - **Post-reboot interactive path.** The final reboot gate schedules the post-reboot unit for both "Reboot now" and "Reboot manually later". A user who later reboots with `.nvidia-finalize-pending` present will enter `stage3_finalize_nvidia` before the normal wizard because the marker boot ID no longer matches the current boot.
 - **`set -e` during configure.sh call.** `setup.sh` has `-e` active, but `configure.sh` is invoked at top level inside `main()` — a non-zero exit here would abort `setup.sh`. In practice `configure.sh` disables `-e` internally and returns 0 almost always, but an outright parse error (rare) would stop the user from seeing `print_access_info`.
 - **`--full` path is only partially tested end-to-end.** The `fresh-install` scenario exercises the staged install path inside DinD with Docker already available. Real GPU driver install, real NVIDIA reboot, and live hardware transcode proof still need a VM or bare-metal host with matching hardware.
-- **Generated-password UX.** The admin password defaults to `openssl rand -base64 12`. A non-technical user pressing Enter through all prompts ends up with a strong password they haven't written down. The final `print_access_info` block directs users to `.env` for the password but does not echo it.
+- **Admin-password UX.** The interactive wizard requires the user to set the admin password — there is no default, so a bare Enter is rejected. It is validated (at least 12 characters and no single quote, matching Portainer's floor) and confirmed by re-entry; it is never auto-generated. `print_access_info` shows the chosen password in the one-time install summary so the user can save it (the re-openable day-2 launcher view masks it behind an opt-in reveal).
 - **~~No idempotence guard across GPU mode switches.~~** Fixed: `setup.sh` syncs `JELLYFIN_GPU` in `.env` after `verify_gpu_usable` (downgrade-only — never overrides user's CPU-only wizard choice). The wizard's choice is authoritative; the sync only fires when `GPU_TYPE == "none"` (hardware gone/broken).
 - **Disk-space check runs after `--full` work.** `check_disk_space` is called inside `main()` after GPU work, but only against `$DATA_DIR`; pre-GPU-install it may run against `/` before the user has picked their data dir. The warning reaches the user, but not early enough to refuse installation on a cramped host.
 - **Hardcoded 120-second health timeout.** `wait_for_healthy` gives up at 120s. On a slow host doing a cold pull of 5 GB of images, services can still be downloading well beyond that. `configure.sh` retries its own per-service waits up to 90s each (in `wait_for_service` from `scripts/lib/http.sh`), but the UX is that `setup.sh` warns "some services may still be starting" even on a healthy cold install.

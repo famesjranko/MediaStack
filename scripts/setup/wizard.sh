@@ -4,6 +4,9 @@
 
 source "$SCRIPT_DIR/scripts/lib/network.sh"
 source "$SCRIPT_DIR/scripts/lib/validators.sh"
+# Shared two-axis quality picker (resolution → size); also sourced by ./mediastack
+# for the day-2 "Change quality profile" action so the two surfaces can't drift.
+source "$SCRIPT_DIR/scripts/lib/quality_select.sh"
 
 _wizard_load_existing_env() {
     _WIZ_PREV_TZ=""
@@ -62,14 +65,16 @@ _wizard_load_existing_env() {
 }
 
 _wizard_apply_settings() {
-    local preset_name="$1"
-    local subtitle_langs="$2"
-    local bitrate_limit="$3"
-    local public_indexers="${4:-false}"
+    local resolution="$1"
+    local size="$2"
+    local subtitle_langs="$3"
+    local bitrate_limit="$4"
+    local public_indexers="${5:-false}"
 
     write_env
     python3 "$SCRIPT_DIR/scripts/setup/wizard_apply.py" \
-        --preset "$preset_name" \
+        --resolution "$resolution" \
+        --size "$size" \
         --languages "$subtitle_langs" \
         --bitrate-limit "$bitrate_limit" \
         --public-indexers "$public_indexers" \
@@ -80,7 +85,7 @@ _discovery_ip_ok=false
 _discovery_speed_ok=false
 
 _wizard_run_discovery() {
-    ui_section 0 4 "Network discovery"
+    ui_section "Network discovery"
     ui_log info "Probing your network to inform Stage 1 recommendations..."
 
     _discovery_ip_ok=false
@@ -176,7 +181,7 @@ exit(0 if c.get('wizard_completed') else 1)
         echo ""
         ui_log info "Core media server is ready. Two optional steps may follow:"
         ui_log info "  1. Hardware transcoding (if you have a supported GPU)"
-        ui_log info "  2. Remote access — set up last, on purpose, so it can verify your working stack"
+        ui_log info "  2. Remote access - set up last, on purpose, so it can verify your working stack"
         echo ""
     fi
 

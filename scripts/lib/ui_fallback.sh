@@ -117,8 +117,17 @@ _ui_banner_impl() {
 }
 
 _ui_section_impl() {
-    local step="$1" total="$2" title="$3"
     echo ""
+    # Bare header form: `ui_section "Title"` (one arg) prints just the styled
+    # title with no [N/M] counter — for non-sequential sections (network
+    # discovery, the single hardware-transcoding offer) where a counter would lie
+    # about progress (#99). Branch on arg count BEFORE referencing $2/$3, so the
+    # 1-arg call is safe under the wizard's `set -u`.
+    if [[ $# -eq 1 ]]; then
+        echo -e "  ${_UI_CYAN}${_UI_BOLD}${1}${_UI_RESET}"
+        return
+    fi
+    local step="$1" total="$2" title="$3"
     if [[ "$total" -gt 0 ]]; then
         echo -e "  ${_UI_CYAN}${_UI_BOLD}[$step/$total] $title${_UI_RESET}"
     else
@@ -254,14 +263,70 @@ _ui_input_impl() {
     # than aborting under `set -e`. Without this, a non-interactive run
     # whose input file is one line short of expected silently exits the
     # whole installer at the next `read` — no error message, no log line.
-    read -rp "  $prompt [$default]: " result || :
+    # Match ui_choose's "press Enter" affordance: when a default exists, tell the
+    # user that Enter accepts it. Display-only — does not touch the read/default
+    # logic, so non-interactive behaviour is unchanged.
+    local _hint="$default"
+    [[ -n "$default" ]] && _hint="$default - press Enter"
+    read -rp "  $prompt [$_hint]: " result || :
     echo "${result:-$default}"
 }
 
+# Shared validator-driven re-prompt loop for ui_input_validated / ui_password_validated.
+# Calls "$prompt_fn" "$prompt" "$default" (the masked variant passes the PUBLIC
+# ui_password by name, so test stubs that replace it keep working) and loops until
+# the validator returns 0. The validator emits its own ui_log warn on failure, so
+# this loop prints nothing on a normal re-prompt.
+#
+# Non-TTY safety (issue #93): on a piped/closed stdin the prompt returns the default
+# every iteration (read hits EOF -> "${result:-$default}"). If that default fails the
+# validator, an unguarded loop spins forever. So, off a TTY, once the value EOF keeps
+# producing (the default) is rejected a SECOND consecutive time, stdin is exhausted -> emit the
+# breadcrumb and SIGTERM the process group, exactly like _ui_choose_impl's EOF branch.
+# These run inside $(...), so a plain exit only kills the subshell; setup.sh /
+# mediastack install a TERM trap that maps the group-kill to UI_EXIT_INPUT_EXHAUSTED.
+# The second strike is the one probe needed to confirm exhaustion across the $(...)
+# boundary (a flag set inside the prompt subshell can't reach us). Distinct invalid
+# inputs, and any interactive TTY, never trip the latch and re-prompt as before.
+_ui_validated_loop() {
+    local prompt_fn="$1"
+    local prompt="$2"
+    local default="$3"
+    local validator_fn="$4"
+
+    local result interactive=0 seen_default_invalid=0
+    [[ -t 0 ]] && interactive=1
+    while true; do
+        result=$("$prompt_fn" "$prompt" "$default")
+        # Validator returns 0 on valid; non-zero means it already emitted ui_log warn.
+        if "$validator_fn" "$result"; then
+            echo "$result"
+            return 0
+        fi
+        if (( ! interactive )) && [[ "$result" == "$default" ]]; then
+            if (( seen_default_invalid )); then
+                _ui_log_impl warn "No more usable input on stdin - exiting non-interactive session (exit ${UI_EXIT_INPUT_EXHAUSTED}: input exhausted)."
+                kill -TERM 0 2>/dev/null || true
+                exit 0
+            fi
+            seen_default_invalid=1
+        else
+            # A distinct value (or any TTY re-prompt) breaks the streak: the latch is
+            # CONSECUTIVE, not sticky, so a non-TTY driver that interleaves the default
+            # with other lines keeps consuming its queued input instead of being killed
+            # on a later, non-adjacent default. (Reachable only if a caller's default is
+            # itself invalid - today every non-empty validated default is pre-clamped -
+            # but this is the shared primitive #94 and later children build on.)
+            seen_default_invalid=0
+        fi
+    done
+}
+
 _ui_input_validated_impl() {
-    # Prompts via _ui_input_impl, then runs the validator on the returned value.
-    # Loops until validator returns 0. The validator emits its own ui_log warn
-    # on failure, so this helper does NOT print anything itself.
+    # Prompts via _ui_input_impl, then runs the validator on the returned value via
+    # _ui_validated_loop (which carries the non-TTY input-exhaustion guard, issue #93).
+    # The validator emits its own ui_log warn on failure, so this helper does NOT
+    # print anything itself.
     #
     # Args:
     #   $1 prompt          (required)
@@ -280,16 +345,7 @@ _ui_input_validated_impl() {
         return 0
     fi
 
-    local result
-    while true; do
-        result=$(_ui_input_impl "$prompt" "$default")
-        # Validator returns 0 on valid; non-zero means it already emitted ui_log warn.
-        if "$validator_fn" "$result"; then
-            echo "$result"
-            return 0
-        fi
-        # Loop — re-prompt with the same prompt + default. No extra logging here.
-    done
+    _ui_validated_loop _ui_input_impl "$prompt" "$default" "$validator_fn"
 }
 
 _ui_password_impl() {
@@ -332,15 +388,7 @@ _ui_password_validated_impl() {
         return 0
     fi
 
-    local result
-    while true; do
-        result=$(ui_password "$prompt" "$default")
-        if "$validator_fn" "$result"; then
-            echo "$result"
-            return 0
-        fi
-        # Loop — re-prompt. No extra logging (the validator already warned).
-    done
+    _ui_validated_loop ui_password "$prompt" "$default" "$validator_fn"
 }
 
 _ui_confirm_impl() {
@@ -362,7 +410,7 @@ _ui_confirm_impl() {
     local interactive=0; [[ -t 0 ]] && interactive=1
     local result=""
     while true; do
-        read -rp "  $prompt [$hint]: " result || :
+        read -rp "  $prompt [$hint - press Enter]: " result || :
         result="${result:-$default}"
         case "${result,,}" in
             y|yes) return 0 ;;
@@ -418,7 +466,10 @@ _ui_kv_impl() {
     local key="$1" value="$2"
     local _klen _pad
     _klen=$(_ui_visible_len "$key")
-    _pad=$(( 18 - _klen )); (( _pad < 0 )) && _pad=0
+    # Pad keys to the widest one any ui_kv caller renders so every value column
+    # aligns. Currently 20: 'Hardware transcoding' / 'Remote streaming cap'. Bump
+    # this if a longer key is ever added (no caller passes a variable-length key).
+    _pad=$(( 20 - _klen )); (( _pad < 0 )) && _pad=0
     echo -e "  ${_UI_BOLD}${key}$(_ui_spaces "$_pad")${_UI_RESET} ${value}"
 }
 

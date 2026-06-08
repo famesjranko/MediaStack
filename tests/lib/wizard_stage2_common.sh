@@ -31,52 +31,21 @@ sed -i \
 
 source ./setup.sh
 
-sudo() { \"\$@\"; }
-cat > scripts/configure.sh <<'CONFIGURE'
-#!/usr/bin/env bash
-exit 0
-CONFIGURE
-chmod +x scripts/configure.sh
-curl() { return 0; }
-docker() {
-    if [[ \"\${1:-}\" == \"--version\" ]]; then
-        echo \"Docker version 27.0.1, build wizard\"
-        return 0
-    fi
-    if [[ \"\${1:-}\" == \"compose\" ]]; then
-        case \" \$* \" in
-            *\" config --services \"*)
-                printf \"%s\\n\" jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer unpackerr flaresolverr uptime-kuma npm wireguard ddns-updater
-                return 0
-                ;;
-            *\" config --images \"*)
-                printf \"%s\\n\" i1 i2 i3 i4 i5 i6 i7 i8 i9 i10 i11 i12 i13 i14
-                return 0
-                ;;
-        esac
-        return 0
-    fi
-    return 0
-}
-openssl() {
-    if [[ \"\${1:-}\" == \"rand\" ]]; then
-        echo GeneratedWizardPassword123
-        return 0
-    fi
-    command openssl \"\$@\"
-}
-timedatectl() { echo Etc/UTC; }
-free() { printf 'Mem: 16Gi 1Gi 15Gi 0Gi 0Gi 15Gi\n'; }
-net_detect_public_ip() { _NET_PUBLIC_IP=203.0.113.10; return 0; }
+# Shared executor stubs live in one place — tests/lib/wizard_stub_common.sh.
+# Sourced AFTER setup.sh so the stubs shadow the real functions; Stage 2 keeps a
+# plain no-op configure.sh (no api key) and adds the remote-access services to the
+# compose-config stub.
+source tests/lib/wizard_stub_common.sh
+ms_stub_core
+ms_stub_common_env
+ms_stub_service_lifecycle
+_stub_compose_service_list() { printf '%s\n' jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer unpackerr flaresolverr uptime-kuma npm wireguard ddns-updater; }
+_stub_compose_image_list() { printf '%s\n' i1 i2 i3 i4 i5 i6 i7 i8 i9 i10 i11 i12 i13 i14; }
 # Stage 2 networked/heavy operations — overridable per scenario.
 stage2_dns_classify() { printf 'ok\n'; }
 stage2_check_http_ports() { printf 'ok\n'; }
 stage2_dynu_preflight() { printf 'ok\n'; }
 detect_lan_cidr() { printf '192.168.1.0/24\n'; }
-pull_images() { log_info \"stub pull_images\"; }
-start_stack() { log_info \"stub start_stack\"; }
-wait_all_healthy() { log_info \"stub wait_all_healthy\"; }
-print_access_info() { log_info \"stub print_access_info\"; }
 stage2_le_classify() { STAGE2_LE_CLASSIFICATION=ready; STAGE2_LE_READY_HOSTS=\"jellyfin.\$1, jellyseerr.\$1\"; printf 'ready\\n'; return 0; }
 BASH
 chmod +x $fixture_path"

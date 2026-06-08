@@ -24,15 +24,15 @@ BASH"
         stage1_continue_detected 1 \
         stage1_admin_username ENTER \
         stage1_admin_email owner@smb-retry.test \
-        stage1_admin_password ENTER \
+        stage1_admin_password WizardAdminPw123 \
+        stage1_admin_password_confirm WizardAdminPw123 \
         stage1_storage_location 1 \
         stage1_data_directory /tmp/ms-wizard-smb-retry \
         stage1_bazarr ENTER \
         stage1_smb y \
         stage1_smb_port_conflict 1 \
         stage1_smb_scope 1 \
-        stage1_quality 1 \
-        stage1_subtitle_langs ENTER \
+        stage1_quality_resolution 1 stage1_quality_size 1 \
         stage1_indexers ENTER \
         stage1_image_channel 1 \
         stage1_qbt_download ENTER \

@@ -14,7 +14,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 SCRIPT_DIR="$TMP_DIR"
-PROFILE_NAME="HD-720p/1080p O'Brian \\u0031"
+PROFILE_NAME="1080p Balanced O'Brian \\u0031"
 SONARR_BODY="$TMP_DIR/sonarr-body.json"
 RADARR_BODY="$TMP_DIR/radarr-body.json"
 

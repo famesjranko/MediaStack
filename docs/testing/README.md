@@ -10,7 +10,7 @@ This document covers **DinD** — the fast in-VM surface. Two further surfaces c
 
 | Surface | Driver | Scope | Wall time | Cost |
 |---------|--------|-------|-----------|------|
-| **DinD** | `tests/run.sh` | Everything that happens *inside* the VM (configurators, fail2ban filters, NPM cert-disk drift heal, wizard flows, compose validation) | ~16 min full battery (252/252 baseline as of f7a7f71) | host CPU only |
+| **DinD** | `tests/run.sh` (full battery: `tests/battery.sh`) | Everything that happens *inside* the VM (configurators, fail2ban filters, NPM cert-disk drift heal, wizard flows, compose validation) | ~16 min full battery (252/252 baseline as of f7a7f71) | host CPU only |
 | **Live-host** (maintainer-private) | private harnesses (not in this repo) | Real Let's Encrypt HTTP-01, public DNS via Dynu, real firewall/WAN-block proof + DDNS pushes (ephemeral cloud VM), plus real-hardware behaviour DinD can't model — GPU passthrough, UFW, systemd, disk I/O (bare metal). Needs real infra/creds. | minutes per run | cloud ~$0.03/hr or your hardware |
 
 DinD cannot prove DDNS pushes work, that public DNS resolves to the new IP, or that a real firewall actually blocks admin ports — the maintainer-private live-host harnesses cover that (an ephemeral cloud VM for the WAN/DNS/LE proof, bare metal for GPU passthrough and host-specific OS behaviour on real silicon). Conversely, the live-host runs don't exercise every internal scenario (npm-heal, wireguard-{server,containers,streaming}, wizard-presets are DinD-only because they exercise interrupted/corrupted setup paths a real VM should never see).
@@ -48,6 +48,28 @@ through the generated compose override.
 ```
 
 `tests/run.sh` orchestrates: validate scenario names, source libs, start cache mirror + DinD (`cache_mirror_up`, `dind_up`, `dind_copy_repo`, `dind_strip_services`, `cache_preload_into_dind`), run each scenario via `source` + `run_scenario`, then tear down runner-owned containers and print the summary on the exit trap (`on_exit`). Exit code non-zero if any hard assertion failed.
+
+## Full battery (`tests/battery.sh`)
+
+`./tests/battery.sh` is the codified full battery — it runs **every**
+`tests/scenarios/*.sh`. The scenarios are stateful and `run.sh` copies the repo into
+DinD only once (the `wizard-ui-*` scenarios stub `scripts/configure.sh`;
+`fresh-install`/`api-matrix`/`wizard-presets` leave a stack running; some scenarios
+don't reset themselves), so the battery runs them through **`run.sh --reset-between`**:
+one DinD with images sideloaded once, and a full state reset (containers, volumes,
+networks cleared + a clean repo restored) between each scenario — so every scenario
+starts pristine regardless of order. `image-override` runs on its own DinD (its
+`MS_TEST_IMAGE_OVERRIDES` would patch the compose for every other scenario). The
+scenario set is discovered by glob, so a newly-added scenario is included automatically.
+Exits non-zero if any scenario fails.
+
+```bash
+./tests/battery.sh          # run the whole battery (image-backed, local only)
+./tests/battery.sh --list   # print the plan, run nothing
+```
+
+This is the local/on-demand gate the **CI boundary** above refers to — remote CI never
+runs it (it skips image pulls).
 
 ## Libraries (`tests/lib/`)
 
@@ -148,7 +170,7 @@ Per-step evidence (phase 4):
 
 - **Step 1 qBittorrent:** `tests/assertions/qbittorrent-live.sh` logs into the live API with shared admin credentials, then verifies pause-on-ratio (`max_ratio_act=0`), speed limits, seed-time policy, Docker-subnet auth bypass, managed save/temp paths, and live API categories.
 - **Step 2 Jackett:** API key present (>=20 chars); configured indexers, when any are enabled, are verified via Torznab caps request through Jackett (not direct upstream probe). Reports which indexers failed if any.
-- **Step 3 Sonarr:** API key, root folder `/data/media/tv`, qBittorrent download client, `HD-720p/1080p` quality profile (fetched by ID, not grepping the full list). Custom format scores verified against exact config.yml values (all 7 formats: Repack/Proper=5, x264=10, x265 HD=-25, BR-DISK=-10000, LQ=-10000, No-RlsGroup=-25, Obfuscated=-25). Indexer count verified with tolerance for upstream-blocked failures. HDTV-720p `preferredSize` tightened to 30.0 (quality definitions). Forms authentication enabled.
+- **Step 3 Sonarr:** API key, root folder `/data/media/tv`, qBittorrent download client, `1080p Balanced` quality profile (fetched by ID, not grepping the full list). Custom format scores verified against exact config.yml values (all 7 formats: Repack/Proper=5, x264=10, x265 HD=-25, BR-DISK=-10000, LQ=-10000, No-RlsGroup=-25, Obfuscated=-25). Indexer count verified with tolerance for upstream-blocked failures. HDTV-720p `preferredSize` tightened to 30.0 (quality definitions). Forms authentication enabled.
 - **Step 4 Radarr:** mirror of Sonarr with `/data/media/movies`. Custom format scores verified against exact config.yml values (same 7 formats). Indexer count, WEBDL-1080p `preferredSize` tightened to 50.0, Forms authentication enabled.
 - **Step 5 Jellyfin:** `StartupWizardCompleted:true` in `/System/Info/Public`, admin auth returns `AccessToken` (with adversarial password containing `$`, `"`, `\`), Movies + TV Shows libraries present.
   Focused host-side coverage: `bash tests/unit/jellyfin.sh` checks Jellyfin library creation logs success or warning based on the library POST result.
@@ -174,7 +196,7 @@ bash tests/unit/remote-web-state.sh
 
 Stage 1 setup-wizard behavior that does not need Docker is covered by host-side Bash units:
 
-- `stage1-admin-password` — admin-password default selection, including regeneration of prior passwords below Portainer's 12-character floor.
+- `stage1-admin-password` — the admin password is never auto-generated: the prompt offers no default (a bare Enter is rejected), is validated (≥12 chars, no single quote — Portainer's floor), and is confirmed by re-entry.
 - `stage1-nas-ordering` — Stage 1 NAS install ordering pauses any previous watchdog before stack stop, then enables/restarts it after the initial stack start.
 - `setup-late-watchdog` — interrupted Stage 1 reruns pause stale watchdogs before resuming the staged wizard and never fall through to the markerless late stack install path.
 - `stack-health` — setup health gate classification for exited services, missing explicit services, and running containers without healthchecks.
@@ -224,6 +246,28 @@ It reads `.env` and `config.yml`, authenticates with the shared admin account,
 and verifies qBittorrent's live API state. DinD `fresh-install` calls the same
 script through `tests/assertions/qbittorrent.sh`; real-host and remote VM tests
 can call it over SSH without duplicating qBittorrent probe logic.
+
+### API-matrix layer
+
+The harness (`tests/scenarios/api-matrix.sh`) plus its per-service modules (`tests/api-matrix/`). Sonarr, Radarr, qBittorrent, Jackett, Jellyfin, and Jellyseerr are all configured **through their HTTP APIs**. The api-matrix layer exploits that: once the API-bearing services are up, it drives those config APIs **directly** through a *matrix* of states and asserts each one lands live — amortizing a single (expensive) bring-up across many cheap, in-place API tests.
+
+It exists because `configure.sh` is **idempotent and warn-on-drift**: on a re-run it refuses to overwrite a profile/setting that already differs (it logs a drift WARN, never reconciles). That is correct for the installer, but it means the configure.sh-path scenarios (`fresh-install`, `wizard-presets`) can only prove **one** configured state — the default point. The api-matrix layer mutates the live API across states, so it proves the whole **parameter space**. That makes it the natural test surface for:
+
+- **new features** with an API config surface — assert every variation the renderer can emit actually lands;
+- **day-2 actions** that re-push settings to a running service (the `mediastack` menu — change quality, adjust bandwidth, toggle indexers, …);
+- **retrospectively, existing API-driven features** — backfill matrix coverage for anything currently proven only at its default point.
+
+**How it's built.** `tests/scenarios/api-matrix.sh` is the harness: it brings up only the services a module needs (the quality module needs just Sonarr + Radarr), reads the API keys, then `source`s and calls per-service **modules** from `tests/api-matrix/`. Each module reuses the **product's** renderers + `api_*` helpers (`scripts/lib/arr/render/*.py`, `scripts/lib/common.sh`) — only the API transport and the assertions are test-owned — and computes its *expected* values from the same product composition, so there is no hardcoded expectation to drift.
+
+**test-1 — `quality`** (`tests/api-matrix/quality.sh` + `apply_cell.py`): loops the six `(resolution × size)` cells, applying each **in place** (`PUT` to the same profile id, renaming the profile across cells) and asserting the live profile name, enabled leaf-quality set, cutoff group, and a global size bound — on both Sonarr and Radarr. The matrix proper runs in ~25s after bring-up. This in-place PUT-rename + global-definition repush is exactly the mechanism the day-2 "change quality profile" action (#71) wraps in UX, so the module also de-risks that work.
+
+```bash
+./tests/run.sh api-matrix
+```
+
+Like `fresh-install`, this is an **image-backed local/on-demand gate** — not part of the CI battery (which skips image pulls). It brings up only its services, so it is far cheaper than `fresh-install`.
+
+**Adding a module.** Drop `tests/api-matrix/<service>.sh` defining a `matrix_<service> …` function that drives the service's API through its states and asserts with `pass`/`fail`/`assert_eq`; `source` it and call it from `api-matrix.sh`, bringing up whatever services it needs. Reuse the product's render/config helpers rather than re-implementing request payloads. Each new day-2 action that mutates a service API should ship with a matrix module here.
 
 ### Stage 1 wizard UI scenarios
 

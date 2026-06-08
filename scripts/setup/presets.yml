@@ -1,24 +1,132 @@
-# Quality tier presets for MediaStack setup wizard.
-# Values calibrated to deliver the doc-claimed grab sizes, based on real-world
-# 1080p WEB-DL (4-7 GB/movie) and 1080p Bluray rip (8-12 GB/movie) ranges.
-# See docs/reference/quality-bounds.md for context.
-# Add new presets by copying a block; wizard_apply.py picks them up automatically.
+# Quality model for the MediaStack setup wizard — two orthogonal axes.
 #
-# Quality IDs:
-#   HDTV-720p=4, WEBDL-720p=5, Bluray-720p=6, WEBRip-720p=14
-#   HDTV-1080p=9, WEBDL-1080p=3, Bluray-1080p=7, WEBRip-1080p=15
-#   Remux-1080p=30 (deliberately excluded from all presets — home-server audience)
-# Group IDs (for cutoff_id):
-#   WEB 720p=1001, WEB 1080p=1002
+# A quality profile is composed at apply time from a (resolution × size) CELL:
+#   resolution = the desired CEILING (enables every tier from the SD floor up to
+#                that ceiling, all sources) + the cutoff group upgrades stop at.
+#   size       = the file-size ENVELOPE only (per-tier min/preferred/max bounds +
+#                custom-format scores). Source-agnostic: a size does NOT filter
+#                WEB vs HDTV/Bluray — every size includes the full tier ladder.
+#
+# Composition (scripts/setup/wizard_apply.py:compose_cell) emits the SAME
+# config.yml sections the renderer already reads (quality_profile /
+# quality_definitions / custom_formats), so render/*.py and configure.sh are
+# unchanged. Profile name = "{resolution} {size}", e.g. "1080p Balanced".
+#
+# Adding a resolution (e.g. 2160p/4K) is a PURE DATA change here: add a block to
+# `resolutions` (tier names + cutoff_group + per-size `size_hints`) and any new
+# ids to `quality_ids`.
+# Proven by tests/unit/wizard-composition.sh.
+#
+# See docs/reference/quality-bounds.md for the scalar size model, the SD floor,
+# and the TRaSH rationale.
 
-presets:
+# ---------------------------------------------------------------------------
+# Quality IDs — the ONLY place numeric Sonarr/Radarr quality IDs live.
+# Tier NAMES are shared across apps; some numeric IDs differ (Bluray-480p is 13
+# in Sonarr but 20 in Radarr). render/quality_definitions.py matches tiers by
+# NAME against the live default profile; only the enabled-id MASK in
+# quality_profile needs these numbers. Confirmed against each app's default
+# profile in the wizard-presets DinD bring-up.
+# ---------------------------------------------------------------------------
+quality_ids:
+  sonarr:
+    SDTV: 1
+    DVD: 2
+    WEBDL-480p: 8
+    WEBRip-480p: 12
+    Bluray-480p: 13
+    HDTV-720p: 4
+    WEBDL-720p: 5
+    WEBRip-720p: 14
+    Bluray-720p: 6
+    HDTV-1080p: 9
+    WEBDL-1080p: 3
+    WEBRip-1080p: 15
+    Bluray-1080p: 7
+    # Remux-1080p=30 — deliberately excluded from every cell (home-server audience)
+  radarr:
+    SDTV: 1
+    DVD: 2
+    WEBDL-480p: 8
+    WEBRip-480p: 12
+    Bluray-480p: 20
+    HDTV-720p: 4
+    WEBDL-720p: 5
+    WEBRip-720p: 14
+    Bluray-720p: 6
+    HDTV-1080p: 9
+    WEBDL-1080p: 3
+    WEBRip-1080p: 15
+    Bluray-1080p: 7
+    # Remux-1080p=30 — deliberately excluded from every cell
+
+# ---------------------------------------------------------------------------
+# Resolutions — the "universe" of a cell: which tiers are enabled (names, floor
+# → ceiling, all sources) and which group upgrades stop at. App-agnostic.
+# upgrade_allowed is constant true for every cell (set in compose_cell).
+# Group IDs: WEB 720p=1001, WEB 1080p=1002, WEB 2160p=1003 (future).
+# `size_hints` carries the per-size GB/movie estimate shown in the size menu AT
+# this resolution (quality-bounds.md "Cells at a glance") — a cell (res × size)
+# value, so it lives here, not under `sizes`. A missing entry just omits the hint
+# for that cell (so adding a resolution stays a single localised data block).
+# ---------------------------------------------------------------------------
+resolutions:
+  720p:
+    display_name: "720p"
+    description: "Smaller library, lower bandwidth. Good for limited storage or slower connections."
+    cutoff_group: 1001
+    size_hints:
+      compact:  "~1.5-3 GB/movie"
+      balanced: "~2-4 GB/movie"
+      large:    "~3-5 GB/movie"
+    tiers:
+      - SDTV
+      - DVD
+      - WEBDL-480p
+      - WEBRip-480p
+      - Bluray-480p
+      - HDTV-720p
+      - WEBDL-720p
+      - WEBRip-720p
+      - Bluray-720p
+  1080p:
+    display_name: "1080p"
+    description: "Full HD. Recommended for most users."
+    cutoff_group: 1002
+    size_hints:
+      compact:  "~2-4 GB/movie"
+      balanced: "~4-8 GB/movie"
+      large:    "~6-15 GB/movie"
+    tiers:
+      - SDTV
+      - DVD
+      - WEBDL-480p
+      - WEBRip-480p
+      - Bluray-480p
+      - HDTV-720p
+      - WEBDL-720p
+      - WEBRip-720p
+      - Bluray-720p
+      - HDTV-1080p
+      - WEBDL-1080p
+      - WEBRip-1080p
+      - Bluray-1080p
+  # 2160p: future epic — pure data add (tiers + cutoff_group 1003 + 2160p quality_ids)
+
+# ---------------------------------------------------------------------------
+# Sizes — the file-size ENVELOPE only. `balanced` is the authored 1.0×
+# reference; `compact` ≈ 0.7× and `large` ≈ 1.2× its preferred/max (mins are the
+# source floor, size-independent). Bounds are MB/min (Sonarr per-episode, Radarr
+# per-movie); preferred sits in the middle of what real sources produce, max is a
+# sane ceiling — NOT TRaSH's "unlimited" (see quality-bounds.md / ADR-25).
+# The 720p/1080p balanced+large rows are ADR-25's calibrated values, carried over;
+# the SD-floor rows and compact's non-WEB rows are derived from the scalar model.
+# Tables are full (SD → 1080p); composition MASKS them to the resolution's tiers.
+# ---------------------------------------------------------------------------
+sizes:
   compact:
     display_name: "Compact"
-    profile_name: "WEB-720p/1080p"
-    description: "Smaller files, good quality. 720p only. Best for limited storage."
-    size_hint: "~2-4 GB/movie"
-    cutoff_id: 1001
-    upgrade_allowed: true
+    description: "Smaller files, good quality. Best for limited storage."
     custom_format_scores:
       "Repack/Proper":  5
       "x264":           0
@@ -27,27 +135,39 @@ presets:
       "LQ":             -10000
       "No-RlsGroup":    -10
       "Obfuscated":     -10
-    sonarr_qualities:
-      - 5    # WEBDL-720p
-      - 14   # WEBRip-720p
-    radarr_qualities:
-      - 5    # WEBDL-720p
-      - 14   # WEBRip-720p
-    quality_definitions:
+    bounds:
       sonarr:
+        SDTV:          { min: 1.0,  preferred: 6.0,  max: 18.0 }
+        DVD:           { min: 2.0,  preferred: 8.0,  max: 21.0 }
+        WEBDL-480p:    { min: 1.0,  preferred: 6.0,  max: 18.0 }
+        WEBRip-480p:   { min: 1.0,  preferred: 6.0,  max: 18.0 }
+        Bluray-480p:   { min: 2.0,  preferred: 10.0, max: 25.0 }
+        HDTV-720p:     { min: 12.0, preferred: 21.0, max: 35.0 }
         WEBDL-720p:    { min: 8.0,  preferred: 20.0, max: 35.0 }
         WEBRip-720p:   { min: 8.0,  preferred: 20.0, max: 35.0 }
+        Bluray-720p:   { min: 18.0, preferred: 28.0, max: 42.0 }
+        HDTV-1080p:    { min: 18.0, preferred: 31.5, max: 52.5 }
+        WEBDL-1080p:   { min: 12.0, preferred: 31.5, max: 52.5 }
+        WEBRip-1080p:  { min: 12.0, preferred: 31.5, max: 52.5 }
+        Bluray-1080p:  { min: 30.0, preferred: 42.0, max: 63.0 }
       radarr:
+        SDTV:          { min: 1.0,  preferred: 6.0,  max: 18.0 }
+        DVD:           { min: 2.0,  preferred: 8.0,  max: 21.0 }
+        WEBDL-480p:    { min: 1.0,  preferred: 6.0,  max: 18.0 }
+        WEBRip-480p:   { min: 1.0,  preferred: 6.0,  max: 18.0 }
+        Bluray-480p:   { min: 2.0,  preferred: 10.0, max: 25.0 }
+        HDTV-720p:     { min: 2.0,  preferred: 17.5, max: 35.0 }
         WEBDL-720p:    { min: 2.0,  preferred: 22.0, max: 37.0 }
         WEBRip-720p:   { min: 2.0,  preferred: 22.0, max: 37.0 }
+        Bluray-720p:   { min: 4.0,  preferred: 21.0, max: 38.5 }
+        HDTV-1080p:    { min: 4.0,  preferred: 35.0, max: 56.0 }
+        WEBDL-1080p:   { min: 4.0,  preferred: 35.0, max: 56.0 }
+        WEBRip-1080p:  { min: 4.0,  preferred: 35.0, max: 56.0 }
+        Bluray-1080p:  { min: 10.0, preferred: 45.5, max: 63.0 }
 
   balanced:
     display_name: "Balanced"
-    profile_name: "HD-720p/1080p"
     description: "Recommended for most users."
-    size_hint: "~4-8 GB/movie"
-    cutoff_id: 1002
-    upgrade_allowed: true
     custom_format_scores:
       "Repack/Proper":  5
       "x264":           10
@@ -56,26 +176,13 @@ presets:
       "LQ":             -10000
       "No-RlsGroup":    -25
       "Obfuscated":     -25
-    sonarr_qualities:
-      - 4    # HDTV-720p
-      - 5    # WEBDL-720p
-      - 6    # Bluray-720p
-      - 14   # WEBRip-720p
-      - 9    # HDTV-1080p
-      - 3    # WEBDL-1080p
-      - 7    # Bluray-1080p
-      - 15   # WEBRip-1080p
-    radarr_qualities:
-      - 4    # HDTV-720p
-      - 5    # WEBDL-720p
-      - 6    # Bluray-720p
-      - 14   # WEBRip-720p
-      - 9    # HDTV-1080p
-      - 3    # WEBDL-1080p
-      - 7    # Bluray-1080p
-      - 15   # WEBRip-1080p
-    quality_definitions:
+    bounds:
       sonarr:
+        SDTV:          { min: 1.0,  preferred: 8.0,  max: 25.0 }
+        DVD:           { min: 2.0,  preferred: 12.0, max: 30.0 }
+        WEBDL-480p:    { min: 1.0,  preferred: 8.0,  max: 25.0 }
+        WEBRip-480p:   { min: 1.0,  preferred: 8.0,  max: 25.0 }
+        Bluray-480p:   { min: 2.0,  preferred: 14.0, max: 35.0 }
         HDTV-720p:     { min: 12.0, preferred: 30.0, max: 50.0 }
         WEBDL-720p:    { min: 10.0, preferred: 30.0, max: 50.0 }
         WEBRip-720p:   { min: 10.0, preferred: 30.0, max: 50.0 }
@@ -85,6 +192,11 @@ presets:
         WEBRip-1080p:  { min: 12.0, preferred: 45.0, max: 75.0 }
         Bluray-1080p:  { min: 30.0, preferred: 60.0, max: 90.0 }
       radarr:
+        SDTV:          { min: 1.0,  preferred: 8.0,  max: 25.0 }
+        DVD:           { min: 2.0,  preferred: 12.0, max: 30.0 }
+        WEBDL-480p:    { min: 1.0,  preferred: 8.0,  max: 25.0 }
+        WEBRip-480p:   { min: 1.0,  preferred: 8.0,  max: 25.0 }
+        Bluray-480p:   { min: 2.0,  preferred: 14.0, max: 35.0 }
         HDTV-720p:     { min: 2.0,  preferred: 25.0, max: 50.0 }
         WEBDL-720p:    { min: 2.0,  preferred: 25.0, max: 50.0 }
         WEBRip-720p:   { min: 2.0,  preferred: 25.0, max: 50.0 }
@@ -94,13 +206,9 @@ presets:
         WEBRip-1080p:  { min: 4.0,  preferred: 50.0, max: 80.0 }
         Bluray-1080p:  { min: 10.0, preferred: 65.0, max: 90.0 }
 
-  quality:
-    display_name: "Quality"
-    profile_name: "HQ-1080p"
-    description: "Best non-Remux 1080p. Falls back to 720p when 1080p unavailable."
-    size_hint: "~6-15 GB/movie"
-    cutoff_id: 1002
-    upgrade_allowed: true
+  large:
+    display_name: "Large"
+    description: "Largest files, best quality within your chosen resolution."
     custom_format_scores:
       "Repack/Proper":  5
       "x264":           10
@@ -109,26 +217,13 @@ presets:
       "LQ":             -10000
       "No-RlsGroup":    -25
       "Obfuscated":     -25
-    sonarr_qualities:
-      - 4    # HDTV-720p
-      - 5    # WEBDL-720p
-      - 6    # Bluray-720p
-      - 14   # WEBRip-720p
-      - 9    # HDTV-1080p
-      - 3    # WEBDL-1080p
-      - 7    # Bluray-1080p
-      - 15   # WEBRip-1080p
-    radarr_qualities:
-      - 4    # HDTV-720p
-      - 5    # WEBDL-720p
-      - 6    # Bluray-720p
-      - 14   # WEBRip-720p
-      - 9    # HDTV-1080p
-      - 3    # WEBDL-1080p
-      - 7    # Bluray-1080p
-      - 15   # WEBRip-1080p
-    quality_definitions:
+    bounds:
       sonarr:
+        SDTV:          { min: 1.0,  preferred: 10.0, max: 30.0  }
+        DVD:           { min: 2.0,  preferred: 14.0, max: 36.0  }
+        WEBDL-480p:    { min: 1.0,  preferred: 10.0, max: 30.0  }
+        WEBRip-480p:   { min: 1.0,  preferred: 10.0, max: 30.0  }
+        Bluray-480p:   { min: 2.0,  preferred: 17.0, max: 42.0  }
         HDTV-720p:     { min: 12.0, preferred: 30.0, max: 55.0  }
         WEBDL-720p:    { min: 10.0, preferred: 30.0, max: 55.0  }
         WEBRip-720p:   { min: 10.0, preferred: 30.0, max: 55.0  }
@@ -138,6 +233,11 @@ presets:
         WEBRip-1080p:  { min: 12.0, preferred: 55.0, max: 85.0  }
         Bluray-1080p:  { min: 30.0, preferred: 80.0, max: 125.0 }
       radarr:
+        SDTV:          { min: 1.0,  preferred: 10.0, max: 30.0  }
+        DVD:           { min: 2.0,  preferred: 14.0, max: 36.0  }
+        WEBDL-480p:    { min: 1.0,  preferred: 10.0, max: 30.0  }
+        WEBRip-480p:   { min: 1.0,  preferred: 10.0, max: 30.0  }
+        Bluray-480p:   { min: 2.0,  preferred: 17.0, max: 42.0  }
         HDTV-720p:     { min: 2.0,  preferred: 30.0, max: 60.0  }
         WEBDL-720p:    { min: 2.0,  preferred: 30.0, max: 60.0  }
         WEBRip-720p:   { min: 2.0,  preferred: 30.0, max: 60.0  }

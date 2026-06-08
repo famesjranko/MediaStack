@@ -729,20 +729,20 @@ _stage3_apply_runtime_override() {
 
 _stage3_offer() {
     {
-        ui_section 1 4 "Hardware transcoding"
+        ui_section "Hardware transcoding"
         ui_box "Hardware transcoding is optional" \
-            "Detected GPU: ${GPU_TYPE:-none}" \
+            "Detected GPU: $(gpu_brand_label "${GPU_TYPE:-none}")" \
             "Jellyfin can use supported GPUs for video conversion." \
             "Intel and AMD finish now. NVIDIA may finish after reboot."
     } >&2
-    ui_choose "Configure hardware transcoding now?" \
+    UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Configure hardware transcoding now?" \
         "Configure hardware transcoding" \
         "Skip for now" \
         "Tell me more"
 }
 
 _stage3_tell_me_more() {
-    ui_section 1 4 "Hardware transcoding"
+    ui_section "Hardware transcoding"
     ui_log info "Intel and AMD GPUs can be configured now without reboot."
     ui_log info "NVIDIA may need one reboot before MediaStack can finish NVENC setup."
     ui_log info "MediaStack only enables a hardware encoder after verification evidence is available."
@@ -1054,20 +1054,17 @@ stage3_prompt_nvidia_reboot() {
         "It will verify nvidia-smi, restart Docker, write Jellyfin NVENC settings, run a test transcode, and print the final summary."
 
     local reboot_action
-    reboot_action=$(ui_choose "Reboot now?" "Reboot now" "Reboot manually later")
+    reboot_action=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Reboot now?" "Reboot now" "Reboot manually later")
     case "$reboot_action" in
         "Reboot now")
+            # The menu above is the single reboot gate (#100): the user chose
+            # "Reboot now", so arm the resume hooks and reboot — no redundant
+            # second confirm. Resume is scheduled/bannered/announced BEFORE the
+            # reboot, so even an interrupted or manual boot finalizes GPU setup.
             schedule_post_reboot
             install_post_reboot_banner
             print_reboot_notice
-            # Honour a typed "no" at the final prompt: the resume is already armed
-            # (schedule/banner/notice above), so declining is safe — fall through to
-            # the same manual-later guidance instead of rebooting regardless.
-            if ui_confirm "Reboot the machine now?" "yes"; then
-                sudo reboot
-            else
-                printf '%s\n' "Reboot manually when ready. MediaStack will resume GPU finalization automatically on the next boot."
-            fi
+            sudo reboot
             ;;
         "Reboot manually later")
             schedule_post_reboot
@@ -1186,7 +1183,7 @@ _stage3_choose_nvidia_mode() {
                 "Standard driver: Debian-managed, official NVENC limits (recommended)" \
                 "Unlock NVENC limit: patch-managed, removes the limit (advanced)"
         } >&2
-        choice=$(ui_choose "How should MediaStack set up the NVIDIA driver?" \
+        choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "How should MediaStack set up the NVIDIA driver?" \
             "Standard driver (recommended)" \
             "Unlock NVENC limit (advanced)" \
             "Tell me more")
@@ -1241,7 +1238,7 @@ _stage3_nvidia_existing_driver() {
             GPU_TYPE="nvidia"
             verify_gpu_usable || true
             if [[ "${GPU_TYPE:-none}" == "nvidia" ]]; then
-                _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified (existing driver)." "" "existing" || true
+                _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified (existing driver - you manage its updates)." "" "existing" || true
             else
                 _stage3_fallback "nvidia" "nvenc"
             fi

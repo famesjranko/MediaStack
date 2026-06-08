@@ -431,7 +431,7 @@ validate_domain_name() {
         return 1
     fi
     if [[ "$value" != *.* || "$value" == *".."* || "$value" == *"_"* ]]; then
-        ui_log warn "Domain must be a normal FQDN such as media.example.com."
+        ui_log warn "Domain must be a normal FQDN such as media.yourdomain.com."
         return 1
     fi
 

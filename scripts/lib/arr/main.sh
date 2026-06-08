@@ -7,6 +7,18 @@
 # Absolute path to this lib's directory — used to locate render/ and templates/.
 _ARR_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Day-2 rename status channel (issue #71). When the launcher's "Change quality
+# profile" action drives configure.sh, it sets QP_RENAME_STATUS to a writable
+# file path. We append the app name here whenever an in-place rename FAILS or is
+# REFUSED (live name drifted), so the launcher can report "did not apply" instead
+# of a false success. configure.sh itself stays exit-0 (its deliberate
+# never-abort contract — see the header note in scripts/configure.sh). A no-op on
+# normal runs, where QP_RENAME_STATUS is unset.
+_qp_record_rename_failure() {
+    [[ -n "${QP_RENAME_STATUS:-}" ]] && printf '%s\n' "$1" >> "$QP_RENAME_STATUS"
+    return 0
+}
+
 # Create a Sonarr/Radarr quality profile named per config.yml with the chosen
 # quality IDs enabled. On first run POSTs a new profile. On re-run with a
 # matching-named profile already present, compares cutoff/upgrade/enabled-IDs
@@ -28,6 +40,100 @@ configure_quality_profile() {
         log_warn "Could not fetch ${app^} quality profiles - skipping check"
         existing="[]"
     fi
+
+    # Day-2 in-place rename (issue #71). The launcher's "Change quality profile"
+    # action sets QP_RENAME_FROM to the OLD profile name when the user re-picks a
+    # cell, so the profile name changes ("1080p Balanced" -> "1080p Large"). The
+    # normal path below would find no profile under the NEW name, fall to
+    # "absent", and POST a brand-new profile — orphaning the old one, which
+    # existing series/movies still reference by id. Instead, locate the
+    # OLD-named profile and PUT the new render onto its SAME id, so the id
+    # survives, library items follow automatically, and nothing is orphaned.
+    # QP_RENAME_FROM is never set on a normal configure.sh re-run, so the
+    # warn-on-drift contract below is unchanged.
+    local rename_from="${QP_RENAME_FROM:-}"
+    if [[ -n "$rename_from" && "$rename_from" != "$profile_name" ]]; then
+        local rename_plan
+        rename_plan=$(echo "$existing" | \
+            OLD_NAME="$rename_from" NEW_NAME="$profile_name" python3 -c '
+import sys, json, os
+old, new = os.environ["OLD_NAME"], os.environ["NEW_NAME"]
+try: profiles = json.load(sys.stdin)
+except Exception: profiles = []
+names = {p.get("name") for p in profiles}
+if new in names and old in names:
+    print("exists_stale")                 # renamed already, but the old one lingers
+elif new in names:
+    print("exists")                       # already renamed -> normal match path
+elif old in names:
+    p = next(pp for pp in profiles if pp.get("name") == old)
+    print("rename\t" + str(p.get("id")))
+else:
+    print("absent")                       # live name drifted -> refuse to orphan
+' 2>/dev/null)
+        case "${rename_plan%%$'\t'*}" in
+            rename)
+                local old_id="${rename_plan#*$'\t'}"
+                local old_profile rendered renamed_json
+                old_profile=$(echo "$existing" | OLD_ID="$old_id" python3 -c '
+import sys, json, os
+oid = os.environ["OLD_ID"]
+profiles = json.load(sys.stdin)
+p = next((pp for pp in profiles if str(pp.get("id")) == oid), None)
+print(json.dumps(p) if p else "")
+' 2>/dev/null)
+                # Render new items/cutoff/name using the OLD profile as template,
+                # then merge them onto the FULL old profile so id/language and
+                # every other field survive the PUT (same as the api-matrix
+                # apply_cell.py contract). Zero the formatItems scores so the
+                # downstream configure_arr_format_scores re-attaches the new
+                # size's scores via its "empty -> PUT" path in this same run.
+                rendered=$(echo "$old_profile" | \
+                    PROFILE_NAME="$profile_name" \
+                    ENABLED_IDS="$enabled_ids_json" \
+                    CUTOFF_ID="$cutoff_id" \
+                    UPGRADE_ALLOWED="$upgrade" \
+                    python3 "$_ARR_LIB_DIR/render/quality_profile.py" 2>/dev/null)
+                renamed_json=$(echo "$rendered" | OLD_PROFILE="$old_profile" python3 -c '
+import sys, json, os
+rendered = json.load(sys.stdin)
+merged = json.loads(os.environ["OLD_PROFILE"])
+merged["name"] = rendered["name"]
+merged["cutoff"] = rendered["cutoff"]
+merged["upgradeAllowed"] = rendered["upgradeAllowed"]
+merged["items"] = rendered["items"]
+for it in merged.get("formatItems", []):
+    it["score"] = 0
+print(json.dumps(merged))
+' 2>/dev/null)
+                if [[ -n "$renamed_json" && "$renamed_json" != "null" ]] \
+                   && api_put "$base/qualityprofile/$old_id" "$key" "$renamed_json" >/dev/null 2>&1; then
+                    log_ok "Quality profile renamed in place: '$rename_from' -> '$profile_name' (cutoff ID: $cutoff_id; id $old_id kept, no orphan)"
+                else
+                    log_warn "Failed to rename ${app_label} quality profile '$rename_from' -> '$profile_name'"
+                    _qp_record_rename_failure "$app"
+                fi
+                return 0
+                ;;
+            exists_stale)
+                # The new name is already live (a prior rename took), but the old
+                # one is still present — a stale profile this action did not
+                # create. Don't touch it; the new name matches config.yml, so the
+                # fall-through SKIPs. Just surface the leftover so the user can
+                # remove it. Not a failure of this change, so not recorded.
+                log_warn "${app_label}: '$profile_name' already exists and the old '$rename_from' is still present (stale). Using '$profile_name'; delete '$rename_from' in ${app_label} (Settings -> Profiles) if no series/movies use it."
+                ;;
+            exists)
+                : # new name already present -> fall through to normal match/skip
+                ;;
+            *)
+                log_warn "${app_label}: no quality profile named '$rename_from' to rename (renamed in the ${app_label} UI?). Not creating a duplicate '$profile_name' that would orphan your in-use profile. To change: rename it back to '$rename_from' in ${app_label} (Settings -> Profiles) and retry, or rebuild (docker compose down -v && ./setup.sh --full)."
+                _qp_record_rename_failure "$app"
+                return 0
+                ;;
+        esac
+    fi
+
     qp_status=$(echo "$existing" | \
         PROFILE_NAME="$profile_name" \
         ENABLED_IDS="$enabled_ids_json" \

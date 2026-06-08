@@ -303,7 +303,7 @@ stage2_dynu_validate_response() {
             ;;
         badauth)
             if [[ "$mode" == "message" ]]; then
-                printf "wrong IP-update password (not your account password -- your IP-update password from Dynu's IP Update Settings page)"
+                printf "the Dynu username or password was not accepted. Either your Dynu account password OR a Dynu 'IP Update Password' works here - re-check both for typos and trailing spaces. If it keeps failing, set an 'IP Update Password' in Dynu (Control Panel > IP Update Settings) and use that"
             else
                 printf 'badauth'
             fi

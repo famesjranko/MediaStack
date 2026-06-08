@@ -53,7 +53,7 @@ EOF
 # shellcheck disable=SC2034
 GPU_TYPE="nvidia"
 output=$(print_access_info)
-if [[ "$output" == *"GPU: nvidia transcoding enabled"* ]]; then
+if [[ "$output" == *"GPU: NVIDIA transcoding enabled"* ]]; then
     fail "stage1-completion: detected GPU alone does not advertise transcoding enabled"
 else
     pass "stage1-completion: detected GPU alone does not advertise transcoding enabled"
@@ -66,7 +66,7 @@ JELLYFIN_GPU=nvidia
 STAGE_3_GPU_STATE=complete
 EOF
 output=$(print_access_info)
-assert_contains "$output" "GPU: nvidia transcoding enabled" "stage1-completion: completed Stage 3 advertises transcoding enabled"
+assert_contains "$output" "GPU: NVIDIA transcoding enabled" "stage1-completion: completed Stage 3 advertises transcoding enabled"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

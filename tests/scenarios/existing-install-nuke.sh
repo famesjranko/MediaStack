@@ -76,7 +76,7 @@ docker() {
 }
 _stage1_install() {
     WIZARD_RAN_INSTALL=true
-    _wizard_apply_settings balanced english 0
+    _wizard_apply_settings 1080p balanced english 0
     sed -i \"s/^STAGE_1_COMPLETE=.*/STAGE_1_COMPLETE=1/\" \"\$SCRIPT_DIR/.env\"
     log_ok \"Stage 1 complete (STAGE_1_COMPLETE=1)\"
 }

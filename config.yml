@@ -33,37 +33,52 @@ categories:
 # ---------------------------------------------------------------------------
 # Quality Profile
 # ---------------------------------------------------------------------------
-# Created in both Sonarr and Radarr as "HD-720p/1080p".
-# Cutoff: WEB 1080p group (stops upgrading once any 1080p WEB quality is reached).
+# Composed by the wizard as the chosen "{resolution} {size}" cell. The shipped
+# default is "1080p Balanced" (1080p ceiling × balanced size envelope). Re-run
+# the setup wizard to pick a different resolution or size.
+# Enables every tier from the SD floor up to the 1080p ceiling, all sources; the
+# cutoff (WEB 1080p group) stops upgrades once a 1080p WEB release is reached, so
+# SD/720p are only fallbacks that upgrade away. See docs/reference/quality-bounds.md.
 #
-# Quality IDs reference:
+# Quality IDs reference (Sonarr; Radarr differs only at Bluray-480p=20):
+#   SDTV=1, DVD=2, WEBDL-480p=8, WEBRip-480p=12, Bluray-480p=13
 #   HDTV-720p=4, WEBDL-720p=5, Bluray-720p=6, WEBRip-720p=14
 #   HDTV-1080p=9, WEBDL-1080p=3, Bluray-1080p=7, WEBRip-1080p=15
 #   Remux-1080p=30 (deliberately excluded; see docs/reference/quality-bounds.md)
 # Group IDs (for cutoff_id; Sonarr rejects sub-quality IDs as cutoffs):
 #   WEB 480p=1000, WEB 720p=1001, WEB 1080p=1002, WEB 2160p=1003
 quality_profile:
-  name: "HD-720p/1080p"
+  name: "1080p Balanced"
   cutoff_id: 1002                # WEB 1080p group (contains WEBRip-1080p + WEBDL-1080p)
   upgrade_allowed: true
   sonarr_qualities:
+    - 1    # SDTV
+    - 2    # DVD
+    - 8    # WEBDL-480p
+    - 12   # WEBRip-480p
+    - 13   # Bluray-480p
     - 4    # HDTV-720p
     - 5    # WEBDL-720p
-    - 6    # Bluray-720p
     - 14   # WEBRip-720p
+    - 6    # Bluray-720p
     - 9    # HDTV-1080p
     - 3    # WEBDL-1080p
-    - 7    # Bluray-1080p
     - 15   # WEBRip-1080p
+    - 7    # Bluray-1080p
   radarr_qualities:              # No Remux; single grabs run 25-40 GB
+    - 1    # SDTV
+    - 2    # DVD
+    - 8    # WEBDL-480p
+    - 12   # WEBRip-480p
+    - 20   # Bluray-480p
     - 4    # HDTV-720p
     - 5    # WEBDL-720p
-    - 6    # Bluray-720p
     - 14   # WEBRip-720p
+    - 6    # Bluray-720p
     - 9    # HDTV-1080p
     - 3    # WEBDL-1080p
-    - 7    # Bluray-1080p
     - 15   # WEBRip-1080p
+    - 7    # Bluray-1080p
 
 # ---------------------------------------------------------------------------
 # Quality Definitions — per-tier file-size bounds
@@ -72,17 +87,22 @@ quality_profile:
 # for movies) so a single grab can land a 25 GB bloat rip or — at the other
 # end — a 400 MB cam. These bounds tighten both extremes.
 #
-# Units: MB per minute (Sonarr per episode, Radarr per movie). Values are
-# calibrated to deliver the Balanced preset's "~4-8 GB/movie" envelope based
-# on real-world 1080p WEB-DL (4-7 GB) and 1080p Bluray rip (8-12 GB) sizes —
-# not the TRaSH max-quality baselines, which target much larger files.
-# See docs/reference/quality-bounds.md for rationale.
+# Units: MB per minute (Sonarr per episode, Radarr per movie). The size envelope
+# is the chosen size axis (here: Balanced "~4-8 GB/movie" at 1080p) — preferred
+# sits mid-range of real-world sources, max is a sane ceiling, NOT the TRaSH
+# max-quality baselines. The SD-floor rows accept small fallback releases that
+# upgrade away toward the ceiling. See docs/reference/quality-bounds.md.
 #
 # Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive).
 # Tiers not listed here keep their upstream defaults. To opt out entirely,
 # delete or comment this whole section.
 quality_definitions:
   sonarr:                                                     # ~1.1-3.4 GB/ep at 45 min
+    SDTV:          { min: 1.0,  preferred: 8.0,  max: 25.0 }
+    DVD:           { min: 2.0,  preferred: 12.0, max: 30.0 }
+    WEBDL-480p:    { min: 1.0,  preferred: 8.0,  max: 25.0 }
+    WEBRip-480p:   { min: 1.0,  preferred: 8.0,  max: 25.0 }
+    Bluray-480p:   { min: 2.0,  preferred: 14.0, max: 35.0 }
     HDTV-720p:     { min: 12.0, preferred: 30.0, max: 50.0 }
     WEBDL-720p:    { min: 10.0, preferred: 30.0, max: 50.0 }
     WEBRip-720p:   { min: 10.0, preferred: 30.0, max: 50.0 }
@@ -92,6 +112,11 @@ quality_definitions:
     WEBRip-1080p:  { min: 12.0, preferred: 45.0, max: 75.0 }
     Bluray-1080p:  { min: 30.0, preferred: 60.0, max: 90.0 }
   radarr:                                                     # ~3-9.9 GB/movie at 110 min
+    SDTV:          { min: 1.0,  preferred: 8.0,  max: 25.0 }
+    DVD:           { min: 2.0,  preferred: 12.0, max: 30.0 }
+    WEBDL-480p:    { min: 1.0,  preferred: 8.0,  max: 25.0 }
+    WEBRip-480p:   { min: 1.0,  preferred: 8.0,  max: 25.0 }
+    Bluray-480p:   { min: 2.0,  preferred: 14.0, max: 35.0 }
     HDTV-720p:     { min: 2.0,  preferred: 25.0, max: 50.0 }
     WEBDL-720p:    { min: 2.0,  preferred: 25.0, max: 50.0 }
     WEBRip-720p:   { min: 2.0,  preferred: 25.0, max: 50.0 }

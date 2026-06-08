@@ -86,7 +86,7 @@ menu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   menu_post >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$menu_out" "Features (subtitles, file sharing, indexers)" \
+assert_contains "$menu_out" "Features & settings (quality, bandwidth, subtitles, sharing, indexers)" \
   "menu_post: Features item always shown"
 if grep -q "Add a feature" <<<"$menu_out"; then
   fail "menu_post: legacy 'Add a feature' label removed"
@@ -97,7 +97,7 @@ fi
 route_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   render_banner(){ :; }
-  ui_choose(){ echo "Features (subtitles, file sharing, indexers)"; }
+  ui_choose(){ echo "Features & settings (quality, bandwidth, subtitles, sharing, indexers)"; }
   submenu_features(){ echo DISPATCH_FEATURES; }
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }

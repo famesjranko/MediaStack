@@ -26,13 +26,14 @@ BASH"
         stage1_continue_detected 1 \
         stage1_admin_username ENTER \
         stage1_admin_email owner@stage1-options.test \
-        stage1_admin_password ENTER \
+        stage1_admin_password WizardAdminPw123 \
+        stage1_admin_password_confirm WizardAdminPw123 \
         stage1_storage_location 1 \
         stage1_data_directory /tmp/ms-wizard-options \
         stage1_bazarr y \
         stage1_smb y \
         stage1_smb_scope 2 \
-        stage1_quality 3 \
+        stage1_quality_resolution 2 stage1_quality_size 3 \
         stage1_subtitle_langs english,spanish,french \
         stage1_indexers y \
         stage1_image_channel 2 \
@@ -58,12 +59,11 @@ BASH"
     assert_eq "/tmp/ms-wizard-options" "$(env_get DATA_DIR)" "wizard-ui stage1 options: data dir from prompt"
     assert_eq "1"      "$(env_get STAGE_1_COMPLETE)"        "wizard-ui stage1 options: Stage 1 completed"
 
-    # Quality-tier propagation: selecting the Quality preset (option 3) must
-    # rewrite config.yml's quality_profile via wizard_apply.py. HQ-1080p is the
-    # Quality tier's profile_name (presets.yml), distinct from the repo default
-    # HD-720p/1080p, so this proves the write happened rather than matching the
-    # shipped value.
+    # Quality propagation: picking 1080p resolution + Large size must compose
+    # config.yml's quality_profile via wizard_apply.py. "1080p Large" is distinct
+    # from the DEMO/default "1080p Balanced", so this proves the write happened
+    # rather than matching a shipped value.
     local quality_section
     quality_section="$(dind_exec "grep -A2 '^quality_profile:' config.yml")"
-    assert_contains "$quality_section" "HQ-1080p" "wizard-ui stage1 options: Quality preset propagated to config.yml"
+    assert_contains "$quality_section" "1080p Large" "wizard-ui stage1 options: quality cell propagated to config.yml"
 }

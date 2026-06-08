@@ -873,6 +873,21 @@ print('missing\\t' + ' '.join(missing))
     log_warn "Some services may still be starting. Check: docker compose ps"
 }
 
+# Map a GPU vendor token (nvidia|amd|intel|none) -> its conventional brand
+# casing for user-facing boxes. Single source of truth so the brand is never
+# spelled three ways again (the "Detected GPU" box, the transcoding summary row
+# and the access-info line all read through this). The catch-all echoes any
+# unexpected value unchanged so a future vendor never prints an empty brand.
+gpu_brand_label() {
+    case "${1:-}" in
+        nvidia) printf 'NVIDIA' ;;
+        amd)    printf 'AMD' ;;
+        intel)  printf 'Intel' ;;
+        none|"") printf 'none' ;;
+        *)      printf '%s' "$1" ;;
+    esac
+}
+
 # Map REMOTE_WEB_STATE -> a human label. Single source of truth for the Stage 2
 # row in print_final_summary AND the recovery re-entry menu's "Current setup"
 # block, so the two never drift. Reads $1 (defaults to $REMOTE_WEB_STATE).
@@ -880,8 +895,8 @@ remote_state_label() {
     local remote_state="${1-${REMOTE_WEB_STATE:-}}"
     case "$remote_state" in
         ready) printf 'ready' ;;
-        skipped) printf 'skipped -- run ./setup.sh --remote to retry' ;;
-        failed) printf 'failed -- run ./setup.sh --remote to retry' ;;
+        skipped) printf 'skipped - run ./setup.sh --remote to retry' ;;
+        failed) printf 'failed - run ./setup.sh --remote to retry' ;;
         unchecked|"") printf 'not configured' ;;
         *) printf 'not configured' ;;
     esac
@@ -896,21 +911,21 @@ transcoding_state_label() {
     case "$gpu_state" in
         complete)
             case "$gpu_vendor" in
-                intel) printf 'complete (intel qsv)' ;;
-                amd) printf 'complete (amd vaapi)' ;;
-                nvidia) printf 'complete (nvidia nvenc)' ;;
+                intel) printf 'complete (Intel QSV)' ;;
+                amd) printf 'complete (AMD VAAPI)' ;;
+                nvidia) printf 'complete (NVIDIA NVENC)' ;;
                 *) printf 'complete' ;;
             esac
             ;;
         pending)
             if [[ "$gpu_vendor" == "nvidia" ]]; then
-                printf 'pending reboot -- NVIDIA finalization queued'
+                printf 'pending reboot - NVIDIA finalization queued'
             else
                 printf 'not configured'
             fi
             ;;
-        skipped) printf 'skipped -- software transcoding' ;;
-        fallback) printf 'fallback -- software transcoding' ;;
+        skipped) printf 'skipped - software transcoding' ;;
+        fallback) printf 'fallback - software transcoding' ;;
         *) printf 'not configured' ;;
     esac
 }
@@ -1122,7 +1137,7 @@ print_access_info() {
     fi
 
     if [[ "$stage3_state" == "complete" && "$jellyfin_gpu" != "none" ]]; then
-        echo -e "  ${GREEN}GPU: ${jellyfin_gpu} transcoding enabled${NC}"
+        echo -e "  ${GREEN}GPU: $(gpu_brand_label "$jellyfin_gpu") transcoding enabled${NC}"
         echo "  Configure in Jellyfin > Dashboard > Playback > Transcoding"
         echo ""
     fi
@@ -1145,7 +1160,7 @@ print_access_info() {
         echo "  config.yml, then run ./scripts/configure.sh (re-runs are safe - already-"
         echo "  configured services are skipped, never overwritten)."
         echo "  Or enable them anytime from the launcher:"
-        echo "    ./mediastack -> Features (subtitles, file sharing, indexers) -> Search indexers"
+        echo "    ./mediastack -> Features & settings -> Search indexers"
         echo ""
     fi
 

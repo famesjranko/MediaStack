@@ -1,13 +1,14 @@
-# tests/scenarios/wizard-presets.sh — verify wizard presets flow through
-# configure.sh into Sonarr/Radarr quality profiles, and that the opt-in
-# public-indexer preset seeds into Jackett.
+# tests/scenarios/wizard-presets.sh — verify the resolution × size composition
+# flows through configure.sh into Sonarr/Radarr quality profiles, and that the
+# opt-in public-indexer preset seeds into Jackett.
 #
-# Applies the "compact" preset (non-default) to config.yml with the public
-# indexer preset enabled (--public-indexers true) before bringing up the
-# stack, then checks that Sonarr and Radarr have the expected profile name,
-# enabled qualities, and cutoff, and that Jackett seeded the indexers. This
-# is the dedicated preset-on test: default scenarios ship indexers: [] and
-# skip the Jackett indexer caps assertion.
+# Composes the "720p Compact" cell (non-default) to config.yml with the public
+# indexer preset enabled (--public-indexers true) before bringing up the stack,
+# then checks that Sonarr and Radarr have the expected profile name, enabled
+# qualities (SD floor → 720p, all sources), and cutoff, that the SD-floor
+# quality IDs in presets.yml match the LIVE apps (Sonarr ≠ Radarr), and that
+# Jackett seeded the indexers. This is the dedicated preset-on test: default
+# scenarios ship indexers: [] and skip the Jackett indexer caps assertion.
 #
 # Recommended strip list for speed (~5 min vs ~15 min):
 #   MS_TEST_STRIP_SERVICES=npm,fail2ban,homepage,portainer,jellyseerr,jellyfin,unpackerr
@@ -44,13 +45,13 @@ run_scenario() {
     env_set BAZARR_ENABLED false
 
     # ------------------------------------------------------------------
-    # 1. Apply "compact" preset to config.yml via wizard_apply.py
+    # 1. Compose the "720p Compact" cell to config.yml via wizard_apply.py
     # ------------------------------------------------------------------
-    dind_exec "python3 scripts/setup/wizard_apply.py --preset compact --languages english,spanish --public-indexers true --config config.yml"
+    dind_exec "python3 scripts/setup/wizard_apply.py --resolution 720p --size compact --languages english,spanish --public-indexers true --config config.yml"
 
     local applied_name
     applied_name=$(dind_exec "python3 -c \"import yaml; print(yaml.safe_load(open('config.yml'))['quality_profile']['name'])\"")
-    assert_eq "WEB-720p/1080p" "$applied_name" "wizard: config.yml profile name set to compact"
+    assert_eq "720p Compact" "$applied_name" "wizard: config.yml profile name set to 720p Compact"
 
     local applied_cutoff
     applied_cutoff=$(dind_exec "python3 -c \"import yaml; print(yaml.safe_load(open('config.yml'))['quality_profile']['cutoff_id'])\"")
@@ -108,6 +109,26 @@ with open('docker-compose.override.yml', 'w') as f:
     assert_jackett_configured
 
     # ------------------------------------------------------------------
+    # 3c. Confirm the SD-floor quality IDs in presets.yml match the LIVE apps.
+    # Sonarr and Radarr assign different numeric IDs to some tiers (Bluray-480p
+    # is 13 vs 20); this is the gate that catches a wrong quality_ids value
+    # before it ships.
+    # ------------------------------------------------------------------
+    # name -> id from /api/v3/qualitydefinition for a given app base+key.
+    _live_quality_id() {
+        local base="$1" key="$2" qname="$3"
+        dind_exec "curl -sf -H 'X-Api-Key: $key' $base/qualitydefinition" \
+            | python3 -c "
+import sys, json
+name = '$qname'
+try:
+    for d in json.load(sys.stdin):
+        if d.get('quality', {}).get('name') == name:
+            print(d['quality']['id']); break
+except Exception: pass" 2>/dev/null
+    }
+
+    # ------------------------------------------------------------------
     # 4. Verify Sonarr quality profile
     # ------------------------------------------------------------------
     local sonarr_key
@@ -116,20 +137,27 @@ with open('docker-compose.override.yml', 'w') as f:
 
     local sonarr_base="http://localhost:8989/api/v3"
 
+    # 4-SD. SD-floor name→id confirmation (Sonarr).
+    assert_eq "1"  "$(_live_quality_id "$sonarr_base" "$sonarr_key" SDTV)"        "wizard: Sonarr SDTV id=1"
+    assert_eq "2"  "$(_live_quality_id "$sonarr_base" "$sonarr_key" DVD)"         "wizard: Sonarr DVD id=2"
+    assert_eq "8"  "$(_live_quality_id "$sonarr_base" "$sonarr_key" WEBDL-480p)"  "wizard: Sonarr WEBDL-480p id=8"
+    assert_eq "12" "$(_live_quality_id "$sonarr_base" "$sonarr_key" WEBRip-480p)" "wizard: Sonarr WEBRip-480p id=12"
+    assert_eq "13" "$(_live_quality_id "$sonarr_base" "$sonarr_key" Bluray-480p)" "wizard: Sonarr Bluray-480p id=13"
+
     # 4a. Profile name
     local sonarr_qp_id
     sonarr_qp_id=$(dind_exec "curl -sf -H 'X-Api-Key: $sonarr_key' $sonarr_base/qualityprofile" \
         | python3 -c "
 import sys, json
-try: print(next((str(p['id']) for p in json.load(sys.stdin) if p.get('name')=='WEB-720p/1080p'),''))
+try: print(next((str(p['id']) for p in json.load(sys.stdin) if p.get('name')=='720p Compact'),''))
 except Exception: pass" 2>/dev/null)
     if [[ -n "$sonarr_qp_id" ]]; then
-        pass "wizard: Sonarr WEB-720p/1080p profile created"
+        pass "wizard: Sonarr 720p Compact profile created"
     else
-        fail "wizard: Sonarr WEB-720p/1080p profile created" "not found in profile list"
+        fail "wizard: Sonarr 720p Compact profile created" "not found in profile list"
     fi
 
-    # 4b. Enabled qualities — only WEB 720p (IDs 5, 14)
+    # 4b. Enabled qualities — SD floor → 720p, all sources.
     if [[ -n "$sonarr_qp_id" ]]; then
         local sonarr_enabled
         sonarr_enabled=$(dind_exec "curl -sf -H 'X-Api-Key: $sonarr_key' $sonarr_base/qualityprofile/$sonarr_qp_id" \
@@ -144,13 +172,15 @@ for item in p.get('items', []):
         if sub.get('allowed') and sub.get('quality'):
             ids.add(sub['quality']['id'])
 print(','.join(str(i) for i in sorted(ids)))" 2>/dev/null)
-        assert_eq "5,14" "$sonarr_enabled" "wizard: Sonarr compact qualities (WEB 720p only)"
+        assert_eq "1,2,4,5,6,8,12,13,14" "$sonarr_enabled" "wizard: Sonarr 720p compact qualities (SD floor → 720p)"
 
-        # 4c. Cutoff
+        # 4c. Cutoff — WEB 720p group; sits ABOVE the SD floor, so SD is a
+        # fallback that upgrades away (render preserves the app's worst→best
+        # order; it only flips `allowed`). See ADR-34.
         local sonarr_cutoff
         sonarr_cutoff=$(dind_exec "curl -sf -H 'X-Api-Key: $sonarr_key' $sonarr_base/qualityprofile/$sonarr_qp_id" \
             | python3 -c "import sys, json; print(json.load(sys.stdin).get('cutoff',''))" 2>/dev/null)
-        assert_eq "1001" "$sonarr_cutoff" "wizard: Sonarr compact cutoff 1001"
+        assert_eq "1001" "$sonarr_cutoff" "wizard: Sonarr 720p compact cutoff 1001 (above SD floor)"
     fi
 
     # 4d. Quality definitions — WEBDL-720p preferred should be 20.0 (compact, sonarr)
@@ -174,20 +204,27 @@ except Exception: pass" 2>/dev/null)
 
     local radarr_base="http://localhost:7878/api/v3"
 
+    # 5-SD. SD-floor name→id confirmation (Radarr — WEBRip-480p differs from Sonarr).
+    assert_eq "1"  "$(_live_quality_id "$radarr_base" "$radarr_key" SDTV)"        "wizard: Radarr SDTV id=1"
+    assert_eq "2"  "$(_live_quality_id "$radarr_base" "$radarr_key" DVD)"         "wizard: Radarr DVD id=2"
+    assert_eq "8"  "$(_live_quality_id "$radarr_base" "$radarr_key" WEBDL-480p)"  "wizard: Radarr WEBDL-480p id=8"
+    assert_eq "12" "$(_live_quality_id "$radarr_base" "$radarr_key" WEBRip-480p)" "wizard: Radarr WEBRip-480p id=12"
+    assert_eq "20" "$(_live_quality_id "$radarr_base" "$radarr_key" Bluray-480p)" "wizard: Radarr Bluray-480p id=20"
+
     local radarr_qp_id
     radarr_qp_id=$(dind_exec "curl -sf -H 'X-Api-Key: $radarr_key' $radarr_base/qualityprofile" \
         | python3 -c "
 import sys, json
-try: print(next((str(p['id']) for p in json.load(sys.stdin) if p.get('name')=='WEB-720p/1080p'),''))
+try: print(next((str(p['id']) for p in json.load(sys.stdin) if p.get('name')=='720p Compact'),''))
 except Exception: pass" 2>/dev/null)
     if [[ -n "$radarr_qp_id" ]]; then
-        pass "wizard: Radarr WEB-720p/1080p profile created"
+        pass "wizard: Radarr 720p Compact profile created"
     else
-        fail "wizard: Radarr WEB-720p/1080p profile created" "not found in profile list"
+        fail "wizard: Radarr 720p Compact profile created" "not found in profile list"
     fi
 
     if [[ -n "$radarr_qp_id" ]]; then
-        # 5b. Radarr compact should also have only WEB qualities (no Remux)
+        # 5b. Radarr SD floor → 720p, all sources (Bluray-480p=20 not 13).
         local radarr_enabled
         radarr_enabled=$(dind_exec "curl -sf -H 'X-Api-Key: $radarr_key' $radarr_base/qualityprofile/$radarr_qp_id" \
             | python3 -c "
@@ -201,12 +238,12 @@ for item in p.get('items', []):
         if sub.get('allowed') and sub.get('quality'):
             ids.add(sub['quality']['id'])
 print(','.join(str(i) for i in sorted(ids)))" 2>/dev/null)
-        assert_eq "5,14" "$radarr_enabled" "wizard: Radarr compact qualities (WEB 720p only)"
+        assert_eq "1,2,4,5,6,8,12,14,20" "$radarr_enabled" "wizard: Radarr 720p compact qualities (SD floor → 720p)"
 
         local radarr_cutoff
         radarr_cutoff=$(dind_exec "curl -sf -H 'X-Api-Key: $radarr_key' $radarr_base/qualityprofile/$radarr_qp_id" \
             | python3 -c "import sys, json; print(json.load(sys.stdin).get('cutoff',''))" 2>/dev/null)
-        assert_eq "1001" "$radarr_cutoff" "wizard: Radarr compact cutoff 1001"
+        assert_eq "1001" "$radarr_cutoff" "wizard: Radarr 720p compact cutoff 1001 (above SD floor)"
     fi
 
     # 5d. Radarr quality definitions — WEBDL-720p preferred should be 22.0 (compact, radarr)
