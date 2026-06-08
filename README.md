@@ -267,7 +267,7 @@ MediaStack follows [TRaSH Guides](https://trash-guides.info/File-and-Folder-Stru
 ```
 
 > [!TIP]
-> Hardlinks mean files appear in both `torrents/` and `media/` without using double the disk space. Both directories must be on the same filesystem.
+> Hardlinks mean files appear in both `torrents/` and `media/` without using double the disk space. Removing a finished torrent never deletes the library copy — both paths are names for the same underlying file, so dropping one keeps the other intact. Both directories must be on the same filesystem.
 
 ---
 
