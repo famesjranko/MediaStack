@@ -36,15 +36,17 @@ assert_fail2ban_configured() {
     # Tier 1a — every jail has an iptables chain in DOCKER-USER.
     local du_rules jail missing_chains=()
     du_rules=$(dind_exec "iptables -S DOCKER-USER 2>/dev/null" | tr -d '\r')
-    for jail in jellyfin npm jellyseerr npm-ratelimit; do
+    # npm-ratelimit ships disabled by default (config.yml rate_limiting.enabled=false,
+    # ADR-35), so only 3 jails are active.
+    for jail in jellyfin npm jellyseerr; do
         if ! echo "$du_rules" | grep -q "f2b-${jail}"; then
             missing_chains+=("$jail")
         fi
     done
     if [[ ${#missing_chains[@]} -eq 0 ]]; then
-        pass "fail2ban: all 4 jails have iptables chains in DOCKER-USER"
+        pass "fail2ban: all 3 jails have iptables chains in DOCKER-USER"
     else
-        fail "fail2ban: all 4 jails have iptables chains in DOCKER-USER" \
+        fail "fail2ban: all 3 jails have iptables chains in DOCKER-USER" \
             "missing: ${missing_chains[*]}"
     fi
 

@@ -81,3 +81,41 @@ print(sum(1 for h in hosts if "limit_req zone=mediastack_ratelimit" in (h.get("a
         fail "fail2ban: f2b-npm-ratelimit chain jumped from DOCKER-USER" "not found in DOCKER-USER"
     fi
 }
+
+# Default state (config.yml rate_limiting.enabled=false, ADR-35): rate limiting is
+# off, so NO limit_req_zone is written, NO proxy host carries limit_req, and the
+# npm-ratelimit jail is not loaded. Static/structural checks only — asserting a
+# "zero 429s under burst" negative would be flaky and prove nothing.
+assert_ratelimit_disabled() {
+    if svc_stripped npm || svc_stripped fail2ban; then
+        skip "rate limiting: disabled verification" "stripped via MS_TEST_STRIP_SERVICES"
+        return
+    fi
+
+    local http_top_content
+    http_top_content=$(dind_exec "cat config/npm/data/nginx/custom/http_top.conf 2>/dev/null" | tr -d '\r')
+    if [[ "$http_top_content" != *"limit_req_zone"* ]]; then
+        pass "rate limiting (disabled): no limit_req_zone in http_top.conf"
+    else
+        fail "rate limiting (disabled): no limit_req_zone in http_top.conf" "content: ${http_top_content:0:200}"
+    fi
+
+    local rl_proxy_hosts rl_count
+    rl_proxy_hosts=$(dind_exec "curl -sf -H 'Authorization: Bearer $NPM_TOKEN' http://localhost:81/api/nginx/proxy-hosts" 2>/dev/null || echo "[]")
+    rl_count=$(echo "$rl_proxy_hosts" | python3 -c '
+import sys, json
+hosts = json.load(sys.stdin)
+print(sum(1 for h in hosts if "limit_req zone=mediastack_ratelimit" in (h.get("advanced_config","") or "")))
+' 2>/dev/null | tr -d '\r\n')
+    if [[ "${rl_count:-0}" -eq 0 ]]; then
+        pass "rate limiting (disabled): 0 proxy hosts carry limit_req in advanced_config"
+    else
+        fail "rate limiting (disabled): proxy hosts must not carry limit_req" "got ${rl_count:-0}"
+    fi
+
+    if echo "$F2B_STATUS" | grep -q "npm-ratelimit"; then
+        fail "rate limiting (disabled): npm-ratelimit jail must not be loaded" "found in fail2ban status"
+    else
+        pass "rate limiting (disabled): npm-ratelimit jail not loaded"
+    fi
+}

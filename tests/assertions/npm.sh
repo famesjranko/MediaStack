@@ -161,5 +161,41 @@ print(count)
         else
             fail "step 9 NPM: security headers in advanced_config" "expected >=2 hosts with headers, got $adv_config_count"
         fi
+
+        # Jellyfin host carries its upstream-recommended extras (jellyfin.org
+        # nginx guide): Content-Security-Policy + client_max_body_size 20M.
+        # Jellyfin-only — upstream Jellyseerr ships neither.
+        local jf_upstream
+        jf_upstream=$(echo "$proxy_hosts" | python3 -c '
+import sys, json
+hosts = json.load(sys.stdin)
+for h in hosts:
+    if any(d.startswith("jellyfin.") for d in h.get("domain_names", [])):
+        ac = h.get("advanced_config", "") or ""
+        print("yes" if ("Content-Security-Policy" in ac and "client_max_body_size 20M" in ac) else "no")
+        break
+' 2>/dev/null | tr -d '\r\n')
+        if [[ "$jf_upstream" == "yes" ]]; then
+            pass "step 9 NPM: jellyfin host has upstream CSP + client_max_body_size 20M"
+        else
+            fail "step 9 NPM: jellyfin host upstream headers" "expected CSP + client_max_body_size 20M, got '$jf_upstream'"
+        fi
+
+        # Headers must actually EMIT on the wire, not merely sit in advanced_config.
+        # NPM's proxy.conf adds `add_header X-Served-By` in `location /`, which makes
+        # nginx drop inherited server-level add_header directives — so the security
+        # headers are set with more_set_headers (headers_more) to survive that. Probe
+        # the live response to prove CSP + HSTS + nosniff reach the client.
+        local emit_headers emit_ok=0
+        emit_headers=$(dind_exec "curl -sk -o /dev/null -D - --resolve 'jellyfin.fresh.test:443:127.0.0.1' https://jellyfin.fresh.test/System/Info/Public")
+        grep -qi '^content-security-policy:'   <<<"$emit_headers" && emit_ok=$((emit_ok+1)) || true
+        grep -qi '^strict-transport-security:' <<<"$emit_headers" && emit_ok=$((emit_ok+1)) || true
+        grep -qi '^x-content-type-options:'    <<<"$emit_headers" && emit_ok=$((emit_ok+1)) || true
+        if [[ "$emit_ok" -eq 3 ]]; then
+            pass "step 9 NPM: security headers emit on live jellyfin responses (CSP + HSTS + nosniff)"
+        else
+            fail "step 9 NPM: security headers emit on live jellyfin responses" \
+                "only $emit_ok/3 present — more_set_headers must survive proxy.conf's location add_header"
+        fi
     fi
 }

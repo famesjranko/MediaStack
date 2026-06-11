@@ -29,14 +29,19 @@ SC_VERSION="0.11.0"
 SC_IMAGE="koalaman/shellcheck:v${SC_VERSION}"
 
 # Split args: shellcheck passthrough flags (anything starting with -) vs. files.
+# Default severity matches the CI gate (--severity=warning): a bare ./tests/lint.sh
+# gives the same pass/fail as CI. Pass --severity=error/style/info to override.
 sc_flags=()
 files=()
+has_severity=false
 for arg in "$@"; do
     case "$arg" in
+        --severity=*) sc_flags+=("$arg"); has_severity=true ;;
         -*) sc_flags+=("$arg") ;;
         *)  files+=("$arg") ;;
     esac
 done
+[[ "$has_severity" == "false" ]] && sc_flags=("--severity=warning" "${sc_flags[@]}")
 
 # Default file set: every tracked shell file. Same discovery the CI shell-syntax
 # loop uses (git ls-files -z '*.sh' 'mediastack'), so "what is shell here" has

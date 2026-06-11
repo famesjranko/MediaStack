@@ -342,7 +342,8 @@ Verify forwarding after setup:
 - Creates proxy hosts for `jellyfin.$DOMAIN` and `jellyseerr.$DOMAIN`
 - Requests Let's Encrypt certificates with HTTP-01 validation
 - Enables forced SSL + HTTP/2
-- Applies security headers (HSTS, X-Content-Type-Options, Permissions-Policy)
+- Applies security headers (HSTS, X-Content-Type-Options, Permissions-Policy, and Jellyfin's Content-Security-Policy)
+- Enables Jellyseerr proxy-trust so its request logs and limits use real client IPs
 
 If certificate issuance fails because DNS is not pointing at your IP yet or port 80 is not forwarded, a `[WARN]` is logged and the proxy works on HTTP. Request certificates manually later through the NPM UI at `http://<ip>:81`.
 
@@ -465,7 +466,7 @@ From outside your home network, such as a phone on cellular:
 - **Kernel hardening:** SYN flood protection, ICMP redirect blocking, reverse path filtering, broadcast ICMP ignore, martian logging.
 - **Fail2ban:** 5 failed logins in 30 min -> 30 min ban for Jellyfin, Jellyseerr, and NPM proxied 401/403. It does not protect NPM admin on `:81`, which is LAN-only.
 - **Private IPs whitelisted:** `10.0.0.0/8` covers wg-easy's peer range, so LAN and VPN users do not ban themselves.
-- **Security headers:** HSTS with `includeSubDomains`, X-Content-Type-Options, Permissions-Policy. Jellyfin gets `proxy_buffering off` for streaming.
+- **Security headers:** HSTS with `includeSubDomains`, X-Content-Type-Options, Permissions-Policy, and Jellyfin's recommended Content-Security-Policy. Jellyfin also gets `proxy_buffering off` for streaming and `client_max_body_size 20M` for uploads.
 - **HSTS note:** Once a browser sees the header, it refuses plain HTTP for all subdomains. Configure SSL before adding new subdomains.
 - **Unban:** `docker exec fail2ban fail2ban-client set <jail> unbanip <ip>`
 

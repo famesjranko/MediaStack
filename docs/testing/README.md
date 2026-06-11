@@ -162,7 +162,7 @@ Structure (`tests/scenarios/fresh-install.sh`):
 | 3. configure.sh | Run `configure.sh`, capture log | Exits 0, summary printed. |
 | 4. Per-step evidence | Service-by-service API assertions | See below. |
 | 4b. Fail2ban | Jail verification, filter regression, ban pipeline | Jails loaded, filters match current log format, DOCKER-USER chain used. |
-| 4c. Rate limiting | NPM nginx `limit_req` + fail2ban `npm-ratelimit` jail | `http_top.conf` zone, `limit_req` in advanced_config, 429 responses under burst, ban pipeline. |
+| 4c. Rate limiting (disabled) | Default-off verification (ADR-35) | No `limit_req_zone` in `http_top.conf`, 0 proxy hosts carry `limit_req`, `npm-ratelimit` jail not loaded. |
 | 5. `.env` back-population | API keys written to `.env` | `SONARR_API_KEY` / `RADARR_API_KEY` / `JELLYFIN_API_KEY` written. |
 | 6. Drift regression | Mutate `config.yml`, re-run `configure.sh`, assert warnings | 3 expected `[WARN]` lines fire, no false positives. |
 
@@ -179,11 +179,11 @@ Per-step evidence (phase 4):
 - **Step 7 Portainer:** admin user initialized (HTTP 204 from `/api/users/admin/check`), wizard admin username + shared password returns JWT, local Docker endpoint created.
   Focused host-side coverage: `bash tests/unit/portainer.sh` checks that empty JWT auth drift warns and skips endpoint/API-token setup, while successful auth still provisions both.
 - **Step 8 Homepage:** services.yaml generated with all service groups, Jellyfin widget configured, Sonarr uses internal URL, ready-state HTTPS URLs used when `REMOTE_WEB_STATE=ready` (`jellyfin.fresh.test`), accessible at port 3000.
-- **Step 9 NPM:** shared admin creds authenticate, defaults rejected, ready-state proxy hosts created (>=2 user-facing), `jellyfin.$DOMAIN` routes via proxy, Let's Encrypt certificates issued via Pebble, SSL forced + cert on proxy hosts, HTTPS connectivity, security headers in `advanced_config`.
+- **Step 9 NPM:** shared admin creds authenticate, defaults rejected, ready-state proxy hosts created (>=2 user-facing), `jellyfin.$DOMAIN` routes via proxy, Let's Encrypt certificates issued via Pebble, SSL forced + cert on proxy hosts, HTTPS connectivity, security headers in `advanced_config`, Jellyfin's upstream CSP + `client_max_body_size 20M`.
 
 ### `remote-gating.sh` — focused remote-state gate
 
-Starts proxy-profile services with a real `DOMAIN` while flipping `REMOTE_WEB_STATE` through unchecked, skipped, and ready. Unchecked/skipped must keep Jellyfin, Homepage, and NPM LAN-only while NPM rate limiting and fail2ban validation still run. Ready must publish cert-backed Jellyfin/Jellyseerr proxy hosts through the Pebble ACME override.
+Starts proxy-profile services with a real `DOMAIN` while flipping `REMOTE_WEB_STATE` through unchecked, skipped, and ready. Unchecked/skipped must keep Jellyfin, Homepage, and NPM LAN-only while NPM's rate-limit step (disabled by default, ADR-35) and fail2ban validation still run. Ready must publish cert-backed Jellyfin/Jellyseerr proxy hosts through the Pebble ACME override.
 
 Remote-state fast checks:
 

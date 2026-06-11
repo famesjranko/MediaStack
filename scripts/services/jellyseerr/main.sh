@@ -313,5 +313,63 @@ print(json.dumps(body))
         fi
     fi
 
+    # ----------------------------------------------------------------------
+    # Trust the NPM reverse proxy so Jellyseerr reads the real client IP from
+    # X-Forwarded-For (the app-side counterpart to Jellyfin's KnownProxies).
+    # Enable it ONLY when remote access via NPM is configured: on a LAN/direct
+    # install Jellyseerr is reached at host:5055 with no proxy in front, so
+    # trusting forwarded headers would let any direct client spoof its IP.
+    # We reconcile trustProxy to that topology-correct value on every run (like
+    # the permissions/quotas block above) rather than warn-on-drift like
+    # KnownProxies: trustProxy is a single boolean, so we can't tell a user's
+    # deliberate off from never-set — the architecture requires it on behind NPM,
+    # so it's ensured. trustProxy lives in settings.network (NOT settings.main)
+    # and is read at Express startup, so a restart is required to apply it.
+    local want_trust=false
+    if [[ "${REMOTE_WEB_STATE:-}" == "ready" && -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then
+        want_trust=true
+    fi
+
+    local js_net_settings cur_trust cur_trust_norm js_trust_changed=false
+    if ! js_net_settings=$(api_fetch "Jellyseerr network settings" -c "$cookiejar" -b "$cookiejar" "$js_url/api/v1/settings/network"); then
+        js_net_settings="{}"
+    fi
+    cur_trust=$(echo "$js_net_settings" | json_get trustProxy False)
+    cur_trust_norm=false
+    [[ "$cur_trust" =~ ^(True|true)$ ]] && cur_trust_norm=true
+
+    if [[ "$cur_trust_norm" == "$want_trust" ]]; then
+        log_skip "Jellyseerr trustProxy already $want_trust"
+    else
+        local net_body
+        net_body=$(WANT="$want_trust" python3 -c 'import os, json; print(json.dumps({"trustProxy": os.environ["WANT"] == "true"}))')
+        if curl -fsS -X POST "$js_url/api/v1/settings/network" \
+            -H "Content-Type: application/json" \
+            -c "$cookiejar" -b "$cookiejar" \
+            -d "$net_body" >/dev/null 2>&1; then
+            log_ok "Jellyseerr trustProxy set to $want_trust (reads real client IP behind NPM)"
+            js_trust_changed=true
+        else
+            log_warn "Failed to set Jellyseerr trustProxy"
+        fi
+    fi
+
+    # trustProxy is applied at Express startup — restart so it takes effect
+    # (best-effort, mirrors the Jellyfin KnownProxies restart). Placed last:
+    # nothing after the settings POSTs uses the cookie session.
+    if [[ "$js_trust_changed" == "true" ]]; then
+        log_info "Restarting Jellyseerr for trustProxy to take effect..."
+        if ! docker compose restart jellyseerr >/dev/null 2>&1; then
+            log_warn "Failed to restart Jellyseerr - check 'docker compose logs jellyseerr'"
+        else
+            for _ in $(seq 1 30); do
+                curl -fsS "$js_url/api/v1/settings/public" >/dev/null 2>&1 && break
+                sleep 2
+            done
+            curl -fsS "$js_url/api/v1/settings/public" >/dev/null 2>&1 || \
+                log_warn "Jellyseerr did not become healthy within 60s after restart - check 'docker logs jellyseerr'"
+        fi
+    fi
+
     cleanup_jellyseerr_tmp
 }

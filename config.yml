@@ -219,10 +219,17 @@ jellyfin:
 # ---------------------------------------------------------------------------
 # Rate Limiting (nginx via NPM)
 # ---------------------------------------------------------------------------
-# Applied to internet-facing proxy hosts (Jellyfin, Jellyseerr).
-# Jellyfin UI sends ~30-50 requests per page load in short bursts.
-# These defaults allow bursty page loads while catching automated abuse.
+# DISABLED BY DEFAULT. Neither Jellyfin's nor Jellyseerr's official reverse-proxy
+# config rate-limits, and a blanket nginx limit_req applies to EVERY path including
+# media streaming and image loads: a multi-device household behind one NAT'd
+# residential IP can hit 429s mid-playback, and the [npm-ratelimit] fail2ban jail
+# can then ban the household's own public IP. Login brute-force stays covered by
+# the jellyfin/jellyseerr/npm 401/403 fail2ban jails regardless of this setting.
+#
+# To re-enable, set enabled: true AND enable the [npm-ratelimit] jail in
+# config/fail2ban/jail.d/mediastack.conf. The settings below apply only when enabled.
 rate_limiting:
+  enabled: false                   # Master switch (off = upstream parity, no nginx limit_req)
   requests_per_second: 15          # Sustained rate per IP
   burst: 60                        # Burst bucket (absorbs page-load spikes)
   ban_maxretry: 10                 # 429 responses within ban_findtime triggers ban

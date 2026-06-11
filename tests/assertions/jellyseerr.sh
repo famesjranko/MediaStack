@@ -52,6 +52,18 @@ print(",".join(names))' 2>/dev/null)
         else
             fail "step 6 Jellyseerr: libraries synced (Movies + TV Shows)" "got '${js_lib_names}'"
         fi
+
+        # trustProxy ("Enable Proxy Support") must be on behind NPM so Jellyseerr
+        # reads the real client IP. It lives in settings.network (NOT settings.main)
+        # and is enabled only when remote-ready — which this scenario is.
+        local js_net js_trust
+        js_net=$(dind_exec "curl -sf -c $js_cookie -b $js_cookie $js_url/api/v1/settings/network")
+        js_trust=$(echo "$js_net" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("trustProxy"))' 2>/dev/null)
+        if [[ "$js_trust" == "True" ]]; then
+            pass "step 6 Jellyseerr: trustProxy enabled (remote-ready)"
+        else
+            fail "step 6 Jellyseerr: trustProxy enabled (remote-ready)" "settings/network trustProxy=$js_trust"
+        fi
     else
         fail "step 6 Jellyseerr: Sonarr connected" "could not authenticate to Jellyseerr (HTTP $js_auth_http)"
         fail "step 6 Jellyseerr: Radarr connected" "could not authenticate to Jellyseerr"

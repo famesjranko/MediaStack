@@ -2,7 +2,7 @@ assert_jellyfin_encoding() {
     # 5b. Intel QSV encoding
     env_set JELLYFIN_GPU intel
     local encoding_log=/tmp/configure-encoding.out
-    if dind_exec "./scripts/configure.sh --only jellyfin" >"$encoding_log" 2>&1; then
+    if dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jellyfin" >"$encoding_log" 2>&1; then
         local encoding_log_stripped
         encoding_log_stripped=$(sed -r 's/\x1b\[[0-9;]*m//g' "$encoding_log")
 
@@ -23,7 +23,7 @@ assert_jellyfin_encoding() {
 
         # Idempotency: re-run should skip, not re-apply
         local encoding_rerun_log=/tmp/configure-encoding-rerun.out
-        dind_exec "./scripts/configure.sh --only jellyfin" >"$encoding_rerun_log" 2>&1
+        dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jellyfin" >"$encoding_rerun_log" 2>&1
         local rerun_stripped
         rerun_stripped=$(sed -r 's/\x1b\[[0-9;]*m//g' "$encoding_rerun_log")
         if echo "$rerun_stripped" | grep -q '\[SKIP\].*Hardware transcoding already set to qsv'; then
@@ -57,7 +57,7 @@ assert_jellyfin_encoding() {
 
         env_set JELLYFIN_GPU amd
         local amd_log=/tmp/configure-amd-vaapi.out
-        dind_exec "./scripts/configure.sh --only jellyfin" >"$amd_log" 2>&1
+        dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jellyfin" >"$amd_log" 2>&1
         local amd_stripped
         amd_stripped=$(sed -r 's/\x1b\[[0-9;]*m//g' "$amd_log")
 
@@ -101,7 +101,7 @@ assert_jellyfin_encoding() {
 
         env_set JELLYFIN_GPU nvidia
         local nvenc_log=/tmp/configure-nvenc.out
-        dind_exec "./scripts/configure.sh --only jellyfin" >"$nvenc_log" 2>&1
+        dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jellyfin" >"$nvenc_log" 2>&1
         local nvenc_stripped
         nvenc_stripped=$(sed -r 's/\x1b\[[0-9;]*m//g' "$nvenc_log")
 
@@ -140,7 +140,7 @@ assert_jellyfin_encoding() {
             http://localhost:8096/System/Configuration/encoding" >/dev/null
 
         env_set JELLYFIN_GPU intel
-        dind_exec "./scripts/configure.sh --only jellyfin" >/dev/null 2>&1
+        dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jellyfin" >/dev/null 2>&1
 
         local drift_encoding_body
         drift_encoding_body=$(dind_exec "curl -sf -H 'Authorization: $jf_auth, Token=\"$JF_TOKEN\"' http://localhost:8096/System/Configuration/encoding" \
@@ -152,7 +152,7 @@ assert_jellyfin_encoding() {
             http://localhost:8096/System/Configuration/encoding" >/dev/null
 
         local drift_encoding_log=/tmp/configure-encoding-drift.out
-        dind_exec "./scripts/configure.sh --only jellyfin" >"$drift_encoding_log" 2>&1
+        dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jellyfin" >"$drift_encoding_log" 2>&1
         local drift_encoding_stripped
         drift_encoding_stripped=$(sed -r 's/\x1b\[[0-9;]*m//g' "$drift_encoding_log")
         if echo "$drift_encoding_stripped" | grep -q "\[WARN\].*Jellyfin transcoding is 'nvenc', expected 'qsv'"; then

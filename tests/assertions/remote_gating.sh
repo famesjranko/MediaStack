@@ -230,8 +230,10 @@ remote_gating_assert_npm_hardening_logs() {
     else
         log_plain=""
     fi
-    assert_contains "$log_plain" "NPM rate limit zone" "remote gating: $state NPM rate limit zone still configured"
-    assert_contains "$log_plain" "Fail2ban: npm-ratelimit jail" "remote gating: $state Fail2ban: npm-ratelimit jail still validated"
+    # Rate limiting ships disabled (ADR-35); the zone + jail steps still RUN outside
+    # the ready gate, now emitting their disabled-path log lines.
+    assert_contains "$log_plain" "NPM rate limiting: disabled" "remote gating: $state NPM rate limiting step still ran"
+    assert_contains "$log_plain" "Fail2ban: npm-ratelimit jail" "remote gating: $state Fail2ban: npm-ratelimit jail step still ran"
 }
 
 assert_remote_gating_unchecked() {
@@ -324,6 +326,8 @@ else:
 
     local log_plain
     log_plain="$(sed -r 's/\x1b\[[0-9;]*m//g' "$log_path" 2>/dev/null || true)"
-    assert_contains "$log_plain" "NPM rate limit zone" "remote gating: ready NPM rate limit zone still configured"
-    assert_contains "$log_plain" "Fail2ban: npm-ratelimit jail" "remote gating: ready Fail2ban: npm-ratelimit jail still validated"
+    # Rate limiting ships disabled (ADR-35); the zone + jail steps still RUN outside
+    # the ready gate, now emitting their disabled-path log lines.
+    assert_contains "$log_plain" "NPM rate limiting: disabled" "remote gating: ready NPM rate limiting step still ran"
+    assert_contains "$log_plain" "Fail2ban: npm-ratelimit jail" "remote gating: ready Fail2ban: npm-ratelimit jail step still ran"
 }

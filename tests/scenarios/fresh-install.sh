@@ -161,7 +161,12 @@ PYEOF
     # 3. Run configure.sh. Must exit 0.
     # ------------------------------------------------------------------
     local configure_log=/tmp/configure.out
-    if dind_exec "./scripts/configure.sh" >"$configure_log" 2>&1; then
+    # UI_ASCII=1 forces ASCII log markers ([OK]/[SKIP]/[WARN]) so the marker-grep
+    # assertions (uptime-kuma, beszel, jellyfin encoding, drift) are deterministic
+    # regardless of the DinD locale — without it the glyph markers (✓/→/!) added in
+    # the terminal-capability work make those greps silently miss. See
+    # scripts/lib/term_caps.sh (UI_ASCII).
+    if dind_exec "UI_ASCII=1 ./scripts/configure.sh" >"$configure_log" 2>&1; then
         pass "configure.sh exits 0"
     else
         fail "configure.sh exits 0"
@@ -197,7 +202,7 @@ PYEOF
     assert_beszel_configured "$configure_log"
     assert_npm_configured "$jf_password"
     assert_fail2ban_configured
-    assert_ratelimit_configured
+    assert_ratelimit_disabled
     assert_env_backpopulation
     assert_jellyfin_encoding
     assert_port_check

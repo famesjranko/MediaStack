@@ -158,20 +158,23 @@ List of `{name, type, path}`. `type` is Jellyfin's `collectionType` (`movies`, `
 
 ### `rate_limiting`
 
-Nginx rate limiting applied to internet-facing proxy hosts (Jellyfin, Jellyseerr) via NPM's advanced config. Jellyfin's UI sends 30--50 requests per page load in short bursts, so the defaults are tuned to allow bursty page loads while catching automated abuse.
+Optional nginx rate limiting for internet-facing proxy hosts (Jellyfin, Jellyseerr) via NPM's advanced config. **Disabled by default** (`enabled: false`) for parity with upstream Jellyfin/Jellyseerr, neither of which rate-limits — a blanket server-level limit applies to every path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback (and the `[npm-ratelimit]` jail could then ban the household's own public IP). Login brute-force is covered regardless by the 401/403 auth jails. See ADR-35.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
+| `enabled` | `false` | Master switch. When `false`, no `limit_req_zone` is written, no `limit_req` is injected into proxy hosts, and the `[npm-ratelimit]` jail-verify is skipped. The fields below apply only when `true`. |
 | `requests_per_second` | `15` | Sustained request rate per IP. Written as an nginx `limit_req_zone` directive in NPM's `http_top.conf`. |
 | `burst` | `60` | Burst bucket size. Absorbs page-load spikes via `limit_req burst=N nodelay` in each proxy host's advanced config. |
 | `ban_maxretry` | `10` | Number of 429 responses within `ban_findtime` that triggers a fail2ban ban. Validated against the `[npm-ratelimit]` jail in `mediastack.conf` (drift is warned, not reconciled). |
 | `ban_findtime` | `60` | Window in seconds for accumulating `ban_maxretry` 429s. |
 
-Consumed by `configure_npm` (`scripts/services/npm/main.sh`), which:
+Consumed by `configure_npm` (`scripts/services/npm/main.sh`). When `enabled: true` it:
 1. Writes the `limit_req_zone` directive to NPM's `http_top.conf`.
 2. Injects `limit_req` directives into each proxy host's `advanced_config`.
 3. Reloads nginx inside the NPM container to activate.
 4. Checks that the `[npm-ratelimit]` jail values in `config/fail2ban/jail.d/mediastack.conf` match `ban_maxretry` / `ban_findtime`.
+
+When `enabled: false` (the default), each of those steps logs a skip. To re-enable, set `enabled: true` **and** set `enabled = true` on the `[npm-ratelimit]` jail in `config/fail2ban/jail.d/mediastack.conf`. The proper future fix is per-path exemption (a second zone + per-`location` config) so streaming/image paths are never limited — see ADR-35.
 
 ---
 
@@ -270,7 +273,7 @@ These service configs are shipped with the repo. They live under `config/` but s
 | `[jellyfin]` | `logpath = /var/log/jellyfin/log_*.log`. |
 | `[npm]` | Two log globs: `default-host_*.log` + `proxy-host-*_*.log`. |
 | `[jellyseerr]` | `logpath = /var/log/jellyseerr/*.log`. |
-| `[npm-ratelimit]` | `logpath = /var/log/npm/proxy-host-*_*.log`. Catches IPs that accumulate 429 (Too Many Requests) responses from nginx `limit_req`. Overrides `[DEFAULT]` with `maxretry = 10`, `findtime = 60` — these values are validated against `config.yml`'s `rate_limiting.ban_maxretry` / `ban_findtime` by `configure_npm` (drift is warned, not reconciled). Uses the `npm-ratelimit` filter (see below). |
+| `[npm-ratelimit]` | **Disabled by default** (`enabled = false`, ADR-35) — companion to `config.yml`'s `rate_limiting.enabled`. `logpath = /var/log/npm/proxy-host-*_*.log`. When enabled, catches IPs that accumulate 429 (Too Many Requests) responses from nginx `limit_req`; overrides `[DEFAULT]` with `maxretry = 10`, `findtime = 60` (validated against `config.yml`'s `rate_limiting.ban_maxretry` / `ban_findtime` by `configure_npm` — drift is warned, not reconciled). Uses the `npm-ratelimit` filter (see below). |
 
 Log paths are mounted read-only from the producing service's config dir (fail2ban volume mounts in `docker-compose.yml`).
 
@@ -304,7 +307,7 @@ Both `sign-in` and `login` variants covered — Jellyseerr's log wording has fli
 failregex = \s429\s.*\[Client <ADDR>\]
 ```
 
-Matches 429 (Too Many Requests) responses in NPM's nginx access log. Same log format as `npm.conf` — status appears before `[Client]`. Paired with the `[npm-ratelimit]` jail to ban IPs that repeatedly trigger nginx `limit_req` rate limits (configured via `config.yml`'s `rate_limiting` section).
+Matches 429 (Too Many Requests) responses in NPM's nginx access log. Same log format as `npm.conf` — status appears before `[Client]`. Paired with the `[npm-ratelimit]` jail to ban IPs that repeatedly trigger nginx `limit_req` rate limits (configured via `config.yml`'s `rate_limiting` section). The filter ships in place but is inert by default because rate limiting is disabled, so nginx emits no 429s to match (ADR-35).
 
 ### `config/jackett/Jackett/ServerConfig.json`
 

@@ -90,15 +90,16 @@ false-positive suppressions live in `.shellcheckrc` (repo root), so the runner
 needs no special flags — and neither do you.
 
 ```bash
-./tests/lint.sh                          # lint every tracked *.sh + mediastack
+./tests/lint.sh                          # lint every tracked *.sh + mediastack (--severity=warning, matches CI)
 ./tests/lint.sh scripts/lib/validators.sh  # lint only the named file(s)
-./tests/lint.sh --severity=error         # only fail on errors (what CI gates on)
+./tests/lint.sh --severity=error         # stricter: only fail on errors
 ```
 
-It prefers a native `shellcheck` and falls back to the `koalaman/shellcheck:stable`
-docker image, so it works with neither installed-but-docker, or shellcheck on PATH.
-CI runs `./tests/lint.sh --severity=error` in the "Static validation" job and fails
-the PR on any new shellcheck **error**.
+It prefers a native `shellcheck` at the pinned version and falls back to the pinned
+`koalaman/shellcheck:v0.11.0` docker image, so the analysing engine is identical
+everywhere.
+The default severity is `--severity=warning` — the same gate CI uses (via `tests/unit.sh`).
+A bare `./tests/lint.sh` therefore gives the same pass/fail result as CI; no flag needed.
 
 > **Version skew is real.** CI's native `shellcheck` and the pinned
 > `koalaman/shellcheck:stable` image are different versions that disagree on a few
@@ -148,7 +149,7 @@ Proves:
 2. Unchecked/skipped state creates no public NPM proxy hosts.
 3. Jellyfin omits the managed NPM `KnownProxies` entry and external HTTPS URLs until ready.
 4. Homepage uses LAN hrefs until ready.
-5. NPM rate-limit and fail2ban validation still run outside the ready gate.
+5. NPM's rate-limit step (disabled by default, ADR-35) and fail2ban validation still run outside the ready gate.
 6. Ready state preserves cert-backed Jellyfin/Jellyseerr proxy publication with the Pebble ACME override.
 
 ### Stage 2 remote-access scenarios

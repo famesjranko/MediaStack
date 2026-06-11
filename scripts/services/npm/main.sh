@@ -657,7 +657,13 @@ for s in json.load(sys.stdin):
     fi
 
     # --- Rate limiting zone (http{} context via NPM custom config) ---
-    local rate_rps rate_burst
+    # Disabled by default (config.yml rate_limiting.enabled) for upstream parity;
+    # see ADR-35. When disabled, no limit_req_zone is written here and no limit_req
+    # is injected into proxy hosts (below), and the npm-ratelimit jail-verify is
+    # skipped.
+    local rate_enabled rate_rps rate_burst
+    rate_enabled="$(cfg_field "rate_limiting.enabled" 2>/dev/null || echo "false")"
+    rate_enabled="${rate_enabled,,}"   # cfg_field prints Python "False"/"True"; normalize
     rate_rps=$(cfg_field "rate_limiting.requests_per_second" 2>/dev/null || echo "15")
     rate_burst=$(cfg_field "rate_limiting.burst" 2>/dev/null || echo "60")
 
@@ -666,7 +672,15 @@ for s in json.load(sys.stdin):
     local expected_zone="limit_req_zone \$binary_remote_addr zone=mediastack_ratelimit:10m rate=${rate_rps}r/s;"
     local http_top_created="false"
 
-    if [[ -f "$http_top_file" ]]; then
+    if [[ "$rate_enabled" != "true" ]]; then
+        log_skip "NPM rate limiting: disabled (config.yml rate_limiting.enabled=false)"
+        # Never delete a managed zone left by a previous enabled install: an existing
+        # proxy host could still reference it, and removing it would break the nginx
+        # reload. Warn only (graceful re-run / never auto-reconcile).
+        if [[ -f "$http_top_file" ]] && grep -q "zone=mediastack_ratelimit" "$http_top_file" 2>/dev/null; then
+            log_warn "NPM rate limiting disabled but a managed http_top.conf zone remains from a prior install - remove it manually or set rate_limiting.enabled: true"
+        fi
+    elif [[ -f "$http_top_file" ]]; then
         local current_content
         current_content=$(cat "$http_top_file")
         if [[ "$current_content" == "$expected_zone" ]]; then
@@ -822,13 +836,39 @@ for host in json.load(sys.stdin):
             local ws_val="false"
             [[ "$websocket" == "1" ]] && ws_val="true"
 
-            local adv_config
-            adv_config="limit_req zone=mediastack_ratelimit burst=${rate_burst} nodelay;
+            local adv_config=""
+            # Rate limiting is opt-in (config.yml rate_limiting.enabled); the
+            # security headers below are always applied. See ADR-35.
+            if [[ "$rate_enabled" == "true" ]]; then
+                adv_config="limit_req zone=mediastack_ratelimit burst=${rate_burst} nodelay;
 limit_req_status 429;
-"'add_header X-Content-Type-Options "nosniff" always;
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-add_header Permissions-Policy "accelerometer=(), ambient-light-sensor=(), battery=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), microphone=()" always;'
-            [[ "$subdomain" == "jellyfin" ]] && adv_config+=$'\nproxy_buffering off;'
+"
+            fi
+            # Security headers use more_set_headers, NOT add_header. NPM's
+            # bundled proxy.conf emits `add_header X-Served-By` inside `location
+            # /`, and nginx drops ALL inherited server-level add_header directives
+            # the moment a location declares its own — so server-level add_header
+            # security headers never reach the response. more_set_headers (the
+            # openresty headers_more module NPM ships) is not subject to that
+            # inheritance rule and emits regardless of the location's add_header.
+            adv_config+='more_set_headers "X-Content-Type-Options: nosniff";
+more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+more_set_headers "Permissions-Policy: accelerometer=(), ambient-light-sensor=(), battery=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), microphone=()";'
+            # Jellyfin-specific additions from its official nginx reverse-proxy
+            # guide (jellyfin.org). proxy_buffering off keeps streaming responsive;
+            # client_max_body_size 20M allows subtitle/avatar/plugin uploads; the
+            # Content-Security-Policy is Jellyfin's exact recommended string
+            # (connect-src 'self' covers the same-origin /socket websocket;
+            # gstatic/youtube/blob are whitelisted for the built-in web player).
+            # CSP uses more_set_headers for the same reason as above; CSP +
+            # client_max_body_size are Jellyfin-only — upstream Jellyseerr ships
+            # neither.
+            if [[ "$subdomain" == "jellyfin" ]]; then
+                adv_config+=$'\nproxy_buffering off;'
+                adv_config+=$'\nclient_max_body_size 20M;'
+                local jf_csp="default-src https: data: blob: ; img-src 'self' https://* ; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.youtube.com blob:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; font-src 'self'"
+                adv_config+=$'\nmore_set_headers "Content-Security-Policy: '"$jf_csp"$'";'
+            fi
 
             local host_json
             host_json=$(echo "$existing_hosts" | FQDN="$fqdn" python3 -c '
@@ -1157,22 +1197,31 @@ for host in json.load(sys.stdin):
             log_warn "Could not reload NPM nginx - rate limits active after next proxy host change"
     fi
 
-    # Verify npm-ratelimit jail values match config.yml
-    local rl_maxretry rl_findtime
-    rl_maxretry=$(cfg_field "rate_limiting.ban_maxretry" 2>/dev/null || echo "10")
-    rl_findtime=$(cfg_field "rate_limiting.ban_findtime" 2>/dev/null || echo "60")
-
-    local jail_file="$SCRIPT_DIR/config/fail2ban/jail.d/mediastack.conf"
-    if grep -q "\[npm-ratelimit\]" "$jail_file" 2>/dev/null; then
-        local current_maxretry current_findtime
-        current_maxretry=$(sed -n '/\[npm-ratelimit\]/,/^\[/{s/^maxretry = //p}' "$jail_file")
-        current_findtime=$(sed -n '/\[npm-ratelimit\]/,/^\[/{s/^findtime = //p}' "$jail_file")
-        if [[ "$current_maxretry" == "$rl_maxretry" && "$current_findtime" == "$rl_findtime" ]]; then
-            log_skip "Fail2ban: npm-ratelimit jail matches config.yml (maxretry=$rl_maxretry, findtime=${rl_findtime}s)"
-        else
-            log_warn "Fail2ban: npm-ratelimit jail values differ from config.yml (jail: maxretry=$current_maxretry findtime=$current_findtime, config: maxretry=$rl_maxretry findtime=$rl_findtime)"
-        fi
+    # Verify npm-ratelimit jail values match config.yml. Only when rate limiting is
+    # enabled: the jail ships disabled alongside rate_limiting.enabled=false (ADR-35).
+    if [[ "$rate_enabled" != "true" ]]; then
+        log_skip "Fail2ban: npm-ratelimit jail skipped (rate limiting disabled)"
     else
-        log_warn "Fail2ban: npm-ratelimit jail not found in $jail_file"
+        local rl_maxretry rl_findtime
+        rl_maxretry=$(cfg_field "rate_limiting.ban_maxretry" 2>/dev/null || echo "10")
+        rl_findtime=$(cfg_field "rate_limiting.ban_findtime" 2>/dev/null || echo "60")
+
+        local jail_file="$SCRIPT_DIR/config/fail2ban/jail.d/mediastack.conf"
+        if grep -q "\[npm-ratelimit\]" "$jail_file" 2>/dev/null; then
+            local current_maxretry current_findtime current_jail_enabled
+            current_maxretry=$(sed -n '/\[npm-ratelimit\]/,/^\[/{s/^maxretry = //p}' "$jail_file")
+            current_findtime=$(sed -n '/\[npm-ratelimit\]/,/^\[/{s/^findtime = //p}' "$jail_file")
+            current_jail_enabled=$(sed -n '/\[npm-ratelimit\]/,/^\[/{s/^enabled = //p}' "$jail_file")
+            if [[ "$current_jail_enabled" != "true" ]]; then
+                log_warn "Fail2ban: npm-ratelimit jail is disabled (enabled = ${current_jail_enabled:-unset}) — rate limiting is active but bans will not fire; set enabled = true in $jail_file"
+            fi
+            if [[ "$current_maxretry" == "$rl_maxretry" && "$current_findtime" == "$rl_findtime" ]]; then
+                log_skip "Fail2ban: npm-ratelimit jail matches config.yml (maxretry=$rl_maxretry, findtime=${rl_findtime}s)"
+            else
+                log_warn "Fail2ban: npm-ratelimit jail values differ from config.yml (jail: maxretry=$current_maxretry findtime=$current_findtime, config: maxretry=$rl_maxretry findtime=$rl_findtime)"
+            fi
+        else
+            log_warn "Fail2ban: npm-ratelimit jail not found in $jail_file"
+        fi
     fi
 }
