@@ -42,9 +42,6 @@ config/qbittorrent/qBittorrent/config/
 # Backups
 backups/
 
-# Local agent/editor state
-.agents/
-
 # Local plan files
 docs/plans
 
