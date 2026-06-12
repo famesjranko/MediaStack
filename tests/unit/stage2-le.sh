@@ -48,7 +48,7 @@ for class in partial transient config-dns config-port rate-limited npm-unhealthy
     reset_le_fixtures
     [[ "$class" == "partial" ]] && {
         STAGE2_LE_READY_HOSTS="jellyfin.gate.test"
-        STAGE2_LE_FAILED_HOSTS="jellyseerr.gate.test"
+        STAGE2_LE_FAILED_HOSTS="seerr.gate.test"
     }
     copy="$(stage2_le_failure_copy "$class")"
     assert_contains "$copy" "./setup.sh --remote" "S2-16: $class copy points to remote retry"
@@ -65,7 +65,7 @@ STAGE2_LE_READY_HOSTS_FIXTURE="jellyfin.gate.test"
 stage2_le_classify gate.test >/dev/null
 assert_eq "partial" "$STAGE2_LE_CLASSIFICATION" "S2-16: one ready host classifies as partial"
 assert_contains "$STAGE2_LE_READY_HOSTS" "jellyfin.gate.test" "S2-16: partial tracks ready host"
-assert_contains "$STAGE2_LE_FAILED_HOSTS" "jellyseerr.gate.test" "S2-16: partial tracks failed host"
+assert_contains "$STAGE2_LE_FAILED_HOSTS" "seerr.gate.test" "S2-16: partial tracks failed host"
 
 reset_le_fixtures
 STAGE2_LE_DNS=no-a

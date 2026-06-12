@@ -12,7 +12,7 @@ PY"
 
 run_scenario() {
     dind_exec "docker compose --profile proxy --profile remote --profile subtitles down -v --remove-orphans 2>/dev/null || true"
-    dind_exec "rm -rf config/jellyfin config/sonarr config/radarr config/jackett config/qbittorrent config/jellyseerr config/homepage config/portainer config/npm config/ddns-updater config/bazarr config/uptime-kuma config/beszel docker-compose.override.yml docker-compose.acme-test.yml"
+    dind_exec "rm -rf config/jellyfin config/sonarr config/radarr config/jackett config/qbittorrent config/seerr config/homepage config/portainer config/npm config/ddns-updater config/bazarr config/uptime-kuma config/beszel docker-compose.override.yml docker-compose.acme-test.yml"
     dind_exec "mkdir -p /tmp/ms-data/media/tv /tmp/ms-data/media/movies /tmp/ms-data/torrents/tv /tmp/ms-data/torrents/movies /tmp/ms-data/torrents/incomplete && chown -R 1000:1000 /tmp/ms-data"
     demo_lan_reset_config_marker
 

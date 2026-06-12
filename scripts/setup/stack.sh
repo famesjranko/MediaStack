@@ -618,7 +618,7 @@ PY
 
 create_config_dirs() {
     log_info "Creating config directories..."
-    local services=(jellyfin sonarr radarr jackett qbittorrent jellyseerr unpackerr homepage portainer wireguard ddns-updater bazarr uptime-kuma beszel)
+    local services=(jellyfin sonarr radarr jackett qbittorrent seerr unpackerr homepage portainer wireguard ddns-updater bazarr uptime-kuma beszel)
     for svc in "${services[@]}"; do
         mkdir -p "$SCRIPT_DIR/config/${svc}"
     done
@@ -640,7 +640,7 @@ create_config_dirs() {
     mkdir -p "$SCRIPT_DIR/config/fail2ban/filter.d"
 
     # Pre-create log-source dirs so fail2ban mounts them before the
-    # producing services (NPM/Jellyfin/Jellyseerr) create them on first run.
+    # producing services (NPM/Jellyfin/Seerr) create them on first run.
     # Without this, Docker auto-creates empty root-owned dirs at mount time
     # and fail2ban jails match nothing until each service is exercised.
     #
@@ -650,7 +650,7 @@ create_config_dirs() {
         "$SCRIPT_DIR/config/npm/data/logs"
         "$SCRIPT_DIR/config/npm/data/nginx/custom"
         "$SCRIPT_DIR/config/jellyfin/log"
-        "$SCRIPT_DIR/config/jellyseerr/logs"
+        "$SCRIPT_DIR/config/seerr/logs"
     )
     for d in "${log_dirs[@]}"; do
         mkdir -p "$d"
@@ -666,7 +666,9 @@ create_config_dirs() {
     touch "$SCRIPT_DIR/config/jellyfin/log/log_.log"
     touch "$SCRIPT_DIR/config/npm/data/logs/default-host_.log"
     touch "$SCRIPT_DIR/config/npm/data/logs/proxy-host-___.log"
-    touch "$SCRIPT_DIR/config/jellyseerr/logs/overseerr-.log"
+    touch "$SCRIPT_DIR/config/seerr/logs/seerr-.log"
+    # The official Seerr image writes /app/config as uid/gid 1000.
+    sudo chown -R 1000:1000 "$SCRIPT_DIR/config/seerr"
 
     # Seed Homepage configs before first container start. Homepage's image
     # writes its own defaults (GitHub/Reddit/YouTube bookmarks, basic widgets)
@@ -981,7 +983,7 @@ print_final_summary() {
     )
     if $remote_ready; then
         rows+=("$(ui_kv 'Jellyfin remote' "https://jellyfin.${domain}")")
-        rows+=("$(ui_kv 'Jellyseerr remote' "https://jellyseerr.${domain}")")
+        rows+=("$(ui_kv 'Seerr remote' "https://seerr.${domain}")")
     fi
     if [[ -n "$wg_init_pw" ]]; then
         rows+=("$(ui_kv 'WireGuard admin' "http://${lan_ip}:51821")")
@@ -1116,7 +1118,7 @@ print_access_info() {
     echo -e "  Radarr           ${u}:7878     ${GREEN}${admin} / ${cred_hint}${NC}"
     echo -e "  qBittorrent      ${u}:8080     ${GREEN}${admin} / ${cred_hint}${NC}"
     echo -e "  Jackett          ${u}:9117     ${GREEN}${cred_hint/%)/, no username)}${NC}"
-    echo -e "  Jellyseerr       ${u}:5055     ${GREEN}${admin} / ${cred_hint}${NC}"
+    echo -e "  Seerr            ${u}:5055     ${GREEN}${admin} / ${cred_hint}${NC}"
     echo -e "  Portainer        ${u}:9000     ${GREEN}${admin} / ${cred_hint}${NC}"
     if [[ "${BAZARR_ENABLED:-false}" == "true" ]]; then
         echo -e "  Bazarr           ${u}:6767     ${GREEN}${admin} / ${cred_hint}${NC}"
@@ -1171,7 +1173,7 @@ print_access_info() {
         echo ""
         if $remote_ready; then
             echo -e "  ${BOLD}Jellyfin${NC}         https://jellyfin.${domain}"
-            echo -e "  ${BOLD}Jellyseerr${NC}       https://jellyseerr.${domain}"
+            echo -e "  ${BOLD}Seerr${NC}            https://seerr.${domain}"
         elif [[ "$remote_state" == "skipped" ]]; then
             echo "  HTTPS skipped. LAN + VPN work. Run ./setup.sh --remote to try again."
         elif [[ "$remote_state" == "failed" ]]; then
@@ -1191,7 +1193,7 @@ print_access_info() {
     echo "  TCP+UDP $(printf '%-6s' "$torrent_port")-> ${lan_ip}   (qBittorrent peer connections)"
     if $has_domain; then
         echo "  TCP 80        -> ${lan_ip}   (Let's Encrypt + HTTP redirect)"
-        echo "  TCP 443       -> ${lan_ip}   (HTTPS - Jellyfin, Jellyseerr)"
+        echo "  TCP 443       -> ${lan_ip}   (HTTPS - Jellyfin, Seerr)"
         echo "  UDP $(printf '%-6s' "$wg_port")-> ${lan_ip}   (WireGuard VPN)"
     fi
     echo ""

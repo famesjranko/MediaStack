@@ -1,5 +1,5 @@
 assert_port_check() {
-    dind_exec "echo '127.0.0.1 jellyfin.fresh.test jellyseerr.fresh.test' >> /etc/hosts"
+    dind_exec "echo '127.0.0.1 jellyfin.fresh.test seerr.fresh.test' >> /etc/hosts"
     env_set DOMAIN fresh.test
 
     local pc_output

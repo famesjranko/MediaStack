@@ -156,7 +156,7 @@ check_ram_warn() {
     local ctx="${free_gb}GB"
     [[ -n "$total_gb" ]] && ctx="${free_gb}GB free of ${total_gb}GB total"
     if (( free_gb < 2 )); then
-        log_warn "Only ${ctx} - Bazarr/Jellyseerr may struggle. Continuing."
+        log_warn "Only ${ctx} - Bazarr/Seerr may struggle. Continuing."
     elif (( free_gb < 4 )); then
         log_warn "Only ${ctx} - flaresolverr (Cloudflare bypass) needs ~1GB for Chromium and may flap on this host. If indexer tests stall, consider disabling the public indexer preset. Continuing."
     else

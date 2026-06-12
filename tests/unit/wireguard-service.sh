@@ -218,7 +218,7 @@ configure_wireguard
 assert_contains "$(cat "$BODY_LOG")" '"192.168.1.50:8096/tcp"' \
     "containers: Jellyfin port appears in initial peer firewallIps"
 assert_contains "$(cat "$BODY_LOG")" '"192.168.1.50:5055/tcp"' \
-    "containers: Jellyseerr port appears in initial peer firewallIps"
+    "containers: Seerr port appears in initial peer firewallIps"
 assert_contains "$(cat "$BODY_LOG")" '"192.168.1.50:7359/udp"' \
     "containers: Jellyfin auto-discovery (UDP) appears in initial peer firewallIps"
 peer_post_body=$(grep "POST .*/api/client/peer-uuid-1" "$BODY_LOG" | sed 's/^[^:]*:: //' || true)

@@ -158,7 +158,7 @@ Structure (`tests/scenarios/fresh-install.sh`):
 |-------|-------------|------------------|
 | 0. Prep | Data dirs, config dirs, `.env` setup, resource-limit override | Data dirs chowned to 1000:1000; `.env` populated with known values; `generate_override` produces resource limits. |
 | 1. Compose up | `docker compose up -d` with optional Pebble ACME override | `docker compose up -d` exits 0. |
-| 2. Health wait | Wait for all 12 services, verify resource limits, start Pebble | All 12 services healthy/running (`wait_healthy` with 360s budget). 11 services checked via healthcheck (flaresolverr, jackett, qbittorrent, jellyfin, npm, sonarr, radarr, jellyseerr, unpackerr, homepage, fail2ban), Portainer by running status (`healthcheck: NONE`). Memory limits verified on all services. |
+| 2. Health wait | Wait for all 12 services, verify resource limits, start Pebble | All 12 services healthy/running (`wait_healthy` with 360s budget). 11 services checked via healthcheck (flaresolverr, jackett, qbittorrent, jellyfin, npm, sonarr, radarr, seerr, unpackerr, homepage, fail2ban), Portainer by running status (`healthcheck: NONE`). Memory limits verified on all services. |
 | 3. configure.sh | Run `configure.sh`, capture log | Exits 0, summary printed. |
 | 4. Per-step evidence | Service-by-service API assertions | See below. |
 | 4b. Fail2ban | Jail verification, filter regression, ban pipeline | Jails loaded, filters match current log format, DOCKER-USER chain used. |
@@ -174,8 +174,8 @@ Per-step evidence (phase 4):
 - **Step 4 Radarr:** mirror of Sonarr with `/data/media/movies`. Custom format scores verified against exact config.yml values (same 7 formats). Indexer count, WEBDL-1080p `preferredSize` tightened to 50.0, Forms authentication enabled.
 - **Step 5 Jellyfin:** `StartupWizardCompleted:true` in `/System/Info/Public`, admin auth returns `AccessToken` (with adversarial password containing `$`, `"`, `\`), Movies + TV Shows libraries present.
   Focused host-side coverage: `bash tests/unit/jellyfin.sh` checks Jellyfin library creation logs success or warning based on the library POST result.
-- **Step 6 Jellyseerr:** `/api/v1/settings/public` reports `initialized:true`. Sonarr and Radarr connections verified. Jellyfin library sync verified — Movies and TV Shows both present and enabled (catches silent poll-timeout failures).
-  Focused host-side coverage: `bash tests/unit/jellyseerr.sh` checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
+- **Step 6 Seerr:** `/api/v1/settings/public` reports `initialized:true`. Sonarr and Radarr connections verified. Jellyfin library sync verified — Movies and TV Shows both present and enabled (catches silent poll-timeout failures).
+  Focused host-side coverage: `bash tests/unit/seerr.sh` checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
 - **Step 7 Portainer:** admin user initialized (HTTP 204 from `/api/users/admin/check`), wizard admin username + shared password returns JWT, local Docker endpoint created.
   Focused host-side coverage: `bash tests/unit/portainer.sh` checks that empty JWT auth drift warns and skips endpoint/API-token setup, while successful auth still provisions both.
 - **Step 8 Homepage:** services.yaml generated with all service groups, Jellyfin widget configured, Sonarr uses internal URL, ready-state HTTPS URLs used when `REMOTE_WEB_STATE=ready` (`jellyfin.fresh.test`), accessible at port 3000.
@@ -183,7 +183,7 @@ Per-step evidence (phase 4):
 
 ### `remote-gating.sh` — focused remote-state gate
 
-Starts proxy-profile services with a real `DOMAIN` while flipping `REMOTE_WEB_STATE` through unchecked, skipped, and ready. Unchecked/skipped must keep Jellyfin, Homepage, and NPM LAN-only while NPM's rate-limit step (disabled by default, ADR-35) and fail2ban validation still run. Ready must publish cert-backed Jellyfin/Jellyseerr proxy hosts through the Pebble ACME override.
+Starts proxy-profile services with a real `DOMAIN` while flipping `REMOTE_WEB_STATE` through unchecked, skipped, and ready. Unchecked/skipped must keep Jellyfin, Homepage, and NPM LAN-only while NPM's rate-limit step (disabled by default, ADR-35) and fail2ban validation still run. Ready must publish cert-backed Jellyfin/Seerr proxy hosts through the Pebble ACME override.
 
 Remote-state fast checks:
 
@@ -249,7 +249,7 @@ can call it over SSH without duplicating qBittorrent probe logic.
 
 ### API-matrix layer
 
-The harness (`tests/scenarios/api-matrix.sh`) plus its per-service modules (`tests/api-matrix/`). Sonarr, Radarr, qBittorrent, Jackett, Jellyfin, and Jellyseerr are all configured **through their HTTP APIs**. The api-matrix layer exploits that: once the API-bearing services are up, it drives those config APIs **directly** through a *matrix* of states and asserts each one lands live — amortizing a single (expensive) bring-up across many cheap, in-place API tests.
+The harness (`tests/scenarios/api-matrix.sh`) plus its per-service modules (`tests/api-matrix/`). Sonarr, Radarr, qBittorrent, Jackett, Jellyfin, and Seerr are all configured **through their HTTP APIs**. The api-matrix layer exploits that: once the API-bearing services are up, it drives those config APIs **directly** through a *matrix* of states and asserts each one lands live — amortizing a single (expensive) bring-up across many cheap, in-place API tests.
 
 It exists because `configure.sh` is **idempotent and warn-on-drift**: on a re-run it refuses to overwrite a profile/setting that already differs (it logs a drift WARN, never reconciles). That is correct for the installer, but it means the configure.sh-path scenarios (`fresh-install`, `wizard-presets`) can only prove **one** configured state — the default point. The api-matrix layer mutates the live API across states, so it proves the whole **parameter space**. That makes it the natural test surface for:
 
@@ -412,7 +412,7 @@ These named scenarios let maintainers test the staged setup and recovery paths w
 | `remote-ready-idempotent` | TEST-05 | Public `./setup.sh --remote` after ready state is idempotent and preserves proxy/cert postconditions. | Real WAN or production cert renewal. |
 | `demo-lan` | TEST-06 | Current `DEMO=1` contract is Stage-1/LAN-safe: no remote-ready publication, pre-seeded values preserved. | Full unattended Stage 2 or hardware transcoding setup. |
 | `existing-install-nuke` | TEST-07 | Existing-install wipe path requires menu selection plus exact `DESTROY`, uses the all-profile compose down path for proxy/remote/subtitles/autoheal services, regenerates `.env`, and preserves the data bind mount. | Host-level destructive recovery outside DinD. |
-| `fail2ban-drift` | TEST-09 | Focused filter drift check for Jellyfin, Jellyseerr, NPM, and NPM rate-limit filters. | Full fail2ban ban pipeline; that remains in `fresh-install`. |
+| `fail2ban-drift` | TEST-09 | Focused filter drift check for Jellyfin, Seerr, NPM, and NPM rate-limit filters. | Full fail2ban ban pipeline; that remains in `fresh-install`. |
 
 Focused staged-setup DinD gate:
 
@@ -506,7 +506,7 @@ Then access services at `http://<host-ip>:<port+10000>`:
 | Jellyfin | 18096 | `http://<host-ip>:18096` |
 | Sonarr | 18989 | `http://<host-ip>:18989` |
 | Radarr | 17878 | `http://<host-ip>:17878` |
-| Jellyseerr | 15055 | `http://<host-ip>:15055` |
+| Seerr | 15055 | `http://<host-ip>:15055` |
 | qBittorrent | 18080 | `http://<host-ip>:18080` |
 | Jackett | 19117 | `http://<host-ip>:19117` |
 | Portainer | 19000 | `http://<host-ip>:19000` |
@@ -526,7 +526,7 @@ docker rm -fv ms-test-dind
 
 - **Core scenarios** include `smoke`, `fresh-install`, `remote-gating`, `npm-heal`, `ddns-seed`, `wireguard`, `wireguard-server`, `wireguard-containers`, `wireguard-streaming`, `stage2-skip`, `stage2-ready`, and `wizard-presets`. `update.sh` has host-side option/default coverage in `tests/unit/update.sh`. `nvidia-repatch.sh` has shared-helper coverage through `tests/unit/nvidia-patch.sh`, but no real NVIDIA hardware execution in DinD. `--full` path (Docker install, GPU driver install, reboot + resume) has no test coverage in DinD; real public DNS, real DDNS pushes, and real Let's Encrypt remain covered on the maintainer-private live-host harnesses.
 - **~~No test for configure.sh re-run after config.yml edit.~~** Fixed: the drift-regression block in `fresh-install.sh` (phase 6) mutates three `config.yml` values (`quality_profile.cutoff_id`, `sonarr.download_client_category`, `jellyfin.libraries[0].path`), re-runs `configure.sh`, and asserts the 3 expected `[WARN]` lines fire with no false positives.
-- **~~Jellyseerr library-sync polling termination is untested.~~** Fixed: `assert_jellyseerr_configured` now verifies that Movies and TV Shows are both present and enabled in the Jellyfin settings endpoint, catching silent poll-timeout failures.
+- **~~Seerr library-sync polling termination is untested.~~** Fixed: `assert_seerr_configured` now verifies that Movies and TV Shows are both present and enabled in the Jellyfin settings endpoint, catching silent poll-timeout failures.
 - **~~Value-level assertions are minimal.~~** Partially fixed: custom format scores are now verified against exact config.yml values (all 7 formats with expected scores) for both Sonarr and Radarr. Quality IDs (`sonarr_qualities`/`radarr_qualities`) are still count-checked only.
 - **~~1337x dependency is flaky.~~** Fixed: replaced the `api.1337x.to` NXDOMAIN probe with Torznab caps requests through Jackett for configured indexers, which proves indexers are configured and servable without depending on direct upstream probes.
 - **Cache mirror binds on Docker bridge gateway, not localhost.** Necessary so DinD's children can reach it, but accessible from any container on that bridge. No auth. On a shared dev host, another container could poison the cache. Mitigated by the transitory lifecycle but worth noting.

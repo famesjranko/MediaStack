@@ -32,7 +32,7 @@ compute_mem_limit() {
 
 _compose_image_services() {
     printf '%s\n' \
-        jellyfin sonarr radarr jackett qbittorrent flaresolverr jellyseerr \
+        jellyfin sonarr radarr jackett qbittorrent flaresolverr seerr \
         unpackerr bazarr homepage portainer npm fail2ban wireguard \
         ddns-updater uptime-kuma beszel beszel-agent autoheal
 }
@@ -200,7 +200,7 @@ generate_override() {
     _swap() { local v="${1%m}"; echo "$(( v * 3 / 2 ))m"; }
     _restart_line() {
         case "${STORAGE_MODE:-local}:$1" in
-            nas:jellyfin|nas:qbittorrent|nas:sonarr|nas:radarr|nas:jellyseerr|nas:unpackerr|nas:bazarr)
+            nas:jellyfin|nas:qbittorrent|nas:sonarr|nas:radarr|nas:seerr|nas:unpackerr|nas:bazarr)
                 echo '    restart: "no"'
                 ;;
         esac
@@ -290,11 +290,11 @@ $(_compose_image_line flaresolverr)
     mem_limit: ${flare_mem}
     memswap_limit: $(_swap "$flare_mem")
     cpus: 1.0
-  jellyseerr:
-$(_compose_image_line jellyseerr)
+  seerr:
+$(_compose_image_line seerr)
     mem_limit: ${seerr_mem}
     memswap_limit: $(_swap "$seerr_mem")
-$(_restart_line jellyseerr)
+$(_restart_line seerr)
   npm:
 $(_compose_image_line npm)
     mem_limit: ${npm_mem}

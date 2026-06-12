@@ -91,7 +91,7 @@ PY
 create_config_dirs_in_dind() {
     dind_exec '
 set -e
-for svc in jellyfin sonarr radarr jackett qbittorrent jellyseerr unpackerr homepage portainer wireguard ddns-updater bazarr uptime-kuma beszel; do
+for svc in jellyfin sonarr radarr jackett qbittorrent seerr unpackerr homepage portainer wireguard ddns-updater bazarr uptime-kuma beszel; do
     mkdir -p config/${svc}
 done
 # setup.sh runs as the installing user, so this bind-mounted directory is
@@ -104,10 +104,12 @@ chown 1000:1000 config/ddns-updater
 mkdir -p config/npm/data config/npm/letsencrypt config/jellyfin/cache
 mkdir -p config/fail2ban/jail.d config/fail2ban/filter.d
 # Log-source dirs for fail2ban (must exist before fail2ban mounts them).
-mkdir -p config/npm/data/logs config/jellyfin/log config/jellyseerr/logs
+mkdir -p config/npm/data/logs config/jellyfin/log config/seerr/logs
 # Placeholder log files so fail2ban jail globs match at boot (fail2ban
 # refuses to start if any glob matches zero files).
-touch config/jellyfin/log/log_.log config/npm/data/logs/default-host_.log config/npm/data/logs/proxy-host-___.log config/jellyseerr/logs/overseerr-.log
+touch config/jellyfin/log/log_.log config/npm/data/logs/default-host_.log config/npm/data/logs/proxy-host-___.log config/seerr/logs/seerr-.log
+# The official Seerr image writes /app/config as uid/gid 1000.
+chown -R 1000:1000 config/seerr
 '
 }
 

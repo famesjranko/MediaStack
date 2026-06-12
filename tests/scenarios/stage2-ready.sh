@@ -18,7 +18,7 @@ import os
 import subprocess
 import sys
 
-managed = {"jellyfin.gate.test", "jellyseerr.gate.test"}
+managed = {"jellyfin.gate.test", "seerr.gate.test"}
 try:
     hosts = json.load(sys.stdin)
 except Exception:
@@ -56,9 +56,9 @@ else:
 ' 2>/dev/null | tr -d '\r')"
 
     if [[ "$ready_check" == "OK" ]]; then
-        pass "TEST-02 fixture DNS/Pebble: NPM has enabled cert-backed Jellyfin/Jellyseerr hosts with disk material"
+        pass "TEST-02 fixture DNS/Pebble: NPM has enabled cert-backed Jellyfin/Seerr hosts with disk material"
     else
-        fail "TEST-02 fixture DNS/Pebble: NPM has enabled cert-backed Jellyfin/Jellyseerr hosts with disk material" "$ready_check"
+        fail "TEST-02 fixture DNS/Pebble: NPM has enabled cert-backed Jellyfin/Seerr hosts with disk material" "$ready_check"
     fi
 }
 
@@ -171,7 +171,7 @@ run_scenario() {
     assert_eq "unchecked" "$(env_get REMOTE_WEB_STATE)" "TEST-02 fixture DNS/Pebble: ready scenario starts from REMOTE_WEB_STATE=unchecked"
 
     npm_acme_override
-    if dind_exec "docker compose --profile proxy -f docker-compose.yml -f docker-compose.acme-test.yml up -d jellyfin jellyseerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
+    if dind_exec "docker compose --profile proxy -f docker-compose.yml -f docker-compose.acme-test.yml up -d jellyfin seerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
         pass "TEST-02 fixture DNS/Pebble: proxy-profile services start with Pebble override"
     else
         fail "TEST-02 fixture DNS/Pebble: proxy-profile services start with Pebble override"
@@ -180,7 +180,7 @@ run_scenario() {
     fi
 
     local svc ok=true
-    for svc in jellyfin jellyseerr homepage npm fail2ban ddns-updater; do
+    for svc in jellyfin seerr homepage npm fail2ban ddns-updater; do
         if wait_healthy "$svc" 360; then
             pass "stage2 ready: $svc healthy"
         else
@@ -197,7 +197,7 @@ run_scenario() {
         return 1
     fi
 
-    dind_exec "grep -q 'jellyfin.gate.test' /etc/hosts || printf '127.0.0.1 jellyfin.gate.test jellyseerr.gate.test\n' >> /etc/hosts"
+    dind_exec "grep -q 'jellyfin.gate.test' /etc/hosts || printf '127.0.0.1 jellyfin.gate.test seerr.gate.test\n' >> /etc/hosts"
 
     # S2-13/S2-14/S2-15: Stage 2 writes unchecked, makes one Pebble-backed
     # publication attempt, probes HTTPS, then promotes ready.

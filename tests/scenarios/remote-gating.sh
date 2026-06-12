@@ -52,7 +52,7 @@ run_scenario() {
     # ------------------------------------------------------------------
     # 1. Start proxy-profile services before ready.
     # ------------------------------------------------------------------
-    if dind_exec "docker compose --profile proxy up -d jellyfin jellyseerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
+    if dind_exec "docker compose --profile proxy up -d jellyfin seerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
         pass "remote gating: docker compose --profile proxy starts non-ready services"
     else
         fail "remote gating: docker compose --profile proxy starts non-ready services"
@@ -61,7 +61,7 @@ run_scenario() {
     fi
 
     local svc ok=true
-    for svc in jellyfin jellyseerr homepage npm fail2ban ddns-updater; do
+    for svc in jellyfin seerr homepage npm fail2ban ddns-updater; do
         if wait_healthy "$svc" 360; then
             pass "remote gating: $svc healthy"
         else

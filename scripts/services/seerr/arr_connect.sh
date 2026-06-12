@@ -1,13 +1,13 @@
 # =============================================================================
-# Jellyseerr — connect a Sonarr or Radarr instance
+# Seerr — connect a Sonarr or Radarr instance
 # =============================================================================
-# Sourced by jellyseerr/main.sh. Depends on helpers already loaded by
+# Sourced by seerr/main.sh. Depends on helpers already loaded by
 # configure.sh: get_api_key, api_get, api_fetch, json_array_nonempty,
 # js_post, cfg_field (common.sh / http.sh / json.sh).
 
-# Args: <sonarr|radarr> <arr_port> <js_url> <cookiejar>
-connect_arr_to_jellyseerr() {
-    local app="$1" arr_port="$2" js_url="$3" cookiejar="$4"
+# Args: <sonarr|radarr> <arr_port> <seerr_url> <cookiejar>
+connect_arr_to_seerr() {
+    local app="$1" arr_port="$2" seerr_url="$3" cookiejar="$4"
     local app_label="${app^}"
 
     local arr_key
@@ -15,20 +15,20 @@ connect_arr_to_jellyseerr() {
     [[ -z "$arr_key" ]] && return 0
 
     local existing connected
-    if ! existing=$(api_fetch "Jellyseerr ${app_label} settings" -c "$cookiejar" -b "$cookiejar" "$js_url/api/v1/settings/${app}"); then
+    if ! existing=$(api_fetch "Seerr ${app_label} settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/${app}"); then
         existing="[]"
     fi
     connected=""
     echo "$existing" | json_array_nonempty && connected="yes"
 
     if [[ -n "$connected" ]]; then
-        log_skip "${app_label} already connected to Jellyseerr"
+        log_skip "${app_label} already connected to Seerr"
         return 0
     fi
 
     local profile_json profile_id profile_name target_profile_name
     if ! profile_json=$(api_get "http://localhost:${arr_port}/api/v3/qualityprofile" "$arr_key"); then
-        log_warn "Could not fetch ${app_label} quality profiles for Jellyseerr - using defaults"
+        log_warn "Could not fetch ${app_label} quality profiles for Seerr - using defaults"
         profile_json="[]"
     fi
     target_profile_name=$(cfg_field quality_profile.name)
@@ -51,7 +51,7 @@ print(match["name"])
     if [[ "$app" == "sonarr" ]]; then
         local _lang_json
         if ! _lang_json=$(api_get "http://localhost:${arr_port}/api/v3/languageprofile" "$arr_key"); then
-            log_warn "Could not fetch Sonarr language profiles for Jellyseerr - using id=1"
+            log_warn "Could not fetch Sonarr language profiles for Seerr - using id=1"
             _lang_json="[]"
         fi
         lang_id=$(echo "$_lang_json" | python3 -c "
@@ -97,7 +97,7 @@ else:
 print(json.dumps(body))
 ')
 
-    js_post "$app_label" "$js_url/api/v1/settings/${app}" \
+    js_post "$app_label" "$seerr_url/api/v1/settings/${app}" \
         "$body" \
         "$cookiejar"
 }

@@ -20,7 +20,7 @@ tests/.image-override-applied
 config/jellyfin/
 config/sonarr/
 config/radarr/
-config/jellyseerr/
+config/seerr/
 config/unpackerr/
 # Homepage runtime artifacts (pre-seeded YAML configs are tracked in git)
 config/homepage/services.yaml

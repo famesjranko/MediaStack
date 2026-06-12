@@ -39,14 +39,14 @@ source tests/lib/wizard_stub_common.sh
 ms_stub_core
 ms_stub_common_env
 ms_stub_service_lifecycle
-_stub_compose_service_list() { printf '%s\n' jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer unpackerr flaresolverr uptime-kuma npm wireguard ddns-updater; }
+_stub_compose_service_list() { printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer unpackerr flaresolverr uptime-kuma npm wireguard ddns-updater; }
 _stub_compose_image_list() { printf '%s\n' i1 i2 i3 i4 i5 i6 i7 i8 i9 i10 i11 i12 i13 i14; }
 # Stage 2 networked/heavy operations — overridable per scenario.
 stage2_dns_classify() { printf 'ok\n'; }
 stage2_check_http_ports() { printf 'ok\n'; }
 stage2_dynu_preflight() { printf 'ok\n'; }
 detect_lan_cidr() { printf '192.168.1.0/24\n'; }
-stage2_le_classify() { STAGE2_LE_CLASSIFICATION=ready; STAGE2_LE_READY_HOSTS=\"jellyfin.\$1, jellyseerr.\$1\"; printf 'ready\\n'; return 0; }
+stage2_le_classify() { STAGE2_LE_CLASSIFICATION=ready; STAGE2_LE_READY_HOSTS=\"jellyfin.\$1, seerr.\$1\"; printf 'ready\\n'; return 0; }
 BASH
 chmod +x $fixture_path"
 }

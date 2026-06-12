@@ -51,7 +51,7 @@ scripts/
       main.sh                       Quality profiles, definitions, custom formats, indexer wiring
       custom_formats.yml            Curated TRaSH Guides format definitions (developer-managed)
       render/*.py                   JSON/XML transforms (Python stdlib only)
-  services/<svc>/                   Per-service configurators (13 services)
+  services/<svc>/                   Per-service configurators (13 services; Seerr is services/seerr/)
     main.sh                         configure_<svc>() — required
     templates/*.json                Static API payloads (no variable substitution)
 

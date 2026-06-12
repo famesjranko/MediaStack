@@ -254,7 +254,7 @@ _dry_run_docker() {
         compose)
             case " $* " in
                 *" config --services "*)
-                    printf '%s\n' jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer unpackerr flaresolverr uptime-kuma
+                    printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer unpackerr flaresolverr uptime-kuma
                     return 0 ;;
                 *" config --images "*)
                     printf 'image%s\n' 1 2 3 4 5 6 7 8 9 10 11

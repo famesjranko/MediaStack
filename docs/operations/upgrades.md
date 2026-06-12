@@ -109,7 +109,7 @@ Columns parsed by the unit test use strict tokens; **do not put `|` inside any c
 | homepage | latest | stable | scenario:fresh-install | scripts/services/homepage/main.sh + tests/assertions/homepage.sh | ADR-13, ADR-24 |
 | jackett | latest | stable | scenario:fresh-install | scripts/services/jackett/main.sh + tests/assertions/jackett.sh | ADR-24 |
 | jellyfin | latest | stable | scenario:fresh-install | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh | ADR-11, ADR-12, ADR-24 |
-| jellyseerr | latest | stable | scenario:fresh-install | scripts/services/jellyseerr/main.sh + tests/assertions/jellyseerr.sh | ADR-24 |
+| seerr | latest | stable | scenario:fresh-install | scripts/services/seerr/main.sh + tests/assertions/seerr.sh | ADR-24 |
 | npm | major:2 | major-gated | scenario:npm-heal | scripts/services/npm/main.sh + tests/assertions/npm.sh | ADR-21, ADR-24 |
 | portainer | latest | stable | scenario:fresh-install | scripts/services/portainer/main.sh + tests/assertions/portainer.sh | ADR-24 |
 | qbittorrent | latest | stable | scenario:fresh-install | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh | ADR-6, ADR-24 |

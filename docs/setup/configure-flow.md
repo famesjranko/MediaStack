@@ -4,7 +4,7 @@ Reads `config.yml`, wires up every service via its HTTP API, and writes generate
 
 `configure.sh` is a **thin entrypoint**. The work lives in `scripts/lib/*` helpers and one directory per service under `scripts/services/<svc>/`. `main()` in `scripts/configure.sh` runs 11 fixed configure steps in order (after per-service readiness waits), plus conditional Bazarr configuration when the subtitles profile is active, conditional Beszel configuration when its default-stack containers are running, then recreates Unpackerr with the populated API keys.
 
-When `STORAGE_APP_WIRING=manual`, configure.sh still sets credentials, auth, indexers, quality profiles, and non-storage services, but skips storage-facing wiring: qBittorrent save paths/categories, Sonarr/Radarr root folders and download clients, Jellyfin libraries, Jellyseerr setup, Sonarr/Radarr Jellyfin notifications, and Unpackerr recreate. The generated `.env` also leaves `UNPACKERR_TORRENT_PATHS` blank so the compose-level Unpackerr integration does not advertise MediaStack's managed `/data/torrents` path. This is separate from `STORAGE_MODE`: manual app wiring can still use `STORAGE_MODE=nas` so the NAS sentinel guard and watchdog protect containers.
+When `STORAGE_APP_WIRING=manual`, configure.sh still sets credentials, auth, indexers, quality profiles, and non-storage services, but skips storage-facing wiring: qBittorrent save paths/categories, Sonarr/Radarr root folders and download clients, Jellyfin libraries, Seerr setup, Sonarr/Radarr Jellyfin notifications, and Unpackerr recreate. The generated `.env` also leaves `UNPACKERR_TORRENT_PATHS` blank so the compose-level Unpackerr integration does not advertise MediaStack's managed `/data/torrents` path. This is separate from `STORAGE_MODE`: manual app wiring can still use `STORAGE_MODE=nas` so the NAS sentinel guard and watchdog protect containers.
 
 ## File layout
 
@@ -33,7 +33,7 @@ scripts/
     ├── radarr/main.sh    + templates/download-client.json
     ├── bazarr/main.sh                   # no templates — API payloads built via python3 json.dumps
     ├── jellyfin/main.sh  + templates/{startup-config,remote-access,library}.json
-    ├── jellyseerr/main.sh + templates/{sonarr-server,radarr-server}.json
+    ├── seerr/main.sh + templates/{sonarr-server,radarr-server}.json
     ├── portainer/main.sh                # no templates — payloads built inline via python3 json.dumps
     ├── homepage/main.sh
     ├── npm/main.sh       + templates/token-default.json
@@ -77,7 +77,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 - `get_api_key PATH` in `scripts/lib/common.sh` — regex-extract `<ApiKey>` from Sonarr/Radarr `config.xml`.
 - `get_jackett_api_key` in `scripts/lib/common.sh` — JSON parse `config/jackett/Jackett/ServerConfig.json`.
 - `save_api_key NAME VALUE` in `scripts/lib/common.sh` — `sed -i` writes into `.env`, logs if changed. Also `export` so later steps in the same invocation see the new value without re-sourcing.
-- `js_post LABEL ENDPOINT PAYLOAD COOKIEJAR` in `scripts/lib/http.sh` — POST JSON within a cookie-authenticated session and surface the rejection body on non-2xx. Hoisted from a nested function inside the old Jellyseerr step during the refactor; explicit `COOKIEJAR` arg (4th) because bash dynamic scoping was its only prior binding.
+- `js_post LABEL ENDPOINT PAYLOAD COOKIEJAR` in `scripts/lib/http.sh` — POST JSON within a cookie-authenticated session and surface the rejection body on non-2xx. Hoisted from a nested function inside the old Seerr step during the refactor; explicit `COOKIEJAR` arg (4th) because bash dynamic scoping was its only prior binding.
 
 ## Pre-step wait (top of `main()` in `scripts/configure.sh`)
 
@@ -236,20 +236,20 @@ Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/net
 
 **Restart:** `KnownProxies` and `AutoDiscovery` are startup-config (ASP.NET `ForwardedHeadersOptions` and UDP listener, respectively). After successful POST: `docker compose up -d --no-deps --force-recreate jellyfin`, poll `/health` for up to 60s. `--force-recreate` ensures the container is recreated (picks up `.env` changes); `--no-deps` avoids pulling in other services. Skip/drift normally avoids restart, except when `JELLYFIN_PUBLISHED_URL` changes; that value is a compose environment variable, so the Jellyfin container is force-recreated to pick up the new LAN or HTTPS URL even when the network API write itself is skipped or drift-protected.
 
-## Step 6 — Jellyseerr (`configure_jellyseerr` in `scripts/services/jellyseerr/main.sh`)
+## Step 6 — Seerr (`configure_seerr` in `scripts/services/seerr/main.sh`)
 
-The longest step — Jellyseerr's bootstrap involves three moving API surfaces (its own, Jellyfin's, and the *arr apps').
+The longest step — Seerr's bootstrap involves three moving API surfaces (its own, Jellyfin's, and the *arr apps').
 
 1. **Already-initialized check**. If `initialized=True`, log info and continue (no longer short-circuits — library sync and *arr connect are reconciled on re-run).
 2. **`POST /api/v1/auth/jellyfin`** — includes `hostname/port/useSsl/urlBase/serverType:2`. If that fails (partial prior run may have stored hostname already), retry without hostname. Uses a cookie jar for session persistence.
 3. **Session verify** via `GET /api/v1/auth/me` — guards against silent auth-cookie failures.
-4. **Library readiness poll**. Read the Jellyfin API key Jellyseerr generated for itself (from the `apiKey` field in `GET /api/v1/settings/jellyfin`), then poll Jellyfin's `GET /Library/MediaFolders` with it for 60s until the `Movies` and `TV Shows` folders appear. Poll count is 30 x 2s. This is the correct gate — Jellyseerr's sync calls Jellyfin's `/Library/MediaFolders` internally, *not* the refresh task status.
+4. **Library readiness poll**. Read the Jellyfin API key Seerr generated for itself (from the `apiKey` field in `GET /api/v1/settings/jellyfin`), then poll Jellyfin's `GET /Library/MediaFolders` with it for 60s until the `Movies` and `TV Shows` folders appear. Poll count is 30 x 2s. This is the correct gate — Seerr's sync calls Jellyfin's `/Library/MediaFolders` internally, *not* the refresh task status.
 5. **Library sync** — `GET /api/v1/settings/jellyfin/library?sync=true`. Captures HTTP code + body so real failures (`404 SYNC_ERROR_NO_LIBRARIES`, `501 SYNC_ERROR_GROUPED_FOLDERS`) surface instead of being masked. A previous implementation used `|| echo "[]"` and silently lost errors.
 6. **Enable libraries** — `GET /api/v1/settings/jellyfin/library?enable=<comma-ids>`.
-7. **Connect Sonarr + Radarr** via `js_post` (defined in `scripts/lib/http.sh`), which captures the response body on non-2xx. Payload includes `activeProfileName`, `activeDirectory`, `activeLanguageProfileId` (Sonarr) — Jellyseerr 2.7.x silently accepts an incomplete payload but the connection won't work without these fields.
+7. **Connect Sonarr + Radarr** via `js_post` (defined in `scripts/lib/http.sh`), which captures the response body on non-2xx. Payload includes `activeProfileName`, `activeDirectory`, `activeLanguageProfileId` (Sonarr) — Seerr 2.7.x silently accepts an incomplete payload but the connection won't work without these fields.
 8. **Mark setup complete** — `POST /api/v1/settings/initialize`, then re-fetch `/api/v1/settings/public` to verify `initialized=true`.
-9. **Extract API key** — from the `apiKey` field of `GET /api/v1/settings/main` (fetched for permissions check below). Saved to `.env` as `JELLYSEERR_API_KEY` via `save_api_key`. Used by the Homepage widget in Step 8.
-10. **Set default permissions + quotas** — `POST /api/v1/settings/main` with `defaultPermissions: 32` (REQUEST only) and `defaultQuotas` from `config.yml` (`jellyseerr.quotas.movie` and `jellyseerr.quotas.tv`). Bits 128/256/512 (auto-approve movies/TV/4K) are NOT set, so all requests require admin approval. Quotas default to unlimited (`limit: 0`) in the shipped `config.yml`.
+9. **Extract API key** — from the `apiKey` field of `GET /api/v1/settings/main` (fetched for permissions check below). Saved to `.env` as `SEERR_API_KEY` via `save_api_key`. Used by the Homepage widget in Step 8.
+10. **Set default permissions + quotas** — `POST /api/v1/settings/main` with `defaultPermissions: 32` (REQUEST only) and `defaultQuotas` from `config.yml` (`seerr.quotas.movie` and `seerr.quotas.tv`). Bits 128/256/512 (auto-approve movies/TV/4K) are NOT set, so all requests require admin approval. Quotas default to unlimited (`limit: 0`) in the shipped `config.yml`.
 
 Heredoc-stdin hazard (commented in the source near the `lib_ids` extraction): `python3 - <<'PY'` rebinds stdin, so using it in a pipeline like `echo $libs | python3 - <<'PY'` silently gives Python an EOF — the `echo`'s output never reaches `sys.stdin`. Use `python3 -c '…'` inside pipes.
 
@@ -271,12 +271,12 @@ Create admin via `POST /api/users/admin/init` with `{"Username": "<JELLYFIN_ADMI
 
 **No auth needed.** Homepage reads static YAML config files from `/app/config/` and hot-reloads on change. No Docker socket mount — the main security win over the previous Flame dashboard.
 
-**Writes:** Generates `config/homepage/services.yaml` via Python `yaml.safe_dump`. Five service groups: Media (Jellyfin + Jellyseerr), Media Management (Sonarr + Radarr + optional Bazarr), Downloads (qBittorrent + Jackett), Network (NPM + optional WireGuard + optional DDNS Updater), Admin (Portainer + optional Beszel + Uptime Kuma). Nine services get native API widgets showing live data:
+**Writes:** Generates `config/homepage/services.yaml` via Python `yaml.safe_dump`. Five service groups: Media (Jellyfin + Seerr), Media Management (Sonarr + Radarr + optional Bazarr), Downloads (qBittorrent + Jackett), Network (NPM + optional WireGuard + optional DDNS Updater), Admin (Portainer + optional Beszel + Uptime Kuma). Nine services get native API widgets showing live data:
 
 | Service | Widget type | Auth source |
 |---------|------------|-------------|
 | Jellyfin | `jellyfin` | `JELLYFIN_API_KEY` from `.env` |
-| Jellyseerr | `jellyseerr` | `JELLYSEERR_API_KEY` from `.env` (extracted in Step 6) |
+| Seerr | `seerr` | `SEERR_API_KEY` from `.env` (extracted in Step 6) |
 | Sonarr | `sonarr` | `SONARR_API_KEY` from `.env` |
 | Radarr | `radarr` | `RADARR_API_KEY` from `.env` |
 | qBittorrent | `qbittorrent` | Subnet-whitelisted (no auth needed) |
@@ -289,7 +289,7 @@ Widget `url` values use internal container names (`http://sonarr:8989`) — reso
 
 All services get `description` (short role label) and `siteMonitor` (internal URL for health-status dots). Jackett is link-only (no Homepage widget type exists for it).
 
-**Remote-ready URLs:** User-facing services (Jellyfin, Jellyseerr) get subdomain `href` URLs (`https://jellyfin.$DOMAIN`) only when `REMOTE_WEB_STATE=ready` and `DOMAIN` is real. Unchecked or skipped remote state uses LAN URLs. Admin tools always use `http://HOST_ADDRESS:port`.
+**Remote-ready URLs:** User-facing services (Jellyfin, Seerr) get subdomain `href` URLs (`https://jellyfin.$DOMAIN`) only when `REMOTE_WEB_STATE=ready` and `DOMAIN` is real. Unchecked or skipped remote state uses LAN URLs. Admin tools always use `http://HOST_ADDRESS:port`.
 
 **Optional services:** Bazarr, WireGuard, DDNS Updater, Beszel detected via `docker compose ps` — included only when running.
 
@@ -318,9 +318,9 @@ NPM ships with an empty user table on first boot. The famous `admin@example.com 
 | Subdomain | Target | WebSocket |
 |-----------|--------|-----------|
 | `jellyfin.$DOMAIN` | `jellyfin:8096` | Yes |
-| `jellyseerr.$DOMAIN` | `jellyseerr:5055` | Yes |
+| `seerr.$DOMAIN` | `seerr:5055` | Yes |
 
-Admin tools (Sonarr, Radarr, Jackett, qBittorrent) are NOT proxied — they stay LAN/VPN-only. Fail2ban protects all proxied traffic via the NPM access log jail (401/403 responses) plus per-service jails for Jellyfin and Jellyseerr.
+Admin tools (Sonarr, Radarr, Jackett, qBittorrent) are NOT proxied — they stay LAN/VPN-only. Fail2ban protects all proxied traffic via the NPM access log jail (401/403 responses) plus per-service jails for Jellyfin and Seerr.
 
 `DOMAIN` still controls infrastructure startup elsewhere: `scripts/setup/stack.sh::_build_profile_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
 
@@ -344,7 +344,7 @@ Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; i
 
 **Settings:** Disables `checkUpdate` via `setSettings({checkUpdate: false}, password)`.
 
-**Monitor creation:** Builds a monitor list from running containers (`docker compose ps`). Each service maps to an HTTP monitor URL (e.g. `http://sonarr:8989/ping`, `http://jellyfin:8096/health`). Services without HTTP endpoints (Unpackerr, Fail2ban) are omitted. All monitors use `maxredirects=0` with `accepted_statuscodes=["200-299", "300-399"]` and `conditions: []` (required in v2) — several services (Jackett, Jellyseerr, Uptime Kuma itself) return 3xx redirects on their root URL, and following the redirect chain can end in a 400 (Jackett's login redirect loop).
+**Monitor creation:** Builds a monitor list from running containers (`docker compose ps`). Each service maps to an HTTP monitor URL (e.g. `http://sonarr:8989/ping`, `http://jellyfin:8096/health`). Services without HTTP endpoints (Unpackerr, Fail2ban) are omitted. All monitors use `maxredirects=0` with `accepted_statuscodes=["200-299", "300-399"]` and `conditions: []` (required in v2) — several services (Jackett, Seerr, Uptime Kuma itself) return 3xx redirects on their root URL, and following the redirect chain can end in a 400 (Jackett's login redirect loop).
 
 **Idempotency:** Existing monitors are deduplicated by URL from the `monitorList` event data. Monitors already present are skipped (`log_skip`), new monitors are created (`log_ok`). No drift detection — monitors are not reconciled after creation.
 
@@ -376,6 +376,6 @@ After the 11 steps, `docker compose up -d unpackerr` recreates the container so 
 - **Step 1 ratio-action `max_ratio_act=0` is hardcoded**, not from `config.yml` (in the `setPreferences` payload in `configure_qbittorrent`). Because any non-zero breaks *arr connectivity this is deliberate — but `config.yml` doesn't expose it at all, so a future maintainer could set it from a UI thinking config.yml is the source of truth and nothing would push it back.
 - **Step 2 indexer failures are per-indexer warnings, not errors.** A typo in `config.yml` indexer IDs produces a `log_warn` and continues. Arguably fine for public indexers that come and go, but means `configure.sh` can succeed with *no* indexers configured.
 - **Step 5 recovery advice deletes all Jellyfin config** (in the auth-failure branch of `configure_jellyfin`). That trashes the Jellyfin media database — if the user already has watched-state, they lose it. The recovery path should be documented outside of `configure.sh`.
-- **Step 6 retry-without-hostname fallback** (in `configure_jellyseerr`) is silent — the user can't tell whether bootstrap used the correct path or the fallback. That matters if the fallback starts masking a real hostname bug.
-- **Heredoc-stdin hazard** (commented in `configure_jellyseerr` near `lib_ids` extraction) **is a trap.** The code carries a comment warning against it, but someone unfamiliar with the pattern could easily reintroduce it. Could be linted with a shellcheck custom rule.
-- **`js_post` has only one caller today** (Jellyseerr step 6, twice). It lives in `lib/http.sh` because a plan-time decision committed to hoisting it when the refactor landed, but the local abstraction rule would argue for keeping it in the Jellyseerr module until a real second consumer appears. Either keep it and accept the mild speculative-abstraction violation, or fold it back into `services/jellyseerr/main.sh` as a private `_jellyseerr_post_capture`.
+- **Step 6 retry-without-hostname fallback** (in `configure_seerr`) is silent — the user can't tell whether bootstrap used the correct path or the fallback. That matters if the fallback starts masking a real hostname bug.
+- **Heredoc-stdin hazard** (commented in `configure_seerr` near `lib_ids` extraction) **is a trap.** The code carries a comment warning against it, but someone unfamiliar with the pattern could easily reintroduce it. Could be linted with a shellcheck custom rule.
+- **`js_post` has only one caller today** (Seerr step 6, twice). It lives in `lib/http.sh` because a plan-time decision committed to hoisting it when the refactor landed, but the local abstraction rule would argue for keeping it in the Seerr module until a real second consumer appears. Either keep it and accept the mild speculative-abstraction violation, or fold it back into `services/seerr/main.sh` as a private `_seerr_post_capture`.

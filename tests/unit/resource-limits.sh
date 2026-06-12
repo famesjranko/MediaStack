@@ -104,7 +104,7 @@ fi
 # generate_override — all compose-image services get mem_limit + memswap_limit
 # ---------------------------------------------------------------------------
 
-ALL_SERVICES="jellyfin sonarr radarr jackett qbittorrent flaresolverr jellyseerr unpackerr bazarr homepage portainer npm fail2ban wireguard ddns-updater uptime-kuma beszel beszel-agent autoheal"
+ALL_SERVICES="jellyfin sonarr radarr jackett qbittorrent flaresolverr seerr unpackerr bazarr homepage portainer npm fail2ban wireguard ddns-updater uptime-kuma beszel beszel-agent autoheal"
 
 compose_services=$(python3 - <<PY
 import yaml

@@ -24,7 +24,7 @@ _WIZ_IMAGE_CHANNEL="stable"
 docker() {
     if [[ "${1:-}" == "compose" ]]; then
         case " $* " in
-            *" config --services "*) printf '%s\n' jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer uptime-kuma beszel; return 0 ;;
+            *" config --services "*) printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer uptime-kuma beszel; return 0 ;;
             *" config --images "*) printf '%s\n' image{1..10}; return 0 ;;
         esac
     fi

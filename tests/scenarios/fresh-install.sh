@@ -10,7 +10,7 @@ source tests/assertions/jackett.sh
 source tests/assertions/sonarr.sh
 source tests/assertions/radarr.sh
 source tests/assertions/jellyfin.sh
-source tests/assertions/jellyseerr.sh
+source tests/assertions/seerr.sh
 source tests/assertions/portainer.sh
 source tests/assertions/homepage.sh
 source tests/assertions/npm.sh
@@ -100,7 +100,7 @@ PYEOF
     # 2. Wait for each service healthy (or running for no-healthcheck ones).
     # ------------------------------------------------------------------
     local svc ok=true
-    for svc in flaresolverr jackett qbittorrent jellyfin npm sonarr radarr jellyseerr unpackerr homepage fail2ban uptime-kuma beszel ddns-updater; do
+    for svc in flaresolverr jackett qbittorrent jellyfin npm sonarr radarr seerr unpackerr homepage fail2ban uptime-kuma beszel ddns-updater; do
         if svc_stripped "$svc"; then
             skip "$svc healthy" "stripped via MS_TEST_STRIP_SERVICES"
             continue
@@ -132,7 +132,7 @@ PYEOF
     # ------------------------------------------------------------------
     # 2b. Verify resource limits are applied to running containers.
     # ------------------------------------------------------------------
-    for svc in jellyfin sonarr radarr jackett qbittorrent flaresolverr jellyseerr npm unpackerr homepage portainer fail2ban uptime-kuma beszel beszel-agent autoheal; do
+    for svc in jellyfin sonarr radarr jackett qbittorrent flaresolverr seerr npm unpackerr homepage portainer fail2ban uptime-kuma beszel beszel-agent autoheal; do
         if svc_stripped "$svc"; then
             skip "$svc has memory limit" "stripped via MS_TEST_STRIP_SERVICES"
             continue
@@ -195,7 +195,7 @@ PYEOF
     assert_sonarr_configured "$configure_log"
     assert_radarr_configured "$configure_log"
     assert_jellyfin_configured "$jf_password"
-    assert_jellyseerr_configured "$jf_password"
+    assert_seerr_configured "$jf_password"
     assert_portainer_configured "$jf_password"
     assert_homepage_configured
     assert_uptime_kuma_configured "$configure_log"

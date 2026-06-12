@@ -87,12 +87,12 @@ assert_eq "192.168.1.50/32" "$fw_server" "ADR-29: server firewallIps = server /3
 
 fw_streaming="$(wg_firewall_ips_for_tier streaming "" "192.168.1.50")"
 assert_eq "192.168.1.50:8096/tcp,192.168.1.50:5055/tcp,192.168.1.50:3000/tcp" "$fw_streaming" \
-    "ADR-29: streaming firewallIps = Jellyfin+Jellyseerr+Homepage only"
+    "ADR-29: streaming firewallIps = Jellyfin+Seerr+Homepage only"
 
 fw_containers="$(wg_firewall_ips_for_tier containers "" "192.168.1.50")"
 # containers tier exposes 17 MediaStack ports — assert key ones are present and 51821 (wg-easy admin) is excluded.
 assert_contains "$fw_containers" "192.168.1.50:8096/tcp" "ADR-29: containers exposes Jellyfin"
-assert_contains "$fw_containers" "192.168.1.50:5055/tcp" "ADR-29: containers exposes Jellyseerr"
+assert_contains "$fw_containers" "192.168.1.50:5055/tcp" "ADR-29: containers exposes Seerr"
 assert_contains "$fw_containers" "192.168.1.50:3000/tcp" "ADR-29: containers exposes Homepage"
 assert_contains "$fw_containers" "192.168.1.50:8989/tcp" "ADR-29: containers exposes Sonarr"
 assert_contains "$fw_containers" "192.168.1.50:7878/tcp" "ADR-29: containers exposes Radarr"

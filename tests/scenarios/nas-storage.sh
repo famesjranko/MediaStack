@@ -107,7 +107,7 @@ rm -f $docker_log $log_path
 PATH=/tmp/fakebin:\$PATH STORAGE_CHECK_INTERVAL=1 STORAGE_OK_STABLE=0 timeout 3 ./scripts/storage-watchdog.sh >$log_path 2>&1 || true
 grep -q \"no NAS-dependent services are running after boot\" $log_path
 grep -q \"docker compose up -d jellyfin\" $docker_log
-grep -q \"docker compose up -d jellyseerr\" $docker_log
+grep -q \"docker compose up -d seerr\" $docker_log
 ! grep -q \"docker compose up -d bazarr\" $docker_log
 '"; then
         pass "NAS: watchdog starts known service set after clean reboot"

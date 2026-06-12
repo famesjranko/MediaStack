@@ -145,7 +145,7 @@ npm_remote_hosts_ready() {
     hosts=$(curl -sf --max-time 30 -H "Authorization: Bearer $token" \
         "$api/nginx/proxy-hosts" 2>/dev/null) || return 1
 
-    for fqdn in "jellyfin.$domain" "jellyseerr.$domain"; do
+    for fqdn in "jellyfin.$domain" "seerr.$domain"; do
         cert_id=$(npm_remote_usable_cert_id_by_fqdn "$token" "$api" "$fqdn") || return 1
         [[ -z "$cert_id" || "$cert_id" == "0" ]] && return 1
 

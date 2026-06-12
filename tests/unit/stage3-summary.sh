@@ -54,7 +54,7 @@ assert_contains "$intel_output" "complete" "FIN-01: Stage 1 complete label"
 assert_contains "$intel_output" "ready" "FIN-01: Stage 2 ready label"
 assert_contains "$intel_output" "complete (Intel QSV)" "FIN-01: Intel summary label"
 assert_contains "$intel_output" "https://jellyfin.gate.test" "FIN-01: ready state prints Jellyfin remote URL"
-assert_contains "$intel_output" "https://jellyseerr.gate.test" "FIN-01: ready state prints Jellyseerr remote URL"
+assert_contains "$intel_output" "https://seerr.gate.test" "FIN-01: ready state prints Seerr remote URL"
 
 write_summary_env "ready" "complete" "amd" "vaapi" ""
 amd_output="$(print_final_summary)"
@@ -72,7 +72,7 @@ write_summary_env "skipped" "skipped" "" "" ""
 skipped_output="$(print_final_summary)"
 assert_contains "$skipped_output" "skipped - run ./setup.sh --remote to retry" "FIN-01: Stage 2 skipped label"
 assert_contains "$skipped_output" "skipped - software transcoding" "FIN-01: hardware transcoding skipped label"
-if [[ "$skipped_output" == *"https://jellyfin.gate.test"* || "$skipped_output" == *"https://jellyseerr.gate.test"* ]]; then
+if [[ "$skipped_output" == *"https://jellyfin.gate.test"* || "$skipped_output" == *"https://seerr.gate.test"* ]]; then
     fail "FIN-01: skipped remote state does not print remote URLs"
 else
     pass "FIN-01: skipped remote state does not print remote URLs"
@@ -81,7 +81,7 @@ fi
 write_summary_env "failed" "skipped" "" "" ""
 failed_output="$(print_final_summary)"
 assert_contains "$failed_output" "failed - run ./setup.sh --remote to retry" "FIN-01: Stage 2 failed label"
-if [[ "$failed_output" == *"https://jellyfin.gate.test"* || "$failed_output" == *"https://jellyseerr.gate.test"* ]]; then
+if [[ "$failed_output" == *"https://jellyfin.gate.test"* || "$failed_output" == *"https://seerr.gate.test"* ]]; then
     fail "FIN-01: failed remote state does not print remote URLs"
 else
     pass "FIN-01: failed remote state does not print remote URLs"

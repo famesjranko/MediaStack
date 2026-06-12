@@ -17,7 +17,7 @@ run_scenario() {
 stage2_le_classify() {
     STAGE2_LE_CLASSIFICATION=config-dns
     STAGE2_LE_READY_HOSTS=\"\"
-    STAGE2_LE_FAILED_HOSTS=\"jellyfin.\$1, jellyseerr.\$1\"
+    STAGE2_LE_FAILED_HOSTS=\"jellyfin.\$1, seerr.\$1\"
     printf 'config-dns\n'
     return 1
 }
@@ -42,6 +42,6 @@ BASH"
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "HTTPS is not ready. Choose how to continue:" "wizard-ui stage2 le skip: LE gate menu shown"
-    assert_contains "$transcript" "DNS does not point both Jellyfin and Jellyseerr" "wizard-ui stage2 le skip: config-dns failure copy shown"
+    assert_contains "$transcript" "DNS does not point both Jellyfin and Seerr" "wizard-ui stage2 le skip: config-dns failure copy shown"
     assert_eq "skipped" "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 le skip: REMOTE_WEB_STATE=skipped after gate skip"
 }

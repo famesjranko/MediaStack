@@ -215,8 +215,8 @@ assert_eq "/data/media/movies" \
     "untouched: radarr root_folder preserved"
 
 assert_eq "0" \
-    "$(yaml_get "$config" "c['jellyseerr']['quotas']['movie']['limit']")" \
-    "untouched: jellyseerr quotas preserved"
+    "$(yaml_get "$config" "c['seerr']['quotas']['movie']['limit']")" \
+    "untouched: seerr quotas preserved"
 
 assert_eq "2" \
     "$(yaml_get "$config" "len(c['jellyfin']['libraries'])")" \

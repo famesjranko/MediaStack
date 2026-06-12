@@ -27,7 +27,7 @@ monitor_map = {
     "radarr":       {"name": "Radarr",         "url": "http://radarr:7878/ping"},
     "jackett":      {"name": "Jackett",        "url": "http://jackett:9117"},
     "qbittorrent":  {"name": "qBittorrent",    "url": "http://qbittorrent:8080"},
-    "jellyseerr":   {"name": "Jellyseerr",     "url": "http://jellyseerr:5055"},
+    "seerr":        {"name": "Seerr",          "url": "http://seerr:5055/api/v1/settings/public"},
     "bazarr":       {"name": "Bazarr",         "url": "http://bazarr:6767"},
     "flaresolverr": {"name": "FlareSolverr",   "url": "http://flaresolverr:8191/health"},
     "homepage":     {"name": "Homepage",       "url": "http://homepage:3000"},

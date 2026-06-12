@@ -12,7 +12,7 @@
 #   - quality-rename Day-2 "change quality profile" (#71): seed cell A, change to
 #                    cell B with QP_RENAME_FROM, assert in-place rename (same id,
 #                    new scores, no orphan) through the PRODUCT configurators.
-# Add qbittorrent / jackett / jellyfin / jellyseerr modules the same way; each new
+# Add qbittorrent / jackett / jellyfin / seerr modules the same way; each new
 # day-2 action that mutates a service API gets a module here.
 #
 # Wall-time budget: ~3-5 min (only Sonarr + Radarr are brought up).

@@ -148,7 +148,7 @@ unset REMOTE_WEB_STATE
 write_access_env "unchecked" "gate.test"
 unchecked_output=$(print_access_info)
 assert_contains "$unchecked_output" "Remote access: not yet configured -- run ./setup.sh --remote" "remote state: unchecked access copy"
-if [[ "$unchecked_output" == *"https://jellyfin.gate.test"* || "$unchecked_output" == *"https://jellyseerr.gate.test"* ]]; then
+if [[ "$unchecked_output" == *"https://jellyfin.gate.test"* || "$unchecked_output" == *"https://seerr.gate.test"* ]]; then
     fail "remote state: unchecked access does not advertise HTTPS URLs"
 else
     pass "remote state: unchecked access does not advertise HTTPS URLs"
@@ -158,13 +158,13 @@ unset REMOTE_WEB_STATE
 write_access_env "ready" "gate.test"
 ready_output=$(print_access_info)
 assert_contains "$ready_output" "https://jellyfin.gate.test" "remote state: ready prints Jellyfin HTTPS URL"
-assert_contains "$ready_output" "https://jellyseerr.gate.test" "remote state: ready prints Jellyseerr HTTPS URL"
+assert_contains "$ready_output" "https://seerr.gate.test" "remote state: ready prints Seerr HTTPS URL"
 
 unset REMOTE_WEB_STATE
 write_access_env "skipped" "gate.test"
 skipped_output=$(print_access_info)
 assert_contains "$skipped_output" "HTTPS skipped. LAN + VPN work. Run ./setup.sh --remote to try again." "remote state: skipped access copy"
-if [[ "$skipped_output" == *"https://jellyfin.gate.test"* || "$skipped_output" == *"https://jellyseerr.gate.test"* ]]; then
+if [[ "$skipped_output" == *"https://jellyfin.gate.test"* || "$skipped_output" == *"https://seerr.gate.test"* ]]; then
     fail "remote state: skipped access does not advertise HTTPS URLs"
 else
     pass "remote state: skipped access does not advertise HTTPS URLs"
@@ -174,7 +174,7 @@ unset REMOTE_WEB_STATE
 write_access_env "failed" "gate.test"
 failed_output=$(print_access_info)
 assert_contains "$failed_output" "HTTPS setup failed. LAN + VPN work. Run ./setup.sh --remote after fixing the issue." "remote state: failed access copy"
-if [[ "$failed_output" == *"https://jellyfin.gate.test"* || "$failed_output" == *"https://jellyseerr.gate.test"* ]]; then
+if [[ "$failed_output" == *"https://jellyfin.gate.test"* || "$failed_output" == *"https://seerr.gate.test"* ]]; then
     fail "remote state: failed access does not advertise HTTPS URLs"
 else
     pass "remote state: failed access does not advertise HTTPS URLs"

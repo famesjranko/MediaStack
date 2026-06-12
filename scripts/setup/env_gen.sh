@@ -113,7 +113,7 @@ write_env() {
     local prev_radarr="${RADARR_API_KEY:-}"
     local prev_jellyfin="${JELLYFIN_API_KEY:-}"
     local prev_bazarr="${BAZARR_API_KEY:-}"
-    local prev_jellyseerr="${JELLYSEERR_API_KEY:-}"
+    local prev_seerr="${SEERR_API_KEY:-}"
     local prev_portainer="${PORTAINER_API_KEY:-}"
     local prev_beszel="${BESZEL_AGENT_KEY:-}"
     local prev_stage1="${STAGE_1_COMPLETE:-}"
@@ -148,7 +148,7 @@ import sys
 
 wanted = {
     "SONARR_API_KEY", "RADARR_API_KEY", "JELLYFIN_API_KEY", "BAZARR_API_KEY",
-    "JELLYSEERR_API_KEY", "PORTAINER_API_KEY", "BESZEL_AGENT_KEY",
+    "SEERR_API_KEY", "PORTAINER_API_KEY", "BESZEL_AGENT_KEY",
     "STAGE_1_COMPLETE", "NPM_LE_SERVER", "JELLYFIN_GPU", "IMAGE_CHANNEL",
     "PUBLIC_INDEXERS_ENABLED", "NVIDIA_DRIVER_MODE", "NVIDIA_PATCH_ENABLED",
     "STAGE_3_GPU_STATE", "STAGE_3_GPU_VENDOR", "STAGE_3_GPU_ENCODER",
@@ -177,7 +177,7 @@ PY
         prev_radarr="${RADARR_API_KEY:-$prev_radarr}"
         prev_jellyfin="${JELLYFIN_API_KEY:-$prev_jellyfin}"
         prev_bazarr="${BAZARR_API_KEY:-$prev_bazarr}"
-        prev_jellyseerr="${JELLYSEERR_API_KEY:-$prev_jellyseerr}"
+        prev_seerr="${SEERR_API_KEY:-$prev_seerr}"
         prev_portainer="${PORTAINER_API_KEY:-$prev_portainer}"
         prev_beszel="${BESZEL_AGENT_KEY:-$prev_beszel}"
         prev_stage1="${STAGE_1_COMPLETE:-$prev_stage1}"
@@ -336,12 +336,12 @@ PY
     [[ "$public_indexers_enabled" == "true" ]] || public_indexers_enabled="false"
 
     local prev_sonarr_env prev_radarr_env prev_jellyfin_env prev_bazarr_env
-    local prev_jellyseerr_env prev_portainer_env prev_beszel_env
+    local prev_seerr_env prev_portainer_env prev_beszel_env
     _env_quote_preserved_secret prev_sonarr_env "SONARR_API_KEY" "$prev_sonarr"
     _env_quote_preserved_secret prev_radarr_env "RADARR_API_KEY" "$prev_radarr"
     _env_quote_preserved_secret prev_jellyfin_env "JELLYFIN_API_KEY" "$prev_jellyfin"
     _env_quote_preserved_secret prev_bazarr_env "BAZARR_API_KEY" "$prev_bazarr"
-    _env_quote_preserved_secret prev_jellyseerr_env "JELLYSEERR_API_KEY" "$prev_jellyseerr"
+    _env_quote_preserved_secret prev_seerr_env "SEERR_API_KEY" "$prev_seerr"
     _env_quote_preserved_secret prev_portainer_env "PORTAINER_API_KEY" "$prev_portainer"
     _env_quote_preserved_secret prev_beszel_env "BESZEL_AGENT_KEY" "$prev_beszel"
 
@@ -465,7 +465,7 @@ SONARR_API_KEY=${prev_sonarr_env}
 RADARR_API_KEY=${prev_radarr_env}
 JELLYFIN_API_KEY=${prev_jellyfin_env}
 BAZARR_API_KEY=${prev_bazarr_env}
-JELLYSEERR_API_KEY=${prev_jellyseerr_env}
+SEERR_API_KEY=${prev_seerr_env}
 PORTAINER_API_KEY=${prev_portainer_env}
 # Single-quoted: generated API keys may include shell- or Compose-special
 # characters, and beszel-agent keys contain spaces.

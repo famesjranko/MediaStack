@@ -104,7 +104,7 @@ print(len([h for h in hosts if bool(h.get("enabled")) and (h.get("certificate_id
         local orphan_managed_count
         orphan_managed_count=$(echo "$proxy_hosts" | DIND="$DIND_NAME" python3 -c '
 import sys, json, os, subprocess
-managed_subdomains = ("jellyfin.", "jellyseerr.")
+managed_subdomains = ("jellyfin.", "seerr.")
 hosts = json.load(sys.stdin)
 def in_dind(*args):
     return subprocess.run(
@@ -164,7 +164,7 @@ print(count)
 
         # Jellyfin host carries its upstream-recommended extras (jellyfin.org
         # nginx guide): Content-Security-Policy + client_max_body_size 20M.
-        # Jellyfin-only — upstream Jellyseerr ships neither.
+        # Jellyfin-only — upstream Seerr ships neither.
         local jf_upstream
         jf_upstream=$(echo "$proxy_hosts" | python3 -c '
 import sys, json

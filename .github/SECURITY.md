@@ -22,6 +22,6 @@ Include:
 
 ## Public Exposure Boundary
 
-Only Jellyfin and Jellyseerr are intended to be exposed through HTTPS. Admin
+Only Jellyfin and Seerr are intended to be exposed through HTTPS. Admin
 ports for NPM, WireGuard, Sonarr, Radarr, Jackett, qBittorrent, Portainer,
 DDNS Updater, and monitoring tools should remain LAN/VPN-only.

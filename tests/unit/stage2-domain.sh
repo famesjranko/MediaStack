@@ -57,13 +57,13 @@ dig() {
         break
     done
     case "$query" in
-        jellyfin.ok.test|jellyseerr.ok.test) printf '203.0.113.10\n' ;;
-        jellyfin.system-only.test|jellyseerr.system-only.test)
+        jellyfin.ok.test|seerr.ok.test) printf '203.0.113.10\n' ;;
+        jellyfin.system-only.test|seerr.system-only.test)
             [[ "$google_resolver" == "true" ]] && return 1
             printf '203.0.113.10\n'
             ;;
-        jellyfin.mismatch.test|jellyseerr.mismatch.test) printf '203.0.113.99\n' ;;
-        jellyfin.cloudflare.test|jellyseerr.cloudflare.test) printf '198.51.100.8\n' ;;
+        jellyfin.mismatch.test|seerr.mismatch.test) printf '203.0.113.99\n' ;;
+        jellyfin.cloudflare.test|seerr.cloudflare.test) printf '198.51.100.8\n' ;;
         apex-only.test) printf '203.0.113.10\n' ;;
         *) return 0 ;;
     esac

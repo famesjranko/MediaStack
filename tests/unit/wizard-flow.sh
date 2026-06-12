@@ -53,7 +53,7 @@ docker() {
     if [[ "${1:-}" == "compose" ]]; then
         case " $* " in
             *" config --services "*)
-                printf '%s\n' jellyfin sonarr radarr jackett qbittorrent jellyseerr homepage portainer uptime-kuma beszel
+                printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer uptime-kuma beszel
                 if [[ " $* " == *" --profile subtitles "* ]]; then
                     printf '%s\n' bazarr
                 fi
@@ -597,7 +597,7 @@ SONARR_API_KEY=
 RADARR_API_KEY=
 JELLYFIN_API_KEY=
 BAZARR_API_KEY=
-JELLYSEERR_API_KEY=
+SEERR_API_KEY=
 PORTAINER_API_KEY=
 BESZEL_AGENT_KEY=
 MEDIASTACK_NETWORK_PREFIX=172.28.0

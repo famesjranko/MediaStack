@@ -255,12 +255,12 @@ _stage2_dns_lookup_a() {
 
 stage2_dns_classify() {
     local domain="$1" public_ip="$2"
-    local jellyfin_a jellyseerr_a apex_a
+    local jellyfin_a seerr_a apex_a
 
     jellyfin_a=$(_stage2_dns_lookup_a "jellyfin.${domain}" || true)
-    jellyseerr_a=$(_stage2_dns_lookup_a "jellyseerr.${domain}" || true)
+    seerr_a=$(_stage2_dns_lookup_a "seerr.${domain}" || true)
 
-    if [[ -z "$jellyfin_a" && -z "$jellyseerr_a" ]]; then
+    if [[ -z "$jellyfin_a" && -z "$seerr_a" ]]; then
         apex_a=$(_stage2_dns_lookup_a "$domain" || true)
         if [[ -n "$apex_a" ]]; then
             printf 'apex-only'
@@ -270,11 +270,11 @@ stage2_dns_classify() {
         return 1
     fi
 
-    if [[ -z "$jellyfin_a" || -z "$jellyseerr_a" ]]; then
+    if [[ -z "$jellyfin_a" || -z "$seerr_a" ]]; then
         printf 'no-a'
         return 1
     fi
-    if stage2_ip_in_cloudflare_v4 "$jellyfin_a" || stage2_ip_in_cloudflare_v4 "$jellyseerr_a"; then
+    if stage2_ip_in_cloudflare_v4 "$jellyfin_a" || stage2_ip_in_cloudflare_v4 "$seerr_a"; then
         printf 'cloudflare'
         return 1
     fi
@@ -282,8 +282,8 @@ stage2_dns_classify() {
         printf 'mismatch:%s' "$jellyfin_a"
         return 1
     fi
-    if [[ "$jellyseerr_a" != "$public_ip" ]]; then
-        printf 'mismatch:%s' "$jellyseerr_a"
+    if [[ "$seerr_a" != "$public_ip" ]]; then
+        printf 'mismatch:%s' "$seerr_a"
         return 1
     fi
 
@@ -630,7 +630,7 @@ except Exception:
 #   full-lan    → whole LAN CIDR, all ports
 #   server      → server IP /32, all ports (host services included: SSH, SMB, etc.)
 #   containers  → server IP, explicit MediaStack container ports (51821 excluded)
-#   streaming   → server IP, Jellyfin/Jellyseerr/Homepage only
+#   streaming   → server IP, Jellyfin/Seerr/Homepage only
 #
 # Container port list: keep in sync with docker-compose.yml. Excludes 51821
 # (wg-easy admin) so containers-tier peers can't add or modify other peers.
@@ -649,7 +649,7 @@ wg_firewall_ips_for_tier() {
         containers)
             [[ -z "$server_ip" ]] && return 1
             # Ports: 80/443/81 NPM (HTTP/HTTPS/admin), 3000 Homepage, 3001 Uptime Kuma,
-            # 5055 Jellyseerr, 6767 Bazarr, 7359/udp Jellyfin auto-discovery, 7878 Radarr,
+            # 5055 Seerr, 6767 Bazarr, 7359/udp Jellyfin auto-discovery, 7878 Radarr,
             # 8000 DDNS, 8080 qBittorrent, 8090 Beszel, 8096 Jellyfin, 8191 FlareSolverr,
             # 8989 Sonarr, 9000 Portainer, 9117 Jackett. 51821 (wg-easy admin) excluded.
             local ports=(80/tcp 81/tcp 443/tcp 3000/tcp 3001/tcp 5055/tcp 6767/tcp \

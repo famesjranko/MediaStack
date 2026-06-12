@@ -47,7 +47,7 @@ Each cell enables every tier from the **SD floor** (SDTV/DVD/480p) up to the res
 
 Remux-1080p (ID 30) is deliberately excluded across all presets — see [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for rationale.
 
-Consumed by `configure_quality_profile` (`scripts/lib/arr/main.sh`, with Python profile transform at `scripts/lib/arr/render/quality_profile.py`) and the Jellyseerr *arr connection helpers (`scripts/services/jellyseerr/main.sh`) which look up the profile by name.
+Consumed by `configure_quality_profile` (`scripts/lib/arr/main.sh`, with Python profile transform at `scripts/lib/arr/render/quality_profile.py`) and the Seerr *arr connection helpers (`scripts/services/seerr/main.sh`) which look up the profile by name.
 
 ### `quality_definitions`
 
@@ -158,7 +158,7 @@ List of `{name, type, path}`. `type` is Jellyfin's `collectionType` (`movies`, `
 
 ### `rate_limiting`
 
-Optional nginx rate limiting for internet-facing proxy hosts (Jellyfin, Jellyseerr) via NPM's advanced config. **Disabled by default** (`enabled: false`) for parity with upstream Jellyfin/Jellyseerr, neither of which rate-limits — a blanket server-level limit applies to every path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback (and the `[npm-ratelimit]` jail could then ban the household's own public IP). Login brute-force is covered regardless by the 401/403 auth jails. See ADR-35.
+Optional nginx rate limiting for internet-facing proxy hosts (Jellyfin, Seerr) via NPM's advanced config. **Disabled by default** (`enabled: false`) for parity with upstream Jellyfin/Seerr, neither of which rate-limits — a blanket server-level limit applies to every path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback (and the `[npm-ratelimit]` jail could then ban the household's own public IP). Login brute-force is covered regardless by the 401/403 auth jails. See ADR-35.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
@@ -230,7 +230,7 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 
 **SMB scope:** `SMB_SHARE_SCOPE=data` shares `${DATA_DIR}` as `Media` and is the recommended default. `SMB_SHARE_SCOPE=system` keeps the intentional full `/` admin share available as `MediaStackSystem`.
 
-**Storage modes:** `local` is the standard managed `/data` layout. `nas` means MediaStack mounts/verifies NFS storage and runs the storage watchdog. NAS sentinel and managed directory writes are made as the installing user when possible so root-squashed NFS exports work. `manual` is represented by `STORAGE_APP_WIRING=manual`: the stack is installed but storage-facing app configuration is skipped so the user can wire Jellyfin, Sonarr/Radarr, qBittorrent, Jellyseerr, and Unpackerr manually. Manual app wiring can still use `STORAGE_MODE=nas` when the user wants NAS guard/watchdog protection. See [storage.md](storage.md) for the operational flow and guard/watchdog behavior.
+**Storage modes:** `local` is the standard managed `/data` layout. `nas` means MediaStack mounts/verifies NFS storage and runs the storage watchdog. NAS sentinel and managed directory writes are made as the installing user when possible so root-squashed NFS exports work. `manual` is represented by `STORAGE_APP_WIRING=manual`: the stack is installed but storage-facing app configuration is skipped so the user can wire Jellyfin, Sonarr/Radarr, qBittorrent, Seerr, and Unpackerr manually. Manual app wiring can still use `STORAGE_MODE=nas` when the user wants NAS guard/watchdog protection. See [storage.md](storage.md) for the operational flow and guard/watchdog behavior.
 
 **VPN access tiers (ADR-29):** The wizard asks for an access tier instead of a tunnel mode. `WG_INIT_ALLOWED_IPS` (client-side routing) and the wg-easy server-side `firewallIps` for the initial peer are both derived from the tier. Per-client firewall is on for every new install.
 
@@ -239,7 +239,7 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `full-lan` | `<WG_LAN_CIDR>` (detected, RFC1918) | `<WG_LAN_CIDR>` — whole LAN, all ports | Owner/admin |
 | `server` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>/32` — all ports incl. host SSH/SMB | Co-admin |
 | `containers` | `<WG_SERVER_LAN_IP>/32` | Enumerated MediaStack container ports at the server IP; **51821 (wg-easy admin) excluded** | Trusted household |
-| `streaming` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>:8096/tcp`, `:5055/tcp`, `:3000/tcp` — Jellyfin + Jellyseerr + Homepage | Friends/kids (README template, not an initial-peer choice) |
+| `streaming` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>:8096/tcp`, `:5055/tcp`, `:3000/tcp` — Jellyfin + Seerr + Homepage | Friends/kids (README template, not an initial-peer choice) |
 
 **Advanced — full-tunnel routing.** Set **both** `WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0'` AND `WG_PER_CLIENT_FIREWALL=false` in `.env` before first boot. Both are required because per-client firewall would otherwise drop the now-routed traffic. The configurator emits a warning if `WG_PER_CLIENT_FIREWALL=false` is combined with a non-`full-lan` tier (almost certainly user error).
 
@@ -254,7 +254,7 @@ In v15 the per-client firewall is enforced inside the wg-easy container regardle
 | `JELLYFIN_API_KEY` | 5 | `scripts/services/jellyfin/main.sh` (AccessToken from auth response, saved as a permanent API key via `/Auth/Keys`) |
 | `JELLYFIN_PUBLISHED_URL` | 5 | `scripts/services/jellyfin/main.sh` (`configure_jellyfin_networking` — `https://jellyfin.<DOMAIN>` when DOMAIN set, else `http://<HOST_ADDRESS>:8096`) |
 | `BAZARR_API_KEY` | (conditional) | `scripts/services/bazarr/main.sh` (read from `config/bazarr/config/config.yaml`; only when subtitles profile is active) |
-| `JELLYSEERR_API_KEY` | 6 | `scripts/services/jellyseerr/main.sh` (from `apiKey` field of `GET /api/v1/settings/main`) |
+| `SEERR_API_KEY` | 6 | `scripts/services/seerr/main.sh` (from `apiKey` field of `GET /api/v1/settings/main`) |
 | `PORTAINER_API_KEY` | 7 | `scripts/services/portainer/main.sh` (persistent access token via `POST /api/users/1/tokens`) |
 
 Unpackerr reads `SONARR_API_KEY` / `RADARR_API_KEY` and `UNPACKERR_TORRENT_PATHS` from env (set in the `unpackerr` service definition in `docker-compose.yml`), which is why `configure.sh` restarts it after API key population for managed app wiring. Homepage reads all seven API keys/credentials from `.env` to generate `services.yaml` with live widgets.
@@ -272,7 +272,7 @@ These service configs are shipped with the repo. They live under `config/` but s
 | `[DEFAULT]` | `ignoreip`: `127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16`. **10.0.0.0/8 is deliberate** — wg-easy hands out 10.8.0.0/24 to peers, and VPN peers are trusted friends/family. Ban 30 min after 5 failures in 30 min, with progressive ban increments (factor 2, max 24h). `banaction = iptables-allports` on `chain = DOCKER-USER` — single-box, all services behind Docker. |
 | `[jellyfin]` | `logpath = /var/log/jellyfin/log_*.log`. |
 | `[npm]` | Two log globs: `default-host_*.log` + `proxy-host-*_*.log`. |
-| `[jellyseerr]` | `logpath = /var/log/jellyseerr/*.log`. |
+| `[seerr]` | `logpath = /var/log/seerr/*.log`. |
 | `[npm-ratelimit]` | **Disabled by default** (`enabled = false`, ADR-35) — companion to `config.yml`'s `rate_limiting.enabled`. `logpath = /var/log/npm/proxy-host-*_*.log`. When enabled, catches IPs that accumulate 429 (Too Many Requests) responses from nginx `limit_req`; overrides `[DEFAULT]` with `maxretry = 10`, `findtime = 60` (validated against `config.yml`'s `rate_limiting.ban_maxretry` / `ban_findtime` by `configure_npm` — drift is warned, not reconciled). Uses the `npm-ratelimit` filter (see below). |
 
 Log paths are mounted read-only from the producing service's config dir (fail2ban volume mounts in `docker-compose.yml`).
@@ -293,13 +293,13 @@ failregex = \s(401|403)\s.*\[Client <ADDR>\]
 
 Matches NPM's nginx access-log format (v2.12+): `[$time] $cache $upstream_status $status - $method $scheme $host "$uri" [Client $addr]`. The status code appears **before** `[Client]` in the log line, so the regex matches the status first, then extracts the IP. This has drifted before; keep the filter aligned with the current image log format.
 
-### `config/fail2ban/filter.d/jellyseerr.conf`
+### `config/fail2ban/filter.d/seerr.conf`
 
 ```
-failregex = .*\[warn\].*Failed (sign-in|login) attempt.*"ip":"<ADDR>".*
+failregex = .*\[warn\]\[(API|Auth)\]\: Failed sign-in attempt.*"ip":"<HOST>"
 ```
 
-Both `sign-in` and `login` variants covered — Jellyseerr's log wording has flipped between releases.
+Matches current Seerr warning records for both Jellyfin authentication (`Auth`) and local-password authentication (`API`). The `fail2ban-drift` DinD scenario exercises both forms.
 
 ### `config/fail2ban/filter.d/npm-ratelimit.conf`
 
@@ -360,7 +360,7 @@ Actual pattern (runtime config exclusions in `.gitignore`):
 config/jellyfin/
 config/sonarr/
 config/radarr/
-config/jellyseerr/
+config/seerr/
 config/unpackerr/
 config/homepage/services.yaml
 config/homepage/logs/
@@ -385,7 +385,7 @@ Adding a new service with tracked config therefore means:
 
 - **`quality_profile.cutoff_id` vs `quality_id`.** Anyone reading the `quality_profile` section in `config.yml` without the comment would assume it's a quality ID. Naming it `cutoff_group_id` would be self-documenting.
 - **NPM filter regex is format-dependent.** `config/fail2ban/filter.d/npm.conf` matches a specific NPM access log format. No test tails a real 401/403 line against it; if NPM changes its log format in a future image, every request would stop triggering bans and fail2ban would log silently. A regression test here would be cheap — generate a known-bad login and assert fail2ban counted it.
-- **Jellyseerr filter accepts both `sign-in` and `login`** — compensating for a known past drift. If the wording changes again, the regex needs a third alternative. No test coverage.
+- **Seerr filter is image-format-dependent.** It matches the current `[warn][Auth]` and `[warn][API]` sign-in records. `fail2ban-drift` provides focused coverage and `fresh-install` proves the jail starts with the shipped image.
 - **~~qBittorrent pre-seed `MaxRatioAction=1` disagrees with API-applied `0`~~** — fixed: pre-seed now ships `MaxRatioAction=0`.
 - **`.env.example` documents `WG_INIT_PASSWORD=''`** with single quotes but a user copying the file without understanding the rule could paste a password containing `$` or `"` unquoted. The smoke test verifies survival through `.env` → compose → container, but a runtime check on the live `.env` would catch hand-edited drift earlier.
 - **`categories` string format.** `"5000,5030,5040"` is a stringified comma-list; `configure_arr_indexers` parses it via inline Python split (`scripts/lib/arr/main.sh`). A list-of-ints would be more natural in YAML but would require changing the shared-helper contract.

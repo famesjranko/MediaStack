@@ -72,7 +72,7 @@ mount is stable:
 - `qbittorrent`
 - `sonarr`
 - `radarr`
-- `jellyseerr`
+- `seerr`
 - `unpackerr`
 - `bazarr` when subtitles are enabled
 
@@ -91,7 +91,7 @@ but skips:
 - qBittorrent save paths and categories.
 - Sonarr/Radarr root folders and qBittorrent download clients.
 - Jellyfin libraries.
-- Jellyseerr Jellyfin/Sonarr/Radarr storage links.
+- Seerr Jellyfin/Sonarr/Radarr storage links.
 - Unpackerr watched torrent paths.
 
 This is for existing libraries or custom layouts where MediaStack should not

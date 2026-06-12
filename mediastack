@@ -203,7 +203,7 @@ diag_readiness() {
 
 # diag_dns_check — pre-install or ad-hoc subdomain DNS verification.
 # Prompts for a domain and runs stage2_dns_classify (which checks
-# jellyfin.<domain> and jellyseerr.<domain> A-records vs the public IP).
+# jellyfin.<domain> and seerr.<domain> A-records vs the public IP).
 diag_dns_check() {
     echo ""
     # bind9-dnsutils (dig) is installed by setup.sh's install_base_packages,
@@ -244,7 +244,7 @@ diag_dns_check() {
     fi
 
     echo ""
-    ui_log info "Checking jellyfin.${domain} and jellyseerr.${domain} A-records (via 8.8.8.8)..."
+    ui_log info "Checking jellyfin.${domain} and seerr.${domain} A-records (via 8.8.8.8)..."
     local result
     result=$(stage2_dns_classify "$domain" "$public_ip")
     local rc=$?
@@ -254,10 +254,10 @@ diag_dns_check() {
             ui_log ok "DNS looks good - both subdomains resolve to your public IP."
             ;;
         no-a)
-            ui_log error "Missing A-records: set jellyfin.${domain} and jellyseerr.${domain} to ${public_ip} at your DNS provider."
+            ui_log error "Missing A-records: set jellyfin.${domain} and seerr.${domain} to ${public_ip} at your DNS provider."
             ;;
         apex-only)
-            ui_log warn "Only the apex (${domain}) has an A-record. Add subdomain A-records for jellyfin.* and jellyseerr.*"
+            ui_log warn "Only the apex (${domain}) has an A-record. Add subdomain A-records for jellyfin.* and seerr.*"
             ;;
         cloudflare)
             ui_log warn "DNS points to Cloudflare. MediaStack expects the A-record to point directly at your home IP (${public_ip}). Disable Cloudflare proxying (grey cloud)."
@@ -449,7 +449,7 @@ action_configure() {
     # all 10 core services configure.sh requires (configure.sh:105-112). The
     # bazarr/npm/wireguard checks inside configure.sh are already gated by
     # container presence, so we don't enforce those here.
-    local core_services=(qbittorrent jackett sonarr radarr jellyfin jellyseerr portainer homepage uptime-kuma beszel)
+    local core_services=(qbittorrent jackett sonarr radarr jellyfin seerr portainer homepage uptime-kuma beszel)
     local running missing=()
     running=$(docker compose ps --filter status=running --format '{{.Name}}' 2>/dev/null || true)
     local svc

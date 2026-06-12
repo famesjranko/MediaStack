@@ -407,7 +407,7 @@ _stage1_reset_manual_storage_fields() {
 
 _stage1_collect_manual_storage() {
     _WIZ_STORAGE_APP_WIRING="manual"
-    ui_log warn "Advanced manual storage skips Jellyfin libraries, Sonarr/Radarr root folders, qBittorrent paths/categories, Jellyseerr links, and Unpackerr path wiring."
+    ui_log warn "Advanced manual storage skips Jellyfin libraries, Sonarr/Radarr root folders, qBittorrent paths/categories, Seerr links, and Unpackerr path wiring."
 
     if ui_confirm "Still enable NAS mount guard/watchdog for this manual storage?" "no"; then
         ui_log info "MediaStack will verify the NAS mount/sentinel and protect data services, but app storage paths stay manual."

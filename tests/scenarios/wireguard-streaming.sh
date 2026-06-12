@@ -1,6 +1,6 @@
 # tests/scenarios/wireguard-streaming.sh — Streaming-tier firewallIps shape (ADR-29).
 # Brings up wg-easy v15, enables the per-client firewall, creates a family-style
-# peer, and writes the streaming-tier firewallIps (Jellyfin + Jellyseerr +
+# peer, and writes the streaming-tier firewallIps (Jellyfin + Seerr +
 # Homepage). Verifies the shape round-trips through wg-easy's possibly-500-but-
 # persisted mutation path documented in ADR-28.
 #
@@ -94,7 +94,7 @@ print(json.dumps(d))')
     esac
 
     # ------------------------------------------------------------------
-    # 3. Create a streaming-tier peer (Jellyfin + Jellyseerr + Homepage).
+    # 3. Create a streaming-tier peer (Jellyfin + Seerr + Homepage).
     # No DNS entry — wg-easy v15 ships clients with INIT_DNS (1.1.1.1) so a
     # server-side DNS allow is not needed.
     # ------------------------------------------------------------------

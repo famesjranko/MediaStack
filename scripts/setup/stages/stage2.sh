@@ -35,7 +35,7 @@ stage2_skip_summary_copy() {
 
 stage2_tell_me_more_copy() {
     cat <<'COPY'
-Remote access needs a domain, DNS records for Jellyfin and Jellyseerr, router forwards for TCP 80 and 443, and one Let's Encrypt certificate attempt. Dynu can keep DNS updated when your home IP changes. WireGuard gives you a VPN for admin tools and fallback access. Skipping is safe: your LAN stack keeps working, and you can retry later with ./setup.sh --remote.
+Remote access needs a domain, DNS records for Jellyfin and Seerr, router forwards for TCP 80 and 443, and one Let's Encrypt certificate attempt. Dynu can keep DNS updated when your home IP changes. WireGuard gives you a VPN for admin tools and fallback access. Skipping is safe: your LAN stack keeps working, and you can retry later with ./setup.sh --remote.
 COPY
 }
 
@@ -211,7 +211,7 @@ _stage2_le_ready_hosts() {
     hosts=$(curl -sf --max-time 30 -H "Authorization: Bearer $token" \
         "$api/nginx/proxy-hosts" 2>/dev/null) || return 1
 
-    for fqdn in "jellyfin.$domain" "jellyseerr.$domain"; do
+    for fqdn in "jellyfin.$domain" "seerr.$domain"; do
         cert_id=$(npm_remote_usable_cert_id_by_fqdn "$token" "$api" "$fqdn") || return 1
         [[ -z "$cert_id" || "$cert_id" == "0" ]] && continue
         host_json=$(npm_remote_host_json_by_fqdn "$hosts" "$fqdn")
@@ -247,7 +247,7 @@ stage2_le_classify() {
 
     ready_hosts=$(_stage2_le_ready_hosts "$domain" 2>/dev/null || true)
     STAGE2_LE_READY_HOSTS="$(printf '%s\n' "$ready_hosts" | awk 'NF { printf "%s%s", sep, $0; sep=", " }')"
-    for fqdn in "jellyfin.$domain" "jellyseerr.$domain"; do
+    for fqdn in "jellyfin.$domain" "seerr.$domain"; do
         if grep -qx "$fqdn" <<<"$ready_hosts"; then
             ((ready_count += 1))
         else
@@ -317,7 +317,7 @@ stage2_le_failure_copy() {
             printf "Let's Encrypt partly reached this server but one validation path failed. Wait a few minutes, then rerun ./setup.sh --remote."
             ;;
         config-dns)
-            printf "DNS does not point both Jellyfin and Jellyseerr hostnames at this box. Fix DNS, then rerun ./setup.sh --remote."
+            printf "DNS does not point both Jellyfin and Seerr hostnames at this box. Fix DNS, then rerun ./setup.sh --remote."
             ;;
         config-port)
             printf "Let's Encrypt could not reach TCP port 80 on this box. Fix router/firewall forwarding, then rerun ./setup.sh --remote."
@@ -344,7 +344,7 @@ stage2_le_gate() {
         _stage2_set_remote_state ready
         _stage2_source_env
         (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage)
-        log_ok "Remote access is ready: https://jellyfin.${domain} and https://jellyseerr.${domain}."
+        log_ok "Remote access is ready: https://jellyfin.${domain} and https://seerr.${domain}."
         return 0
     fi
 
@@ -469,16 +469,16 @@ _stage2_dns_status_message() {
     local status="$1"
     case "$status" in
         ok)
-            ui_log ok "DNS matches this public IP for Jellyfin and Jellyseerr."
+            ui_log ok "DNS matches this public IP for Jellyfin and Seerr."
             ;;
         cloudflare)
-            ui_log warn "Cloudflare proxy is on. Set jellyfin.${_WIZ_DOMAIN} and jellyseerr.${_WIZ_DOMAIN} to DNS-only, then retry."
+            ui_log warn "Cloudflare proxy is on. Set jellyfin.${_WIZ_DOMAIN} and seerr.${_WIZ_DOMAIN} to DNS-only, then retry."
             ;;
         apex-only)
-            ui_log warn "Only the apex domain resolves. Add wildcard *.${_WIZ_DOMAIN} or separate records for jellyfin.${_WIZ_DOMAIN} and jellyseerr.${_WIZ_DOMAIN}."
+            ui_log warn "Only the apex domain resolves. Add wildcard *.${_WIZ_DOMAIN} or separate records for jellyfin.${_WIZ_DOMAIN} and seerr.${_WIZ_DOMAIN}."
             ;;
         no-a)
-            ui_log warn "No A records found for jellyfin.${_WIZ_DOMAIN} and jellyseerr.${_WIZ_DOMAIN}."
+            ui_log warn "No A records found for jellyfin.${_WIZ_DOMAIN} and seerr.${_WIZ_DOMAIN}."
             ;;
         mismatch:*)
             ui_log warn "DNS resolves to ${status#mismatch:}, not this public IP (${_NET_PUBLIC_IP:-unknown})."
@@ -494,7 +494,7 @@ _stage2_collect_domain() {
 
     # Walk a non-technical user through getting a free hostname if they
     # don't already have a domain. Dynu is what we recommend because:
-    #   - free tier supports wildcards (jellyfin.X + jellyseerr.X)
+    #   - free tier supports wildcards (jellyfin.X + seerr.X)
     #   - same account doubles as the DDNS provider we already integrate
     #   - no DNS provider lock-in or paid tier required for home use
     # If they already have a domain (Cloudflare-managed personal domain,
@@ -641,7 +641,7 @@ _stage2_offer_ddns() {
         if [[ "$ip_kind" == "Yes"* ]]; then
             _WIZ_USES_DDNS="false"
             _WIZ_DDNS_PREFLIGHT_OK="false"
-            ui_log info "Skipping DDNS. Point A records for jellyfin.${_WIZ_DOMAIN} and jellyseerr.${_WIZ_DOMAIN} at your public IP."
+            ui_log info "Skipping DDNS. Point A records for jellyfin.${_WIZ_DOMAIN} and seerr.${_WIZ_DOMAIN} at your public IP."
             return 1
         fi
     fi
@@ -941,7 +941,7 @@ _stage2_confirm() {
     ui_section 5 5 "Confirm install"
     ui_box "Stage 2: Install Plan" \
         "$(ui_kv 'Domain' "$_WIZ_DOMAIN")" \
-        "$(ui_kv 'HTTPS' "jellyfin.${_WIZ_DOMAIN}, jellyseerr.${_WIZ_DOMAIN}")" \
+        "$(ui_kv 'HTTPS' "jellyfin.${_WIZ_DOMAIN}, seerr.${_WIZ_DOMAIN}")" \
         "$(ui_kv 'WireGuard' "${_WIZ_WG_HOST}:${_WIZ_WG_PORT}")" \
         "$(ui_kv 'Remote streaming cap' "$( [[ "${_WIZ_JELLYFIN_BITRATE:-0}" == "0" ]] && echo 'unlimited' || echo "${_WIZ_JELLYFIN_BITRATE} Mbps/viewer" )")" \
         "$(ui_kv 'Access' 'LAN remains available if HTTPS fails')"

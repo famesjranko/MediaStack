@@ -45,7 +45,7 @@ fi
 FAKE_HOSTS='[
   {"id": 1, "domain_names": ["jellyfin.old.test"], "forward_host": "jellyfin", "forward_port": 8096, "enabled": true},
   {"id": 2, "domain_names": ["jellyfin.gate.test"], "forward_host": "jellyfin", "forward_port": 8096, "enabled": true},
-  {"id": 3, "domain_names": ["jellyseerr.gate.test"], "forward_host": "jellyseerr", "forward_port": 5055, "enabled": true}
+  {"id": 3, "domain_names": ["seerr.gate.test"], "forward_host": "seerr", "forward_port": 5055, "enabled": true}
 ]'
 
 _npm_warn_stale_managed_hosts "token" "http://npm.test/api" "gate.test" "$FAKE_HOSTS"; rc=$?
@@ -65,10 +65,10 @@ curl() {
             printf '{"token":"ready-token"}\n'
             ;;
         *"/api/nginx/certificates"*)
-            printf '[{"id":11,"is_deleted":false,"domain_names":["jellyfin.gate.test"]},{"id":12,"is_deleted":false,"domain_names":["jellyseerr.gate.test"]}]\n'
+            printf '[{"id":11,"is_deleted":false,"domain_names":["jellyfin.gate.test"]},{"id":12,"is_deleted":false,"domain_names":["seerr.gate.test"]}]\n'
             ;;
         *"/api/nginx/proxy-hosts"*)
-            printf '[{"id":2,"domain_names":["jellyfin.gate.test"],"certificate_id":11,"enabled":true},{"id":3,"domain_names":["jellyseerr.gate.test"],"certificate_id":12,"enabled":true}]\n'
+            printf '[{"id":2,"domain_names":["jellyfin.gate.test"],"certificate_id":11,"enabled":true},{"id":3,"domain_names":["seerr.gate.test"],"certificate_id":12,"enabled":true}]\n'
             ;;
         *)
             return 22
@@ -99,7 +99,7 @@ server_name jellyfin.gate.test;
 ssl_certificate /etc/letsencrypt/live/npm-11/fullchain.pem;
 EOF
 cat >"$TMP_ROOT/config/npm/data/nginx/proxy_host/3.conf" <<'EOF'
-server_name jellyseerr.gate.test;
+server_name seerr.gate.test;
 ssl_certificate /etc/letsencrypt/live/npm-12/fullchain.pem;
 EOF
 

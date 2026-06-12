@@ -179,13 +179,13 @@ for group in data:
                 for details in svc.values():
                     if isinstance(details, dict) and details.get('href'):
                         hrefs.append(str(details['href']))
-bad = [h for h in hrefs if h in ('https://jellyfin.gate.test', 'https://jellyseerr.gate.test')]
+bad = [h for h in hrefs if h in ('https://jellyfin.gate.test', 'https://seerr.gate.test')]
 needles = ('http://127.0.0.1:8096', ':8096', 'http://127.0.0.1:5055', ':5055')
 has_jellyfin_lan = any('jellyfin.gate.test' not in h and (h.endswith(':8096') or ':8096/' in h) for h in hrefs)
-has_jellyseerr_lan = any('jellyseerr.gate.test' not in h and (h.endswith(':5055') or ':5055/' in h) for h in hrefs)
+has_seerr_lan = any('seerr.gate.test' not in h and (h.endswith(':5055') or ':5055/' in h) for h in hrefs)
 if bad:
     print('bad_https=' + ','.join(bad))
-elif not (has_jellyfin_lan and has_jellyseerr_lan):
+elif not (has_jellyfin_lan and has_seerr_lan):
     print('missing_lan=' + repr(hrefs))
 else:
     print('OK')
@@ -208,7 +208,7 @@ try:
     hosts = json.load(sys.stdin)
 except Exception:
     hosts = []
-managed = {"jellyfin.gate.test", "jellyseerr.gate.test"}
+managed = {"jellyfin.gate.test", "seerr.gate.test"}
 print(sum(
     1 for host in hosts
     if host.get("enabled") and managed.intersection(set(host.get("domain_names") or []))
@@ -263,7 +263,7 @@ import os
 import subprocess
 import sys
 
-managed = {"jellyfin.gate.test", "jellyseerr.gate.test"}
+managed = {"jellyfin.gate.test", "seerr.gate.test"}
 try:
     hosts = json.load(sys.stdin)
 except Exception:

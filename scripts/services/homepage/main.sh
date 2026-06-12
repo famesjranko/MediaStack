@@ -43,7 +43,7 @@ configure_homepage() {
         SONARR_KEY="${SONARR_API_KEY:-}" \
         RADARR_KEY="${RADARR_API_KEY:-}" \
         JELLYFIN_KEY="${JELLYFIN_API_KEY:-}" \
-        JELLYSEERR_KEY="${JELLYSEERR_API_KEY:-}" \
+        SEERR_KEY="${SEERR_API_KEY:-}" \
         NPM_EMAIL="${NPM_ADMIN_EMAIL:-}" \
         NPM_PW="${JELLYFIN_ADMIN_PASSWORD:-}" \
         PORTAINER_KEY="${PORTAINER_API_KEY:-}" \
@@ -63,7 +63,7 @@ remote_state = os.environ["REMOTE_WEB_STATE"]
 sonarr_key = os.environ["SONARR_KEY"]
 radarr_key = os.environ["RADARR_KEY"]
 jf_key = os.environ["JELLYFIN_KEY"]
-js_key = os.environ["JELLYSEERR_KEY"]
+seerr_key = os.environ["SEERR_KEY"]
 npm_email = os.environ["NPM_EMAIL"]
 npm_pw = os.environ["NPM_PW"]
 ptainer_key = os.environ["PORTAINER_KEY"]
@@ -93,12 +93,12 @@ media = {"Media": [
         "siteMonitor": "http://jellyfin:8096",
         "widget": {"type": "jellyfin", "url": "http://jellyfin:8096", "key": jf_key},
     }},
-    {"Jellyseerr": {
-        "icon": "jellyseerr",
+    {"Seerr": {
+        "icon": "seerr",
         "description": "Media Requests",
-        "href": href("jellyseerr", 5055),
-        "siteMonitor": "http://jellyseerr:5055",
-        **({"widget": {"type": "jellyseerr", "url": "http://jellyseerr:5055", "key": js_key}} if js_key else {}),
+        "href": href("seerr", 5055),
+        "siteMonitor": "http://seerr:5055",
+        **({"widget": {"type": "seerr", "url": "http://seerr:5055", "key": seerr_key}} if seerr_key else {}),
     }},
 ]}
 services.append(media)

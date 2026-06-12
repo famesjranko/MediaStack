@@ -506,7 +506,7 @@ except Exception:
 stale = []
 for host in hosts:
     for name in host.get("domain_names", []) or []:
-        if not (name.startswith("jellyfin.") or name.startswith("jellyseerr.")):
+        if not (name.startswith("jellyfin.") or name.startswith("seerr.")):
             continue
         suffix = name.split(".", 1)[1] if "." in name else ""
         if suffix and suffix != domain:
@@ -714,13 +714,13 @@ for s in json.load(sys.stdin):
         log_info "Stage 2 remote attempt allowed -- requesting/verifying public proxy hosts before REMOTE_WEB_STATE=ready"
     fi
 
-    # Only proxy user-facing services (Jellyfin + Jellyseerr). Admin tools
+    # Only proxy user-facing services (Jellyfin + Seerr). Admin tools
     # (Sonarr, Radarr, Jackett, qBittorrent) stay LAN/VPN-only.
     # Fail2ban protects these via the NPM access log jail (401/403 responses).
     # subdomain|forward_host|forward_port|websocket(0/1)
     local proxy_hosts=(
         "jellyfin|jellyfin|8096|1"
-        "jellyseerr|jellyseerr|5055|1"
+        "seerr|seerr|5055|1"
     )
 
     local existing_hosts="[]"
@@ -861,7 +861,7 @@ more_set_headers "Permissions-Policy: accelerometer=(), ambient-light-sensor=(),
             # (connect-src 'self' covers the same-origin /socket websocket;
             # gstatic/youtube/blob are whitelisted for the built-in web player).
             # CSP uses more_set_headers for the same reason as above; CSP +
-            # client_max_body_size are Jellyfin-only — upstream Jellyseerr ships
+            # client_max_body_size are Jellyfin-only — upstream Seerr ships
             # neither.
             if [[ "$subdomain" == "jellyfin" ]]; then
                 adv_config+=$'\nproxy_buffering off;'

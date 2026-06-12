@@ -7,9 +7,9 @@ assert_env_backpopulation() {
     [[ -n "$env_radarr" && ${#env_radarr} -ge 20 ]] && pass ".env RADARR_API_KEY populated" || fail ".env RADARR_API_KEY populated"
     [[ -n "$env_jf" && ${#env_jf} -ge 20 ]] && pass ".env JELLYFIN_API_KEY populated" || fail ".env JELLYFIN_API_KEY populated"
 
-    local env_jellyseerr
-    env_jellyseerr=$(env_get JELLYSEERR_API_KEY)
-    [[ -n "$env_jellyseerr" && ${#env_jellyseerr} -ge 20 ]] && pass ".env JELLYSEERR_API_KEY populated" || fail ".env JELLYSEERR_API_KEY populated"
+    local env_seerr
+    env_seerr=$(env_get SEERR_API_KEY)
+    [[ -n "$env_seerr" && ${#env_seerr} -ge 20 ]] && pass ".env SEERR_API_KEY populated" || fail ".env SEERR_API_KEY populated"
 
     local env_portainer
     env_portainer=$(env_get PORTAINER_API_KEY)

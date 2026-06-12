@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/unit/jellyseerr.sh
+# tests/unit/seerr.sh
 
 set -uo pipefail
 
@@ -7,7 +7,7 @@ UNIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$UNIT_DIR/../.." && pwd)"
 
 source "$REPO_ROOT/tests/lib/assert.sh"
-CURRENT_SCENARIO="jellyseerr"
+CURRENT_SCENARIO="seerr"
 scenario_begin "$CURRENT_SCENARIO"
 
 TMP_DIR="$(mktemp -d)"
@@ -23,7 +23,7 @@ printf '%s\n' '<Config><ApiKey>sonarr-key</ApiKey></Config>' > "$SCRIPT_DIR/conf
 printf '%s\n' '<Config><ApiKey>radarr-key</ApiKey></Config>' > "$SCRIPT_DIR/config/radarr/config.xml"
 
 source "$REPO_ROOT/scripts/lib/json.sh"
-source "$REPO_ROOT/scripts/services/jellyseerr/arr_connect.sh"
+source "$REPO_ROOT/scripts/services/seerr/arr_connect.sh"
 
 log_skip() { :; }
 log_warn() { :; }
@@ -77,8 +77,8 @@ js_post() {
     esac
 }
 
-connect_arr_to_jellyseerr sonarr 8989 "http://localhost:5055" "$TMP_DIR/cookie"
-connect_arr_to_jellyseerr radarr 7878 "http://localhost:5055" "$TMP_DIR/cookie"
+connect_arr_to_seerr sonarr 8989 "http://localhost:5055" "$TMP_DIR/cookie"
+connect_arr_to_seerr radarr 7878 "http://localhost:5055" "$TMP_DIR/cookie"
 
 mapfile -t sonarr_lines < <(WANT_PROFILE="$PROFILE_NAME" python3 - "$SONARR_BODY" <<'PY'
 import json
@@ -95,10 +95,10 @@ print(body.get("activeLanguageProfileId"))
 PY
 )
 
-assert_eq "44" "${sonarr_lines[0]:-}" "Jellyseerr Sonarr profile id resolves configured quoted profile"
-assert_eq "True" "${sonarr_lines[1]:-}" "Jellyseerr Sonarr profile name preserves quote and backslash"
-assert_eq "/data/media/tv" "${sonarr_lines[2]:-}" "Jellyseerr Sonarr payload keeps configured root folder"
-assert_eq "7" "${sonarr_lines[3]:-}" "Jellyseerr Sonarr payload keeps language profile id"
+assert_eq "44" "${sonarr_lines[0]:-}" "Seerr Sonarr profile id resolves configured quoted profile"
+assert_eq "True" "${sonarr_lines[1]:-}" "Seerr Sonarr profile name preserves quote and backslash"
+assert_eq "/data/media/tv" "${sonarr_lines[2]:-}" "Seerr Sonarr payload keeps configured root folder"
+assert_eq "7" "${sonarr_lines[3]:-}" "Seerr Sonarr payload keeps language profile id"
 
 mapfile -t radarr_lines < <(WANT_PROFILE="$PROFILE_NAME" python3 - "$RADARR_BODY" <<'PY'
 import json
@@ -115,10 +115,10 @@ print(body.get("minimumAvailability"))
 PY
 )
 
-assert_eq "44" "${radarr_lines[0]:-}" "Jellyseerr Radarr profile id resolves configured quoted profile"
-assert_eq "True" "${radarr_lines[1]:-}" "Jellyseerr Radarr profile name preserves quote and backslash"
-assert_eq "/data/media/movies" "${radarr_lines[2]:-}" "Jellyseerr Radarr payload keeps configured root folder"
-assert_eq "released" "${radarr_lines[3]:-}" "Jellyseerr Radarr payload keeps minimum availability"
+assert_eq "44" "${radarr_lines[0]:-}" "Seerr Radarr profile id resolves configured quoted profile"
+assert_eq "True" "${radarr_lines[1]:-}" "Seerr Radarr profile name preserves quote and backslash"
+assert_eq "/data/media/movies" "${radarr_lines[2]:-}" "Seerr Radarr payload keeps configured root folder"
+assert_eq "released" "${radarr_lines[3]:-}" "Seerr Radarr payload keeps minimum availability"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

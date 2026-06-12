@@ -18,7 +18,7 @@ storage_is_manual() {
 }
 
 storage_data_services() {
-    printf '%s\n' unpackerr qbittorrent sonarr radarr jellyseerr jellyfin
+    printf '%s\n' unpackerr qbittorrent sonarr radarr seerr jellyfin
     if [[ "${BAZARR_ENABLED:-false}" == "true" ]]; then
         printf '%s\n' bazarr
     fi

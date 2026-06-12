@@ -184,9 +184,9 @@ radarr:
   download_client_category: "radarr"
 
 # ---------------------------------------------------------------------------
-# Jellyseerr
+# Seerr
 # ---------------------------------------------------------------------------
-jellyseerr:
+seerr:
   quotas:
     movie:
       limit: 0                     # Max movie requests per period (0 = unlimited)
@@ -219,12 +219,12 @@ jellyfin:
 # ---------------------------------------------------------------------------
 # Rate Limiting (nginx via NPM)
 # ---------------------------------------------------------------------------
-# DISABLED BY DEFAULT. Neither Jellyfin's nor Jellyseerr's official reverse-proxy
+# DISABLED BY DEFAULT. Neither Jellyfin's nor Seerr's official reverse-proxy
 # config rate-limits, and a blanket nginx limit_req applies to EVERY path including
 # media streaming and image loads: a multi-device household behind one NAT'd
 # residential IP can hit 429s mid-playback, and the [npm-ratelimit] fail2ban jail
 # can then ban the household's own public IP. Login brute-force stays covered by
-# the jellyfin/jellyseerr/npm 401/403 fail2ban jails regardless of this setting.
+# the jellyfin/seerr/npm 401/403 fail2ban jails regardless of this setting.
 #
 # To re-enable, set enabled: true AND enable the [npm-ratelimit] jail in
 # config/fail2ban/jail.d/mediastack.conf. The settings below apply only when enabled.

@@ -33,7 +33,7 @@ has_domain=false
 service_hosts=()
 if [[ -n "$DOMAIN" && "$DOMAIN" != "example.com" ]]; then
     has_domain=true
-    service_hosts=("jellyfin.$DOMAIN" "jellyseerr.$DOMAIN")
+    service_hosts=("jellyfin.$DOMAIN" "seerr.$DOMAIN")
 fi
 
 # -----------------------------------------------------------------------------
@@ -95,7 +95,7 @@ if $has_domain; then
     if [[ -n "$apex_ip" ]]; then
         log_info "Optional apex DNS: $DOMAIN -> $apex_ip"
     else
-        log_info "Optional apex DNS: $DOMAIN is not required; MediaStack uses jellyfin.$DOMAIN and jellyseerr.$DOMAIN."
+        log_info "Optional apex DNS: $DOMAIN is not required; MediaStack uses jellyfin.$DOMAIN and seerr.$DOMAIN."
     fi
 fi
 
@@ -209,7 +209,7 @@ if [[ $checks_fail -gt 0 || $checks_skip -gt 0 ]]; then
         ""
         "  TCP+UDP ${TORRENT_PORT} -> $local_ip   (qBittorrent peer connections - always required)"
         "  TCP 80      -> $local_ip   (Let's Encrypt + HTTP redirect - only if using a domain)"
-        "  TCP 443     -> $local_ip   (HTTPS - Jellyfin, Jellyseerr - only if using a domain)"
+        "  TCP 443     -> $local_ip   (HTTPS - Jellyfin, Seerr - only if using a domain)"
         "  UDP ${WG_PORT}   -> $local_ip   (WireGuard VPN - only if using remote access)"
     )
     ui_box "Required Port Forwards" "${fwd_lines[@]}"

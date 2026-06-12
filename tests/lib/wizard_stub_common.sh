@@ -23,7 +23,7 @@
 # can override the list without forking the docker() stub. Literal args, never a
 # split variable, so no SC2086.
 _stub_compose_service_list() {
-    printf '%s\n' jellyfin sonarr radarr jackett qbittorrent jellyseerr \
+    printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr \
         homepage portainer unpackerr flaresolverr uptime-kuma
 }
 _stub_compose_image_list() {

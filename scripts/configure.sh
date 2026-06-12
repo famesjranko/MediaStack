@@ -55,7 +55,7 @@ source "$SCRIPT_DIR/scripts/setup/storage.sh"
 # Supports services/<svc>.sh (single file) or services/<svc>/main.sh
 # (directory form) — a service can grow from one file to a submodule
 # without touching this entrypoint.
-for svc in qbittorrent jackett sonarr radarr bazarr jellyfin jellyseerr portainer homepage npm ddns-updater wireguard uptime-kuma beszel; do
+for svc in qbittorrent jackett sonarr radarr bazarr jellyfin seerr portainer homepage npm ddns-updater wireguard uptime-kuma beszel; do
     if [[ -f "$SCRIPT_DIR/scripts/services/$svc/main.sh" ]]; then
         source "$SCRIPT_DIR/scripts/services/$svc/main.sh"
     else
@@ -112,7 +112,7 @@ main() {
     _should_configure sonarr      && wait_for_service "Sonarr"      "http://localhost:8989"
     _should_configure radarr      && wait_for_service "Radarr"      "http://localhost:7878"
     _should_configure jellyfin    && wait_for_service "Jellyfin"    "http://localhost:8096"
-    _should_configure jellyseerr  && wait_for_service "Jellyseerr"  "http://localhost:5055"
+    _should_configure seerr  && wait_for_service "Seerr"  "http://localhost:5055"
     _should_configure portainer   && wait_for_service "Portainer"   "http://localhost:9000"
     _should_configure homepage    && wait_for_service "Homepage"    "http://localhost:3000"
 
@@ -171,12 +171,12 @@ main() {
             configure_arr_jellyfin_connection "radarr" "http://localhost:7878/api/v3" "${RADARR_API_KEY:-}"
     fi
 
-    if _should_configure jellyseerr; then
+    if _should_configure seerr; then
         if storage_is_manual; then
-            log_skip "Jellyseerr setup skipped (manual app wiring)"
+            log_skip "Seerr setup skipped (manual app wiring)"
         else
             sleep 3  # Jellyfin may have just restarted - let auth endpoints stabilise
-            configure_jellyseerr
+            configure_seerr
         fi
     fi
     _should_configure homepage && configure_homepage

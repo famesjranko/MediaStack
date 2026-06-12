@@ -2,6 +2,9 @@ assert_fail2ban_filter_matches() {
     local name="$1"
     local log_source="$2"
     local filter_path="$3"
+    # Optional 4th arg: assert an EXACT match count (e.g. one per failure type). Omit for the
+    # default "at least one match" check, so existing callers are unchanged.
+    local expected_count="${4:-}"
 
     if svc_stripped fail2ban; then
         skip "fail2ban drift: ${name} filter" "stripped via MS_TEST_STRIP_SERVICES"
@@ -13,7 +16,14 @@ assert_fail2ban_filter_matches() {
     matched_count=$(echo "$f2b_regex_out" | sed -n 's/.*[[:space:]]\([0-9]*\) matched.*/\1/p' | head -1)
     [[ -z "$matched_count" ]] && matched_count=0
 
-    if [[ "$matched_count" -ge 1 ]]; then
+    if [[ -n "$expected_count" ]]; then
+        if [[ "$matched_count" -eq "$expected_count" ]]; then
+            pass "fail2ban drift: ${name} filter matches all $expected_count log shapes ($matched_count hits)"
+        else
+            fail "fail2ban drift: ${name} filter matches all $expected_count log shapes" \
+                "filter=${name} matched=${matched_count} expected=${expected_count} log=${log_source} filter_path=${filter_path}"
+        fi
+    elif [[ "$matched_count" -ge 1 ]]; then
         pass "fail2ban drift: ${name} filter matches current log format ($matched_count hits)"
     else
         fail "fail2ban drift: ${name} filter matches current log format" \
@@ -31,14 +41,14 @@ assert_fail2ban_configured() {
     F2B_STATUS=$(dind_exec "docker exec fail2ban fail2ban-client status" | tr -d '\r')
     assert_contains "$F2B_STATUS" "jellyfin" "fail2ban: jellyfin jail loaded"
     assert_contains "$F2B_STATUS" "npm" "fail2ban: npm jail loaded"
-    assert_contains "$F2B_STATUS" "jellyseerr" "fail2ban: jellyseerr jail loaded"
+    assert_contains "$F2B_STATUS" "seerr" "fail2ban: seerr jail loaded"
 
     # Tier 1a — every jail has an iptables chain in DOCKER-USER.
     local du_rules jail missing_chains=()
     du_rules=$(dind_exec "iptables -S DOCKER-USER 2>/dev/null" | tr -d '\r')
     # npm-ratelimit ships disabled by default (config.yml rate_limiting.enabled=false,
     # ADR-35), so only 3 jails are active.
-    for jail in jellyfin npm jellyseerr; do
+    for jail in jellyfin npm seerr; do
         if ! echo "$du_rules" | grep -q "f2b-${jail}"; then
             missing_chains+=("$jail")
         fi
@@ -99,7 +109,7 @@ except Exception:
 ' >/dev/null 2>&1 || true
     done
 
-    if ! svc_stripped jellyseerr; then
+    if ! svc_stripped seerr; then
         for _f2b_i in $(seq 1 6); do
             dind_exec "curl -s -o /dev/null -X POST http://localhost:5055/api/v1/auth/local \
                 -H 'Content-Type: application/json' \
@@ -126,14 +136,14 @@ except Exception:
         fail "fail2ban: jellyfin filter matches current log format" "0 matched — log format may have changed"
     fi
 
-    if ! svc_stripped jellyseerr; then
-        f2b_regex_out=$(dind_exec "docker exec fail2ban sh -c 'cat /var/log/jellyseerr/*.log > /tmp/f2b-test.log 2>/dev/null && fail2ban-regex /tmp/f2b-test.log /data/filter.d/jellyseerr.conf 2>&1; rm -f /tmp/f2b-test.log'" | tr -d '\r')
+    if ! svc_stripped seerr; then
+        f2b_regex_out=$(dind_exec "docker exec fail2ban sh -c 'cat /var/log/seerr/*.log > /tmp/f2b-test.log 2>/dev/null && fail2ban-regex /tmp/f2b-test.log /data/filter.d/seerr.conf 2>&1; rm -f /tmp/f2b-test.log'" | tr -d '\r')
         matched_count=$(echo "$f2b_regex_out" | sed -n 's/.*[[:space:]]\([0-9]*\) matched.*/\1/p' | head -1)
         [[ -z "$matched_count" ]] && matched_count=0
         if [[ "$matched_count" -ge 1 ]]; then
-            pass "fail2ban: jellyseerr filter matches current log format ($matched_count hits)"
+            pass "fail2ban: seerr filter matches current log format ($matched_count hits)"
         else
-            fail "fail2ban: jellyseerr filter matches current log format" "0 matched — log format may have changed"
+            fail "fail2ban: seerr filter matches current log format" "0 matched — log format may have changed"
         fi
     fi
 

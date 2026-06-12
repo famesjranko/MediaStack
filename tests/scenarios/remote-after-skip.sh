@@ -47,7 +47,7 @@ for arg in \"\$@\"; do
         +*|A|AAAA|CNAME|@*)
             continue
             ;;
-        jellyfin.gate.test|jellyseerr.gate.test|gate.test)
+        jellyfin.gate.test|seerr.gate.test|gate.test)
             printf '203.0.113.42\n'
             exit 0
             ;;
@@ -77,7 +77,7 @@ remote_after_skip_start_proxy_fixture() {
       flaresolverr:
         condition: service_started
 EOF"
-    if dind_exec "docker compose --profile proxy -f docker-compose.yml -f docker-compose.acme-test.yml up -d jellyfin jellyseerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
+    if dind_exec "docker compose --profile proxy -f docker-compose.yml -f docker-compose.acme-test.yml up -d jellyfin seerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
         pass "TEST-04 fixture DNS/Pebble: proxy-profile services start"
     else
         fail "TEST-04 fixture DNS/Pebble: proxy-profile services start"
@@ -86,7 +86,7 @@ EOF"
     fi
 
     local svc ok=true
-    for svc in jellyfin jellyseerr homepage npm fail2ban ddns-updater; do
+    for svc in jellyfin seerr homepage npm fail2ban ddns-updater; do
         if wait_healthy "$svc" 360; then
             pass "TEST-04 fixture DNS/Pebble: $svc healthy"
         else
@@ -103,7 +103,7 @@ EOF"
         return 1
     fi
 
-    dind_exec "grep -q 'jellyfin.gate.test' /etc/hosts || printf '127.0.0.1 jellyfin.gate.test jellyseerr.gate.test\n' >> /etc/hosts"
+    dind_exec "grep -q 'jellyfin.gate.test' /etc/hosts || printf '127.0.0.1 jellyfin.gate.test seerr.gate.test\n' >> /etc/hosts"
 }
 
 remote_after_skip_watch_pebble_dns() {

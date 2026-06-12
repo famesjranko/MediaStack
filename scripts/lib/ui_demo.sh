@@ -79,8 +79,8 @@ run_demo() {
     ui_log ok "Sonarr ready"
     ui_spin "Applying quality profiles..." sleep "${UI_DEMO_DELAY}"
     ui_log ok "Quality profiles configured"
-    ui_spin "Connecting Jellyseerr to Jellyfin..." sleep "${UI_DEMO_DELAY}"
-    ui_log ok "Jellyseerr linked"
+    ui_spin "Connecting Seerr to Jellyfin..." sleep "${UI_DEMO_DELAY}"
+    ui_log ok "Seerr linked"
     _demo_pause
 
     # --- Input prompts ---
@@ -136,7 +136,7 @@ run_demo() {
     ui_kv "Radarr" "http://192.168.1.50:7878"
     ui_kv "Jackett" "http://192.168.1.50:9117"
     ui_kv "qBittorrent" "http://192.168.1.50:8080"
-    ui_kv "Jellyseerr" "http://192.168.1.50:5055"
+    ui_kv "Seerr" "http://192.168.1.50:5055"
     ui_kv "NPM Admin" "http://192.168.1.50:81"
     _demo_pause
 
@@ -168,7 +168,7 @@ run_demo() {
 
     # --- Full progress bar sequence ---
     ui_divider "Full Run Simulation"
-    local steps=("qBittorrent" "Jackett" "Sonarr" "Radarr" "Jellyfin" "Jellyseerr" "Homepage" "NPM" "DDNS")
+    local steps=("qBittorrent" "Jackett" "Sonarr" "Radarr" "Jellyfin" "Seerr" "Homepage" "NPM" "DDNS")
     for i in "${!steps[@]}"; do
         local step_num=$((i + 1))
         ui_section "$step_num" 9 "Configuring ${steps[$i]}"
@@ -230,7 +230,7 @@ run_demo() {
     ui_section 5 5 "Port Forwarding"
     ui_box "Required Port Forwards -> 192.168.1.50" \
         "  TCP 80       Let's Encrypt + HTTP redirect" \
-        "  TCP 443      HTTPS (Jellyfin, Jellyseerr)" \
+        "  TCP 443      HTTPS (Jellyfin, Seerr)" \
         "  TCP+UDP 6881 qBittorrent peer connections" \
         "  UDP 51820    WireGuard VPN"
     ui_log info "Log into your router and find Port Forwarding (usually under NAT/Firewall)"

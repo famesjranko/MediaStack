@@ -11,7 +11,7 @@
 # scenarios ship indexers: [] and skip the Jackett indexer caps assertion.
 #
 # Recommended strip list for speed (~5 min vs ~15 min):
-#   MS_TEST_STRIP_SERVICES=npm,fail2ban,homepage,portainer,jellyseerr,jellyfin,unpackerr
+#   MS_TEST_STRIP_SERVICES=npm,fail2ban,homepage,portainer,seerr,jellyfin,unpackerr
 # Note: don't strip bazarr (profile-gated, won't start) or flaresolverr
 # (Jackett depends on it). The override references all services so stripping
 # one that's in the override causes a "no image" compose error.

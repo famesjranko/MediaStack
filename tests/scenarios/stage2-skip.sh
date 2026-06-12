@@ -33,21 +33,21 @@ for group in data:
                 if isinstance(details, dict) and details.get('href'):
                     hrefs.append(str(details['href']))
 
-bad = [h for h in hrefs if h in ('https://jellyfin.gate.test', 'https://jellyseerr.gate.test')]
+bad = [h for h in hrefs if h in ('https://jellyfin.gate.test', 'https://seerr.gate.test')]
 has_jellyfin_lan = any('jellyfin.gate.test' not in h and (h.endswith(':8096') or ':8096/' in h) for h in hrefs)
-has_jellyseerr_lan = any('jellyseerr.gate.test' not in h and (h.endswith(':5055') or ':5055/' in h) for h in hrefs)
+has_seerr_lan = any('seerr.gate.test' not in h and (h.endswith(':5055') or ':5055/' in h) for h in hrefs)
 if bad:
     print('public_https=' + ','.join(bad))
-elif not (has_jellyfin_lan and has_jellyseerr_lan):
+elif not (has_jellyfin_lan and has_seerr_lan):
     print('missing_lan=' + repr(hrefs))
 else:
     print('OK')
 PY
 " | tr -d '\r')"
     if [[ "$homepage_check" == "OK" ]]; then
-        pass "TEST-03 skipped-state LAN-only: Homepage keeps Jellyfin/Jellyseerr LAN hrefs"
+        pass "TEST-03 skipped-state LAN-only: Homepage keeps Jellyfin/Seerr LAN hrefs"
     else
-        fail "TEST-03 skipped-state LAN-only: Homepage keeps Jellyfin/Jellyseerr LAN hrefs" "$homepage_check"
+        fail "TEST-03 skipped-state LAN-only: Homepage keeps Jellyfin/Seerr LAN hrefs" "$homepage_check"
     fi
 
     network_json="$(remote_gating_fetch_jellyfin_network)"
@@ -142,7 +142,7 @@ run_scenario() {
     stage2_seed_remote_env skipped
     assert_eq "skipped" "$(env_get REMOTE_WEB_STATE)" "TEST-03 skipped-state LAN-only: skipped path starts with REMOTE_WEB_STATE=skipped"
 
-    if dind_exec "docker compose --profile proxy up -d jellyfin jellyseerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
+    if dind_exec "docker compose --profile proxy up -d jellyfin seerr homepage npm fail2ban ddns-updater" >/dev/null 2>&1; then
         pass "TEST-03 skipped-state LAN-only: proxy-profile services start for skipped fixture"
     else
         fail "TEST-03 skipped-state LAN-only: proxy-profile services start for skipped fixture"
@@ -151,7 +151,7 @@ run_scenario() {
     fi
 
     local svc ok=true
-    for svc in jellyfin jellyseerr homepage npm fail2ban ddns-updater; do
+    for svc in jellyfin seerr homepage npm fail2ban ddns-updater; do
         if wait_healthy "$svc" 360; then
             pass "stage2 skip: $svc healthy"
         else

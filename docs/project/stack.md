@@ -41,7 +41,7 @@ Generator: /project-stack (audit of existing codebase)
 | Jackett | linuxserver/jackett | 9117 | default |
 | qBittorrent | linuxserver/qbittorrent | 8080 | default |
 | FlareSolverr | ghcr.io/flaresolverr/flaresolverr | 8191 | default |
-| Jellyseerr | fallenbagel/jellyseerr | 5055 | default |
+| Seerr | ghcr.io/seerr-team/seerr | 5055 | default |
 | Unpackerr | ghcr.io/hotio/unpackerr | — | default |
 | Homepage | ghcr.io/gethomepage/homepage | 3000 | default |
 | NPM | jc21/nginx-proxy-manager:2 | 80/443/81 | proxy |

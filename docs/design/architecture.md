@@ -28,7 +28,7 @@ All 19 services declared in `docker-compose.yml`. Healthcheck, depends_on condit
 | 4 | `jackett` | `linuxserver/jackett:latest` | 9117 | default | flaresolverr | `curl /` | 30s |
 | 5 | `qbittorrent` | `linuxserver/qbittorrent:latest` | 8080, 6881 TCP+UDP | default | — | `curl /` | 30s |
 | 6 | `flaresolverr` | `ghcr.io/flaresolverr/flaresolverr:latest` | 8191 | default | — | `curl /health` | 60s |
-| 7 | `jellyseerr` | `fallenbagel/jellyseerr:latest` | 5055 | default | jellyfin, sonarr, radarr | `wget --spider` | 30s |
+| 7 | `seerr` | `ghcr.io/seerr-team/seerr:latest` | 5055 | default | jellyfin, sonarr, radarr | `wget --spider /api/v1/settings/public` | 30s |
 | 8 | `unpackerr` | `ghcr.io/hotio/unpackerr:latest` | — | default | sonarr, radarr | `pgrep unpackerr` | 30s |
 | 9 | `homepage` | `ghcr.io/gethomepage/homepage:latest` | 3000 | default | — | `wget --spider` | 30s |
 | 10 | `npm` | `jc21/nginx-proxy-manager:2` | 80, 443, 81 | **proxy** | — | `/bin/check-health` | 30s |
@@ -54,7 +54,7 @@ qbittorrent (independent)
   └─> radarr ─┤
               ├─> bazarr (subtitles profile)
               ├─> unpackerr
-              └─> jellyseerr ◄── jellyfin (start_period 60s)
+              └─> seerr ◄── jellyfin (start_period 60s)
 jellyfin (independent)
 npm (independent) ◄── fail2ban  (depends_on: started, not healthy)
 homepage (independent)
@@ -68,7 +68,7 @@ autoheal (autoheal profile, Docker socket monitor)
 
 Two depends_on styles are in use:
 
-- **`condition: service_healthy`** — sonarr/radarr/jackett/jellyseerr/unpackerr. Containers wait for upstream healthcheck to pass before starting. Stacks compose cleanly on cold boot.
+- **`condition: service_healthy`** — sonarr/radarr/jackett/seerr/unpackerr. Containers wait for upstream healthcheck to pass before starting. Stacks compose cleanly on cold boot.
 - **Plain `depends_on: [npm]`** on fail2ban — fail2ban starts when NPM is *running*, not healthy. NPM's log files may not exist yet at that moment; `create_config_dirs()` in `scripts/setup/stack.sh` pre-touches placeholder log files so fail2ban's `logpath` globs match at boot.
 - **`condition: service_healthy`** on beszel-agent — agent waits for hub's `/beszel health` check to pass before starting. Both Beszel images are distroless (no shell, no curl) but include built-in `health` subcommands.
 
@@ -94,7 +94,7 @@ Two depends_on styles are in use:
                            │               │                       │
   ┌─────────────────────────────────┐  ┌───┘                       │ all services via
   │ fail2ban (host net, NET_ADMIN)  │  │   ┌───────────────────┐   │ host port bindings
-  │ reads npm/jellyfin/jellyseerr   │  │   │ beszel-agent      │   │
+  │ reads npm/jellyfin/seerr   │  │   │ beszel-agent      │   │
   │ logs; writes DOCKER-USER bans   │  │   │ (host net) :45876 │   │
   └───────────────┬─────────────────┘  │   └───────┬───────────┘   │
                   │                    │           │               │
@@ -116,7 +116,7 @@ Two depends_on styles are in use:
       │                     │  
       ▼                     ▼
   ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-  │   jellyfin    │  │  jellyseerr   │  │   homepage    │  │   portainer   │  │  uptime-kuma  │
+  │   jellyfin    │  │  seerr   │  │   homepage    │  │   portainer   │  │  uptime-kuma  │
   │    :8096      │  │    :5055      │  │    :3000      │  │    :9000      │  │    :3001      │
   └──────┬────────┘  └──────┬────────┘  └───────────────┘  │  distroless   │  │  monitors all │
          │ scans media      │ request                      └───────────────┘  └───────────────┘
@@ -160,7 +160,7 @@ Single Docker bridge network `mediastack` with host port bindings. Bridge servic
 | 81 | npm | LAN only | **No** | Admin UI. Never forward. Smoke test (`tests/scenarios/smoke.sh`) asserts no `host_ip` binding. |
 | 3000 | homepage | LAN | No | Dashboard. |
 | 3001 | uptime-kuma | LAN | No | Service monitoring. Status page + Homepage widget. |
-| 5055 | jellyseerr | LAN | No | |
+| 5055 | seerr | LAN | No | |
 | 6881 TCP/UDP | qbittorrent | LAN + optional WAN | **Yes** | Peer connections (DHT/PEX). Forward for torrent health. |
 | 7359/udp | jellyfin | LAN | No | Auto-discovery (UDP broadcast). |
 | 7878 | radarr | LAN | No | |
@@ -186,11 +186,11 @@ Single Docker bridge network `mediastack` with host port bindings. Bridge servic
 How a single "add this movie" request flows through the stack end-to-end:
 
 ```
-  User opens Jellyseerr  ──►  clicks "Request Movie"
+  User opens Seerr  ──►  clicks "Request Movie"
                                       │
                                       ▼
                           ┌───────────────────────┐
-                          │      Jellyseerr       │  POST /api/v3/movie
+                          │      Seerr       │  POST /api/v3/movie
                           │  (checks Jellyfin     │  {title, qualityProfileId,
                           │   libraries for       │   rootFolderPath, …}
                           │   "already have it")  │
@@ -271,16 +271,16 @@ Key points the diagram makes visible:
 
 - **Hardlink is the magic.** Radarr's "import" is `link(2)`, not `copy(2)` — the file at `/data/torrents/movies/` and `/data/media/movies/` share inodes. Seeding continues from the same bytes Jellyfin reads. Works only because every container sees the same filesystem at `/data`.
 - **FlareSolverr is conditional.** Jackett only calls it for Cloudflare-protected indexers. If no indexer needs it, FlareSolverr idles (but still runs — Jackett has a hard dependency on it being healthy at startup).
-- **Quality-profile matching happens in Radarr**, not Jellyseerr. Jellyseerr forwards the `qualityProfileId` but the actual "release scoring" is inside Radarr's `RssSyncService`.
+- **Quality-profile matching happens in Radarr**, not Seerr. Seerr forwards the `qualityProfileId` but the actual "release scoring" is inside Radarr's `RssSyncService`.
 - **Sonarr's flow is identical** — substitute "movie" → "episode/season", `/data/media/movies/` → `/data/media/tv/`, category `radarr` → `tv-sonarr`.
 
 ## Security layer
 
 Four defenses, layered:
 
-1. **Reverse proxy (NPM).** Terminates TLS via built-in Let's Encrypt. Admin UI on port 81 is LAN-only by convention (do not port-forward). NPM admin uses the shared `JELLYFIN_ADMIN_PASSWORD` with `NPM_ADMIN_EMAIL` for login. `configure.sh` auto-creates proxy hosts for user-facing services only (`jellyfin.$DOMAIN`, `jellyseerr.$DOMAIN`) — admin tools (Sonarr, Radarr, etc.) stay LAN/VPN-only.
-2. **Rate limiting (NPM + fail2ban) — disabled by default.** Optional nginx `limit_req` on internet-facing proxy hosts, **off by default** (`config.yml` `rate_limiting.enabled: false`) for parity with upstream Jellyfin/Jellyseerr, neither of which rate-limits. A blanket server-level limit applies to *every* path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback — and the `[npm-ratelimit]` jail could then ban the household's own public IP. When enabled, it is 15 req/sec per IP with burst of 60 (settings in `rate_limiting:`), returning HTTP 429, and the `[npm-ratelimit]` fail2ban jail (also disabled by default) watches NPM access logs for 429s — 10 within 60 seconds triggers a ban. Login brute-force is covered regardless by the auth jails below. See ADR-35.
-3. **Brute-force ban (fail2ban).** Host-network container with `NET_ADMIN` + `NET_RAW` capabilities (fail2ban service definition in `docker-compose.yml`). Three jails active by default: `jellyfin`, `npm`, `jellyseerr` — the `npm` jail bans repeated 401/403 responses on the proxy logs, covering credential-stuffing and login brute-force. A fourth jail, `npm-ratelimit`, ships disabled alongside rate limiting (above). Default: ban 30 min after 5 failures in 30 min (default jail settings in `config/fail2ban/jail.d/mediastack.conf`). `ignoreip = 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16` — 10.0.0.0/8 is deliberate because wg-easy hands out 10.8.0.0/24 to peers, and VPN peers are trusted friends/family by design.
+1. **Reverse proxy (NPM).** Terminates TLS via built-in Let's Encrypt. Admin UI on port 81 is LAN-only by convention (do not port-forward). NPM admin uses the shared `JELLYFIN_ADMIN_PASSWORD` with `NPM_ADMIN_EMAIL` for login. `configure.sh` auto-creates proxy hosts for user-facing services only (`jellyfin.$DOMAIN`, `seerr.$DOMAIN`) — admin tools (Sonarr, Radarr, etc.) stay LAN/VPN-only.
+2. **Rate limiting (NPM + fail2ban) — disabled by default.** Optional nginx `limit_req` on internet-facing proxy hosts, **off by default** (`config.yml` `rate_limiting.enabled: false`) for parity with upstream Jellyfin/Seerr, neither of which rate-limits. A blanket server-level limit applies to *every* path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback — and the `[npm-ratelimit]` jail could then ban the household's own public IP. When enabled, it is 15 req/sec per IP with burst of 60 (settings in `rate_limiting:`), returning HTTP 429, and the `[npm-ratelimit]` fail2ban jail (also disabled by default) watches NPM access logs for 429s — 10 within 60 seconds triggers a ban. Login brute-force is covered regardless by the auth jails below. See ADR-35.
+3. **Brute-force ban (fail2ban).** Host-network container with `NET_ADMIN` + `NET_RAW` capabilities (fail2ban service definition in `docker-compose.yml`). Three jails active by default: `jellyfin`, `npm`, `seerr` — the `npm` jail bans repeated 401/403 responses on the proxy logs, covering credential-stuffing and login brute-force. A fourth jail, `npm-ratelimit`, ships disabled alongside rate limiting (above). Default: ban 30 min after 5 failures in 30 min (default jail settings in `config/fail2ban/jail.d/mediastack.conf`). `ignoreip = 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16` — 10.0.0.0/8 is deliberate because wg-easy hands out 10.8.0.0/24 to peers, and VPN peers are trusted friends/family by design.
 4. **VPN access (wg-easy v15).** Profile-gated (wireguard service definition in `docker-compose.yml`). Takes plaintext `INIT_PASSWORD` at first boot (`_build_profile_args` reads `WG_INIT_PASSWORD` from `.env` as the activation marker — see ADR-28). The value is single-quoted because it may contain shell-special chars. v15 runs on the `mediastack` bridge at `.11`, publishes `${WG_PORT}/udp` + `51821/tcp`, and uses per-client `firewallIps` (server-enforced) for the access-tier model (ADR-29: Full LAN / Server / Containers / Streaming). The wg-easy admin UI on `51821` is restricted to LAN by the `MEDIASTACK-DOCKER-RESTRICT` chain (ADR-15) and is excluded from the Containers tier's `firewallIps` so a Containers-tier peer cannot add or modify other peers.
 
 ## Data layout
@@ -309,8 +309,8 @@ Mount strategy:
 
 ## Observations / open questions
 
-- **Jellyfin healthcheck vs library readiness.** `/health` returns 200 as soon as HTTP is up, long before Jellyfin has enumerated its libraries. Because Jellyseerr `depends_on` Jellyfin as `service_healthy`, Jellyseerr can start before Jellyfin has a library view — which is why the library polling loop in `scripts/services/jellyseerr/main.sh` polls `/Library/MediaFolders` separately before syncing. The depends_on condition is providing false confidence here; the real gate is inside configure.sh.
-- **Three services use `wget --spider` for healthchecks** (jellyseerr, homepage, wireguard) while core services use `curl`. If any image drops wget in a future rebuild, its healthcheck silently fails. Standardising on curl would be safer where the image ships it. DDNS Updater intentionally mirrors its image-baked binary healthcheck in compose.
+- **Jellyfin healthcheck vs library readiness.** `/health` returns 200 as soon as HTTP is up, long before Jellyfin has enumerated its libraries. Because Seerr `depends_on` Jellyfin as `service_healthy`, Seerr can start before Jellyfin has a library view — which is why the library polling loop in `scripts/services/seerr/main.sh` polls `/Library/MediaFolders` separately before syncing. The depends_on condition is providing false confidence here; the real gate is inside configure.sh.
+- **Three services use `wget --spider` for healthchecks** (seerr, homepage, wireguard) while core services use `curl`. If any image drops wget in a future rebuild, its healthcheck silently fails. Standardising on curl would be safer where the image ships it. DDNS Updater intentionally mirrors its image-baked binary healthcheck in compose.
 - **Fail2ban `depends_on: [npm]`** is plain, not health-gated. It starts when NPM is merely running; NPM's logs may not exist yet. The placeholder log touching in `scripts/setup/stack.sh` (`create_config_dirs`) is a workaround — a health-gated dependency would be cleaner if NPM had a healthcheck that fires after log files exist.
 - **NPM port 81** has no `host_ip: 127.0.0.1` binding by design (LAN-reachable, per smoke test 5). If a friend's router ever port-forwards 81 by accident, the admin UI is exposed. A comment in the npm service definition in `docker-compose.yml` warns against this but nothing enforces it.
 - **Portainer and Beszel Agent mount `/var/run/docker.sock:ro`** — the `:ro` bind option does not make the Docker API read-only; containers with the socket can still have broad daemon access. Portainer needs this for container management, and Beszel Agent needs it for per-container metrics. Homepage uses static YAML config with no Docker socket access.

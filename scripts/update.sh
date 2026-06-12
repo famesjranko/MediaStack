@@ -72,7 +72,7 @@ generate_override "${JELLYFIN_GPU:-none}"
 # Capture-then-grep avoids SIGPIPE+pipefail race: `compose ps | grep -q` reads
 # false because grep's early exit SIGPIPE-signals docker compose under
 # `set -euo pipefail`. Word boundaries (\b) keep `npm` from matching `pnpm` in
-# jellyseerr's COMMAND column.
+# seerr's COMMAND column.
 PROFILE_ARGS=""
 proxy_ps=$(docker compose --profile proxy ps --status running 2>/dev/null || true)
 if grep -qE '\b(npm|fail2ban|ddns-updater)\b' <<<"$proxy_ps"; then

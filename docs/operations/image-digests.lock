@@ -7,7 +7,7 @@ radarr	linuxserver/radarr:latest	sha256:c0a4335d4249b46102f64cf6fa27ffc3bddfd913
 jackett	linuxserver/jackett:latest	sha256:5fca95003ee60643d26133157005144132b085edf41c665c7694c898763e5161	2026-06-08T07:15:51Z	scenario:fresh-install
 qbittorrent	linuxserver/qbittorrent:latest	sha256:715d2bfbcf1cd3d734cbbd4fbd599eb7ea0642eaa079a372dd0d343f59516700	2026-06-01T06:49:06Z	scenario:fresh-install
 flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47	2026-06-01T06:49:06Z	compose-only
-jellyseerr	fallenbagel/jellyseerr:latest	sha256:4538137bc5af902dece165f2bf73776d9cf4eafb6dd714670724af8f3eb77764	2026-06-01T06:49:06Z	scenario:fresh-install
+seerr	ghcr.io/seerr-team/seerr:latest	sha256:c92d2dc117f62185e7bcb88cd56efd374ea79210eaf433275449e8d5988eb5a8	2026-06-11T16:38:18Z	scenario:fresh-install
 unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:b0939e1b2c64499b82678a8c8c3e189d1e92c8223633fd34239174382de8ca8a	2026-06-01T06:49:06Z	compose-only
 bazarr	linuxserver/bazarr:latest	sha256:4b5e510042bf471c8bafab89cada9774fba2fb25f16ec64235151cacbe847c10	2026-06-08T07:15:51Z	manual
 homepage	ghcr.io/gethomepage/homepage:latest	sha256:d8d784e5090111b6e4c56dfd90e272d2953a2094e87349f647165df0fa6c4401	2026-06-01T06:49:06Z	scenario:fresh-install

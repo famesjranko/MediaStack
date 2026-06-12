@@ -110,7 +110,7 @@ wait_for_jellyfin_auth() {
 }
 
 # POST JSON within a cookie-authenticated session and surface rejection bodies.
-# Used by Jellyseerr to connect Sonarr/Radarr — 2.7.x's *Settings schemas
+# Used by Seerr to connect Sonarr/Radarr — 2.7.x's *Settings schemas
 # require fields like activeProfileName and silent failures leave users with a
 # half-configured instance.
 #

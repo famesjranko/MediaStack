@@ -11,13 +11,13 @@ Turnkey media server for home networks. One command takes bare Debian to a fully
 <!-- stable-image-badges:start -->
 [![Images: Stable default](https://img.shields.io/badge/Images-Stable%20default-2ea44f?logo=docker&logoColor=white)](docs/operations/image-digests.lock)
 [![Stable refs: 19 pinned](https://img.shields.io/badge/Stable%20refs-19%20pinned-0969da)](docs/operations/image-digests.lock)
-[![Accepted: 2026-06-08](https://img.shields.io/badge/Accepted-2026--06--08-6f42c1)](docs/operations/image-updates.md)
+[![Accepted: 2026-06-11](https://img.shields.io/badge/Accepted-2026--06--11-6f42c1)](docs/operations/image-updates.md)
 [![Latest: upstream tags](https://img.shields.io/badge/Latest-upstream%20tags-f9a825)](docker-compose.yml)
 <!-- stable-image-badges:end -->
 
 </div>
 
-MediaStack turns a fresh Debian server into a complete home media stack: Jellyfin, Jellyseerr, Sonarr, Radarr, qBittorrent, monitoring, remote access, and the supporting services they need. It is designed for non-technical users who should not have to edit service config files by hand.
+MediaStack turns a fresh Debian server into a complete home media stack: Jellyfin, Seerr, Sonarr, Radarr, qBittorrent, monitoring, remote access, and the supporting services they need. It is designed for non-technical users who should not have to edit service config files by hand.
 
 `./mediastack` opens the guided launcher. `setup.sh --full` installs Docker, detects GPU hardware, creates the storage layout, hardens the host, starts the containers, and wires services together through their APIs. Storage can be local, managed NFS/NAS, or advanced manual. `config.yml` remains the source of truth for what gets configured.
 
@@ -76,7 +76,7 @@ Run setup directly if you do not want the launcher menu:
 | Capability | Included |
 |:-----------|:---------|
 | Media streaming | Jellyfin with Movies and TV Shows libraries |
-| Requests | Jellyseerr connected to Jellyfin, Sonarr, and Radarr |
+| Requests | Seerr connected to Jellyfin, Sonarr, and Radarr |
 | Automation | Sonarr, Radarr, Jackett, FlareSolverr, qBittorrent, Unpackerr |
 | Dashboard | Homepage widgets for queues, stats, and download speeds |
 | Monitoring | Uptime Kuma plus Beszel resource dashboards |
@@ -116,7 +116,7 @@ MediaStack runs 19 containers. The default stack starts automatically; optional 
 | Jackett | 9117 | Torrent indexer proxy | default |
 | qBittorrent | 8080 | Torrent client | default |
 | FlareSolverr | 8191 | Cloudflare bypass | default |
-| Jellyseerr | 5055 | Media requests | default |
+| Seerr | 5055 | Media requests | default |
 | Unpackerr | - | Extract archived downloads | default |
 | Portainer | 9000 | Container management UI | default |
 | NPM | 80/443/81 | Reverse proxy + SSL | proxy |
@@ -145,11 +145,11 @@ The setup script configures services through their HTTP APIs so the stack is usa
 | **Radarr** | Same as Sonarr for movies; Remux excluded across all cells, see [`docs/reference/quality-bounds.md`](docs/reference/quality-bounds.md) |
 | **Bazarr** | Connected to Sonarr + Radarr, English language profile *(subtitles profile only)* |
 | **Jellyfin** | Admin account, Movies + TV Shows libraries, hardware transcoding based on hardware probes |
-| **Jellyseerr** | Connected to Jellyfin + Sonarr + Radarr, admin approval required, per-user request quotas |
+| **Seerr** | Connected to Jellyfin + Sonarr + Radarr, admin approval required, per-user request quotas |
 | **Portainer** | Admin user created, local Docker endpoint configured |
 | **Homepage** | Service groups with API widgets |
 | **Uptime Kuma** | Admin account, HTTP monitors for all services, status page, Homepage widget |
-| **NPM** | Admin credentials, proxy hosts for `jellyfin.$DOMAIN` and `jellyseerr.$DOMAIN` |
+| **NPM** | Admin credentials, proxy hosts for `jellyfin.$DOMAIN` and `seerr.$DOMAIN` |
 | **WireGuard** | wg-easy admin credentials, endpoint settings, access tier, and one initial peer named after the setup admin user *(remote profile only)* |
 
 Most configured admin UIs use the setup admin username and password (`JELLYFIN_ADMIN_USER` / `JELLYFIN_ADMIN_PASSWORD`). NPM and Beszel use the setup admin email (`NPM_ADMIN_EMAIL`) with the same password. WireGuard's wg-easy UI uses the setup admin username and password. API keys are auto-discovered and saved to `.env`.
@@ -182,10 +182,10 @@ This preserves your media library under `/data` but re-seeds service state. Auto
 Everything is wired together before setup exits.
 
 1. Open Homepage at `http://<ip>:3000`
-2. Use Jellyseerr to request a show or movie
+2. Use Seerr to request a show or movie
 3. Watch it in Jellyfin after automation completes
 
-Homepage is the day-to-day front door on your LAN. It links to Jellyfin, Jellyseerr, downloads, automation, and monitoring from one page.
+Homepage is the day-to-day front door on your LAN. It links to Jellyfin, Seerr, downloads, automation, and monitoring from one page.
 
 <details>
 <summary><strong>What was configured behind the scenes</strong></summary>
@@ -196,7 +196,7 @@ Homepage is the day-to-day front door on your LAN. It links to Jellyfin, Jellyse
 - Jellyfin admin account + Movies/TV libraries
 - Jackett admin password + optional indexers from `config.yml`
 - Sonarr/Radarr download client, root folders, quality profiles, per-tier file-size bounds, TRaSH naming conventions, optional indexer connections
-- Jellyseerr connected to Jellyfin, Sonarr, and Radarr
+- Seerr connected to Jellyfin, Sonarr, and Radarr
 - Unpackerr restarted with API keys
 - qBittorrent categories, paths, and limits
 
@@ -216,14 +216,14 @@ Setup creates one admin/owner account so the stack can configure itself. For dai
 
 A typical family setup:
 
-| Person | Jellyfin role | Jellyseerr role |
+| Person | Jellyfin role | Seerr role |
 |:-------|:--------------|:----------------|
 | Parent 1 | Admin if they maintain the server | Request approver, no quota, or auto-approve |
 | Parent 2 | Admin only if needed | Request approver, no quota, or auto-approve |
 | Kid 1 | Normal user with age/library limits | Request-only; admin approval required |
 | Kid 2 | Normal user with age/library limits | Request-only; admin approval required |
 
-Jellyfin and Jellyseerr permissions are separate. Jellyfin admin rights let someone manage libraries, users, playback settings, and server configuration. Jellyseerr permissions control requests, approvals, auto-approval, and request limits. A parent can approve Jellyseerr requests without also being a Jellyfin admin. If you want a parent account to be an admin in both apps, make that user an administrator in Jellyfin and grant admin or request-management permissions in Jellyseerr after their first Jellyseerr sign-in.
+Jellyfin and Seerr permissions are separate. Jellyfin admin rights let someone manage libraries, users, playback settings, and server configuration. Seerr permissions control requests, approvals, auto-approval, and request limits. A parent can approve Seerr requests without also being a Jellyfin admin. If you want a parent account to be an admin in both apps, make that user an administrator in Jellyfin and grant admin or request-management permissions in Seerr after their first Seerr sign-in.
 
 ### Add Jellyfin users
 
@@ -236,17 +236,17 @@ Jellyfin and Jellyseerr permissions are separate. Jellyfin admin rights let some
 
 ### Give parents request control
 
-1. Have each parent sign in to Jellyseerr once with their Jellyfin account, or import Jellyfin users from Jellyseerr's Users page.
-2. Sign in to Jellyseerr with the setup admin/owner account.
+1. Have each parent sign in to Seerr once with their Jellyfin account, or import Jellyfin users from Seerr's Users page.
+2. Sign in to Seerr with the setup admin/owner account.
 3. Open Users, edit the parent account, and grant the request-management or admin permissions you want them to have.
 4. If trusted parent requests should not wait for approval, enable the relevant auto-approve permissions for that parent.
-5. If parent accounts should not be limited, override or remove their movie and series request limits in Jellyseerr.
+5. If parent accounts should not be limited, override or remove their movie and series request limits in Seerr.
 
-Jellyseerr permission labels can vary by version. Look for settings named like Admin, Manage Requests, Auto-Approve, and request limits.
+Seerr permission labels can vary by version. Look for settings named like Admin, Manage Requests, Auto-Approve, and request limits.
 
-For kids, leave the default Jellyseerr permissions alone unless you intentionally want a different rule. MediaStack configures new Jellyseerr users as request-only by default, with admin approval required.
+For kids, leave the default Seerr permissions alone unless you intentionally want a different rule. MediaStack configures new Seerr users as request-only by default, with admin approval required.
 
-By default, MediaStack sets Jellyseerr request limits to `0` movies and `0` TV series per 7 days. In Jellyseerr, `0` means unlimited requests. That does not mean auto-approved: a request-only user can ask for unlimited items, but each request still waits for a parent/admin to approve it. To add a real cap, edit `config.yml` under `jellyseerr.quotas`, for example 5 movies and 5 TV series per 7 days, then re-run `./scripts/configure.sh`. Parent accounts can avoid approval by using auto-approve permissions. If you enable quotas but want parents to stay unlimited, set per-user request-limit overrides for those parent accounts in Jellyseerr.
+By default, MediaStack sets Seerr request limits to `0` movies and `0` TV series per 7 days. In Seerr, `0` means unlimited requests. That does not mean auto-approved: a request-only user can ask for unlimited items, but each request still waits for a parent/admin to approve it. To add a real cap, edit `config.yml` under `seerr.quotas`, for example 5 movies and 5 TV series per 7 days, then re-run `./scripts/configure.sh`. Parent accounts can avoid approval by using auto-approve permissions. If you enable quotas but want parents to stay unlimited, set per-user request-limit overrides for those parent accounts in Seerr.
 
 Keep the original setup admin account as the owner/break-glass account. Use personal parent accounts for day-to-day watching and request approval.
 
@@ -277,7 +277,7 @@ A domain name, port forwarding, and MediaStack does the rest. `configure.sh` aut
 
 | Access type | What's exposed | Protected by |
 |:------------|:---------------|:-------------|
-| Internet (HTTPS) | Jellyfin, Jellyseerr | NPM reverse proxy + Let's Encrypt + fail2ban |
+| Internet (HTTPS) | Jellyfin, Seerr | NPM reverse proxy + Let's Encrypt + fail2ban |
 | LAN only | All admin UIs | Router ports are not forwarded |
 | VPN (WireGuard) | Scope set by the peer's access tier (Full LAN / Server / Containers / Streaming) | WireGuard encryption + admin password |
 
@@ -286,7 +286,7 @@ A domain name, port forwarding, and MediaStack does the rest. `configure.sh` aut
 
 <br>
 
-You need DNS records so `jellyfin.<domain>` and `jellyseerr.<domain>` resolve to your home IP.
+You need DNS records so `jellyfin.<domain>` and `seerr.<domain>` resolve to your home IP.
 
 **Free DDNS with Dynu (recommended):**
 
@@ -297,7 +297,7 @@ You need DNS records so `jellyfin.<domain>` and `jellyseerr.<domain>` resolve to
 
 `setup.sh` prompts for Dynu credentials and seeds the DDNS updater automatically.
 
-**Already have a domain?** Create A records for `jellyfin.yourdomain.com` and `jellyseerr.yourdomain.com`. If using Cloudflare, set records to **"DNS only" (grey cloud)**; proxied mode breaks fail2ban. For dynamic IPs, configure the DDNS updater at `http://<ip>:8000` (supports 50+ providers).
+**Already have a domain?** Create A records for `jellyfin.yourdomain.com` and `seerr.yourdomain.com`. If using Cloudflare, set records to **"DNS only" (grey cloud)**; proxied mode breaks fail2ban. For dynamic IPs, configure the DDNS updater at `http://<ip>:8000` (supports 50+ providers).
 
 </details>
 
@@ -311,7 +311,7 @@ Forward these ports to your MediaStack server's LAN IP:
 | Port | Protocol | Purpose |
 |:-----|:---------|:--------|
 | 80 | TCP | Let's Encrypt validation + HTTP to HTTPS redirect |
-| 443 | TCP | HTTPS traffic for Jellyfin and Jellyseerr |
+| 443 | TCP | HTTPS traffic for Jellyfin and Seerr |
 | 6881 | TCP+UDP | qBittorrent peer connections |
 | 51820 | UDP | WireGuard VPN |
 
@@ -339,11 +339,11 @@ Verify forwarding after setup:
 
 `configure.sh` automatically:
 
-- Creates proxy hosts for `jellyfin.$DOMAIN` and `jellyseerr.$DOMAIN`
+- Creates proxy hosts for `jellyfin.$DOMAIN` and `seerr.$DOMAIN`
 - Requests Let's Encrypt certificates with HTTP-01 validation
 - Enables forced SSL + HTTP/2
 - Applies security headers (HSTS, X-Content-Type-Options, Permissions-Policy, and Jellyfin's Content-Security-Policy)
-- Enables Jellyseerr proxy-trust so its request logs and limits use real client IPs
+- Enables Seerr proxy-trust so its request logs and limits use real client IPs
 
 If certificate issuance fails because DNS is not pointing at your IP yet or port 80 is not forwarded, a `[WARN]` is logged and the proxy works on HTTP. Request certificates manually later through the NPM UI at `http://<ip>:81`.
 
@@ -415,7 +415,7 @@ WireGuard uses your base domain and UDP port, such as `yourdomain.com:51820`; no
 > <server>:80/tcp,<server>:81/tcp,<server>:443/tcp,<server>:3000/tcp,<server>:3001/tcp,<server>:5055/tcp,<server>:6767/tcp,<server>:7359/udp,<server>:7878/tcp,<server>:8000/tcp,<server>:8080/tcp,<server>:8090/tcp,<server>:8096/tcp,<server>:8191/tcp,<server>:8989/tcp,<server>:9000/tcp,<server>:9117/tcp
 > ```
 >
-> **Streaming** (Jellyfin + Jellyseerr + Homepage only — recommended for friends/kids):
+> **Streaming** (Jellyfin + Seerr + Homepage only — recommended for friends/kids):
 >
 > ```
 > <server>:8096/tcp,<server>:5055/tcp,<server>:3000/tcp
@@ -450,8 +450,8 @@ Fail2ban runs in the `proxy` profile alongside NPM and DDNS Updater, so brute-fo
 From outside your home network, such as a phone on cellular:
 
 1. `https://jellyfin.yourdomain.com` - Jellyfin login with HTTPS lock
-2. `https://jellyseerr.yourdomain.com` - Jellyseerr login
-3. Connect via WireGuard - the peer can reach whatever its access tier allows (Full LAN reaches every device on your home network; Server reaches the MediaStack box; Containers reaches MediaStack apps; Streaming reaches Jellyfin + Jellyseerr + Homepage)
+2. `https://seerr.yourdomain.com` - Seerr login
+3. Connect via WireGuard - the peer can reach whatever its access tier allows (Full LAN reaches every device on your home network; Server reaches the MediaStack box; Containers reaches MediaStack apps; Streaming reaches Jellyfin + Seerr + Homepage)
 
 </details>
 
@@ -464,7 +464,7 @@ From outside your home network, such as a phone on cellular:
 - **Docker admin ports:** Sonarr, Radarr, Jackett, qBittorrent WebUI, and other management ports are restricted to LAN via `DOCKER-USER` chain rules.
 - **Automatic security updates:** `unattended-upgrades` applies security-only patches daily. Kernel and NVIDIA packages are blacklisted to prevent GPU/driver breakage.
 - **Kernel hardening:** SYN flood protection, ICMP redirect blocking, reverse path filtering, broadcast ICMP ignore, martian logging.
-- **Fail2ban:** 5 failed logins in 30 min -> 30 min ban for Jellyfin, Jellyseerr, and NPM proxied 401/403. It does not protect NPM admin on `:81`, which is LAN-only.
+- **Fail2ban:** 5 failed logins in 30 min -> 30 min ban for Jellyfin, Seerr, and NPM proxied 401/403. It does not protect NPM admin on `:81`, which is LAN-only.
 - **Private IPs whitelisted:** `10.0.0.0/8` covers wg-easy's peer range, so LAN and VPN users do not ban themselves.
 - **Security headers:** HSTS with `includeSubDomains`, X-Content-Type-Options, Permissions-Policy, and Jellyfin's recommended Content-Security-Policy. Jellyfin also gets `proxy_buffering off` for streaming and `client_max_body_size 20M` for uploads.
 - **HSTS note:** Once a browser sees the header, it refuses plain HTTP for all subdomains. Configure SSL before adding new subdomains.

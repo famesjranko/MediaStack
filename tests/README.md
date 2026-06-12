@@ -150,7 +150,7 @@ Proves:
 3. Jellyfin omits the managed NPM `KnownProxies` entry and external HTTPS URLs until ready.
 4. Homepage uses LAN hrefs until ready.
 5. NPM's rate-limit step (disabled by default, ADR-35) and fail2ban validation still run outside the ready gate.
-6. Ready state preserves cert-backed Jellyfin/Jellyseerr proxy publication with the Pebble ACME override.
+6. Ready state preserves cert-backed Jellyfin/Seerr proxy publication with the Pebble ACME override.
 
 ### Stage 2 remote-access scenarios
 
@@ -159,7 +159,7 @@ Stage 2 adds WireGuard/remote-access DinD scenarios:
 - `stage2-skip` proves the user can skip HTTPS setup, `REMOTE_WEB_STATE=skipped` is persisted, LAN URLs remain in Jellyfin/Homepage, and public NPM proxy hosts are not published.
 - `stage2-ready` proves the ready path with safe in-VM/Pebble ACME fixtures: NPM renders cert-backed hosts, Jellyfin HTTPS responds, and `REMOTE_WEB_STATE=ready` is written only after proxy/cert postconditions.
 - `wireguard` starts wg-easy v15 at the Full LAN tier with the `remote` profile, asserts the major-`15` image pin (digest-locked under stable) and bridge-network `.11` placement (ADR-23, ADR-28) plus the ADR-17 capability set, and verifies interface creation, Basic Auth on `/api/client`, peer creation via the v15 API, `wg-easy.db` persistence, NAT/MASQUERADE, and custom `WG_PORT` propagation end-to-end (compose binding, container listen-port, `wg0.conf`).
-- `wireguard-server`, `wireguard-containers`, `wireguard-streaming` cover the Server / Containers / Streaming access tiers (ADR-29). Each enables wg-easy's per-client firewall and verifies the tier's `firewallIps` shape persists through wg-easy's possibly-500-but-persisted mutation path (ADR-28). Server tier asserts the bare `/32` shape, Containers asserts the MediaStack port enumeration (51821 excluded), Streaming asserts the Jellyfin+Jellyseerr+Homepage triple.
+- `wireguard-server`, `wireguard-containers`, `wireguard-streaming` cover the Server / Containers / Streaming access tiers (ADR-29). Each enables wg-easy's per-client firewall and verifies the tier's `firewallIps` shape persists through wg-easy's possibly-500-but-persisted mutation path (ADR-28). Server tier asserts the bare `/32` shape, Containers asserts the MediaStack port enumeration (51821 excluded), Streaming asserts the Jellyfin+Seerr+Homepage triple.
 - Stage 2 distinguishes failed HTTPS attempts from intentional skips with `REMOTE_WEB_STATE=failed`; a failed LE gate keeps LAN/VPN usable and is retried by rerunning `./setup.sh --remote`, never by an automatic in-process retry.
 
 Run the focused remote-access DinD gate with:
@@ -214,7 +214,7 @@ directly or over SSH.
 ```
 
 Services configured through their HTTP APIs (Sonarr, Radarr, qBittorrent,
-Jackett, Jellyfin, Jellyseerr) get a dedicated layer: `tests/scenarios/api-matrix.sh`
+Jackett, Jellyfin, Seerr) get a dedicated layer: `tests/scenarios/api-matrix.sh`
 brings up only the services a module needs, then drives those config APIs
 **directly** through a matrix of states, asserting each lands live — one bring-up,
 many cheap in-place API tests. Unlike `configure.sh` (idempotent, warn-on-drift,
@@ -344,7 +344,7 @@ Current units:
 - **portainer** — checks Portainer auth drift handling, including a warning when admin auth returns no JWT and the normal endpoint/API-token setup path when auth succeeds.
 - **bazarr** — checks Bazarr config-file write success/failure handling without needing a running Bazarr container.
 - **jellyfin** — checks Jellyfin library creation logging for successful and failed API POSTs without needing a running Jellyfin container.
-- **jellyseerr** — checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
+- **seerr** — checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
 - **json-helpers** — exercises `json_get`, `json_path`, `json_has_name`, `json_array_nonempty` from `scripts/lib/json.sh` with representative inputs (missing keys, nested paths, case-insensitive matching, empty/invalid JSON).
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-image badge block stays derived from the lock file.
@@ -434,7 +434,7 @@ Scenario catalog:
 | `remote-ready-idempotent` | TEST-05 | Public `./setup.sh --remote` after ready state preserves ready proxy/cert postconditions. |
 | `demo-lan` | TEST-06 | Current `DEMO=1` Stage-1/LAN-safe contract; no full unattended remote or GPU setup. |
 | `existing-install-nuke` | TEST-07 | Existing-install wipe menu plus exact `DESTROY`; all-profile compose down is used; data bind-mount sentinel survives reinstall. |
-| `fail2ban-drift` | TEST-09 | Focused regex drift checks for `jellyfin`, `jellyseerr`, `npm`, and `npm-ratelimit`. |
+| `fail2ban-drift` | TEST-09 | Focused regex drift checks for `jellyfin`, `seerr`, `npm`, and `npm-ratelimit`. |
 
 Boundary: these are DinD proofs. `stage2-ready`, `remote-after-skip`, and `remote-ready-idempotent` use fixture DNS and Pebble, not public WAN. TEST-08 — real public DNS, DDNS updates, WAN firewall behavior, and real Let's Encrypt HTTP-01 — is proven on the maintainer-private live-host harnesses, not in this public repo.
 
@@ -456,7 +456,7 @@ The host-side `/tmp/configure.out` captures the full `configure.sh` log from the
 
 `configure.sh` accepts `--only svc1,svc2,...` to run only the named services (docker-compose names). The test suite uses this for re-run assertions (encoding, drift, idempotency) so they don't pay the cost of all 14 services each time.
 
-Service names match docker-compose: `qbittorrent`, `jackett`, `sonarr`, `radarr`, `bazarr`, `jellyfin`, `jellyseerr`, `portainer`, `homepage`, `npm`, `ddns-updater`, `uptime-kuma`, `beszel`.
+Service names match docker-compose: `qbittorrent`, `jackett`, `sonarr`, `radarr`, `bazarr`, `jellyfin`, `seerr`, `portainer`, `homepage`, `npm`, `ddns-updater`, `uptime-kuma`, `beszel`.
 
 To iterate on a single service manually, keep DinD alive and run configure.sh inside it:
 

@@ -31,7 +31,7 @@ setup_sandbox() {
 #!/usr/bin/env bash
 if [[ "${1:-}" == "ahosts" ]]; then
     case "${2:-}" in
-        jellyfin.test.example.org|jellyseerr.test.example.org|jellyfin.quoted.example.org|jellyseerr.quoted.example.org)
+        jellyfin.test.example.org|seerr.test.example.org|jellyfin.quoted.example.org|seerr.quoted.example.org)
             printf '203.0.113.10 STREAM %s\n' "$2"
             exit 0
             ;;
@@ -78,8 +78,8 @@ assert_http_log_has_service_urls() {
     for url in \
         "http://jellyfin.${domain}" \
         "https://jellyfin.${domain}" \
-        "http://jellyseerr.${domain}" \
-        "https://jellyseerr.${domain}"; do
+        "http://seerr.${domain}" \
+        "https://seerr.${domain}"; do
         grep -qx "$url" "$TMP_DIR/http.log" || missing+=("$url")
     done
 
