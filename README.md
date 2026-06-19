@@ -697,7 +697,7 @@ For deeper review and maintenance detail:
 
 ## License
 
-MediaStack is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+MediaStack is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md)
 
 Non-commercial use is permitted. Commercial use requires prior written permission from Andrew Mcdonald.
 
