@@ -6,7 +6,7 @@ Turnkey media server for home networks. One command takes bare Debian to a fully
 
 [![Debian](https://img.shields.io/badge/Debian-11%2F12%2F13-A81D33?logo=debian&logoColor=white)](https://www.debian.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![License](https://img.shields.io/badge/License-MIT-green)](#license)
+[![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange)](#license)
 
 <!-- stable-image-badges:start -->
 [![Images: Stable default](https://img.shields.io/badge/Images-Stable%20default-2ea44f?logo=docker&logoColor=white)](docs/operations/image-digests.lock)
@@ -697,4 +697,8 @@ For deeper review and maintenance detail:
 
 ## License
 
-MIT.
+MediaStack is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+Non-commercial use is permitted. Commercial use requires prior written permission from Andrew Mcdonald.
+
+SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
