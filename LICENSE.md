@@ -1,4 +1,4 @@
-Required Notice: Copyright © 2026 Andrew Mcdonald
+Required Notice: Copyright © 2026 famesjranko
 
 # PolyForm Noncommercial License 1.0.0
 
