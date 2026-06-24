@@ -136,7 +136,7 @@ Generator: /project-stack (audit of existing codebase)
 python3 scripts/image-drift.py --status
 python3 scripts/image-drift.py --status-tsv
 
-# README Stable-image badge guard (no network; derives from docs/operations/image-digests.lock):
+# README Stable-baseline badge guard (no network; derives from docs/operations/image-digests.lock):
 python3 scripts/image-drift.py --check-readme-badges README.md
 
 # Re-apply NVIDIA patch after driver update

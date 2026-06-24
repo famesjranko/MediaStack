@@ -78,6 +78,18 @@ def parse_args() -> argparse.Namespace:
         help="Exit successfully after writing current digests, even if they differ",
     )
     parser.add_argument(
+        "--accept-services",
+        action="append",
+        metavar="SVC[,SVC...]",
+        help=(
+            "Selectively accept only these drifted services into the lock, preserving "
+            "every other row and its timestamp. Repeatable and comma-separated. Requires "
+            "--current-file and --write-current; mutually exclusive with --accept-current. "
+            "Refused when the snapshot adds or removes services (use --accept-current to "
+            "re-baseline the full service set)."
+        ),
+    )
+    parser.add_argument(
         "--status",
         action="store_true",
         help="Print a per-service update status table (user-facing) and exit",
@@ -90,17 +102,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--readme-badges",
         action="store_true",
-        help="Print the generated README Stable image badge block and exit",
+        help="Print the generated README Stable-baseline badge block and exit",
     )
     parser.add_argument(
         "--write-readme-badges",
         metavar="PATH",
-        help="Replace the marked README Stable image badge block in PATH",
+        help="Replace the marked README Stable-baseline badge block in PATH",
     )
     parser.add_argument(
         "--check-readme-badges",
         metavar="PATH",
-        help="Fail if the marked README Stable image badge block in PATH is stale",
+        help="Fail if the marked README Stable-baseline badge block in PATH is stale",
     )
     return parser.parse_args()
 
@@ -205,48 +217,17 @@ def _shield_badge(
     return f"[![{alt}]({url})]({link})"
 
 
-def _latest_tested_date(rows: list[ImageDigest]) -> str:
-    dates = []
-    for row in rows:
-        match = re.match(r"^(\d{4}-\d{2}-\d{2})T", row.tested_at_utc)
-        if match:
-            dates.append(match.group(1))
-    return max(dates) if dates else "unknown"
-
-
 def format_readme_badges(rows: list[ImageDigest]) -> str:
     count = len(rows)
-    accepted = _latest_tested_date(rows)
     lines = [
         README_BADGES_START,
         _shield_badge(
-            "Images: Stable default",
-            "Images",
-            "Stable default",
+            f"Stable image baseline: {count} pinned digests",
+            "Stable image baseline",
+            f"{count} pinned digests",
             "2ea44f",
-            "docs/operations/image-digests.lock",
+            "docs/operations/day-2.md",
             query="logo=docker&logoColor=white",
-        ),
-        _shield_badge(
-            f"Stable refs: {count} pinned",
-            "Stable refs",
-            f"{count} pinned",
-            "0969da",
-            "docs/operations/image-digests.lock",
-        ),
-        _shield_badge(
-            f"Accepted: {accepted}",
-            "Accepted",
-            accepted,
-            "6f42c1",
-            "docs/operations/image-updates.md",
-        ),
-        _shield_badge(
-            "Latest: upstream tags",
-            "Latest",
-            "upstream tags",
-            "f9a825",
-            "docker-compose.yml",
         ),
         README_BADGES_END,
     ]
@@ -301,19 +282,19 @@ def run_readme_badges(args: argparse.Namespace) -> int:
     if args.check_readme_badges:
         if expected != current:
             print(
-                "README Stable image badges are out of date; run "
+                "README Stable-baseline badge is out of date; run "
                 f"python3 scripts/image-drift.py --write-readme-badges {readme_path}",
                 file=sys.stderr,
             )
             return 1
-        print("README Stable image badges are current.")
+        print("README Stable-baseline badge is current.")
         return 0
 
     if expected == current:
-        print(f"README Stable image badges already current in {readme_path}.")
+        print(f"README Stable-baseline badge is already current in {readme_path}.")
         return 0
     readme_path.write_text(expected)
-    print(f"README Stable image badges updated in {readme_path}.")
+    print(f"README Stable-baseline badge updated in {readme_path}.")
     return 0
 
 
@@ -389,6 +370,101 @@ def compare(
     return added, changed, removed
 
 
+def parse_service_selection(values: list[str]) -> list[str]:
+    """Flatten repeated and comma-separated --accept-services values, in order.
+
+    ``action="append"`` gives a list of raw strings; each may itself be a
+    comma-separated list. Whitespace is stripped and empty tokens dropped, so
+    ``--accept-services "sonarr, radarr" --accept-services qbittorrent`` and the
+    comma-only form behave identically.
+    """
+    services: list[str] = []
+    for value in values:
+        for part in value.split(","):
+            name = part.strip()
+            if name:
+                services.append(name)
+    return services
+
+
+def resolve_accept_services(
+    values: list[str],
+    previous: list[ImageDigest],
+    current: list[ImageDigest],
+    added: list[ImageDigest],
+    removed: list[ImageDigest],
+) -> set[str]:
+    """Validate a selective-accept request and return the selected service set.
+
+    Selective accept only handles digest drift on an unchanged service *set*, so
+    a snapshot that adds or removes services is refused (the maintainer must
+    re-baseline with --accept-current). Raises SystemExit (exit 1, message on
+    stderr — the same idiom as read_tsv) on any invalid request so a maintainer
+    never silently accepts the wrong rows.
+    """
+    if added or removed:
+        details = []
+        if added:
+            details.append("added: " + ", ".join(sorted(row.service for row in added)))
+        if removed:
+            details.append("removed: " + ", ".join(sorted(row.service for row in removed)))
+        raise SystemExit(
+            "--accept-services only handles digest drift on existing services, but the "
+            f"snapshot changes the service set ({'; '.join(details)}). Re-baseline the full "
+            "set with --accept-current."
+        )
+
+    selected = parse_service_selection(values)
+    if not selected:
+        raise SystemExit("--accept-services requires at least one service name")
+
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for name in selected:
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    if duplicates:
+        raise SystemExit(
+            "--accept-services lists duplicate service(s): " + ", ".join(sorted(duplicates))
+        )
+
+    previous_by_service = {row.service: row for row in previous}
+    current_by_service = {row.service: row for row in current}
+    for name in selected:
+        if name not in current_by_service:
+            raise SystemExit(
+                f"--accept-services: unknown service '{name}' (not in the current snapshot)"
+            )
+        previous_row = previous_by_service[name]
+        current_row = current_by_service[name]
+        if (
+            previous_row.image == current_row.image
+            and previous_row.digest == current_row.digest
+        ):
+            raise SystemExit(
+                f"--accept-services: '{name}' has not drifted; it already matches the lock"
+            )
+    return seen
+
+
+def merge_selective(
+    previous: list[ImageDigest], current: list[ImageDigest], selected: set[str]
+) -> list[ImageDigest]:
+    """Lock rows after a selective accept: previous rows, selected ones swapped.
+
+    Because selective accept is refused when the service set changes, ``previous``
+    and ``current`` cover the same services; iterating ``previous`` preserves the
+    lock's order, every unselected row (and its timestamp) verbatim, and replaces
+    only the selected services with their freshly enriched current row.
+    """
+    current_by_service = {row.service: row for row in current}
+    return [
+        current_by_service[row.service] if row.service in selected else row
+        for row in previous
+    ]
+
+
 def preflight_command(row: ImageDigest) -> str:
     if row.preflight.startswith("scenario:"):
         scenario = row.preflight.split(":", 1)[1]
@@ -449,6 +525,33 @@ def markdown_summary(
             "",
             "```bash",
             "python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current",
+            "```",
+        ]
+    )
+    if changed and not added and not removed:
+        drifted = ",".join(current.service for _, current in changed)
+        lines.extend(
+            [
+                "",
+                "To accept only the services whose preflight passed and leave the other "
+                "drifted rows pending, name them explicitly (preserves every other row):",
+                "",
+                "```bash",
+                "python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv "
+                "--write-current docs/operations/image-digests.lock "
+                f"--accept-services {drifted}",
+                "```",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Then regenerate the README Stable-baseline badge from the accepted lock and commit "
+            "everything together — the `tests/unit/upgrades-manifest.sh` CI check fails the "
+            "build if this step is skipped:",
+            "",
+            "```bash",
+            "python3 scripts/image-drift.py --write-readme-badges README.md",
             "```",
         ]
     )
@@ -698,6 +801,27 @@ def main() -> int:
     upgrades_path = pathlib.Path(args.upgrades)
     tested_at_utc = args.tested_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    if args.accept_services:
+        if args.accept_current:
+            print(
+                "--accept-services and --accept-current are mutually exclusive; choose "
+                "selective or full acceptance",
+                file=sys.stderr,
+            )
+            return 1
+        if not args.current_file:
+            print(
+                "--accept-services requires --current-file so the accepted digest snapshot is the one that was preflighted",
+                file=sys.stderr,
+            )
+            return 1
+        if not args.write_current:
+            print(
+                "--accept-services requires --write-current <lock> to write the merged baseline",
+                file=sys.stderr,
+            )
+            return 1
+
     if args.accept_current and not args.current_file:
         print(
             "--accept-current requires --current-file so the accepted digest snapshot is the one that was preflighted",
@@ -729,6 +853,12 @@ def main() -> int:
         print(f"image drift check failed: {exc}", file=sys.stderr)
         return 1
     if not previous:
+        if args.accept_services:
+            print(
+                "--accept-services requires an existing baseline lock to preserve unselected rows",
+                file=sys.stderr,
+            )
+            return 1
         if current_path:
             write_tsv(current_path, current)
         print("No previous image digest baseline found; current digests recorded as baseline.")
@@ -738,6 +868,23 @@ def main() -> int:
         return 0
 
     added, changed, removed = compare(previous, current)
+
+    if args.accept_services:
+        # Selective accept resolves and writes the merged lock here, then returns
+        # before the full-snapshot write below, so it never clobbers the merge.
+        selected = resolve_accept_services(args.accept_services, previous, current, added, removed)
+        merged = merge_selective(previous, current, selected)
+        write_tsv(current_path, merged)
+        print(
+            "Selectively accepted drifted services: "
+            + ", ".join(sorted(selected))
+            + "; all other rows preserved."
+        )
+        pending = sorted({current.service for _, current in changed} - selected)
+        if pending:
+            print("Drifted services left pending: " + ", ".join(pending) + ".")
+        return 0
+
     if current_path:
         write_tsv(current_path, current)
     summary = markdown_summary(added, changed, removed)

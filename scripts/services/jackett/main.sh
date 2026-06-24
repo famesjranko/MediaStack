@@ -78,7 +78,7 @@ print(json.dumps(d))
         # Wait for Jackett to come back, then re-seed the session cookie.
         for _ in $(seq 1 30); do
             sleep 1
-            if curl -sf -o /dev/null "http://localhost:9117/UI/Dashboard" 2>/dev/null; then
+            if curl -sf --max-time 3 -o /dev/null "http://localhost:9117/UI/Dashboard" 2>/dev/null; then
                 break
             fi
         done

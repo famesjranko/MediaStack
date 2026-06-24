@@ -8,10 +8,14 @@
 #   - presence: every compose service has a manifest row (no missing/stale/duplicate)
 #   - policy<->tag: each row's strict pin-policy token matches the live tag
 #   - preflight validity: each preflight token resolves to a real oracle
+#   - lock<->manifest: accepted image records keep the same preflight confidence tier
 #   - scenario coverage: a `scenario:X` row's service is actually started by X,
 #     checked against the explicit SCENARIO_COVERAGE map below (scenario ->
 #     profiles/services it launches) — catches a row claiming a scenario that
 #     never launches the service (the bazarr class)
+#   - README Stable-baseline badge is regenerated from the current lock (catches
+#     a lock-restamping commit that forgot the image-updates.md step 9 badge
+#     regen — see scripts/image-drift.py --check-readme-badges)
 # docker-compose.yml stays the single source of truth for tags; this guard makes
 # the manifest's policy claims self-checking (see ADR-24).
 
@@ -71,7 +75,29 @@ else:
             dups.add(svc)  # duplicate rows would otherwise be masked (last-write-wins)
         rows[svc] = {"policy": cells[1], "preflight": cells[3]}
 
-# 3. Presence (and no stale rows).
+# 3. Parse the stable lock's preflight records. The lock is the Stable-channel
+# record, while the manifest is the preflight SSOT used to generate commands;
+# accepting different confidence tiers between them makes the record misleading.
+lock_rows = {}
+lock_dups = set()
+lock_path = os.path.join(REPO, "docs/operations/image-digests.lock")
+with open(lock_path) as f:
+    for raw in f:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        cells = line.split("\t")
+        if cells[0] == "service":
+            continue
+        if len(cells) != 5:
+            out.append(("FAIL", "stable lock rows have five columns :: " + line))
+            continue
+        svc = cells[0]
+        if svc in lock_rows:
+            lock_dups.add(svc)
+        lock_rows[svc] = cells[4]
+
+# 4. Presence (and no stale rows).
 missing = sorted(s for s in services if s not in rows)
 extra = sorted(s for s in rows if s not in services)
 out.append(("FAIL", "every compose service has a manifest row :: missing=" + ",".join(missing))
@@ -81,7 +107,7 @@ out.append(("FAIL", "no stale manifest rows :: extra=" + ",".join(extra))
 out.append(("FAIL", "no duplicate manifest rows :: dup=" + ",".join(sorted(dups)))
            if dups else ("PASS", "no duplicate manifest rows"))
 
-# 4. Policy <-> live tag.
+# 5. Policy <-> live tag.
 def policy_ok(policy, tag):
     if policy == "latest":
         return tag == "latest"
@@ -98,7 +124,7 @@ pol_bad = [f"{s}(policy={rows[s]['policy']},tag={svc_tag[s]})"
 out.append(("FAIL", "pin policy matches live compose tag :: " + " ".join(pol_bad))
            if pol_bad else ("PASS", "pin policy matches live compose tag"))
 
-# 5. Preflight token validity.
+# 6. Preflight token validity.
 def preflight_ok(pf):
     if pf in ("compose-only", "manual"):
         return True
@@ -113,7 +139,22 @@ pf_bad = [f"{s}(preflight={rows[s]['preflight']})"
 out.append(("FAIL", "preflight token resolves to a real oracle :: " + " ".join(pf_bad))
            if pf_bad else ("PASS", "preflight token resolves to a real oracle"))
 
-# 6. scenario:<name> rows must actually START the service — a row can't claim a
+# 7. The Stable lock must cover exactly the manifest services and retain its
+# preflight token. The lock is not allowed to silently retain an obsolete tier.
+lock_missing = sorted(s for s in rows if s not in lock_rows)
+lock_extra = sorted(s for s in lock_rows if s not in rows)
+out.append(("FAIL", "every manifest service has a stable lock row :: missing=" + ",".join(lock_missing))
+           if lock_missing else ("PASS", "every manifest service has a stable lock row"))
+out.append(("FAIL", "no stale stable lock rows :: extra=" + ",".join(lock_extra))
+           if lock_extra else ("PASS", "no stale stable lock rows"))
+out.append(("FAIL", "no duplicate stable lock rows :: dup=" + ",".join(sorted(lock_dups)))
+           if lock_dups else ("PASS", "no duplicate stable lock rows"))
+lock_pf_bad = [f"{s}(lock={lock_rows[s]},manifest={rows[s]['preflight']})"
+               for s in rows if s in lock_rows and lock_rows[s] != rows[s]["preflight"]]
+out.append(("FAIL", "stable lock preflight matches manifest :: " + " ".join(lock_pf_bad))
+           if lock_pf_bad else ("PASS", "stable lock preflight matches manifest"))
+
+# 8. scenario:<name> rows must actually START the service — a row can't claim a
 #    scenario that never launches it (the bazarr coverage-overstatement class).
 def svc_profiles(s):
     p = (services.get(s) or {}).get("profiles")
@@ -128,6 +169,9 @@ SCENARIO_COVERAGE = {
     # scenario -> compose profiles it brings up (override reaches via the patched
     # compose) and/or services it launches standalone (docker run + ms_test_image)
     "fresh-install":  {"profiles": {"default", "proxy", "autoheal"}},
+    "autoheal":       {"services": {"autoheal"}},
+    "bazarr":         {"services": {"bazarr"}},
+    "unpackerr":      {"services": {"unpackerr"}},
     "npm-heal":       {"services": {"npm"}},
     "wireguard":      {"services": {"wireguard"}},
     "fail2ban-drift": {"services": {"fail2ban"}},
@@ -170,5 +214,16 @@ while IFS=$'\t' read -r status msg; do
         *)    fail "unexpected checker line" "$status $msg" ;;
     esac
 done <<< "$results"
+
+# README Stable-baseline badge must reflect the current lock. Pure local file
+# read, no network — safe to run on every PR, not just at accept-time.
+badge_out=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+    --previous "$REPO_ROOT/docs/operations/image-digests.lock" \
+    --check-readme-badges "$REPO_ROOT/README.md" 2>&1)
+if [[ $? -eq 0 ]]; then
+    pass "README Stable-baseline badge is current"
+else
+    fail "README Stable-baseline badge is current" "$badge_out"
+fi
 
 summary

@@ -4,15 +4,13 @@
 
 Turnkey media server for home networks. One command takes bare Debian to a fully configured stack.
 
-[![Debian](https://img.shields.io/badge/Debian-11%2F12%2F13-A81D33?logo=debian&logoColor=white)](https://www.debian.org)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange)](#license)
+[![Debian 11–13](https://img.shields.io/badge/Debian-11%E2%80%9313-A81D33?logo=debian&logoColor=white)](https://www.debian.org)
+[![Docker Engine + Compose](https://img.shields.io/badge/Docker-Engine%20%2B%20Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![Public CI](https://img.shields.io/github/actions/workflow/status/famesjranko/MediaStack/ci.yml?branch=main&label=Public%20CI)](https://github.com/famesjranko/MediaStack/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange)](#license)<br>
 
 <!-- stable-image-badges:start -->
-[![Images: Stable default](https://img.shields.io/badge/Images-Stable%20default-2ea44f?logo=docker&logoColor=white)](docs/operations/image-digests.lock)
-[![Stable refs: 19 pinned](https://img.shields.io/badge/Stable%20refs-19%20pinned-0969da)](docs/operations/image-digests.lock)
-[![Accepted: 2026-06-11](https://img.shields.io/badge/Accepted-2026--06--11-6f42c1)](docs/operations/image-updates.md)
-[![Latest: upstream tags](https://img.shields.io/badge/Latest-upstream%20tags-f9a825)](docker-compose.yml)
+[![Stable image baseline: 19 pinned digests](https://img.shields.io/badge/Stable%20image%20baseline-19%20pinned%20digests-2ea44f?logo=docker&logoColor=white)](docs/operations/day-2.md)
 <!-- stable-image-badges:end -->
 
 </div>
@@ -574,7 +572,7 @@ The setup wizard asks which image channel to use:
 > [!IMPORTANT]
 > Stable is recommended for most users. Latest is useful if you deliberately want upstream image changes before MediaStack maintainers have accepted them. MediaStack does not provide automatic rollback; the default update path leaves old dangling image layers unless you prune, which can help with manual recovery if an upstream release breaks.
 
-The scheduled **Image Drift Alert** workflow checks whether compose image tags now resolve to new remote digests compared with [`docs/operations/image-digests.lock`](docs/operations/image-digests.lock), then fails with a reminder to run the relevant local DinD preflight. It does not pull layers, start containers, or run DinD in GitHub Actions. Stable-channel users receive accepted image updates after updating the repo and running `./scripts/update.sh`.
+A maintainer-run, scheduled **Image Drift Alert** check compares compose image tags against the digests recorded in [`docs/operations/image-digests.lock`](docs/operations/image-digests.lock) and flags any that moved, so maintainers know to run the relevant local DinD preflight before accepting an update. It does not pull layers, start containers, or run DinD. It is not something a Stable-channel install runs itself — Stable-channel users simply receive accepted image updates after updating the repo and running `./scripts/update.sh`.
 
 Portainer may show image update indicators, but for a normal MediaStack install the supported update path is `./scripts/update.sh`. Use Portainer for visibility, logs, restarts, and troubleshooting; avoid mixing Portainer-driven container recreation with this repo's compose-managed setup unless you intentionally manage the stack through Portainer.
 

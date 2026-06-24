@@ -21,6 +21,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,13 +33,26 @@ RENDER = os.path.join(REPO, "scripts", "lib", "arr", "render")
 
 
 def api(method, url, key, body=None):
+    # Sonarr/Radarr can transiently 409 a profile/definition PUT fired right
+    # after a prior mutation to the same resource (still settling internally).
+    # An unretried 409 here used to drop the PUT silently: the live profile
+    # stayed on the PREVIOUS cell's state and every later assertion compared
+    # against stale data (#171). Retry the same idempotent PUT/POST before
+    # giving up so a transient conflict can't masquerade as a landed change.
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(
         url, data=data, method=method,
         headers={"X-Api-Key": key, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        raw = resp.read()
-        return json.loads(raw) if raw else None
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError as exc:
+            if exc.code != 409 or attempt == attempts:
+                raise
+            time.sleep(0.5 * attempt)
 
 
 def render_profile(template, name, enabled_ids, cutoff):

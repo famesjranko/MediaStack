@@ -22,6 +22,22 @@ _qr_push() {
     dind_exec "bash tests/api-matrix/push_quality.sh $app $base $key $res $size '$rename_from'" >/dev/null 2>&1
 }
 
+# Push, then verify the expected profile name actually landed; retry on miss.
+# configure_quality_profile warns-and-returns-0 on a failed PUT (by design —
+# configure.sh never hard-fails a day-2 step), so a dropped PUT from a
+# transient *arr API conflict (#171) is otherwise invisible to the caller and
+# leaves the live profile on its PREVIOUS name when the assertions run.
+_qr_push_until() {
+    local app="$1" base="$2" key="$3" res="$4" size="$5" rename_from="$6" expected="$7"
+    local attempt
+    for attempt in 1 2 3; do
+        _qr_push "$app" "$base" "$key" "$res" "$size" "$rename_from"
+        [[ -n "$(_qr_id_of "$base" "$key" "$expected")" ]] && return 0
+        sleep "$attempt"
+    done
+    return 1
+}
+
 # Echo profile count for the app's *arr.
 _qr_count() {
     dind_exec "curl -sf -H 'X-Api-Key: $2' $1/qualityprofile" \
@@ -74,7 +90,11 @@ matrix_quality_rename() {
     _qr_delete_named "$base" "$key" "720p Balanced"
 
     # Seed cell A: 720p compact (initial create, no rename signal).
-    _qr_push "$app" "$base" "$key" 720p compact ""
+    if ! _qr_push_until "$app" "$base" "$key" 720p compact "" "720p Compact"; then
+        fail "$label rename: cell A '720p Compact' created" "push never landed after retries"
+        skip "$label rename: all remaining module assertions" "cell A seed failed"
+        return
+    fi
     local seed_count seed_id
     seed_count=$(_qr_count "$base" "$key")
     seed_id=$(_qr_id_of "$base" "$key" "720p Compact")
@@ -83,7 +103,11 @@ matrix_quality_rename() {
         || fail "$label rename: cell A '720p Compact' created" "no id"
 
     # Change to cell B: 720p balanced, with the day-2 in-place rename signal.
-    _qr_push "$app" "$base" "$key" 720p balanced "720p Compact"
+    if ! _qr_push_until "$app" "$base" "$key" 720p balanced "720p Compact" "720p Balanced"; then
+        fail "$label rename: '720p Balanced' push" "push never landed after retries"
+        skip "$label rename: rename + score-reattachment assertions" "cell B push failed"
+        return
+    fi
     local after_count new_id old_id
     after_count=$(_qr_count "$base" "$key")
     new_id=$(_qr_id_of "$base" "$key" "720p Balanced")

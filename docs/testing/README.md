@@ -39,6 +39,7 @@ through the generated compose override.
 ./tests/run.sh smoke fresh-install    # both in order
 ./tests/run.sh remote-gating          # REMOTE_WEB_STATE publication gates
 ./tests/run.sh --no-preload nas-storage  # managed NAS/NFS storage fixture (~4s)
+./tests/run.sh --no-preload autoheal  # Autoheal functional image-drift oracle (~40s)
 ./tests/run.sh --no-preload wizard-ui-stage1-local wizard-ui-stage1-nas-retry  # core PTY wizard UX checks
 ./tests/run.sh smoke remote-gating npm-heal  # focused remote-state verification gate
 ./tests/run.sh smoke remote-gating npm-heal ddns-seed wireguard wireguard-server wireguard-containers wireguard-streaming stage2-skip stage2-ready  # focused remote-access gate
@@ -173,13 +174,51 @@ Per-step evidence (phase 4):
 - **Step 3 Sonarr:** API key, root folder `/data/media/tv`, qBittorrent download client, `1080p Balanced` quality profile (fetched by ID, not grepping the full list). Custom format scores verified against exact config.yml values (all 7 formats: Repack/Proper=5, x264=10, x265 HD=-25, BR-DISK=-10000, LQ=-10000, No-RlsGroup=-25, Obfuscated=-25). Indexer count verified with tolerance for upstream-blocked failures. HDTV-720p `preferredSize` tightened to 30.0 (quality definitions). Forms authentication enabled.
 - **Step 4 Radarr:** mirror of Sonarr with `/data/media/movies`. Custom format scores verified against exact config.yml values (same 7 formats). Indexer count, WEBDL-1080p `preferredSize` tightened to 50.0, Forms authentication enabled.
 - **Step 5 Jellyfin:** `StartupWizardCompleted:true` in `/System/Info/Public`, admin auth returns `AccessToken` (with adversarial password containing `$`, `"`, `\`), Movies + TV Shows libraries present.
-  Focused host-side coverage: `bash tests/unit/jellyfin.sh` checks Jellyfin library creation logs success or warning based on the library POST result.
+  Focused host-side coverage: `bash tests/unit/jellyfin.sh` checks Jellyfin library creation logs success or warning based on the library POST result; `bash tests/unit/api-matrix-jellyfin.sh` deterministically proves the VirtualFolders read retries transient failures, preserves the successful JSON response, and stops after five failed requests.
 - **Step 6 Seerr:** `/api/v1/settings/public` reports `initialized:true`. Sonarr and Radarr connections verified. Jellyfin library sync verified — Movies and TV Shows both present and enabled (catches silent poll-timeout failures).
   Focused host-side coverage: `bash tests/unit/seerr.sh` checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
 - **Step 7 Portainer:** admin user initialized (HTTP 204 from `/api/users/admin/check`), wizard admin username + shared password returns JWT, local Docker endpoint created.
   Focused host-side coverage: `bash tests/unit/portainer.sh` checks that empty JWT auth drift warns and skips endpoint/API-token setup, while successful auth still provisions both.
 - **Step 8 Homepage:** services.yaml generated with all service groups, Jellyfin widget configured, Sonarr uses internal URL, ready-state HTTPS URLs used when `REMOTE_WEB_STATE=ready` (`jellyfin.fresh.test`), accessible at port 3000.
 - **Step 9 NPM:** shared admin creds authenticate, defaults rejected, ready-state proxy hosts created (>=2 user-facing), `jellyfin.$DOMAIN` routes via proxy, Let's Encrypt certificates issued via Pebble, SSL forced + cert on proxy hosts, HTTPS connectivity, security headers in `advanced_config`, Jellyfin's upstream CSP + `client_max_body_size 20M`.
+
+### `bazarr.sh` — subtitles-profile oracle
+
+The focused Bazarr scenario starts the `subtitles` profile target
+(`docker compose --profile subtitles up -d bazarr`) with its Sonarr/Radarr
+dependency chain, runs `configure.sh --only bazarr`, then verifies the Bazarr API
+settings and SQLite language profile through `tests/assertions/bazarr.sh`.
+
+It exists because `fresh-install` deliberately excludes optional profiles. Use
+`./tests/run.sh bazarr` as Bazarr's image-drift preflight; `fresh-install` does
+not prove Bazarr startup or configurator compatibility.
+
+### `autoheal.sh` — functional self-heal oracle
+
+This focused image-drift preflight starts Autoheal alone, then launches an
+isolated disposable container with an intentionally failing healthcheck. It
+requires both that fixture to restart and an Autoheal action log naming the
+fixture, so starting the sidecar without a heal cannot pass. Run
+`./tests/run.sh --no-preload autoheal`; use `MS_TEST_IMAGE_OVERRIDES` with the
+candidate digest when preflighting an image update.
+
+### `unpackerr.sh` — completed-download extraction oracle
+
+The focused Unpackerr scenario configures the real qBittorrent/Sonarr/Radarr
+closure, then supplies one deterministic completed-torrent Radarr queue record
+through a strict local stub. It proves that Unpackerr retains its production
+endpoint, generated API key, `/data/torrents` mapping, and data bind mount while
+authenticating the queue request and extracting a real ZIP fixture.
+
+Run it as the image-drift preflight, including for a candidate digest:
+
+```bash
+./tests/run.sh unpackerr
+MS_TEST_IMAGE_OVERRIDES="unpackerr=ghcr.io/hotio/unpackerr:latest" ./tests/run.sh unpackerr
+```
+
+The boundary is intentional: the stub replaces only the unavailable completed
+queue event. This is not a real qBittorrent transfer or Arr import pipeline.
 
 ### `remote-gating.sh` — focused remote-state gate
 
@@ -249,7 +288,7 @@ can call it over SSH without duplicating qBittorrent probe logic.
 
 ### API-matrix layer
 
-The harness (`tests/scenarios/api-matrix.sh`) plus its per-service modules (`tests/api-matrix/`). Sonarr, Radarr, qBittorrent, Jackett, Jellyfin, and Seerr are all configured **through their HTTP APIs**. The api-matrix layer exploits that: once the API-bearing services are up, it drives those config APIs **directly** through a *matrix* of states and asserts each one lands live — amortizing a single (expensive) bring-up across many cheap, in-place API tests.
+The harness (`tests/scenarios/api-matrix.sh`) plus its per-service modules (`tests/api-matrix/`). Many MediaStack services are configured **through their HTTP APIs**, and the api-matrix layer exploits that: once a module's API-bearing services are up, it drives those config APIs **directly** through a *matrix* of states and asserts each one lands live — amortizing a single (expensive) bring-up across many cheap, in-place API tests. **Today the layer ships modules for Sonarr/Radarr** (`quality`, `quality-rename`)**, qBittorrent** (`qbittorrent`: config-driven setup plus the surgical day-2 speed-limit action)**, Jackett** (`jackett`: indexer enable/skip + FlareSolverr-URL/admin-password set-once cycles)**, Jellyfin** (`jellyfin`: library config match/drift/absent branches plus the Sonarr/Radarr notification wiring)**, and Seerr** (`seerr`: Sonarr/Radarr connection wiring) — #164's full scope now ships (see *Adding a module*).
 
 It exists because `configure.sh` is **idempotent and warn-on-drift**: on a re-run it refuses to overwrite a profile/setting that already differs (it logs a drift WARN, never reconciles). That is correct for the installer, but it means the configure.sh-path scenarios (`fresh-install`, `wizard-presets`) can only prove **one** configured state — the default point. The api-matrix layer mutates the live API across states, so it proves the whole **parameter space**. That makes it the natural test surface for:
 
@@ -261,11 +300,23 @@ It exists because `configure.sh` is **idempotent and warn-on-drift**: on a re-ru
 
 **test-1 — `quality`** (`tests/api-matrix/quality.sh` + `apply_cell.py`): loops the six `(resolution × size)` cells, applying each **in place** (`PUT` to the same profile id, renaming the profile across cells) and asserting the live profile name, enabled leaf-quality set, cutoff group, and a global size bound — on both Sonarr and Radarr. The matrix proper runs in ~25s after bring-up. This in-place PUT-rename + global-definition repush is exactly the mechanism the day-2 "change quality profile" action (#71) wraps in UX, so the module also de-risks that work.
 
+**test-2 — `quality-rename`** (`tests/api-matrix/quality-rename.sh`): seeds quality cell A, then changes to cell B via `QP_RENAME_FROM`, asserting the profile is renamed **in place** (same id, the new size's custom-format score re-attached, no orphan profile) through the **product** configurators — the exact path the day-2 "change quality profile" action (#71) takes.
+
+**test-3 — `qbittorrent`** (`tests/api-matrix/qbittorrent.sh` + `push_qbt.sh`): applies the product qBittorrent configurator against a live daemon, asserting config-derived preferences, pause-on-ratio, and categories. It then changes limits to 7/3 MB/s through the product day-2 action and proves paths, categories, and ratio policy remain unchanged.
+
+**test-4 — `jackett`** (`tests/api-matrix/jackett.sh` + `push_jackett.sh`): seeds two already-CI-proven public indexers (`eztv`, `yts` — the same ids `wizard-presets.sh` already drives against live trackers) plus one deliberately bogus id, applies the product configurator, and asserts the two real indexers land `configured:true`, the bogus one is skipped with the product's own "not available in Jackett" log line, the FlareSolverr URL and admin password are set once, and a second unchanged `apply` takes every skip path (asserted via the product's own `log_skip` lines, not just unchanged state). Deliberately scoped to the deterministic, local part of `configure_jackett` — live Torznab/Cloudflare reachability stays `wizard-presets.sh`'s job per the FlareSolverr confidence boundary in [`docs/operations/upgrades.md`](../operations/upgrades.md).
+
+**test-5 — `jellyfin`** (`tests/api-matrix/jellyfin.sh` + `push_jellyfin.sh`): drives the first-run wizard with config.yml-derived libraries, then re-applies with one library unchanged, one with a drifted path, and one brand-new — exercising `configure_jellyfin_libraries`' match/drift/absent branches in a single re-apply (the drift case asserts the live path is *not* overwritten, since Jellyfin has no path-rename endpoint and a re-root would lose watch history). It then drives `configure_arr_jellyfin_connection` for both Sonarr and Radarr, asserting the exact wiring (host, port, `updateLibrary`, and each app's documented trigger — `onImportComplete` for Sonarr, `onDownload` for Radarr; `apiKey` itself is a Sonarr/Radarr-masked field and can't be verified via the API) and that a second unchanged run takes the idempotent skip path with the connection object byte-for-byte unchanged. Deliberately scoped to library/notification states; encoding, streaming, networking, and server name stay covered at their default point by `fresh-install`'s `assert_jellyfin_configured`.
+
+**test-6 — `seerr`** (`tests/api-matrix/seerr.sh` + `push_seerr.sh`): drives the real `configure_seerr` first-run bootstrap (against the Jellyfin admin the `jellyfin` module's bring-up already configures) and asserts the exact `connect_arr_to_seerr` wiring for both Sonarr and Radarr — host, port, `useSsl`, `isDefault`, `is4k`, `syncEnabled`, `preventSearch`, root directory, and each app's documented extra (Sonarr's `enableSeasonFolders` + resolved language profile id, Radarr's `minimumAvailability`). The expected quality-profile id/name is resolved against the **live** Sonarr/Radarr profile list (mirroring `connect_arr_to_seerr`'s own match-or-fallback logic), not a static config.yml snapshot, since the `quality`/`quality-rename` modules earlier in the same run rename profiles in place. It then re-runs the connection directly and asserts the idempotent already-connected skip path with the connection object byte-for-byte unchanged. Deliberately scoped to connection wiring; Jellyfin library-sync membership, default permissions/quotas, and trustProxy stay covered at their default point by `fresh-install`'s `assert_seerr_configured`.
+
 ```bash
 ./tests/run.sh api-matrix
 ```
 
 Like `fresh-install`, this is an **image-backed local/on-demand gate** — not part of the CI battery (which skips image pulls). It brings up only its services, so it is far cheaper than `fresh-install`.
+
+**Scope.** api-matrix is a **parameter-space gate** for a single service's renderer→API contract — *not* a cross-service interop oracle and *not* an image-drift preflight. `fresh-install` owns those: it asserts each service's configured state plus the Sonarr/Radarr↔qBittorrent download-client wiring, and it is the drift-preflight oracle for the Sonarr/Radarr rows in [`docs/operations/upgrades.md`](../operations/upgrades.md). Do not read api-matrix as proof that Jackett/Jellyfin/Seerr's live cross-service handshakes work end-to-end (e.g. Jellyfin actually rescanning a library when Sonarr/Radarr fire the configured notification, or Seerr's request flow actually reaching Sonarr/Radarr) — the `jellyfin`/`seerr` modules only prove the connection objects themselves are wired correctly, not that the round-trips work live.
 
 **Adding a module.** Drop `tests/api-matrix/<service>.sh` defining a `matrix_<service> …` function that drives the service's API through its states and asserts with `pass`/`fail`/`assert_eq`; `source` it and call it from `api-matrix.sh`, bringing up whatever services it needs. Reuse the product's render/config helpers rather than re-implementing request payloads. Each new day-2 action that mutates a service API should ship with a matrix module here.
 
@@ -532,3 +583,4 @@ docker rm -fv ms-test-dind
 - **Cache mirror binds on Docker bridge gateway, not localhost.** Necessary so DinD's children can reach it, but accessible from any container on that bridge. No auth. On a shared dev host, another container could poison the cache. Mitigated by the transitory lifecycle but worth noting.
 - **GHCR is single point of failure for the cache bootstrap.** If `ghcr.io/distribution/distribution:3.0.0` becomes unavailable, the mirror can't start and tests fall back to direct Hub pulls. A second fallback source (or pinning by digest) would harden this.
 - **No per-scenario isolation of counter state.** A scenario that silently bypasses a `fail` (e.g. `return 1` without calling `fail` first) leaves the counter confused. The pass/fail counts are persisted across scenarios by design but it's worth checking that every exit path records a result.
+- **~~api-matrix `fail "...";return`/`continue` cascades silently dropped downstream assertions (no skip accounting).~~** Fixed (#179): this is the *within-module* version of the bullet above — a precondition miss partway through a stateful module (e.g. an unreadable API after a failed apply) used to fall straight through to `return`/`continue` with no skip accounting, so a run could report "0 skipped" while dozens of assertions never ran. Every `fail "...";return`/`continue` site across `tests/api-matrix/*.sh` now pairs with one `skip()` call naming the dropped block (not one per dropped assertion — see the convention comment in `tests/scenarios/api-matrix.sh`).

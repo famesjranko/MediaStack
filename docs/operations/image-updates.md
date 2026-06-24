@@ -36,15 +36,30 @@ When it fails:
    security-sensitive.
 6. For `manual` services, start the relevant profile locally and verify the UI/configurator path by
    hand.
-7. If any preflight fails, leave `docs/operations/image-digests.lock` unchanged and fix the integration before
-   accepting the digest.
-8. If every affected service passes, accept the same snapshot that was tested:
+
+   `scenario:`, `unit:`, `compose-only`, and `manual` are not equal confidence — roughly highest to
+   lowest in that order. A `compose-only`/`manual` row passing review is a weaker signal than a
+   `scenario:`-backed row, so weigh the tier, not just pass/fail, when deciding whether to accept it
+   alongside stronger-oracle rows.
+7. If any preflight fails, leave `docs/operations/image-digests.lock` unchanged for that service and
+   fix the integration before accepting its digest. This does not block accepting other services that
+   did pass.
+8. Acceptance is selective by default — accept only the services whose preflight passed and leave the
+   rest pending:
+
+   ```bash
+   python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
+   ```
+
+   Use `--accept-current` instead only when every drifted service in the snapshot passed and you want
+   to accept the whole snapshot in one step (also required the first time a service is added or
+   removed, since `--accept-services` refuses a changed service set):
 
    ```bash
    python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
    ```
 
-9. Regenerate the README Stable image badges from the accepted lock:
+9. Regenerate the README Stable-baseline badge from the accepted lock:
 
    ```bash
    python3 scripts/image-drift.py --write-readme-badges README.md

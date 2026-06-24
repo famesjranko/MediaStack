@@ -132,13 +132,49 @@ Proves:
 - `configure.sh` exits 0 (does not abort mid-run on a recoverable API error).
 - Each of the 8 configure steps produced the expected side-effect (API key present, root folder registered, etc.).
 - qBittorrent's live API accepts the shared admin credentials and reports configured preferences/categories through `tests/assertions/qbittorrent-live.sh`.
-- Sonarr + Radarr get all expected indexers wired in (7 for Sonarr, 6 for Radarr) — catches regressions in the FlareSolverr cold-start retry path.
+- Sonarr + Radarr indexer wiring is checked against whatever `config.yml` lists — the default ships `indexers: []`, so this is a no-op skip here; `wizard-presets.sh` is the scenario that actually seeds indexers (via the opt-in public-indexer preset) and exercises the FlareSolverr cold-start retry path, against real Cloudflare-protected trackers, so it is not a deterministic image-drift oracle for FlareSolverr — see `docs/operations/upgrades.md` "FlareSolverr — confidence boundary".
 - Quality definitions were tightened from upstream defaults (HDTV-720p preferredSize on Sonarr, Bluray-1080p preferredSize on Radarr — both differ noticeably from stock; ADR-25 dropped Remux-1080p entirely).
 - `SONARR_API_KEY`, `RADARR_API_KEY`, `JELLYFIN_API_KEY`, and ready-state `REMOTE_WEB_STATE` are back-populated into `.env`.
 
 Total: 46 hard assertions at current scope.
 
 If you add new assertions that detect a known `configure.sh` bug, use `skip` with a bug-ref so the scenario still runs. Convert back to `pass`/`fail` once the bug is fixed.
+
+### `bazarr` — subtitles-profile oracle
+
+Starts the `subtitles` profile target (`docker compose --profile subtitles up -d bazarr`)
+with Bazarr's Sonarr/Radarr dependency chain, runs `configure.sh --only bazarr`,
+then verifies the Bazarr API settings and SQLite language profile through
+`tests/assertions/bazarr.sh`.
+
+This is the image-drift preflight for Bazarr. `fresh-install` still excludes the
+subtitles profile, so it does not prove Bazarr startup or configurator
+compatibility.
+
+### `autoheal` — functional self-heal oracle
+
+Starts Autoheal alone and a disposable container with an intentional failing
+healthcheck. The oracle requires both a restart of that exact fixture and an
+Autoheal action log that names it, so a healthy sidecar or a heal of another
+container cannot pass. Run it as `./tests/run.sh --no-preload autoheal`, adding
+an exact `MS_TEST_IMAGE_OVERRIDES` digest when preflighting Autoheal.
+
+### `unpackerr` — completed-download extraction oracle
+
+`./tests/run.sh unpackerr` configures qBittorrent, Sonarr, and Radarr, then
+replaces only Radarr's completed-download queue event with a strict local stub.
+It verifies the generated API-key request, configured `/data/torrents` path,
+and extraction of a real ZIP archive by the Compose Unpackerr container.
+
+Use a candidate image override when preflighting a new Unpackerr digest:
+
+```bash
+MS_TEST_IMAGE_OVERRIDES="unpackerr=ghcr.io/hotio/unpackerr:latest" ./tests/run.sh unpackerr
+```
+
+It does not prove an end-to-end qBittorrent transfer or Arr import; those
+systems are configured and asserted before the deterministic queue event is
+substituted.
 
 ### `remote-gating` — remote publication gates
 
@@ -213,17 +249,26 @@ directly or over SSH.
 ./tests/run.sh api-matrix
 ```
 
-Services configured through their HTTP APIs (Sonarr, Radarr, qBittorrent,
-Jackett, Jellyfin, Seerr) get a dedicated layer: `tests/scenarios/api-matrix.sh`
-brings up only the services a module needs, then drives those config APIs
-**directly** through a matrix of states, asserting each lands live — one bring-up,
-many cheap in-place API tests. Unlike `configure.sh` (idempotent, warn-on-drift,
-proves only the default point), it covers the full parameter space, so it's the
-surface for new API-driven features, day-2 re-push actions, and backfilling
-existing ones. Modules live in `tests/api-matrix/<service>.sh` and reuse the
-product renderers + `api_*` helpers. test-1 (`quality`) loops the six
-resolution×size cells in place on Sonarr + Radarr (and underpins the #71 day-2
-change-quality action). Image-backed local gate, not in CI. See
+Many services are configured through their HTTP APIs, so they can get a
+dedicated layer: `tests/scenarios/api-matrix.sh` brings up only the services a
+module needs, then drives those config APIs **directly** through a matrix of
+states, asserting each lands live — one bring-up, many cheap in-place API tests.
+Unlike `configure.sh` (idempotent, warn-on-drift, proves only the default
+point), it covers the full parameter space, so it's the surface for new
+API-driven features, day-2 re-push actions, and backfilling existing ones.
+Modules live in `tests/api-matrix/<service>.sh` and reuse the product renderers
+and `api_*` helpers. **Today Sonarr/Radarr, qBittorrent, Jackett, Jellyfin, and
+Seerr modules exist** (#164's full scope): `quality` loops the six
+resolution×size cells in place, `quality-rename` exercises the #71 day-2
+change-quality rename, `qbittorrent` covers setup plus its surgical day-2
+speed-limit action, `jackett` covers indexer enable/skip plus the
+FlareSolverr-URL/admin-password set-once cycles (live Torznab/Cloudflare
+reachability stays `wizard-presets.sh`'s job), `jellyfin` covers library
+config match/drift/absent branches plus the Sonarr/Radarr notification
+wiring (including idempotent re-run), and `seerr` covers the Sonarr/Radarr
+connection wiring plus its idempotent re-run. It's a parameter-space gate, not
+a cross-service interop oracle and not an image-drift preflight — `fresh-install`
+owns those. Image-backed local gate, not in CI. See
 [`docs/testing/README.md`](../docs/testing/README.md#api-matrix-layer) for the full write-up and how to add a module.
 
 ### Stage 1 wizard UI scenarios
@@ -311,7 +356,7 @@ overrides switch the DinD copy to `IMAGE_CHANNEL=latest` so the compose patch re
 MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.sh wireguard
 ```
 
-Most services have no dedicated scenario — use `fresh-install` (which does **not** start the `remote`/wireguard or `subtitles`/bazarr profiles; those need their own scenarios). `docs/operations/upgrades.md` lists each
+Most services have no dedicated scenario — use `fresh-install` (which does **not** start the `remote`/wireguard or `subtitles`/bazarr profiles; those use `wireguard` and `bazarr`). Autoheal uses its own focused `autoheal` scenario because a running-state check cannot prove a heal. `docs/operations/upgrades.md` lists each
 service's pin policy and preflight command; the "Bumping a Service Version" playbook in `docs/project/structure.md`
 walks the full ritual. The `image-override` scenario is a fast (~15s, config-only) proof that an
 override actually reaches compose:
@@ -344,10 +389,11 @@ Current units:
 - **portainer** — checks Portainer auth drift handling, including a warning when admin auth returns no JWT and the normal endpoint/API-token setup path when auth succeeds.
 - **bazarr** — checks Bazarr config-file write success/failure handling without needing a running Bazarr container.
 - **jellyfin** — checks Jellyfin library creation logging for successful and failed API POSTs without needing a running Jellyfin container.
+- **api-matrix-jellyfin** — deterministically checks the api-matrix Jellyfin VirtualFolders helper retries transient failures, preserves successful JSON, and stops after five failed requests without requiring DinD.
 - **seerr** — checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
 - **json-helpers** — exercises `json_get`, `json_path`, `json_has_name`, `json_array_nonempty` from `scripts/lib/json.sh` with representative inputs (missing keys, nested paths, case-insensitive matching, empty/invalid JSON).
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
-- **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-image badge block stays derived from the lock file.
+- **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
 - **manage-updates** — covers the day-2 "Manage updates" feature (ADR-30): `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` truth table and hardened running-digest extraction, and the launcher's WireGuard/non-updatable exclusion from "Update all" (sources `mediastack` via its `BASH_SOURCE` guard). Pure bash + python3; no Docker/network.
 - **launcher-hardware** — covers the `./mediastack` day-2 "Manage hardware transcoding" surface: the post-install menu exposes it, the submenu offers configure/change and NVIDIA repatch where relevant, and configure/change dispatches to the transcoding recovery path. Pure bash; no Docker/network.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.

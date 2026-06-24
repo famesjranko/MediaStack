@@ -72,12 +72,20 @@ matrix_quality() {
         # to the SAME id (in-place rename + repush — the #71 mechanism).
         if [[ -z "$pid" ]]; then
             pid=$(dind_exec "python3 tests/api-matrix/apply_cell.py $app $base $key $res $size")
+            if [[ -z "$pid" ]]; then
+                fail "$label api-matrix: $res $size apply returned no profile id"
+                skip "$label api-matrix: $res $size cell assertions" "no profile id returned"
+                continue
+            fi
         else
-            dind_exec "python3 tests/api-matrix/apply_cell.py $app $base $key $res $size $pid" >/dev/null
-        fi
-        if [[ -z "$pid" ]]; then
-            fail "$label api-matrix: $res $size apply returned no profile id"
-            continue
+            # Exit status matters here: a failed PUT (e.g. an unretried 409)
+            # must not fall through to assertions that would silently compare
+            # against the PREVIOUS cell's still-live state (#171).
+            if ! dind_exec "python3 tests/api-matrix/apply_cell.py $app $base $key $res $size $pid" >/dev/null; then
+                fail "$label api-matrix: $res $size apply_cell failed (HTTP error after retries)"
+                skip "$label api-matrix: $res $size cell assertions" "apply_cell failed"
+                continue
+            fi
         fi
 
         exp=$(_qm_expected "$app" "$res" "$size")

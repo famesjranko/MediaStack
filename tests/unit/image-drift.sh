@@ -40,9 +40,13 @@ badges=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
 rc=$?
 
 assert_eq "0" "$rc" "image-drift README badges render exits zero"
-assert_contains "$badges" "Images: Stable default" "image-drift README badges include Stable default badge"
-assert_contains "$badges" "Stable refs: 1 pinned" "image-drift README badges include lock row count"
-assert_contains "$badges" "Accepted: 2026-01-01" "image-drift README badges include accepted date"
+assert_contains "$badges" "Stable image baseline: 1 pinned digests" "image-drift README badge includes lock row count"
+assert_contains "$badges" "docs/operations/day-2.md" "image-drift README badge links to user-facing update guidance"
+if [[ "$(grep -c '^\[!\[' <<<"$badges")" == "1" ]]; then
+    pass "image-drift README badge block contains one generated badge"
+else
+    fail "image-drift README badge block contains one generated badge" "expected=1"
+fi
 
 cat > "$TMP_DIR/README.md" <<'EOF'
 # Example
@@ -60,7 +64,7 @@ readme_text=$(cat "$TMP_DIR/README.md")
 
 assert_eq "0" "$rc" "image-drift README badge write exits zero"
 assert_contains "$output" "updated" "image-drift README badge write reports update"
-assert_contains "$readme_text" "Stable refs: 1 pinned" "image-drift README badge write replaces marked block"
+assert_contains "$readme_text" "Stable image baseline: 1 pinned digests" "image-drift README badge write replaces marked block"
 
 output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
@@ -121,6 +125,190 @@ rc=$?
 
 assert_eq "1" "$rc" "image-drift accept rejects live re-resolution"
 assert_contains "$output" "--accept-current requires --current-file" "image-drift accept explains current-file requirement"
+
+# --- selective accept (--accept-services) -----------------------------------
+# Fixture: a baseline with DISTINCT old timestamps (so preservation is provable),
+# plus three candidate snapshots — a matched-set digest drift, an added service,
+# and a removed service. printf keeps the literal tabs honest.
+SHA_A="sha256:$(printf 'a%.0s' {1..64})"   # sonarr previous
+SHA_B="sha256:$(printf 'b%.0s' {1..64})"   # radarr previous
+SHA_C="sha256:$(printf 'c%.0s' {1..64})"   # sonarr current (drifted)
+SHA_D="sha256:$(printf 'd%.0s' {1..64})"   # radarr current (drifted)
+SHA_E="sha256:$(printf 'e%.0s' {1..64})"   # jackett (unchanged)
+SHA_G="sha256:$(printf 'g%.0s' {1..64})"   # homepage (added)
+
+{
+    printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n'
+    printf 'sonarr\tlinuxserver/sonarr:latest\t%s\t2020-01-01T00:00:00Z\tscenario:fresh-install\n' "$SHA_A"
+    printf 'radarr\tlinuxserver/radarr:latest\t%s\t2020-02-02T00:00:00Z\tscenario:fresh-install\n' "$SHA_B"
+    printf 'jackett\tlinuxserver/jackett:latest\t%s\t2020-03-03T00:00:00Z\tscenario:fresh-install\n' "$SHA_E"
+} > "$TMP_DIR/sel-previous.tsv"
+
+{
+    printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n'
+    printf 'sonarr\tlinuxserver/sonarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_C"
+    printf 'radarr\tlinuxserver/radarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_D"
+    printf 'jackett\tlinuxserver/jackett:latest\t%s\t\tscenario:fresh-install\n' "$SHA_E"
+} > "$TMP_DIR/sel-matched.tsv"
+
+{
+    cat "$TMP_DIR/sel-matched.tsv"
+    printf 'homepage\tghcr.io/gethomepage/homepage:latest\t%s\t\tscenario:fresh-install\n' "$SHA_G"
+} > "$TMP_DIR/sel-added.tsv"
+
+{
+    printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n'
+    printf 'sonarr\tlinuxserver/sonarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_C"
+    printf 'radarr\tlinuxserver/radarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_D"
+} > "$TMP_DIR/sel-removed.tsv"
+
+cat > "$TMP_DIR/sel-upgrades.md" <<'EOF'
+<!-- upgrades-manifest:start -->
+| Service | Pin policy | API stability | Preflight | Touchpoint | ADR |
+|---|---|---|---|---|---|
+| sonarr | latest | stable | scenario:fresh-install | x | ADR-24 |
+| radarr | latest | stable | scenario:fresh-install | x | ADR-24 |
+| jackett | latest | stable | scenario:fresh-install | x | ADR-24 |
+<!-- upgrades-manifest:end -->
+EOF
+
+sel_base=(--previous "$TMP_DIR/sel-previous.tsv" --upgrades "$TMP_DIR/sel-upgrades.md")
+
+# Selective accept of one drifted service writes that row and preserves the rest.
+merged="$TMP_DIR/sel-merged.tsv"
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$merged" \
+    --accept-services sonarr --tested-at 2026-06-01T00:00:00Z 2>&1)
+rc=$?
+assert_eq "0" "$rc" "image-drift selective accept exits zero"
+assert_contains "$output" "Selectively accepted drifted services: sonarr" "image-drift selective accept reports the accepted service"
+assert_contains "$output" "Drifted services left pending: radarr" "image-drift selective accept reports the pending drift"
+
+exp_sonarr=$(printf 'sonarr\tlinuxserver/sonarr:latest\t%s\t2026-06-01T00:00:00Z\tscenario:fresh-install' "$SHA_C")
+if grep -qF "$exp_sonarr" "$merged"; then
+    pass "image-drift selective accept writes the selected drifted digest + fresh timestamp"
+else
+    fail "image-drift selective accept writes the selected drifted digest + fresh timestamp"
+fi
+exp_radarr=$(printf 'radarr\tlinuxserver/radarr:latest\t%s\t2020-02-02T00:00:00Z\tscenario:fresh-install' "$SHA_B")
+if grep -qF "$exp_radarr" "$merged"; then
+    pass "image-drift selective accept preserves the unselected drifted row and its old timestamp"
+else
+    fail "image-drift selective accept preserves the unselected drifted row and its old timestamp"
+fi
+if grep -qF "$SHA_D" "$merged"; then
+    fail "image-drift selective accept excludes the unaccepted drifted digest"
+else
+    pass "image-drift selective accept excludes the unaccepted drifted digest"
+fi
+exp_jackett=$(printf 'jackett\tlinuxserver/jackett:latest\t%s\t2020-03-03T00:00:00Z\tscenario:fresh-install' "$SHA_E")
+if grep -qF "$exp_jackett" "$merged"; then
+    pass "image-drift selective accept preserves the unchanged row verbatim"
+else
+    fail "image-drift selective accept preserves the unchanged row verbatim"
+fi
+
+# Multiple services, comma-separated: both accepted, the unchanged row preserved.
+merged2="$TMP_DIR/sel-merged2.tsv"
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$merged2" \
+    --accept-services sonarr,radarr --tested-at 2026-06-01T00:00:00Z 2>&1)
+rc=$?
+assert_eq "0" "$rc" "image-drift selective multi-accept exits zero"
+exp_radarr_new=$(printf 'radarr\tlinuxserver/radarr:latest\t%s\t2026-06-01T00:00:00Z\tscenario:fresh-install' "$SHA_D")
+if grep -qF "$exp_radarr_new" "$merged2" && grep -qF "$exp_jackett" "$merged2"; then
+    pass "image-drift selective multi-accept updates both selected rows, preserves the rest"
+else
+    fail "image-drift selective multi-accept updates both selected rows, preserves the rest"
+fi
+
+# A snapshot that adds a service is refused (structural change needs --accept-current).
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-added.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
+    --accept-services sonarr 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept refuses an added service"
+assert_contains "$output" "added: homepage" "image-drift selective accept names the added service"
+assert_contains "$output" "--accept-current" "image-drift selective accept points added services at full accept"
+
+# A snapshot that removes a service is refused too.
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-removed.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
+    --accept-services sonarr 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept refuses a removed service"
+assert_contains "$output" "removed: jackett" "image-drift selective accept names the removed service"
+
+# Invalid selectors fail clearly.
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
+    --accept-services bogus 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept rejects an unknown service"
+assert_contains "$output" "unknown service 'bogus'" "image-drift selective accept explains the unknown service"
+
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
+    --accept-services sonarr,sonarr 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept rejects a duplicate selector"
+assert_contains "$output" "duplicate service" "image-drift selective accept explains the duplicate"
+
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
+    --accept-services jackett 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept rejects a non-drifted service"
+assert_contains "$output" "has not drifted" "image-drift selective accept explains the non-drifted selector"
+
+# Arg guards: mutual exclusion is reported before the current-file requirement.
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --accept-services sonarr --accept-current 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept is mutually exclusive with full accept"
+assert_contains "$output" "mutually exclusive" "image-drift selective accept explains the mutual exclusion first"
+
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --write-current "$TMP_DIR/sel-x.tsv" --accept-services sonarr 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept requires a frozen current-file"
+assert_contains "$output" "requires --current-file" "image-drift selective accept explains the current-file requirement"
+
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-matched.tsv" --accept-services sonarr 2>&1)
+rc=$?
+assert_eq "1" "$rc" "image-drift selective accept requires a write-current destination"
+assert_contains "$output" "requires --write-current" "image-drift selective accept explains the write-current requirement"
+
+# The drift summary offers a copy-paste selective-accept command for the drifted
+# services, but only when no service was added or removed.
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-matched.tsv" 2>&1)
+rc=$?
+assert_eq "2" "$rc" "image-drift summary exits 2 on unaccepted drift"
+assert_contains "$output" "--accept-services sonarr,radarr" "image-drift summary offers a selective-accept command"
+assert_contains "$output" "--write-readme-badges README.md" "image-drift summary closes with the README badge regen step"
+
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-added.tsv" 2>&1)
+if printf '%s' "$output" | grep -qF -- "--accept-services"; then
+    fail "image-drift summary omits the selective command when the service set changed"
+else
+    pass "image-drift summary omits the selective command when the service set changed"
+fi
+
+# The badge-regen closing step only makes sense when there was drift to accept;
+# the no-drift early return must stay a plain one-liner.
+output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+    --current-file "$TMP_DIR/sel-previous.tsv" 2>&1)
+rc=$?
+assert_eq "0" "$rc" "image-drift summary exits zero when nothing drifted"
+assert_contains "$output" "No compose image digest changes detected" "image-drift summary reports no drift"
+if printf '%s' "$output" | grep -qF -- "--write-readme-badges"; then
+    fail "image-drift summary omits the badge regen step when nothing drifted"
+else
+    pass "image-drift summary omits the badge regen step when nothing drifted"
+fi
 
 scenario_end "$CURRENT_SCENARIO"
 summary
