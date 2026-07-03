@@ -9,6 +9,7 @@ or run DinD.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import pathlib
@@ -53,6 +54,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--snapshot-current",
         help="Write a current digest TSV and exit successfully without accepting it",
+    )
+    parser.add_argument(
+        "--record-install",
+        metavar="PATH",
+        help=(
+            "Record each running service's local install digest (service<TAB>image<TAB>digest) "
+            "to PATH and exit. Overwrites PATH with the current full set (ADR-30)."
+        ),
     )
     parser.add_argument(
         "--current-file",
@@ -561,7 +570,9 @@ def markdown_summary(
 # --- User-facing per-service update status (Manage updates menu) ------------
 # The maintainer drift check above compares compose tags to the tested lock.
 # This scan instead answers, per service: "is a newer image available for me?"
-# It is channel-agnostic in detection and branches only when deriving a label.
+# Fully channel-agnostic (#206): stable/latest is an install-time choice, so the
+# label no longer branches on channel — a pinned Stable service and an upstream-tag
+# service both read "Update available" when they trail their compose tag.
 # See ADR-30 and scripts/setup/override.sh (_effective_channel).
 
 IMAGE_POLICY_FILE = "config/state/image-policy.tsv"
@@ -638,8 +649,45 @@ def image_repo_digest(image_id: str, image: str) -> str | None:
     return only if len(repo_digests) == 1 else None
 
 
+def _is_pin(value: str) -> bool:
+    """A per-service policy value that is a literal digest pin (ADR-30 #208)."""
+    return "@sha256:" in value
+
+
+def record_install(compose_path: pathlib.Path, out_path: pathlib.Path) -> int:
+    """Record each running service's local install digest to out_path (overwrite).
+
+    Reuses the local digest readers (no registry) — the digest a service is
+    actually running right after install. Overwritten on every install run so a
+    `down -v && ./setup.sh --full` rebuild re-baselines (ADR-30 #208). Services
+    with no resolvable local digest are skipped, not recorded as revertable.
+    """
+    rows: list[tuple[str, str, str]] = []
+    for service, image in load_compose_images(compose_path):
+        image_id = container_image_id(service)
+        if image_id is None:
+            continue
+        digest = image_repo_digest(image_id, image)
+        if not digest:
+            continue
+        rows.append((service, image, digest))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# MediaStack per-service install digests - the image each service was installed running.",
+        "# Format: service<TAB>image<TAB>digest. Overwritten on each install run (ADR-30).",
+    ]
+    lines += [f"{service}\t{image}\t{digest}" for service, image, digest in rows]
+    out_path.write_text("\n".join(lines) + "\n")
+    return 0
+
+
 def read_policy(path: pathlib.Path) -> dict[str, str]:
-    """Per-service policy overrides: {service: 'stable'|'latest'}."""
+    """Per-service policy overrides: {service: 'stable'|'latest'|'<image>@sha256:...'}.
+
+    A digest-pin value (#208 "Revert to installed image") is a real override too,
+    so it's kept — presence drives the `manual` override flag; the value is
+    normalized to the display token `pinned` by the status formatters.
+    """
     if not path.exists():
         return {}
     out: dict[str, str] = {}
@@ -648,7 +696,7 @@ def read_policy(path: pathlib.Path) -> dict[str, str]:
         if not line or line.startswith("#"):
             continue
         parts = line.split("\t")
-        if len(parts) >= 2 and parts[1] in ("stable", "latest"):
+        if len(parts) >= 2 and (parts[1] in ("stable", "latest") or _is_pin(parts[1])):
             out[parts[0]] = parts[1]
     return out
 
@@ -658,6 +706,14 @@ def derive_status(
 ) -> tuple[str, bool]:
     """Return (status_text, updatable). upstream == 'unknown' means offline.
 
+    Channel-agnostic (#206): stable/latest is an install-time choice, so the day-2
+    status answers one question for every service regardless of channel — "does a
+    newer image exist for this compose tag?" ``policy`` and ``lock`` are retained
+    for signature + CLI-column compatibility but no longer branch the label; a
+    pinned Stable service and an upstream-tag service both read "Update available"
+    when the running digest trails the tag, and applying either floats the service
+    to its tag.
+
     present=False ⇒ no container. present=True with running=None ⇒ the container
     exists but its local repo digest can't be resolved ("Unknown local digest").
     """
@@ -665,20 +721,11 @@ def derive_status(
         return ("Not installed", False)
     if running is None:
         return ("Unknown local digest", False)
-    if policy == "stable" and lock is not None:
-        if running != lock:
-            return ("Tested Stable update available", True)
-        if upstream == "unknown":
-            return ("On tested Stable", False)
-        if upstream != lock:
-            return ("Untested upstream update available", True)
-        return ("On tested Stable", False)
-    # Upstream-tag services (effective latest, or stable with no lock row).
     if upstream == "unknown":
         return ("Unknown (offline)", False)
     if running == upstream:
         return ("Up to date", False)
-    return ("Upstream update available", True)
+    return ("Update available", True)
 
 
 def scan_status(
@@ -690,8 +737,10 @@ def scan_status(
 ) -> list[dict]:
     lock = {row.service: row.digest for row in read_tsv(lock_path)}
     policy = read_policy(policy_path)
-    rows: list[dict] = []
-    for service, image in load_compose_images(compose_path):
+    images = load_compose_images(compose_path)
+
+    def scan_one(item: tuple[str, str]) -> dict:
+        service, image = item
         # "manual" = an explicit per-service row; "default" = inherits the global
         # channel. The launcher uses this to offer reset only for real overrides.
         override = "manual" if service in policy else "default"
@@ -699,35 +748,48 @@ def scan_status(
         image_id = container_image_id(service)
         present = image_id is not None
         running = image_repo_digest(image_id, image) if image_id is not None else None
-        if progress:
-            print(".", end="", file=sys.stderr, flush=True)
         try:
             upstream = resolve_digest(image)
         except RuntimeError:
             upstream = "unknown"
+        if progress:
+            print(".", end="", file=sys.stderr, flush=True)
         status, updatable = derive_status(effective, present, running, upstream, lock.get(service))
-        rows.append(
-            {
-                "service": service,
-                "image": image,
-                "policy": effective,
-                "override": override,
-                "status": status,
-                "updatable": updatable,
-            }
-        )
+        return {
+            "service": service,
+            "image": image,
+            "policy": effective,
+            "override": override,
+            "status": status,
+            "updatable": updatable,
+        }
+
+    # Each row is dominated by a network `docker buildx imagetools inspect` in
+    # resolve_digest; run them concurrently (subprocess releases the GIL) so the
+    # launcher's status scan takes ~one round-trip, not the sum of ~19. Threads
+    # (not processes) keep the docker calls and stderr progress dots simple, and
+    # `.map` preserves compose order for the table.
+    workers = min(8, len(images))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        rows = list(pool.map(scan_one, images))
     if progress:
         print("", file=sys.stderr)
     return rows
 
 
-_POLICY_LABEL = {"stable": "Stable (tested)", "latest": "Upstream tag"}
+_POLICY_LABEL = {"stable": "Pinned", "latest": "Tracking tag", "pinned": "Pinned (install)"}
+
+
+def _policy_display(value: str) -> str:
+    """Normalize a policy value to a short display token (digest pin -> 'pinned')."""
+    return "pinned" if _is_pin(value) else value
 
 
 def format_status_tsv(rows: list[dict]) -> str:
     # Columns: service, policy, override(manual|default), status, updatable.
+    # A digest pin is emitted as the short token `pinned`, never the raw digest.
     return "\n".join(
-        f"{r['service']}\t{r['policy']}\t{r['override']}\t{r['status']}"
+        f"{r['service']}\t{_policy_display(r['policy'])}\t{r['override']}\t{r['status']}"
         f"\t{'true' if r['updatable'] else 'false'}"
         for r in rows
     )
@@ -736,9 +798,14 @@ def format_status_tsv(rows: list[dict]) -> str:
 def format_status_table(rows: list[dict]) -> str:
     head = ("SERVICE", "POLICY", "STATUS")
 
+    def is_pin_row(r: dict) -> bool:
+        return _is_pin(r["policy"])
+
     def label(r: dict) -> str:
-        base = _POLICY_LABEL.get(r["policy"], r["policy"])
-        return base + " *" if r["override"] == "manual" else base
+        base = _POLICY_LABEL.get(_policy_display(r["policy"]), r["policy"])
+        # The `*` footnote means "tracking its upstream tag" — the opposite of a
+        # pinned service, so pins get the label without the star.
+        return base + " *" if r["override"] == "manual" and not is_pin_row(r) else base
 
     body = [(r["service"], label(r), r["status"]) for r in rows]
     w0 = max([len(head[0])] + [len(b[0]) for b in body], default=len(head[0]))
@@ -747,9 +814,9 @@ def format_status_table(rows: list[dict]) -> str:
     lines.append(f"{'-' * w0}  {'-' * w1}  {'-' * len(head[2])}")
     for service, lbl, status in body:
         lines.append(f"{service:<{w0}}  {lbl:<{w1}}  {status}")
-    if any(r["override"] == "manual" for r in rows):
+    if any(r["override"] == "manual" and not is_pin_row(r) for r in rows):
         lines.append("")
-        lines.append("* manual override — not following the default channel")
+        lines.append("* manual override — tracking its upstream tag, not the image it was installed with")
     return "\n".join(lines)
 
 
@@ -795,6 +862,8 @@ def main() -> int:
         return run_readme_badges(args)
     if args.status or args.status_tsv:
         return run_status(args)
+    if args.record_install:
+        return record_install(pathlib.Path(args.compose), pathlib.Path(args.record_install))
     previous_path = pathlib.Path(args.previous) if args.previous else None
     current_path = pathlib.Path(args.write_current) if args.write_current else None
     snapshot_path = pathlib.Path(args.snapshot_current) if args.snapshot_current else None

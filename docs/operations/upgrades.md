@@ -17,22 +17,27 @@ recorded pin policy disagrees with the live compose tag.
 
 Compose tags remain readable and selective (ADR-24): `latest` is acceptable where the integration
 surface is low-risk or covered by tests; major/exact pins are used where an upstream major has broken
-us or the API is unstable. Stable-channel installs do not float at runtime: setup generates
-`image: tag@sha256:digest` overrides from `docs/operations/image-digests.lock`. Latest-channel installs opt
-back into raw compose tags. When an upgrade outruns what the configurator supports, the recovery
-model is **clean cutover** (Invariant 2): `docker compose down -v && ./setup.sh --full`. There is no
-in-place multi-version support.
+us or the API is unstable. `stable`/`latest` is an **install-time** choice: a Stable install
+generates `image: tag@sha256:digest` overrides from `docs/operations/image-digests.lock` (the
+versions the installer was tested against), a Latest install installs raw compose tags. Post-install
+a service stays on its installed image until the user updates it from the day-2 menu — there is no
+auto-updater. When an upgrade outruns what the configurator supports, the recovery model is **clean
+cutover** (Invariant 2): `docker compose down -v && ./setup.sh --full`. There is no in-place
+multi-version support.
 
-## User-facing per-service overrides (ADR-30)
+## User-facing per-service updates (ADR-30)
 
-The day-2 `./mediastack` → **Manage updates** menu lets a user float one service from its tested
-Stable digest to its compose tag, recorded in the gitignored `config/state/image-policy.tsv`
-(`service<TAB>stable|latest`). This is **user intent, not a maintainer signal** — it never edits
-`docs/operations/image-digests.lock`. The lock stays the tested record; `_effective_channel`
-(`scripts/setup/override.sh`) layers the per-service override on top of the global `IMAGE_CHANNEL`
-when generating the compose override. A floated service follows its **compose tag**, so the pin
-policy in the manifest below still bounds it (a `major:N` service stays within major N; an
-`exact-patch` service can't move). See `docs/operations/day-2.md` for the menu and status semantics.
+The day-2 `./mediastack` → **Manage updates** menu lets a user update one service to the newest image
+for its compose tag, recorded as a sticky `latest` override in the gitignored
+`config/state/image-policy.tsv` (`service<TAB>stable|latest|<image>@sha256:<digest>` — a digest value
+pins the service to its installed image for "Revert", #208). This is **user intent, not a
+maintainer signal** — it never edits `docs/operations/image-digests.lock`. The lock stays the tested
+record; `_effective_channel` (`scripts/setup/override.sh`) layers the per-service override on top of
+the global `IMAGE_CHANNEL` when generating the compose override. An updated service follows its
+**compose tag**, so the pin policy in the manifest below still bounds it (a `major:N` service stays
+within major N; an `exact-patch` service can't move). "Revert a service to its installed image"
+re-pins the service to its recorded install digest (falling back to clearing the override if none was
+recorded). See `docs/operations/day-2.md` for the menu and status semantics.
 
 ## Preflight a candidate image (no compose edit, test-only)
 

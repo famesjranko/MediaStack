@@ -240,11 +240,11 @@ _dry_run_install_stubs() {
     # --- day-2 launcher executors ---
     _docker_reachable()        { return 0; }
     _compose_running_summary() { printf '%s' "11/11"; }
-    _update_status_scan()      { printf 'jellyfin\tstable\t-\tOn tested Stable\tno\n'; }
+    _update_status_scan()      { printf 'jellyfin\tstable\t-\tUp to date\tfalse\n'; }
     _regenerate_override()     { _dry_run_would "regenerate docker-compose.override.yml"; return 0; }
     _recreate_service()        { _dry_run_would "recreate the '${1:-}' container"; return 0; }
     _apply_service_update()    { _dry_run_would "update the '${1:-}' container"; return 0; }
-    _reset_service_to_default(){ _dry_run_would "reset '${1:-}' to its default image"; return 0; }
+    _reset_service_to_default(){ _dry_run_would "revert '${1:-}' to its installed image"; return 0; }
     _run_setup_return()        { shift 2 2>/dev/null || true; _dry_run_would "run: ./setup.sh $*"; return 0; }
 }
 

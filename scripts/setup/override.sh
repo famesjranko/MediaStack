@@ -64,13 +64,30 @@ _image_policy_file() {
 }
 
 # Echo 'stable' or 'latest' for a service with a valid per-service policy row;
-# echo nothing otherwise. TSV: <service>\t<policy>.
+# echo nothing otherwise. TSV: <service>\t<policy> where policy is
+# stable|latest|<image>@sha256:<digest>. This reader answers "what channel" and
+# is deliberately blind to a digest pin (that is _service_pin's job).
 _service_policy() {
     local service="$1" file
     file="$(_image_policy_file)"
     [[ -f "$file" ]] || return 0
     awk -F '\t' -v service="$service" '
         $1 == service && ($2 == "stable" || $2 == "latest") {
+            print $2; found = 1; exit
+        }
+        END { if (!found) exit 1 }
+    ' "$file" 2>/dev/null || return 0
+}
+
+# Echo the per-service digest pin (<image>@sha256:...) if one is set, else
+# nothing. A pin is orthogonal to the channel: "Revert to installed image" (#208)
+# re-pins a service to its recorded install digest on any channel.
+_service_pin() {
+    local service="$1" file
+    file="$(_image_policy_file)"
+    [[ -f "$file" ]] || return 0
+    awk -F '\t' -v service="$service" '
+        $1 == service && $2 ~ /@sha256:/ {
             print $2; found = 1; exit
         }
         END { if (!found) exit 1 }
@@ -95,8 +112,11 @@ _policy_overrides_note() {
     [[ -f "$file" ]] || { printf 'none\n'; return 0; }
     while IFS=$'\t' read -r svc pol; do
         [[ -z "$svc" || "$svc" == \#* ]] && continue
-        [[ "$pol" == "stable" || "$pol" == "latest" ]] || continue
-        out+="${svc}=${pol} "
+        if [[ "$pol" == "stable" || "$pol" == "latest" ]]; then
+            out+="${svc}=${pol} "
+        elif [[ "$pol" == *@sha256:* ]]; then
+            out+="${svc}=pinned "
+        fi
     done < "$file"
     if [[ -n "$out" ]]; then printf '%s\n' "${out% }"; else printf 'none\n'; fi
 }
@@ -151,7 +171,14 @@ _validate_stable_image_lock() {
 
 _compose_image_line() {
     local service="$1"
-    local channel
+    local pin channel
+    # Precedence: an explicit digest pin (#208) wins over channel, so a reverted
+    # service holds its installed image on any channel.
+    pin="$(_service_pin "$service")"
+    if [[ -n "$pin" ]]; then
+        printf '    image: %s\n' "$pin"
+        return 0
+    fi
     channel="$(_effective_channel "$service")" || return 1
     if [[ "$channel" != "stable" ]]; then
         return 0

@@ -19,7 +19,7 @@
     "stage1_quality_confirm": "Use these library choices\\?",
     "stage1_indexers": "Enable the example public-tracker indexers\\?",
     "stage1_indexers_confirm": "Use this indexer choice\\?",
-    "stage1_image_channel": "Choose how MediaStack should update container images:",
+    "stage1_image_channel": "Which image versions should MediaStack install\\?",
     "stage1_qbt_download": "qBittorrent download limit",
     "stage1_qbt_upload": "qBittorrent upload limit",
     "stage1_qbt_port": "qBittorrent peer port",

@@ -310,5 +310,43 @@ else
     pass "image-drift summary omits the badge regen step when nothing drifted"
 fi
 
+# #208: --record-install writes the local install-digest set, and read_policy tolerates
+# a digest-pin value (normalized to the 'pinned' token by the status formatters). Run
+# in-process with the docker readers monkeypatched - the real docker path is exercised
+# end-to-end by the DinD fresh-install scenario.
+rec_out=$(python3 - "$REPO_ROOT" "$TMP_DIR" <<'PY' 2>&1
+import sys, pathlib, importlib.util
+repo, tmp = sys.argv[1], pathlib.Path(sys.argv[2])
+spec = importlib.util.spec_from_file_location("idrift", f"{repo}/scripts/image-drift.py")
+m = importlib.util.module_from_spec(spec)
+sys.modules["idrift"] = m
+spec.loader.exec_module(m)
+
+# read_policy accepts stable/latest AND a <image>@sha256 pin.
+pol = tmp / "policy.tsv"
+pol.write_text("# h\nsonarr\tlatest\nradarr\tlscr.io/x/radarr:latest@sha256:" + "a" * 64 + "\n")
+p = m.read_policy(pol)
+print("POLICY_OK" if p.get("sonarr") == "latest" and m._is_pin(p.get("radarr", "")) else "POLICY_BAD")
+
+# record_install writes service<TAB>image<TAB>digest for each running service (skips
+# services with no resolvable local digest).
+m.load_compose_images = lambda _p: [("sonarr", "lscr.io/x/sonarr:latest"),
+                                     ("radarr", "lscr.io/x/radarr:latest"),
+                                     ("ghost", "lscr.io/x/ghost:latest")]
+m.container_image_id = lambda s: None if s == "ghost" else "img-" + s
+m.image_repo_digest = lambda i, img: "sha256:" + "b" * 64
+out = tmp / "image-install.tsv"
+m.record_install(pathlib.Path("docker-compose.yml"), out)
+rows = [l for l in out.read_text().splitlines() if l and not l.startswith("#")]
+ok = (len(rows) == 2
+      and all(len(r.split("\t")) == 3 for r in rows)
+      and rows[0].startswith("sonarr\tlscr.io/x/sonarr:latest\tsha256:")
+      and not any(r.startswith("ghost") for r in rows))
+print("RECORD_OK" if ok else "RECORD_BAD:" + repr(rows))
+PY
+)
+assert_contains "$rec_out" "POLICY_OK" "image-drift read_policy accepts a digest pin value"
+assert_contains "$rec_out" "RECORD_OK" "image-drift --record-install writes the service/image/digest set, skipping undigestable services"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

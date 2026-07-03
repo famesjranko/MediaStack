@@ -65,7 +65,8 @@ config/                             Live service configs (all gitignored — run
                                     install if absent; templates survive uninstall/full-wipe.
   fail2ban/, homepage/, jackett/, qbittorrent/   Live copies seeded from examples/defaults/ (gitignored)
   state/                            Runtime state snapshots (gitignored)
-    image-policy.tsv                Per-service image overrides — Manage updates menu (ADR-30)
+    image-policy.tsv                Per-service update overrides + digest pins — Manage updates menu (ADR-30)
+    image-install.tsv               Per-service install digests — "Revert to installed image" target (ADR-30 #208)
 
 tests/
   run.sh                            Test runner: ./tests/run.sh [scenario] [--keep] [--no-cache]

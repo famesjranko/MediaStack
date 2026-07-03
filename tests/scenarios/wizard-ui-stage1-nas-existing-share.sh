@@ -51,7 +51,7 @@ wizard_share_case_steps() {
   {\"send\": \"\\n\"},
   {\"expect\": \"Use this indexer choice[?]\"},
   {\"send\": \"1\\n\"},
-  {\"expect\": \"Choose how MediaStack should update container images:\"},
+  {\"expect\": \"Which image versions should MediaStack install[?]\"},
   {\"send\": \"1\\n\"},
   {\"expect\": \"qBittorrent download limit\"},
   {\"send\": \"\\n\"},

@@ -33,52 +33,53 @@ Flow (`scripts/update.sh`):
 
 The launcher's post-install **"Manage updates"** screen is the day-2 update surface for
 non-technical users — per-image visibility and selective control, without SSH or Portainer
-(ADR-30). It is channel-agnostic in detection and policy-aware in apply.
+(ADR-30). `stable`/`latest` is an **install-time** choice only (which image versions the installer
+was tested against); post-install every update is a uniform, manual opt-in, so detection and apply
+are fully channel-agnostic — an update is an update.
 
 **Status scan.** `python3 scripts/image-drift.py --status` (table) / `--status-tsv` (machine)
-reports, per service, a **Policy** (`Stable (tested)` / `Upstream tag`, with `*` marking a manual
-override) and a **Status**:
+reports, per service, a **Policy** (`Pinned` = still on its installed digest / `Tracking tag` =
+following its compose tag, with `*` marking a service you've updated) and a **Status**:
 
 | Status | Meaning |
 |---|---|
-| `On tested Stable` | running the maintainer-tested digest; nothing newer upstream |
-| `Tested Stable update available` | the lock advanced (after `git pull`) — apply to get the tested digest |
-| `Untested upstream update available` | on the tested digest, but upstream moved past it |
-| `Up to date` | upstream-tag service already on the newest tag digest |
-| `Upstream update available` | upstream-tag service has a newer tag digest |
+| `Up to date` | running the newest image for its compose tag |
+| `Update available` | a newer image exists for its compose tag than the one running |
 | `Not installed` | no container exists for this service |
 | `Unknown local digest` | container running, but its repo digest can't be resolved (locally built/imported) |
 | `Unknown (offline)` | registry unreachable, can't compare upstream |
 
-The TSV is `service<TAB>policy<TAB>override<TAB>status<TAB>updatable`, where `override` is `manual`
-(explicit per-service row) or `default` (inherits the global channel). The running digest is read
-from the **image object** (`docker image inspect … RepoDigests`, repo-matched), not the container;
-both it and the upstream digest are manifest-list digests, so the comparison is multi-arch safe. The
-command reads `IMAGE_CHANNEL` from the exported env (the launcher sources `.env`) or, when run
-directly, from the `.env` beside the compose file — so a Latest install is labelled correctly either
-way.
+A freshly Stable-installed box shows most services as `Update available` — the pinned install
+digests trail the moving upstream tags, and applying is entirely up to you. The TSV is
+`service<TAB>policy<TAB>override<TAB>status<TAB>updatable`, where `override` is `manual` (a service
+you've updated — an explicit per-service row) or `default`. The running digest is read from the
+**image object** (`docker image inspect … RepoDigests`, repo-matched), not the container; both it
+and the upstream digest are manifest-list digests, so the comparison is multi-arch safe.
 
 **Menu actions.**
-- **Update a service / Update all upstream-tag services** — float the service(s) to their compose
-  tag. On a Stable install this records a sticky per-service `latest` override in
-  `config/state/image-policy.tsv` and labels them "outside the tested Stable baseline." A service
-  showing a *tested* Stable update instead applies in-channel (no float). "Update all" targets only
-  services with an *upstream* (ahead-of-tested) update and **excludes WireGuard**; a single
-  WireGuard update needs an extra confirm (it can disconnect the VPN client running it).
-- **Pull tested Stable updates (recommended)** — runs `scripts/update.sh` (the safe path that pulls
-  new *tested* digests after a repo update).
-- **Reset a service to the default channel** — clears the service's explicit override so it follows
-  the global channel again (re-pins to the lock under Stable). Lists only services with a manual
-  override (excluding `Not installed`).
-- **Switch default channel** — toggles `IMAGE_CHANNEL`; affects only services without an override.
+- **Update a service / Update all** — pull the newest image for the service(s). A service still on
+  its installed (pinned) digest floats to its compose tag — a sticky per-service `latest` override
+  in `config/state/image-policy.tsv` — while one already tracking its tag just pulls the newer
+  digest. "Update all" covers every updatable service and **excludes WireGuard**; a single WireGuard
+  update needs an extra confirm (it can disconnect the VPN client running it).
+- **Revert a service to its installed image** — re-pins the service to the digest it was installed
+  running (recorded in `config/state/image-install.tsv`), on **any** channel — written as a per-service
+  digest pin in `config/state/image-policy.tsv`. Lists only services you've updated (a manual override),
+  excluding `Not installed`. If the installed image is no longer available upstream the recreate is
+  rolled back onto the service's previous cached image rather than left down.
+- **Re-check for updates now** — re-runs the registry scan.
 
-Update and reset only **recreate a service that is already running**; a stopped service has its new
+To change the global install channel after install, re-run the installer (`./mediastack` → Install)
+and pick the other channel; there is no day-2 channel toggle. The CLI `scripts/update.sh` remains a
+bulk re-pull per the current override.
+
+Update and revert only **recreate a service that is already running**; a stopped service has its new
 image pulled and staged but is **not started** — the change applies the next time the stack starts.
 
 Every apply regenerates `docker-compose.override.yml` (preserving GPU/mem/NAS settings), runs the
 storage guard, and recreates only the touched service (no `--remove-orphans`). "latest" follows the
 **compose tag**, so ADR-24 pins hold: `npm:2`/`uptime-kuma:2`/`wireguard:15` stay within their
-pinned major — floating WireGuard pulls the newest 15.x but never v14 or a future v16. The lock
+pinned major — updating WireGuard pulls the newest 15.x but never v14 or a future v16. The lock
 file is never edited by this path.
 
 ## `./mediastack` → Manage hardware transcoding

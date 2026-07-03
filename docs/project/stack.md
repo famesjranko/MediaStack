@@ -135,7 +135,7 @@ Generator: /project-stack (audit of existing codebase)
 # Optional: also prune dangling images host-wide after the update
 ./scripts/update.sh --prune
 
-# Day-2 per-service updates: ./mediastack → "Manage updates" (status, per-service, channel; ADR-30)
+# Day-2 per-service updates: ./mediastack → "Manage updates" (status, per-service updates; ADR-30)
 # Day-2 change quality profile: ./mediastack → "Features & settings" → "Change quality profile" (resolution × size, renamed in place, no orphan)
 # Day-2 uninstall: ./mediastack → "Uninstall MediaStack" (transactional teardown; removes only recorded MediaStack host changes; data/ and config/ preserved)
 # Per-service update-availability scan (table / TSV):

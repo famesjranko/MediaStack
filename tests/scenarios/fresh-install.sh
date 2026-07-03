@@ -22,6 +22,7 @@ source tests/assertions/port_check.sh
 source tests/assertions/uptime_kuma.sh
 source tests/assertions/drift.sh
 source tests/assertions/beszel.sh
+source tests/assertions/install_digest.sh
 
 run_scenario() {
     # ------------------------------------------------------------------
@@ -208,4 +209,5 @@ PYEOF
     assert_port_check
     assert_drift_regression
     assert_uptime_kuma_idempotent
+    assert_install_digest_recorded
 }

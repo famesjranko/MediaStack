@@ -552,30 +552,30 @@ Update all service images:
 Or, without the terminal, run `./mediastack` and choose **Manage updates**. It shows each
 container with a colour-coded status (up to date / update available / not installed), and lets you:
 
-- **Update a service** or **Update all** — pull newer images for individual containers, or all of them.
-- **Pull tested Stable updates** — the recommended safe path (same as `./scripts/update.sh`).
-- **Reset a service to the default channel** — undo a manual update and go back to the default (the tested Stable image).
-- **Switch default channel** between Stable and Upstream tags.
+- **Update a service** or **Update all** — pull the newest image for individual containers, or all of them.
+- **Revert a service to its installed image** — undo an update and go back to the image the service was installed with.
+- **Re-check for updates now** — refresh the status against the registries.
 
-Updating one container ahead of the tested set is sticky and clearly flagged as "outside the tested
-Stable baseline" until you return it to Stable. Updating WireGuard asks for an extra confirmation
-(it briefly restarts remote access) and is skipped by "Update all" unless you opt in — run it from
-your LAN if you rely on the VPN for access.
+Updating a container moves it off the image it was installed with and is sticky until you revert it.
+Updating WireGuard asks for an extra confirmation (it briefly restarts remote access) and is skipped
+by "Update all" unless you opt in — run it from your LAN if you rely on the VPN for access.
 
 Hardware transcoding has its own day-2 launcher path: run `./mediastack` and choose
 **Manage hardware transcoding (GPU)**. That is where NVIDIA users can move between the
 Standard driver and **Unlock NVENC limit**; it is separate from image updates because it
 changes host GPU drivers and may require a reboot.
 
-The setup wizard asks which image channel to use:
+The setup wizard asks which image versions to **install** with. This is an install-time choice, not
+an auto-updater — nothing updates on its own, and afterward updates are the same either way (via
+**Manage updates**):
 
-| Channel | Default | Behavior |
+| Channel | Default | Installs with |
 |:--------|:--------|:---------|
-| Stable | Yes | Uses MediaStack-tested digests from [`docs/operations/image-digests.lock`](docs/operations/image-digests.lock). |
-| Latest | No | Uses the current upstream tags from `docker-compose.yml`. |
+| Stable | Yes | MediaStack-tested digests from [`docs/operations/image-digests.lock`](docs/operations/image-digests.lock) — the versions the installer was verified against. |
+| Latest | No | The current upstream tags from `docker-compose.yml`. |
 
 > [!IMPORTANT]
-> Stable is recommended for most users. Latest is useful if you deliberately want upstream image changes before MediaStack maintainers have accepted them. MediaStack does not provide automatic rollback; the default update path leaves old dangling image layers unless you prune, which can help with manual recovery if an upstream release breaks.
+> Stable is recommended for most users: it installs the image versions the installer/configurator was tested end-to-end against. Latest installs the newest upstream tags straight from the registries — useful if you deliberately want the newest images at install time. Either way, to change the install channel later, re-run the installer and pick the other one. MediaStack does not provide automatic rollback; updates leave old dangling image layers unless you prune, which can help with manual recovery if an upstream release breaks.
 
 A maintainer-run, scheduled **Image Drift Alert** check compares compose image tags against the digests recorded in [`docs/operations/image-digests.lock`](docs/operations/image-digests.lock) and flags any that moved, so maintainers know to run the relevant local DinD preflight before accepting an update. It does not pull layers, start containers, or run DinD. It is not something a Stable-channel install runs itself — Stable-channel users simply receive accepted image updates after updating the repo and running `./scripts/update.sh`.
 

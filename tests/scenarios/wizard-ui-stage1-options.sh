@@ -55,7 +55,7 @@ BASH"
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "Choose SMB share scope:" "wizard-ui stage1 options: SMB scope menu shown"
     assert_contains "$transcript" "Full system" "wizard-ui stage1 options: full-system scope option shown"
-    assert_contains "$transcript" "Choose how MediaStack should update container images:" "wizard-ui stage1 options: image channel menu shown"
+    assert_contains "$transcript" "Which image versions should MediaStack install?" "wizard-ui stage1 options: image channel menu shown"
 
     assert_eq "true"   "$(env_get BAZARR_ENABLED)"          "wizard-ui stage1 options: Bazarr enabled"
     assert_eq "true"   "$(env_get SMB_ENABLED)"             "wizard-ui stage1 options: SMB enabled"

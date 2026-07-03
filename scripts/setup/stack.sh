@@ -415,11 +415,7 @@ pull_images() {
 
     if (( total > 0 && present == total )); then
         log_ok "All ${total} images already present locally - skipping pull"
-        if [[ "$image_channel" == "latest" ]]; then
-            log_info "Latest channel selected - choose Manage updates from the menu to refresh upstream tags."
-        else
-            log_info "Stable channel selected - update MediaStack, then choose Manage updates from the menu to pull newer tested digests."
-        fi
+        log_info "To check for and apply image updates later, run ./mediastack -> Manage updates."
         return 0
     elif (( present > 0 && present < total )); then
         log_info "Pulling ${image_channel} channel container images (${present}/${total} already present, fetching $((total - present)) new)..."
@@ -445,11 +441,7 @@ pull_images() {
     log_warn "Some images could not be pulled after ${max_attempts} attempts."
     log_warn "Continuing with cached images (if any). Services with missing images will not start."
     log_info "You can retry manually later: docker compose ${profiles[*]} pull --policy missing"
-    if [[ "$image_channel" == "latest" ]]; then
-        log_info "Latest channel selected - retry from Manage updates in the menu when registry access recovers."
-    else
-        log_info "Stable channel selected - retry after updating MediaStack or restoring registry access."
-    fi
+    log_info "Or, once registry access recovers, run ./mediastack -> Manage updates."
     return 0
 }
 
