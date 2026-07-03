@@ -10,12 +10,13 @@ run_scenario() {
     wizard_stage1_write_base_fixture "$fixture" "wizard-nas-edit-key"
     dind_exec "cat >>$fixture <<'BASH'
 mkdir -p /tmp/ms-wizard-nas-edit
-storage_mount_nfs() {
+storage_probe_nas() {
     local attempts=0
     [[ -f /tmp/wizard-nas-edit-attempts ]] && attempts=\$(cat /tmp/wizard-nas-edit-attempts)
     attempts=\$((attempts + 1))
     printf '%s\n' \$attempts > /tmp/wizard-nas-edit-attempts
-    [[ \${STORAGE_NFS_HOST:-} == 127.0.0.2 ]]
+    [[ \${STORAGE_NFS_HOST:-} == 127.0.0.2 ]] || return 1
+    _STORAGE_PROBE_CLASS=empty
 }
 BASH"
     wizard_stage1_append_runner "$fixture"
@@ -25,28 +26,33 @@ BASH"
         stage1_admin_username ENTER \
         stage1_admin_email owner@edit-retry.test \
         stage1_admin_password WizardAdminPw123 \
-        stage1_admin_password_confirm WizardAdminPw123 \
+        stage1_admin_confirm 1 \
         stage1_storage_location 2 \
         stage1_nas_local_mountpoint /tmp/ms-wizard-nas-edit \
         stage1_nas_host 127.0.0.1 \
         stage1_nas_nfs_export /exports/bad \
-        stage1_nas_nfs_options ENTER \
-        stage1_nas_sentinel ENTER \
         stage1_nas_mount_failed 1 \
         stage1_nas_local_mountpoint /tmp/ms-wizard-nas-edit \
         stage1_nas_host 127.0.0.2 \
         stage1_nas_nfs_export /exports/good \
-        stage1_nas_nfs_options ENTER \
-        stage1_nas_sentinel ENTER \
         stage1_nas_share_empty NONE \
+        stage1_nas_nfs_options_confirm ENTER \
+        stage1_nas_watchdog ENTER \
+        stage1_nas_review 1 \
         stage1_bazarr ENTER \
+        stage1_subtitle_confirm 1 \
         stage1_smb ENTER \
+        stage1_smb_confirm 1 \
         stage1_quality_resolution 1 stage1_quality_size 1 \
+        stage1_quality_confirm 1 \
         stage1_indexers ENTER \
+        stage1_indexers_confirm 1 \
         stage1_image_channel 1 \
         stage1_qbt_download ENTER \
         stage1_qbt_upload ENTER \
         stage1_qbt_port ENTER \
+        stage1_qbit_confirm 1 \
+        stage1_security_ufw ENTER stage1_security_hardening ENTER \
         stage1_proceed 1
 
     wizard_stage1_run_pty "wizard-ui stage1 NAS edit retry" "$fixture" "$steps" "$plain_log" || return 1

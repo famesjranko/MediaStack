@@ -4,6 +4,10 @@ existing_nuke_reset_config_marker() {
     dind_exec "python3 - <<'PY'
 from pathlib import Path
 p = Path('config.yml')
+# config.yml is gitignored (seeded from its template on install); dind_copy_repo
+# does not carry it in on a clean checkout, so seed it here before resetting.
+if not p.exists():
+    p.write_text(Path('config/examples/config.yml').read_text())
 text = p.read_text()
 text = text.replace('wizard_completed: true', 'wizard_completed: false')
 p.write_text(text)

@@ -55,11 +55,15 @@ scripts/
     main.sh                         configure_<svc>() — required
     templates/*.json                Static API payloads (no variable substitution)
 
-config/                             Pre-seeded configs tracked in git
-  examples/                         Optional example config fragments, not enabled by default
-  fail2ban/{action,filter,jail}.d/  Jails, regex filters, iptables action
-  jackett/Jackett/                  ServerConfig.json (FlareSolverr URL)
-  qbittorrent/qBittorrent/          qBittorrent.conf + categories.json
+config/                             Live service configs (all gitignored — runtime)
+  examples/                         Tracked-in-git config templates
+    defaults/                       Pre-seed templates: fail2ban/{action,filter,jail}.d,
+                                    homepage/*.yaml, jackett/Jackett/ServerConfig.json,
+                                    qbittorrent/qBittorrent/{qBittorrent.conf,categories.json}.
+                                    create_config_dirs (seed_config_from_templates in
+                                    scripts/setup/stack.sh) copies each to config/<svc>/ on
+                                    install if absent; templates survive uninstall/full-wipe.
+  fail2ban/, homepage/, jackett/, qbittorrent/   Live copies seeded from examples/defaults/ (gitignored)
   state/                            Runtime state snapshots (gitignored)
     image-policy.tsv                Per-service image overrides — Manage updates menu (ADR-30)
 
@@ -152,4 +156,4 @@ scenarios).
 - Feature touches 2+ services → `scripts/flows/*.sh`, not inline in a service
 - New shared Sonarr/Radarr pattern → `scripts/lib/arr/`
 - New test scenario → `tests/scenarios/<name>.sh` + register in run.sh case statement
-- Pre-seeded config for a new service → `config/<svc>/` + update .gitignore boundary
+- Pre-seeded config for a new service → add the template under `config/examples/defaults/<svc>/…` (tracked) and gitignore the live `config/<svc>/` copy; `seed_config_from_templates` copies it on install automatically

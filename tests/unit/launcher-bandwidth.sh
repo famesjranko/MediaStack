@@ -42,7 +42,7 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   submenu_features >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$render_out" "Adjust bandwidth limits (qBittorrent)" \
+assert_contains "$render_out" "Adjust bandwidth:" \
   "features: bandwidth option is listed"
 
 dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -51,7 +51,7 @@ dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
   ui_choose(){ echo "Adjust bandwidth limits (qBittorrent)"; }
-  action_adjust_bandwidth(){ echo DISPATCH_BANDWIDTH; }
+  action_adjust_bandwidth(){ echo DISPATCH_BANDWIDTH; exit 0; }
   BAZARR_ENABLED=false; SMB_ENABLED=false; PUBLIC_INDEXERS_ENABLED=false
   submenu_features 2>&1
 ' 2>&1)

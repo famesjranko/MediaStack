@@ -19,6 +19,8 @@ _wizard_load_existing_env() {
     _WIZ_PREV_UL=""
     _WIZ_PREV_BAZARR=""
     _WIZ_PREV_SMB=""
+    _WIZ_PREV_UFW=""
+    _WIZ_PREV_HARDENING=""
     _WIZ_PREV_SMB_SHARE_SCOPE=""
     _WIZ_PREV_TORRENT_PORT=""
     _WIZ_PREV_IMAGE_CHANNEL=""
@@ -32,6 +34,7 @@ _wizard_load_existing_env() {
     _WIZ_PREV_STORAGE_NFS_EXPORT=""
     _WIZ_PREV_STORAGE_NFS_OPTS=""
     _WIZ_PREV_STORAGE_SENTINEL=""
+    _WIZ_PREV_STORAGE_WATCHDOG=""
 
     if [[ -f "$SCRIPT_DIR/.env" ]]; then
         set -a
@@ -48,6 +51,8 @@ _wizard_load_existing_env() {
         _WIZ_PREV_UL="${QBT_UL_LIMIT:-}"
         _WIZ_PREV_BAZARR="${BAZARR_ENABLED:-}"
         _WIZ_PREV_SMB="${SMB_ENABLED:-}"
+        _WIZ_PREV_UFW="${UFW_ENABLED:-}"
+        _WIZ_PREV_HARDENING="${HARDENING_ENABLED:-}"
         _WIZ_PREV_SMB_SHARE_SCOPE="${SMB_SHARE_SCOPE:-}"
         _WIZ_PREV_TORRENT_PORT="${TORRENT_PORT:-}"
         _WIZ_PREV_IMAGE_CHANNEL="${IMAGE_CHANNEL:-}"
@@ -61,6 +66,7 @@ _wizard_load_existing_env() {
         _WIZ_PREV_STORAGE_NFS_EXPORT="${STORAGE_NFS_EXPORT:-}"
         _WIZ_PREV_STORAGE_NFS_OPTS="${STORAGE_NFS_OPTS:-}"
         _WIZ_PREV_STORAGE_SENTINEL="${STORAGE_SENTINEL:-}"
+        _WIZ_PREV_STORAGE_WATCHDOG="${STORAGE_WATCHDOG:-}"
     fi
 }
 
@@ -72,13 +78,23 @@ _wizard_apply_settings() {
     local public_indexers="${5:-false}"
 
     write_env
-    python3 "$SCRIPT_DIR/scripts/setup/wizard_apply.py" \
+    # wizard_apply.py prints human-readable result lines to stdout (quality
+    # profile, subtitle languages, indexer preset). Route them through log_ok so
+    # they carry the same ✓ glyph/colour as the rest of the wizard output rather
+    # than appearing as naked lines. stderr (errors) is left untouched so real
+    # failures still surface on their own path.
+    local _apply_out _apply_rc=0 _line
+    _apply_out=$(python3 "$SCRIPT_DIR/scripts/setup/wizard_apply.py" \
         --resolution "$resolution" \
         --size "$size" \
         --languages "$subtitle_langs" \
         --bitrate-limit "$bitrate_limit" \
         --public-indexers "$public_indexers" \
-        --config "$SCRIPT_DIR/config.yml"
+        --config "$SCRIPT_DIR/config.yml") || _apply_rc=$?
+    while IFS= read -r _line; do
+        [[ -n "$_line" ]] && log_ok "$_line"
+    done <<< "$_apply_out"
+    return $_apply_rc
 }
 
 _discovery_ip_ok=false
@@ -98,15 +114,13 @@ _wizard_run_discovery() {
         ui_log warn "Could not detect public IP (no internet or behind CGNAT)."
     fi
 
-    if [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" || -n "$(command -v speedtest-cli 2>/dev/null)" ]]; then
-        if ui_spin_fg "Running speed test (15-30 seconds)..." net_run_speedtest; then
-            _discovery_speed_ok=true
-            ui_log ok "Download: ${_NET_DL_MBPS} Mbps | Upload: ${_NET_UL_MBPS} Mbps"
-        else
-            ui_log warn "Speed test failed - you can set qBittorrent limits manually."
-        fi
+    # The speed test uses curl (always present) with a librespeed-cli fallback,
+    # so it is always attempted; net_run_speedtest degrades gracefully on failure.
+    if ui_spin_fg "Measuring your connection speed (~15s)..." net_run_speedtest; then
+        _discovery_speed_ok=true
+        ui_log ok "Download: ${_NET_DL_MBPS} Mbps | Upload: ${_NET_UL_MBPS} Mbps"
     else
-        ui_log skip "speedtest-cli not installed - qBittorrent limits will default to manual values."
+        ui_log warn "Speed test unavailable - you can set qBittorrent limits manually."
     fi
 
     if $_discovery_ip_ok; then
@@ -144,6 +158,7 @@ source "$SCRIPT_DIR/scripts/setup/stages/stage2.sh"
 source "$SCRIPT_DIR/scripts/setup/stages/stage3.sh"
 
 run_wizard() {
+    seed_root_config   # seed live config.yml from template (defined in env_gen.sh)
     # Self-skip only when config.yml, .env, and the Stage 1 completion marker
     # all agree. `_wizard_apply_settings` writes `wizard_completed: true`
     # before Stage 1 starts containers and proves Jellyfin is usable; if setup
@@ -156,7 +171,7 @@ with open('$SCRIPT_DIR/config.yml') as f:
 exit(0 if c.get('wizard_completed') else 1)
 " 2>/dev/null; then
         if grep -Eq '^STAGE_1_COMPLETE=1[[:space:]]*$' "$SCRIPT_DIR/.env"; then
-            log_skip "Setup wizard already completed (delete 'wizard_completed: true' from config.yml to re-run)"
+            log_skip "Setup wizard already completed (re-run setup to reconfigure)"
             return 0
         fi
         log_warn "Setup wizard marker exists but Stage 1 is not complete; resuming Stage 1."
@@ -191,7 +206,7 @@ exit(0 if c.get('wizard_completed') else 1)
     run_stage2 || stage2_rc=$?
     if (( stage2_rc != 0 )); then
         if stage3_pending_nvidia_reboot_same_boot; then
-            log_warn "NVIDIA hardware transcoding is prepared and still needs a reboot. Run ./setup.sh --transcoding when you are ready to finish it."
+            log_warn "NVIDIA hardware transcoding is prepared and still needs a reboot. Choose Manage hardware transcoding (GPU) from the menu when you are ready to finish it."
         fi
         return "$stage2_rc"
     fi

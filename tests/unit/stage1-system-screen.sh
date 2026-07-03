@@ -15,9 +15,9 @@ source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/lib/ui.sh"
 source "$REPO_ROOT/scripts/setup/checks.sh"
 source "$REPO_ROOT/scripts/setup/wizard.sh"
-# stack.sh defines gpu_brand_label, used by _stage1_show_system for the GPU row's
+# gpu.sh defines gpu_brand_label, used by _stage1_show_system for the GPU row's
 # brand casing (production sources it via setup.sh before Stage 1 runs).
-source "$REPO_ROOT/scripts/setup/stack.sh"
+source "$REPO_ROOT/scripts/setup/gpu.sh"
 
 set +e
 set +u
@@ -51,13 +51,14 @@ _stage1_show_system
 assert_contains "$SCREEN_CAPTURE" "Detected your system" "stage1-show-system: title"
 assert_contains "$SCREEN_CAPTURE" "Hostname=" "stage1-show-system: hostname row"
 assert_contains "$SCREEN_CAPTURE" "LAN IP=192.168.1.10" "stage1-show-system: LAN IP row"
+assert_contains "$SCREEN_CAPTURE" "Router (gateway)=" "stage1-show-system: router/gateway row"
 assert_contains "$SCREEN_CAPTURE" "Public IP=203.0.113.42" "stage1-show-system: public IP row"
 assert_contains "$SCREEN_CAPTURE" "Docker version=27.0.1" "stage1-show-system: docker version row"
 assert_contains "$SCREEN_CAPTURE" "GPU=Intel" "stage1-show-system: GPU row"
 assert_contains "$SCREEN_CAPTURE" "Timezone=Etc/UTC" "stage1-show-system: timezone row"
 
 line_count=$(printf '%s\n' "$SCREEN_CAPTURE" | awk 'END {print NR}')
-assert_eq "10" "$line_count" "stage1-show-system: title + 9 rows"
+assert_eq "11" "$line_count" "stage1-show-system: title + 10 rows"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

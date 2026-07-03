@@ -117,9 +117,7 @@ if not general_applied:
 if changed:
     with open(config_path, 'w') as f:
         yaml.safe_dump(c, f, sort_keys=False)
-
-print('changed' if changed else 'unchanged')
-" 2>/dev/null
+" >/dev/null 2>&1
         local write_result=$?
 
         if [[ "$write_result" -ne 0 ]]; then
@@ -153,6 +151,10 @@ print('changed' if changed else 'unchanged')
         fi
 
         if $needs_restart; then
+            # Bazarr reads sonarr/radarr + general settings from config.yaml only
+            # at startup (no live API for these), so a restart is required — hence
+            # the second "Waiting for Bazarr" below.
+            log_info "Restarting Bazarr to apply settings..."
             docker compose restart bazarr >/dev/null 2>&1
             wait_for_service "Bazarr" "$bazarr_url"
         fi

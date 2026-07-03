@@ -205,7 +205,7 @@ else:
 ' 2>/dev/null)
         case "${lib_status%%$'\t'*}" in
             match)
-                log_skip "Jellyfin library '$lib_name' already matches config.yml"
+                log_skip "Jellyfin library '$lib_name' already matches your settings"
                 continue
                 ;;
             drift)
@@ -284,7 +284,7 @@ print(c.get('HardwareAccelerationType', ''))" 2>/dev/null)
 
     local stage3_state="${STAGE_3_GPU_STATE:-}"
     if [[ "$stage3_state" == "complete" && "$current_accel" != "$accel_type" ]]; then
-        log_warn "Jellyfin transcoding is '$current_accel', expected '$accel_type' from completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; run ./setup.sh --transcoding to re-verify and apply."
+        log_warn "Jellyfin transcoding is '$current_accel', expected '$accel_type' from completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; choose Manage hardware transcoding (GPU) -> Configure or change hardware transcoding to re-verify and apply."
         return 0
     fi
 
@@ -372,7 +372,7 @@ if changed:
         return 0
     fi
     if [[ "$stage3_state" == "complete" ]]; then
-        log_warn "Jellyfin hardware transcoding settings differ from the completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; run ./setup.sh --transcoding to re-verify and apply."
+        log_warn "Jellyfin hardware transcoding settings differ from the completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; choose Manage hardware transcoding (GPU) -> Configure or change hardware transcoding to re-verify and apply."
         return 0
     fi
     encoding_body=$(echo "$encoding_result" | tail -n +2)
@@ -651,7 +651,7 @@ else:
             if [[ "$published_url_changed" == "true" ]]; then
                 log_info "Recreating Jellyfin for PublishedServerUrl change..."
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
-                    log_warn "Failed to recreate Jellyfin - check 'docker compose logs jellyfin'"
+                    log_warn "Failed to recreate Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
                 fi
                 for _ in $(seq 1 30); do
                     curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
@@ -670,7 +670,7 @@ else:
             if [[ "$published_url_changed" == "true" ]]; then
                 log_info "Recreating Jellyfin for PublishedServerUrl change..."
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
-                    log_warn "Failed to recreate Jellyfin - check 'docker compose logs jellyfin'"
+                    log_warn "Failed to recreate Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
                 fi
                 for _ in $(seq 1 30); do
                     curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
@@ -718,12 +718,12 @@ else:
             sleep 2
             log_info "Recreating Jellyfin for networking and PublishedServerUrl changes to take effect..."
             if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
-                log_warn "Failed to recreate Jellyfin - check 'docker compose logs jellyfin'"
+                log_warn "Failed to recreate Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
             fi
         else
             log_info "Restarting Jellyfin for networking changes to take effect..."
             if ! docker compose restart jellyfin >/dev/null 2>&1; then
-                log_warn "Failed to restart Jellyfin - check 'docker compose logs jellyfin'"
+                log_warn "Failed to restart Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
             fi
         fi
         for _ in $(seq 1 30); do

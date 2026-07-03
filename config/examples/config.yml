@@ -127,22 +127,23 @@ quality_definitions:
     Bluray-1080p:  { min: 10.0, preferred: 65.0, max: 90.0 }
 
 # ---------------------------------------------------------------------------
-# Custom Formats — TRaSH Guides scoring
+# Custom Formats — release-quality scoring
 # ---------------------------------------------------------------------------
-# Scores custom release attributes within a quality tier. Higher scores are
-# preferred; negative scores penalise. -10000 effectively blocks.
-# Set to 0 to disable a format's scoring (format still exists but is neutral).
-# Delete this section to skip custom format configuration entirely.
+# Scores release attributes to STEER selection within a quality tier. Higher
+# scores are preferred; negative scores penalise but do NOT block. No default
+# format hard-blocks — file size is gated by the quality_definitions bounds,
+# not here. (-10000 still hard-blocks if you want it; none does by default.)
+# Set a score to 0 to make a format neutral. Delete this section to skip.
 #
 # Format definitions: scripts/lib/arr/custom_formats.yml
 custom_formats:
   "Repack/Proper":  5
-  "x264":           10
-  "x265 (HD)":      -25
-  "BR-DISK":        -10000
-  "LQ":             -10000
-  "No-RlsGroup":    -25
-  "Obfuscated":     -25
+  "x264":           0
+  "x265 (HD)":      0
+  "BR-DISK":        0
+  "LQ":             -100
+  "No-RlsGroup":    -10
+  "Obfuscated":     -10
 
 # ---------------------------------------------------------------------------
 # Disk Space Protection

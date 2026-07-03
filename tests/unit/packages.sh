@@ -24,6 +24,10 @@ log_info()  { :; }
 log_warn()  { :; }
 log_error() { :; }
 
+# packages.sh wraps apt calls in ui_spin (defined in ui.sh, not sourced here).
+# Run the wrapped command in-process so the sudo shim records the apt install.
+ui_spin() { shift; "$@"; }
+
 PACKAGE_CALLS=()
 
 reset_package_shims() {

@@ -36,12 +36,20 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
   BAZARR_ENABLED=true; SMB_ENABLED=false; PUBLIC_INDEXERS_ENABLED=false
+  UFW_ENABLED=false; HARDENING_ENABLED=true
   submenu_features >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
 assert_contains "$render_out" "Subtitles (Bazarr): ON"  "features: bazarr state ON read from .env"
 assert_contains "$render_out" "File sharing (SMB): OFF" "features: smb state OFF read from .env"
 assert_contains "$render_out" "Search indexers: OFF"    "features: indexers state OFF read from .env"
+assert_contains "$render_out" "Firewall (UFW): OFF"     "features: ufw state OFF read from .env"
+assert_contains "$render_out" "System hardening: ON"    "features: hardening state ON read from .env"
+if grep -q "NAS storage watchdog" <<<"$render_out"; then
+  fail "features: NAS watchdog hidden on non-NAS install"
+else
+  pass "features: NAS watchdog hidden on non-NAS install"
+fi
 if grep -q "Add remote access" <<<"$render_out"; then
   fail "features: remote add hidden when already configured"
 else
@@ -72,6 +80,20 @@ if grep -q "Add hardware transcoding" <<<"$adds_out"; then
 else
   pass "features: GPU add NOT offered here even when transcoding predicate is true (single top-level home)"
 fi
+
+# The NAS storage watchdog toggle appears only on NAS installs (STORAGE_MODE=nas).
+nas_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  LABELS=$(mktemp)
+  render_banner(){ :; }
+  ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Back"; }
+  recovery_menu_remote_available(){ return 1; }
+  recovery_menu_transcoding_available(){ return 1; }
+  STORAGE_MODE=nas; STORAGE_WATCHDOG=true
+  submenu_features >/dev/null 2>&1
+  tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
+' 2>&1)
+assert_contains "$nas_out" "NAS storage watchdog: ON" "features: NAS watchdog shown ON on NAS install"
 
 # ---------------------------------------------------------------------------
 # 2. menu_post always exposes Features and routes it to submenu_features.
@@ -116,9 +138,11 @@ dispatch() {
     recovery_menu_remote_available(){ return 1; }
     recovery_menu_transcoding_available(){ return 1; }
     ui_choose(){ echo "$CHOICE"; }
-    action_toggle_bazarr(){ echo DISPATCH_BAZARR; }
-    action_toggle_smb(){ echo DISPATCH_SMB; }
-    action_toggle_indexers(){ echo DISPATCH_INDEXERS; }
+    action_toggle_bazarr(){ echo DISPATCH_BAZARR; exit 0; }
+    action_toggle_smb(){ echo DISPATCH_SMB; exit 0; }
+    action_toggle_indexers(){ echo DISPATCH_INDEXERS; exit 0; }
+    action_toggle_ufw(){ echo DISPATCH_UFW; exit 0; }
+    action_toggle_hardening(){ echo DISPATCH_HARDENING; exit 0; }
     BAZARR_ENABLED=true; SMB_ENABLED=false; PUBLIC_INDEXERS_ENABLED=false
     submenu_features 2>&1
   ' 2>&1
@@ -126,6 +150,21 @@ dispatch() {
 assert_contains "$(dispatch 'Subtitles (Bazarr): ON')"  "DISPATCH_BAZARR"   "dispatch: subtitles -> bazarr toggle"
 assert_contains "$(dispatch 'File sharing (SMB): OFF')"  "DISPATCH_SMB"      "dispatch: file sharing -> smb toggle"
 assert_contains "$(dispatch 'Search indexers: OFF')"     "DISPATCH_INDEXERS" "dispatch: indexers -> indexers toggle"
+assert_contains "$(dispatch 'Firewall (UFW): OFF')"      "DISPATCH_UFW"       "dispatch: firewall -> ufw toggle"
+assert_contains "$(dispatch 'System hardening: ON')"     "DISPATCH_HARDENING" "dispatch: hardening -> hardening toggle"
+
+# Watchdog dispatch needs STORAGE_MODE=nas for the option to be built.
+watchdog_dispatch=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  render_banner(){ :; }
+  recovery_menu_remote_available(){ return 1; }
+  recovery_menu_transcoding_available(){ return 1; }
+  ui_choose(){ echo "NAS storage watchdog: ON"; }
+  action_toggle_watchdog(){ echo DISPATCH_WATCHDOG; exit 0; }
+  STORAGE_MODE=nas; STORAGE_WATCHDOG=true
+  submenu_features 2>&1
+' 2>&1)
+assert_contains "$watchdog_dispatch" "DISPATCH_WATCHDOG" "dispatch: NAS watchdog -> watchdog toggle"
 
 # ---------------------------------------------------------------------------
 # 4. Toggle BEHAVIOUR in a sandbox SCRIPT_DIR — capture real commands + .env.
@@ -145,7 +184,18 @@ EOF
     chmod +x "$tmp/scripts/configure.sh"
     cat > "$tmp/scripts/setup/hardening.sh" <<"EOF"
 setup_samba(){ echo "SAMBA enabled=${SMB_ENABLED} scope=${SMB_SHARE_SCOPE:-}" >> "$CAPTURE"; }
+setup_ufw(){ echo "UFW_SETUP" >> "$CAPTURE"; }
+setup_ufw_service_ports(){ echo "UFW_PORTS" >> "$CAPTURE"; }
+setup_unattended_upgrades(){ echo "APT_HARDEN" >> "$CAPTURE"; }
+setup_sysctl_hardening(){ echo "SYSCTL_HARDEN" >> "$CAPTURE"; }
+_uninstall_ufw(){ echo "UFW_UNINSTALL" >> "$CAPTURE"; return 0; }
+_uninstall_sysctl(){ echo "SYSCTL_UNINSTALL" >> "$CAPTURE"; return 0; }
+_uninstall_apt(){ echo "APT_UNINSTALL" >> "$CAPTURE"; return 0; }
+_ms_state_set(){ echo "STATE_SET $*" >> "$CAPTURE"; }
+validate_install_state(){ return 0; }
 EOF
+    # UFW OFF path probes `sudo ufw status`; stub sudo so it never really runs.
+    sudo(){ echo "SUDO $*" >> "$CAPTURE"; return 0; }
     _docker_reachable(){ return 0; }
     _regenerate_override(){ :; }
     docker(){ echo "DOCKER $*" >> "$CAPTURE"; }
@@ -155,6 +205,8 @@ EOF
     ui_log(){ :; }; pause_for_menu(){ :; }; _show_action_result(){ :; }
     ui_confirm(){ return 0; }
     ui_choose(){ echo "Media only (recommended)"; }
+    storage_install_watchdog(){ echo "WATCHDOG_INSTALL" >> "$CAPTURE"; }
+    storage_pause_watchdog_for_install(){ echo "WATCHDOG_PAUSE" >> "$CAPTURE"; }
     _reload_env                       # load INIT into shell vars
     "$HANDLER"
     echo "=== ENV ==="; cat "$tmp/.env"
@@ -206,6 +258,42 @@ assert_contains "$s_on" "SMB_SHARE_SCOPE='data'"        "smb ON: .env scope reco
 s_off=$(run_toggle action_toggle_smb "SMB_ENABLED=true")
 assert_contains "$s_off" "SAMBA enabled=false" "smb OFF: runs setup_samba cleanup path"
 assert_contains "$s_off" "SMB_ENABLED='false'" "smb OFF: .env flag set false (single-quoted)"
+
+# --- UFW ON / OFF: configure via setup_ufw; revert via _uninstall_ufw + latch reset
+u_on=$(run_toggle action_toggle_ufw "UFW_ENABLED=false")
+assert_contains "$u_on" "UFW_SETUP"        "ufw ON: runs setup_ufw"
+assert_contains "$u_on" "UFW_ENABLED='true'" "ufw ON: .env flag set true (single-quoted)"
+
+u_off=$(run_toggle action_toggle_ufw "UFW_ENABLED=true")
+assert_contains "$u_off" "UFW_UNINSTALL"   "ufw OFF: runs _uninstall_ufw (ledger-aware revert)"
+assert_contains "$u_off" "STATE_SET UFW_DEFAULTS_APPLIED false" "ufw OFF: resets latch so re-enable reconfigures"
+assert_contains "$u_off" "STATE_SET UFW_RULE_COUNT 0"           "ufw OFF: resets recorded rule count"
+assert_contains "$u_off" "UFW_ENABLED='false'" "ufw OFF: .env flag set false (single-quoted)"
+
+# --- Hardening ON / OFF: apply/revert sysctl + unattended-upgrades ----------
+h_on=$(run_toggle action_toggle_hardening "HARDENING_ENABLED=false")
+assert_contains "$h_on" "APT_HARDEN"    "hardening ON: enables unattended-upgrades"
+assert_contains "$h_on" "SYSCTL_HARDEN" "hardening ON: applies kernel sysctl hardening"
+assert_contains "$h_on" "HARDENING_ENABLED='true'" "hardening ON: .env flag set true (single-quoted)"
+
+h_off=$(run_toggle action_toggle_hardening "HARDENING_ENABLED=true")
+assert_contains "$h_off" "SYSCTL_UNINSTALL" "hardening OFF: reverts kernel sysctl"
+assert_contains "$h_off" "APT_UNINSTALL"    "hardening OFF: removes unattended-upgrades policy"
+assert_contains "$h_off" "HARDENING_ENABLED='false'" "hardening OFF: .env flag set false (single-quoted)"
+
+# --- NAS watchdog ON / OFF: install unit vs stop+disable; flip .env flag ------
+w_on=$(run_toggle action_toggle_watchdog $'STORAGE_MODE=nas\nSTORAGE_WATCHDOG=false')
+assert_contains "$w_on" "WATCHDOG_INSTALL"        "watchdog ON: installs the systemd unit"
+assert_contains "$w_on" "STORAGE_WATCHDOG='true'" "watchdog ON: .env flag set true (single-quoted)"
+
+w_off=$(run_toggle action_toggle_watchdog $'STORAGE_MODE=nas\nSTORAGE_WATCHDOG=true')
+assert_contains "$w_off" "WATCHDOG_PAUSE"          "watchdog OFF: stops+disables the unit"
+assert_contains "$w_off" "STORAGE_WATCHDOG='false'" "watchdog OFF: .env flag set false (single-quoted)"
+if grep -Eq "down|[[:space:]]-v([[:space:]]|$)" <<<"$w_off"; then
+  fail "watchdog OFF: host unit only — never touches docker compose volumes"
+else
+  pass "watchdog OFF: host unit only — never touches docker compose volumes"
+fi
 
 # ---------------------------------------------------------------------------
 # 5. Non-TTY safety + indexer-clobber warning (direct regression guards).

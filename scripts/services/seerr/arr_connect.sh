@@ -14,14 +14,24 @@ connect_arr_to_seerr() {
     arr_key=$(get_api_key "$SCRIPT_DIR/config/${app}/config.xml")
     [[ -z "$arr_key" ]] && return 0
 
-    local existing connected
-    if ! existing=$(api_fetch "Seerr ${app_label} settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/${app}"); then
-        existing="[]"
+    # Read the current Seerr-side config for this app. A failed GET must NOT be
+    # treated as "empty": Seerr's POST /settings/{app} CREATES a new server, so
+    # on a re-run whose GET merely hiccuped (expired session cookie, transient
+    # non-2xx) falling through to the POST below spawns a DUPLICATE server —
+    # which demotes the original's isDefault and can be rejected outright.
+    # Retry a few times (day-2 re-runs must tolerate transient *arr/Seerr API
+    # blips), and if the read still fails, skip rather than risk a duplicate.
+    local existing="" attempt
+    for attempt in 1 2 3; do
+        existing=$(api_fetch "Seerr ${app_label} settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/${app}") && break
+        existing=""
+        sleep "$attempt"
+    done
+    if [[ -z "$existing" ]]; then
+        log_warn "Could not read Seerr ${app_label} settings after retries; skipping connect to avoid a duplicate server. Re-run configure.sh or connect ${app_label} in the Seerr UI."
+        return 0
     fi
-    connected=""
-    echo "$existing" | json_array_nonempty && connected="yes"
-
-    if [[ -n "$connected" ]]; then
+    if echo "$existing" | json_array_nonempty; then
         log_skip "${app_label} already connected to Seerr"
         return 0
     fi

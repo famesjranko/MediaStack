@@ -97,6 +97,8 @@ dry_run_launch() {
             --exclude=./.nvidia-patch \
             --exclude=./backups \
             --exclude=./tests/.dind-state \
+            --exclude=./config/portainer \
+            --exclude=./config/beszel \
             -cf - -C "$root" . \
         | docker exec -i -u mstest "$cname" tar -xf - -C /home/mstest/MediaStack; then
         echo "  Failed to copy the repo into the dry-run container." >&2

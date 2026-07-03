@@ -20,13 +20,21 @@ _jfm_cfg_libraries() {
     dind_exec "bash -c 'CONFIG_FILE=/tmp/ms-jellyfin-matrix.yml; export CONFIG_FILE; SCRIPT_DIR=\$PWD; export SCRIPT_DIR; source scripts/lib/common.sh; cfg_jf_libraries'"
 }
 
+# Bounded retry budget for the #178 readiness race. Generous on purpose: every
+# poll below exits the instant the subsystem answers, so a larger ceiling costs
+# nothing on a ready service and only helps a slow/contended DinD — where the
+# first-run wizard can confirm "Admin user created" (or an *arr write) tens of
+# seconds before VirtualFolders / the notification list is queryable. ~15 × (up
+# to 3s curl + 1s sleep) ≈ 60s worst case, exited early on the first success.
+_JFM_READY_RETRIES=15
+
 # Bounded retry: the first-run wizard can confirm "Admin user created" a beat
 # before the VirtualFolders subsystem is queryable, especially under DinD
 # resource contention (#178). Retries the whole dind_exec call rather than
 # looping inside its sh -c string, so no extra quoting layer is introduced.
 _jfm_libraries() {
     local api_key="$1" out
-    for _ in 1 2 3 4 5; do
+    for _ in $(seq "$_JFM_READY_RETRIES"); do
         out=$(dind_exec "curl -sf --max-time 3 -H 'Authorization: MediaBrowser Client=\"ApiMatrix\", Device=\"Test\", DeviceId=\"api-matrix\", Version=\"1.0\", Token=\"$api_key\"' http://localhost:8096/Library/VirtualFolders") && { printf '%s' "$out"; return 0; }
         sleep 1
     done
@@ -52,7 +60,7 @@ PY
 # config-mutating apply, with no guarantee the write is queryable instantly.
 _jfm_notification() {
     local base="$1" key="$2" out
-    for _ in 1 2 3 4 5; do
+    for _ in $(seq "$_JFM_READY_RETRIES"); do
         out=$(dind_exec "curl -sf --max-time 3 -H 'X-Api-Key: $key' $base/notification") && { printf '%s' "$out"; return 0; }
         sleep 1
     done
@@ -188,7 +196,7 @@ matrix_jellyfin() {
     fi
     assert_contains "$apply_log" "Jellyfin wizard already completed, authenticating" \
         "Jellyfin api-matrix: re-apply took the already-completed-wizard branch"
-    assert_contains "$apply_log" "Jellyfin library 'Movies' already matches config.yml" \
+    assert_contains "$apply_log" "Jellyfin library 'Movies' already matches your settings" \
         "Jellyfin api-matrix: unchanged library skips (match branch)"
     assert_contains "$apply_log" "Jellyfin library 'TV Shows' path differs from config.yml" \
         "Jellyfin api-matrix: drifted library warns instead of re-rooting (drift branch)"

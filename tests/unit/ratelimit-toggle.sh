@@ -30,7 +30,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # Export CONFIG_FILE per common.sh's caller contract (it reads the exported var);
 # the export attribute persists across the per-case reassignments below.
 SCRIPT_DIR="$TMP_DIR"
-export CONFIG_FILE="$REPO_ROOT/config.yml"
+export CONFIG_FILE="$REPO_ROOT/config/examples/config.yml"
 # shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/lib/common.sh"
 
@@ -44,7 +44,7 @@ rate_gate() {
 # Rewrite a copy of the shipped config.yml with a python mutation, echo its path.
 mutate_config() {
     local out="$1" code="$2"
-    python3 - "$REPO_ROOT/config.yml" "$out" <<EOF
+    python3 - "$REPO_ROOT/config/examples/config.yml" "$out" <<EOF
 import sys, yaml
 with open(sys.argv[1]) as f:
     c = yaml.safe_load(f)
@@ -55,7 +55,7 @@ EOF
 }
 
 # 1. Shipped default must be OFF.
-CONFIG_FILE="$REPO_ROOT/config.yml"
+CONFIG_FILE="$REPO_ROOT/config/examples/config.yml"
 assert_eq "false" "$(rate_gate)" "shipped config.yml: rate_limiting.enabled normalizes to false"
 
 # 2. Opt-in flip must normalize to a usable "true" (guards the Python "True" bug).
@@ -71,7 +71,7 @@ CONFIG_FILE="$MISSING_CFG"
 assert_eq "false" "$(rate_gate)" "missing rate_limiting.enabled falls back to off"
 
 # 4. Companion fail2ban jail ships disabled alongside the master switch.
-JAIL="$REPO_ROOT/config/fail2ban/jail.d/mediastack.conf"
+JAIL="$REPO_ROOT/config/examples/defaults/fail2ban/jail.d/mediastack.conf"
 jail_enabled=$(sed -n '/^\[npm-ratelimit\]/,/^\[/{s/^enabled = //p}' "$JAIL")
 assert_eq "false" "$jail_enabled" "config: [npm-ratelimit] jail ships enabled = false"
 

@@ -3,6 +3,12 @@
 Day-2 scripts under `scripts/` and routine operational tasks. Backup and
 long-term data protection are intentionally out of scope for MediaStack.
 
+## `./mediastack` → Uninstall MediaStack
+
+Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, unchanged sysctl hardening, Samba ownership, watchdog units, and setup banners. `data/`, `config/`, and the checkout are preserved.
+
+The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts before teardown. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried. User-modified MediaStack-owned files are preserved and reported instead of overwritten or deleted.
+
 ## `scripts/update.sh`
 
 Wrapper around `docker compose pull && up -d` for the configured image channel.
@@ -86,8 +92,11 @@ Actions:
 - **Configure or change hardware transcoding** — delegates to `./setup.sh --transcoding`.
   This re-detects the GPU and runs the Stage 3 hardware engine without rerunning Stage 1/2.
   NVIDIA users can choose **Standard driver** or **Unlock NVENC limit (advanced)** here.
-- **Repatch NVIDIA driver (Unlock mode)** — runs `scripts/nvidia-repatch.sh` when the
-  current install is NVIDIA/Unlock. Standard and `existing` driver modes are no-ops.
+- **Update NVIDIA driver + reapply Unlock patch** — available only for an active
+  NVIDIA/Unlock configuration. The guarded setup action defaults to No, downloads before
+  mutation, refuses loaded modules, installs once, and patches only after reboot/version verification.
+- **Reapply Unlock patch only** — uses the same guarded setup route and reviewed pinned patch.
+  Both Unlock actions stay hidden and fail closed for Standard, externally managed, and non-NVIDIA installs.
 - **Reboot to finish hardware transcoding** — appears when an NVIDIA finalize marker is
   waiting on the current boot.
 
@@ -116,6 +125,60 @@ Flow:
 
 If you renamed the quality profile yourself in the Sonarr/Radarr UI (so the live name no longer matches
 `config.yml`), the re-push refuses to create a duplicate and warns instead — rename it back, or rebuild.
+
+## `./mediastack` → Features & settings → Firewall (UFW) / System hardening
+
+Two ON/OFF toggles mirror the Stage 1 wizard's Security prompts (ADR-40), backed by `UFW_ENABLED`
+and `HARDENING_ENABLED` in `.env`:
+
+- **Firewall (UFW)** — ON runs `setup_ufw` (default-deny inbound, LAN/SSH/web allowed, plus the
+  `DOCKER-USER` restriction chain), reopening remote service ports only on a real-domain install.
+  Requires Docker to be reachable (the chain lives in `DOCKER-USER`). OFF runs `_uninstall_ufw`,
+  then resets the ownership latches so a later ON reconfigures cleanly. If you added your own UFW
+  rules or changed the defaults after install, OFF removes only MediaStack's rules and **leaves UFW
+  active**, telling you so — and because that removal also drops MediaStack's SSH allows, it
+  re-asserts an SSH allow (RFC1918 LAN ranges + your current SSH session) so a remote/headless box
+  can never be locked out. Run `sudo ufw disable` yourself if you want the firewall fully off.
+- **System hardening** — ON applies unattended security upgrades + kernel sysctl hardening; OFF
+  reverts both (`_uninstall_sysctl` + `_uninstall_apt`), restoring pre-install sysctl values it still
+  owns and removing the MediaStack drop-ins.
+
+Both ON actions refuse (warn + skip) when no valid ownership ledger exists — run a full install or
+reset first. Toggling is add-only: turning a feature off never deletes user data or user-owned
+firewall/kernel settings.
+
+## `./mediastack` → View storage & data mount
+
+Shown **only on NAS installs** (`STORAGE_MODE=nas`) as a top-level menu item — local
+installs have no mount to inspect (data dir + free space already show in **Manage stack**).
+A read-only status box built entirely from the `storage_*` getters in
+`scripts/setup/storage.sh`, so a non-technical user can see their mount at a glance:
+
+- **NAS source** — the expected `host:/export` (`storage_expected_source`).
+- **Filesystem** — expected type plus live state: `mounted, healthy`; `mounted, verifying…`
+  (sentinel not yet present); `WRONG: <live source> (<live fstype>) — expected nfs4` when a
+  different disk is mounted at the mountpoint; or `not mounted`.
+- **Data** — the data dir and free space (`df -h`).
+- **Watchdog** — `running`, `running (services paused — NAS down since <ts>)`, `stopped`, or
+  `disabled`, from the unit's `systemctl is-active` state + the `config/state/storage-watchdog-stopped` flag.
+- **Services** — how many of the NAS-dependent services (`storage_data_services`) are running.
+
+The one action, **Re-check NAS now**, re-runs `storage_nas_ok` (mount + sentinel) and reports a
+verdict; the box then redraws with the live mount state. Remount/restart are intentionally not
+offered here — the watchdog already auto-repairs the mount and restarts paused services.
+
+## `./mediastack` → Features & settings → NAS storage watchdog
+
+Shown **only on NAS installs** (`STORAGE_MODE=nas`), backed by `STORAGE_WATCHDOG` in `.env`
+(absent = ON, so pre-existing NAS installs stay protected):
+
+- **ON** runs `storage_install_watchdog` — installs the root helper, sudoers rule, and
+  `mediastack-storage-watchdog.service`, and re-enables the pre-start guard.
+- **OFF** runs `storage_pause_watchdog_for_install` (stop + disable the unit) and makes
+  `storage_guard_before_start` a no-op. NAS storage stays mounted and verified; only the automatic
+  stop/restart-on-mount-loss protection is removed.
+
+No `docker compose` restart is involved — it is a host systemd unit, not a Compose service.
 
 ## `scripts/nvidia-repatch.sh`
 

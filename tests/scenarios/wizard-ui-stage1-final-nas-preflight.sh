@@ -25,22 +25,29 @@ BASH"
         stage1_admin_username ENTER \
         stage1_admin_email owner@final-nas.test \
         stage1_admin_password WizardAdminPw123 \
-        stage1_admin_password_confirm WizardAdminPw123 \
+        stage1_admin_confirm 1 \
         stage1_storage_location 2 \
         stage1_nas_local_mountpoint /tmp/ms-wizard-final-nas \
         stage1_nas_host 127.0.0.1 \
         stage1_nas_nfs_export /exports/final \
-        stage1_nas_nfs_options ENTER \
-        stage1_nas_sentinel ENTER \
         stage1_nas_share_empty NONE \
+        stage1_nas_nfs_options_confirm ENTER \
+        stage1_nas_watchdog ENTER \
+        stage1_nas_review 1 \
         stage1_bazarr ENTER \
+        stage1_subtitle_confirm 1 \
         stage1_smb ENTER \
+        stage1_smb_confirm 1 \
         stage1_quality_resolution 1 stage1_quality_size 1 \
+        stage1_quality_confirm 1 \
         stage1_indexers ENTER \
+        stage1_indexers_confirm 1 \
         stage1_image_channel 1 \
         stage1_qbt_download ENTER \
         stage1_qbt_upload ENTER \
         stage1_qbt_port ENTER \
+        stage1_qbit_confirm 1 \
+        stage1_security_ufw ENTER stage1_security_hardening ENTER \
         stage1_proceed 1 \
         stage1_nas_storage_check_failed 1
 

@@ -14,17 +14,55 @@ that mountpoint or a subdirectory such as `${STORAGE_MOUNTPOINT}/mediastack`.
 
 ## Managed NFS/NAS Flow
 
-Stage 1 collects:
+Stage 1 collects the connection details first, verifies them, and only then asks
+the fiddly options — so nothing tedious is answered before the NAS is proven
+reachable:
 
-- Local mountpoint, usually `/data`.
-- NAS host/IP.
-- NFS export path.
-- NFS mount options.
-- Sentinel file path, defaulting to `${DATA_DIR}/.mediastack-storage-ready`.
+1. **Local mountpoint** (usually `/data`), **NAS host/IP**, **NFS export path** —
+   the three things needed to reach the share.
+2. **Verify** the share non-destructively (see below), one line per check.
+3. **NFS mount options** — a yes/no accepts the recommended defaults; "no" opens
+   an editable field and **re-verifies** with the custom options (the initial
+   probe ran on the defaults, so custom options are otherwise unproven), warning
+   that custom options are advanced and unsupported.
+4. **Whether to enable the NAS mount watchdog** (recommended).
+5. A single **review box** lists every choice (NAS server, mount point, NFS
+   options, watchdog) with a menu underneath: *Confirm and continue / Change NFS
+   options + watchdog / Change NAS address, export or mount point / Change storage
+   type / Abort installation*. "Change …" jumps back to that layer; "Change
+   storage type" returns to the storage-backend menu. Confirming only locks in the
+   choices — nothing is mounted or configured until install.
+
+The sentinel path is internal, always `${DATA_DIR}/.mediastack-storage-ready`,
+and not prompted.
 
 Setup installs `nfs-common` only when NAS storage is selected and the NFS mount
-helpers are missing. It tries `mount -t nfs4` first, then falls back to generic
-`nfs` with the same options.
+helpers are missing.
+
+**Verify, don't mount (during the wizard).** The wizard does **not** mount the
+share at the real mountpoint while you are choosing settings. Instead
+`storage_probe_nas` verifies it non-destructively — it mounts to a throwaway
+temporary directory (never `${STORAGE_MOUNTPOINT}`), runs one check per line, then
+unmounts and cleans up. Because the real mountpoint is never touched, changing a
+setting can never collide with a prior mount and you are never asked to detach
+anything. The checks:
+
+1. **NAS reachable** — TCP to `host:2049` (NFSv4), falling back to `:111`.
+2. **NFS export available** — a temporary mount with fail-fast options (`hard`
+   swapped for `soft` + a short `timeo`/`retrans`) so a bad target errors quickly
+   instead of hanging.
+3. **Share readable**.
+4. **Share writable** — tested as the installing user (mirrors how MediaStack
+   creates directories and the sentinel), so read-only exports and root-squash are
+   caught up front.
+
+All green ⇒ the share is classified (see below) and the per-section "Use these
+storage choices?" confirm locks it in. Any failed check raises the specific
+failure and offers edit / retry / use local storage — never a detach prompt.
+
+The **real** `${STORAGE_MOUNTPOINT}` mount happens later, at install time
+(`storage_preflight_nas`, after `.env` is written). It tries `mount -t nfs4`
+first, then falls back to generic `nfs` with the same options.
 
 After a successful mount, MediaStack records the live `findmnt` source and
 fstype in `.env` as `STORAGE_EXPECTED_SOURCE` and `STORAGE_EXPECTED_FSTYPE`.
@@ -53,7 +91,15 @@ to create with `sudo`, so root-squashed exports can still work.
 
 ## Guards And Watchdog
 
-NAS mode has two protection layers:
+The watchdog is opt-out per NAS install (`STORAGE_WATCHDOG`, default on). The
+Stage 1 wizard asks "Enable the NAS mount watchdog?" and it can be flipped later
+from the day-2 **Features & settings** menu ("NAS storage watchdog", shown only
+on NAS installs). When off, NAS storage is still mounted and verified once at
+install, but neither protection layer below runs — `storage_guard_before_start`
+returns success and no systemd unit is installed. The marker/sentinel path is
+internal and no longer user-configurable.
+
+When on, NAS mode has two protection layers:
 
 1. `storage_guard_before_start` runs before `start_stack`, the launcher start
    action, and `scripts/update.sh` recreate containers. It refuses to start if

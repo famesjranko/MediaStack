@@ -78,11 +78,11 @@ assert_contains "$le_choices" "Abort setup" "S2-16: LE gate includes Abort setup
 confirm_choices="$(stage2_confirm_choices)"
 assert_contains "$confirm_choices" "Install" "S2-12: confirm includes Install"
 assert_contains "$confirm_choices" "Back" "S2-12: confirm includes Back"
-assert_contains "$confirm_choices" "Skip Stage 2" "S2-12: confirm includes Skip Stage 2"
+assert_contains "$confirm_choices" "Skip remote access" "S2-12: confirm includes Skip remote access"
 
 # S2-15: skip copy is the user-facing fallback when ready postconditions fail.
 skip_copy="$(stage2_skip_summary_copy)"
-assert_contains "$skip_copy" "HTTPS skipped. LAN + VPN work. Run ./setup.sh --remote to try again." "S2-10: skip summary matches UI-SPEC copy"
+assert_contains "$skip_copy" "HTTPS skipped. LAN + VPN work. Choose Features & settings -> Add remote access from the menu to try again." "S2-10: skip summary matches UI-SPEC copy"
 
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
@@ -538,7 +538,7 @@ else
 fi
 
 assert_contains "$stage2_source" "run_stage2()" "04-04: run_stage2 controller exists"
-assert_contains "$stage2_source" "MediaStack - Stage 2: Remote Access" "04-04: Stage 2 banner title"
+assert_contains "$stage2_source" "MediaStack - Remote Access" "04-04: Remote access banner title"
 assert_contains "$stage2_source" "HTTPS + WireGuard in a few minutes (longer on first DNS setup)" "04-04: Stage 2 banner subtitle"
 assert_contains "$stage2_source" "_stage2_install()" "04-04: install function exists"
 assert_contains "$stage2_source" "MEDIASTACK_NPM_ATTEMPT_REMOTE=1 ./scripts/configure.sh --only npm,ddns-updater,wireguard" "04-05: NPM remote attempt is process-scoped"

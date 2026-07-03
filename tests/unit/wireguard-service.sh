@@ -271,7 +271,7 @@ WG_LAN_CIDR=""
 WG_SERVER_LAN_IP="192.168.1.50"
 WG_PER_CLIENT_FIREWALL="false"
 configure_wireguard
-assert_contains "${WARN_MESSAGES[*]:-}" "WG_PER_CLIENT_FIREWALL=false with WG_ACCESS_TIER='containers'" \
+assert_contains "${WARN_MESSAGES[*]:-}" "WG_PER_CLIENT_FIREWALL=false with tier 'containers'" \
     "sanity: warns when escape hatch is combined with restrictive tier"
 
 # -----------------------------------------------------------------------------
@@ -301,7 +301,7 @@ WG_PER_CLIENT_FIREWALL="true"
 configure_wireguard
 rc=$?
 assert_eq "1" "$rc" "fail-closed: missing WG_LAN_CIDR returns nonzero"
-assert_contains "${WARN_MESSAGES[*]:-}" "leaving initial peer restricted until .env is fixed" \
+assert_contains "${WARN_MESSAGES[*]:-}" "initial peer left restricted" \
     "fail-closed: missing WG_LAN_CIDR warns"
 case "$(cat "$BODY_LOG")" in
     *'0.0.0.0/0'*) fail "fail-closed: missing WG_LAN_CIDR must not write broad firewallIps" ;;

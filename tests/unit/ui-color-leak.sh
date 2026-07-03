@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/ui-color-leak.sh
 #
-# Regression for #7. The UI palette (scripts/lib/ui_fallback.sh) and the
+# Regression for #7. The UI palette (scripts/lib/ui_render_fallback.sh) and the
 # configure-time log_* helpers (scripts/lib/common.sh) used to hardcode ANSI
 # colour with no gating, so anyone who piped the installer to `tee setup.log`,
 # redirected it for a bug report, or ran in a non-TTY captured escape-code soup
@@ -24,7 +24,7 @@ CURRENT_SCENARIO="ui-color-leak"
 scenario_begin "$CURRENT_SCENARIO"
 
 ESC=$'\033'
-UI="$REPO_ROOT/scripts/lib/ui.sh"          # sources ui_fallback.sh (-> term_caps.sh)
+UI="$REPO_ROOT/scripts/lib/ui.sh"          # sources ui_render_fallback.sh (-> term_caps.sh)
 COMMON="$REPO_ROOT/scripts/lib/common.sh"  # sources term_caps.sh
 
 # Render a snippet with ui.sh + common.sh sourced, in a clean subprocess whose

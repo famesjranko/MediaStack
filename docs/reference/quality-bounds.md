@@ -82,19 +82,19 @@ A cell uses the rows for its resolution's tiers only — `720p Balanced` applies
 
 ## Custom format scores
 
-Higher = preferred. `-10000` is a hard block — releases matching that format never get grabbed. `BR-DISK` and `LQ` are hard-blocked across all sizes. Scores are per **size** (shared across resolutions).
+Scores **steer** release selection within a quality tier — higher = preferred, negative = penalised. They do **not** gate file size (the bounds above do), and by default **nothing is hard-blocked**. Scores are the **same across all three sizes** — release quality is size-independent; the size axis is the bounds envelope only (see ADR-43).
 
-| Format | Compact | Balanced | Large |
-|---|---:|---:|---:|
-| Repack/Proper | 5 | 5 | 5 |
-| x264 | 0 | 10 | 10 |
-| x265 (HD) | 0 | -25 | -50 |
-| BR-DISK | -10000 | -10000 | -10000 |
-| LQ | -10000 | -10000 | -10000 |
-| No-RlsGroup | -10 | -25 | -25 |
-| Obfuscated | -10 | -25 | -25 |
+| Format | Score | Effect |
+|---|---:|---|
+| Repack/Proper | 5 | prefer the repacked / proper release |
+| x264 | 0 | neutral |
+| x265 (HD) | 0 | neutral — the server transcodes, so HEVC direct-play is a non-issue, and x265 is smaller (helps the size goal) |
+| BR-DISK | 0 | not blocked here — a full disc image is rejected by the size envelope, and is grabbable if you raise the bounds to want it |
+| LQ | -100 | soft penalty on low-quality re-encode groups (YIFY/YTS/…): dispreferred, but grabbed as a last resort when nothing better exists |
+| No-RlsGroup | -10 | slight nudge toward releases with a recognised group tag |
+| Obfuscated | -10 | slight nudge against scrambled / anonymous release names |
 
-Compact is more permissive on missing-group / obfuscated releases (smaller releases more often lack standard group tags). Balanced and Large both prefer x264 and penalize x265 — x265 is harder for some clients to direct-play. Large penalizes x265 more aggressively because it stays at 1080p where x264 quality at higher bitrates is mature.
+The profile's reject floor (`minFormatScore`, `-1000` in `render/quality_profile.py`) sits below the worst default penalty stack (~-120) so **nothing is score-blocked by default**, and above `-10000` so a format you *deliberately* set to `-10000` still hard-blocks. **Do not raise `minFormatScore` to `0`** — that turns every negative score into a hard reject. To hard-block a format (e.g. a full BluRay disc), set its score to `-10000` in `config.yml`.
 
 HDR / Dolby Vision custom formats are deliberately not added — the home-server audience typically doesn't have HDR-capable playback gear, and HDR releases run 25-40% larger at the same nominal quality, working against the size-control goal. (A 4K column would revisit this.)
 
@@ -102,7 +102,7 @@ Format definitions (the regex conditions that match each format) are developer-m
 
 ## Why these bounds and not TRaSH defaults
 
-TRaSH Guides values target maximum-quality grabs. Their typical 1080p WEB-DL preferred is ~137 MB/min — at a 110-min movie that's a 15 GB file — and TRaSH leaves **preferred/max effectively unlimited** (≈1000 for Sonarr, ≈2000 for Radarr, both meaning "no cap") for **every** tier, SD floor included. Real Netflix/Amazon/Disney 1080p WEB-DL releases are 4-7 GB; setting preferred at the TRaSH default biases the system to over-bloated releases. MediaStack's bounds put the preferred peak in the middle of what real sources actually produce, with max as a sane ceiling. TRaSH **is** authoritative for the **mins** (the source floor, e.g. ~5 MB/min for SD) and for the custom-format scores — MediaStack's contribution is the per-band preferred/max envelope.
+TRaSH Guides values target maximum-quality grabs. Their typical 1080p WEB-DL preferred is ~137 MB/min — at a 110-min movie that's a 15 GB file — and TRaSH leaves **preferred/max effectively unlimited** (≈1000 for Sonarr, ≈2000 for Radarr, both meaning "no cap") for **every** tier, SD floor included. Real Netflix/Amazon/Disney 1080p WEB-DL releases are 4-7 GB; setting preferred at the TRaSH default biases the system to over-bloated releases. MediaStack's bounds put the preferred peak in the middle of what real sources actually produce, with max as a sane ceiling. TRaSH **is** authoritative for the **mins** (the source floor, e.g. ~5 MB/min for SD); MediaStack's contribution is the per-band preferred/max envelope. (Custom-format *scores* were also once TRaSH-derived but were retuned to a neutral, non-blocking baseline — see [Custom format scores](#custom-format-scores) and ADR-43.)
 
 Reference table for sanity-checking:
 

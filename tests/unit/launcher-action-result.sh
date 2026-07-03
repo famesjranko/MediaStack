@@ -96,5 +96,28 @@ else
     pass "launcher: deliberate abort must not render as an error"
 fi
 
+# Per-service starts use the same NAS guard as starting the whole stack.
+service_guard=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  docker(){ [[ "$*" == *"ps --filter status=exited"* ]] && echo jellyfin || echo DOCKER_CALLED; }
+  ui_choose(){ echo jellyfin; }; storage_guard_before_start(){ return 1; }; pause_for_menu(){ :; }
+  action_service_start
+' 2>&1)
+if [[ "$service_guard" == *DOCKER_CALLED* ]]; then
+    fail "launcher: NAS guard blocks a per-service start" "$service_guard"
+else
+    pass "launcher: NAS guard blocks a per-service start"
+fi
+
+# Compose failures must reach the existing action-result renderer.
+service_failure=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  docker(){ [[ "$*" == *"ps --filter status=running"* ]] && { echo jellyfin; return; }; return 42; }
+  ui_choose(){ echo jellyfin; }; pause_for_menu(){ :; }; ui_log(){ printf "%s|%s\n" "$1" "$2"; }
+  action_service_stop
+' 2>&1)
+assert_contains "$service_failure" "error|Stop jellyfin exited with code 42." \
+    "launcher: per-service Compose failures are reported honestly"
+
 echo -e "${CYAN}◀ launcher-action-result done${NC}"
 summary

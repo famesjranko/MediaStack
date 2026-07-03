@@ -180,7 +180,10 @@ NGINX"
         && pass "heal: fell through to offline path (API repair insufficient)" \
         || fail "heal: fell through to offline path"
 
-    grep -q "rows_verified=" <<<"$heal_plain" \
+    # The configurator logs the applied reset ("sqlite: host(s) N -> enabled=0
+    # cert=0"); reaching that line means the python's internal row-count
+    # verification passed (it raises SystemExit -> non-zero otherwise).
+    grep -q "sqlite: host" <<<"$heal_plain" \
         && pass "heal: sqlite UPDATE verified (row count)" \
         || fail "heal: sqlite UPDATE verified (row count)"
 

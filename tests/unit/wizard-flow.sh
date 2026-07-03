@@ -21,7 +21,7 @@ scenario_begin "$CURRENT_SCENARIO"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-cp "$REPO_ROOT/config.yml" "$TMP_DIR/config.yml"
+cp "$REPO_ROOT/config/examples/config.yml" "$TMP_DIR/config.yml"
 cp "$REPO_ROOT/.env.example" "$TMP_DIR/.env.example"
 cp -r "$REPO_ROOT/scripts" "$TMP_DIR/scripts"
 mkdir -p "$TMP_DIR/config/ddns-updater"
@@ -72,9 +72,13 @@ docker() {
 }
 export -f docker
 
-# speedtest-cli: not available in unit test
-speedtest-cli() { return 1; }
-export -f speedtest-cli
+# Speed test tools: not available in unit test. The wizard runs under
+# UI_DEMO=1/DEMO=1 which short-circuits net_run_speedtest before any tool, so
+# these are belt-and-suspenders. Do NOT stub curl here — the wizard uses it for
+# public-IP/Cloudflare/port checks, and the speed-test path's primary method is
+# curl+Cloudflare.
+librespeed-cli() { return 1; }
+export -f librespeed-cli
 
 # openssl: deterministic password generation for both demo paths
 openssl() {
@@ -626,7 +630,7 @@ TMP_DIR_DEMO=$(mktemp -d)
 TMP_DIR_DEMO_DEFAULT=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR" "$TMP_DIR_DEMO" "$TMP_DIR_DEMO_DEFAULT"' EXIT
 
-cp "$REPO_ROOT/config.yml" "$TMP_DIR_DEMO/config.yml"
+cp "$REPO_ROOT/config/examples/config.yml" "$TMP_DIR_DEMO/config.yml"
 cp "$REPO_ROOT/.env.example" "$TMP_DIR_DEMO/.env.example"
 cp -r "$REPO_ROOT/scripts" "$TMP_DIR_DEMO/scripts"
 mkdir -p "$TMP_DIR_DEMO/config/ddns-updater"
@@ -684,7 +688,7 @@ else
     fail "DEMO=1: weak pre-seeded password replaced" "got '$demo_pw'"
 fi
 
-cp "$REPO_ROOT/config.yml" "$TMP_DIR_DEMO_DEFAULT/config.yml"
+cp "$REPO_ROOT/config/examples/config.yml" "$TMP_DIR_DEMO_DEFAULT/config.yml"
 cp "$REPO_ROOT/.env.example" "$TMP_DIR_DEMO_DEFAULT/.env.example"
 cp -r "$REPO_ROOT/scripts" "$TMP_DIR_DEMO_DEFAULT/scripts"
 mkdir -p "$TMP_DIR_DEMO_DEFAULT/config/ddns-updater"
@@ -725,24 +729,29 @@ ui_input_validated() {
     esac
 }
 ui_confirm() {
+    # The SMB section's only confirm is "Enable SMB file share...": say yes.
     SMB_CONFIRM_COUNT=$((SMB_CONFIRM_COUNT + 1))
-    case "$SMB_CONFIRM_COUNT" in
-        1) return 1 ;; # Bazarr prompt
-        2) return 0 ;; # SMB prompt
-        *) return 0 ;;
-    esac
+    return 0
 }
 validate_smb_port() { return 0; }
 ui_choose() {
-    printf '%s\n' "${1:-}" > "$SMB_SCOPE_PROMPT_FILE"
-    echo "Full system (/) - advanced admin access to the whole server."
+    # The end-of-section review ("Use these …?") must be accepted or the storage
+    # wrapper loops forever; everything else keeps the original scope-capture behaviour.
+    case "${1:-}" in
+        "Use these"*) echo "Use these details" ;;
+        *)
+            printf '%s\n' "${1:-}" > "$SMB_SCOPE_PROMPT_FILE"
+            echo "Full system (/) - advanced admin access to the whole server."
+            ;;
+    esac
 }
 
 _WIZ_DATA_DIR=""
 _WIZ_BAZARR_ENABLED=""
 _WIZ_SMB_ENABLED=""
 _WIZ_SMB_SHARE_SCOPE=""
-_stage1_collect_storage >/dev/null 2>&1
+# SMB now lives in its own section (_stage1_collect_smb), split out of storage.
+_stage1_collect_smb >/dev/null 2>&1
 SMB_SCOPE_PROMPT=$(cat "$SMB_SCOPE_PROMPT_FILE" 2>/dev/null)
 
 assert_eq "true" "$_WIZ_SMB_ENABLED" "SMB prompt: enabling SMB is preserved"
@@ -761,7 +770,7 @@ eval "$_orig_validate_smb_port"
 TMP_DIR_FULL=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR" "$TMP_DIR_DEMO" "$TMP_DIR_FULL"' EXIT
 
-cp "$REPO_ROOT/config.yml" "$TMP_DIR_FULL/config.yml"
+cp "$REPO_ROOT/config/examples/config.yml" "$TMP_DIR_FULL/config.yml"
 cp "$REPO_ROOT/.env.example" "$TMP_DIR_FULL/.env.example"
 cp -r "$REPO_ROOT/scripts" "$TMP_DIR_FULL/scripts"
 mkdir -p "$TMP_DIR_FULL/config/ddns-updater"
@@ -903,7 +912,24 @@ if [[ "$full_order_text" == *"check_docker"*"install_docker"* ]]; then
 else
     pass "--full: check_docker does not run before install_docker"
 fi
-assert_contains "$full_order_text" "run_wizard setup_ufw_service_ports setup_samba" "main: post-wizard host integration still runs after stage install"
+# Host integration (UFW service ports + SMB share) moved into Stage 1
+# (_stage1_install, before print_access_info) so the SMB share the user picks in
+# the wizard is configured with the rest of Stage 1, not tacked on after the
+# final summary. main() no longer calls them after run_wizard; the stubbed
+# run_wizard here does not reach _stage1_install, so they must be absent from
+# main's post-wizard order.
+if [[ "$full_order_text" == *"setup_samba"* || "$full_order_text" == *"setup_ufw_service_ports"* ]]; then
+    fail "main: host integration moved into Stage 1 (not called by main after run_wizard)" "order: $full_order_text"
+else
+    pass "main: host integration moved into Stage 1 (not called by main after run_wizard)"
+fi
+# ...and confirm Stage 1 actually owns it, ordered before the access summary.
+stage1_src_hostint="$(cat "$REPO_ROOT/scripts/setup/stages/stage1.sh")"
+if [[ "$stage1_src_hostint" == *"setup_ufw_service_ports"*"setup_samba"*"print_access_info"* ]]; then
+    pass "stage1: host integration runs before print_access_info"
+else
+    fail "stage1: host integration must run before print_access_info" "stage1.sh order mismatch"
+fi
 if [[ "$full_order_text" == *"run_wizard"*"stop_existing_stack"* || "$full_order_text" == *"run_wizard"*"pull_images"* || "$full_order_text" == *"run_wizard"*"start_stack"* ]]; then
     fail "main: legacy stack install is skipped after stage install" "order: $full_order_text"
 else

@@ -105,6 +105,12 @@ storage_nas_ok() {
     storage_mount_matches && storage_sentinel_ok
 }
 
+# The mount watchdog/guard is opt-out per NAS install. Absent = enabled, so
+# existing installs (no STORAGE_WATCHDOG key) keep their watchdog.
+storage_watchdog_enabled() {
+    [[ "${STORAGE_WATCHDOG:-true}" != "false" ]]
+}
+
 storage_mountpoint_has_mount() {
     findmnt -rn -M "$(storage_mountpoint)" >/dev/null 2>&1
 }
@@ -170,7 +176,103 @@ storage_ensure_nfs_common() {
     fi
     storage_log_info "Installing nfs-common for NAS storage..."
     sudo apt-get update -qq >/dev/null 2>&1 || true
-    sudo apt-get install -y -qq nfs-common >/dev/null
+    ui_spin "Installing nfs-common..." sudo apt-get install -y -qq nfs-common
+}
+
+# TCP reachability probe. Reuses the codebase nc idiom (network.sh) with a
+# /dev/tcp fallback so it works without netcat installed.
+storage_host_port_open() {
+    local host="$1" port="$2"
+    if command -v nc >/dev/null 2>&1; then
+        nc -z -w5 "$host" "$port" >/dev/null 2>&1 && return 0
+        return 1
+    fi
+    timeout 5 bash -c "exec 3<>/dev/tcp/${host}/${port}" >/dev/null 2>&1
+}
+
+# Turn the user's real mount options into fail-fast probe options: a bad target
+# must error out, not hang. Strip hard/soft/timeo/retrans, force soft + short
+# timeout so an unreachable export fails in ~10s instead of retrying forever.
+storage_probe_opts() {
+    local opts="${1:-vers=4.2,proto=tcp,rw}"
+    local cleaned
+    cleaned=$(printf '%s' "$opts" \
+        | tr ',' '\n' \
+        | grep -viE '^(hard|soft|timeo=.*|retrans=.*)$' \
+        | paste -sd, -)
+    printf '%s' "${cleaned:+${cleaned},}soft,timeo=50,retrans=2"
+}
+
+# Non-destructive NAS verification for the wizard. Mounts the export to a
+# THROWAWAY temp dir (never the real mountpoint), runs discrete checks with one
+# line each, classifies the share, then unmounts. Because it never touches the
+# real mountpoint, no mismatch/detach can ever happen. Sets _STORAGE_PROBE_CLASS
+# on success. Returns 0 only if reachable + mountable + readable + writable.
+storage_probe_nas() {
+    local host="${STORAGE_NFS_HOST:-}"
+    local export_path="${STORAGE_NFS_EXPORT:-}"
+    local opts probe_opts tmp rc=0
+    opts="${STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
+    _STORAGE_PROBE_CLASS=""
+
+    if [[ -z "$host" || -z "$export_path" ]]; then
+        storage_log_err "NAS storage selected but NFS host/export is missing."
+        return 1
+    fi
+
+    # 1. NAS reachable (NFSv4 port 2049; fall back to rpcbind 111 for v3).
+    if storage_host_port_open "$host" 2049 || storage_host_port_open "$host" 111; then
+        storage_log_ok "NAS reachable ($host)"
+    else
+        storage_log_err "NAS not reachable at ${host}:2049 (host down or firewalled)."
+        return 1
+    fi
+
+    if ! tmp=$(mktemp -d 2>/dev/null); then
+        storage_log_err "Could not create a temporary directory to test the NAS mount."
+        return 1
+    fi
+
+    # 2. Export mountable — temp mount with fail-fast opts, never the real mountpoint.
+    probe_opts="$(storage_probe_opts "$opts")"
+    if ui_spin "Testing NFS export ${host}:${export_path}..." \
+            sudo mount -t nfs4 -o "$probe_opts" "${host}:${export_path}" "$tmp" \
+        || sudo mount -t nfs -o "$probe_opts" "${host}:${export_path}" "$tmp" >/dev/null 2>&1; then
+        storage_log_ok "NFS export available (${export_path})"
+    else
+        storage_log_err "NFS export not found or not permitted for this host (${host}:${export_path})."
+        rmdir "$tmp" 2>/dev/null || true
+        return 1
+    fi
+
+    # 3. Readable.
+    if ls "$tmp" >/dev/null 2>&1; then
+        storage_log_ok "Share is readable"
+    else
+        storage_log_err "Share mounted but is not readable."
+        rc=1
+    fi
+
+    # 4. Writable — tested as the install user (not sudo), mirroring how
+    #    MediaStack actually creates directories and the sentinel. Catches
+    #    read-only exports and root-squash that would block managed writes.
+    if [[ $rc -eq 0 ]]; then
+        if touch "$tmp/.mediastack-probe" >/dev/null 2>&1; then
+            rm -f "$tmp/.mediastack-probe" 2>/dev/null || true
+            storage_log_ok "Share is writable"
+        else
+            storage_log_err "Share is read-only for this host (check the NFS export's rw option + squash)."
+            rc=1
+        fi
+    fi
+
+    # 5. Classify while still mounted, then always unmount + clean up the temp dir.
+    if [[ $rc -eq 0 ]]; then
+        _STORAGE_PROBE_CLASS="$(storage_classify_data_root "$tmp")"
+    fi
+    sudo umount -l "$tmp" >/dev/null 2>&1 || true
+    rmdir "$tmp" 2>/dev/null || true
+    return $rc
 }
 
 storage_env_set() {
@@ -279,6 +381,7 @@ storage_preflight_nas() {
 
 storage_guard_before_start() {
     storage_is_nas || return 0
+    storage_watchdog_enabled || return 0
     if storage_nas_ok; then
         return 0
     fi
@@ -409,28 +512,45 @@ storage_watchdog_sudoers_content() {
 storage_pause_watchdog_for_install() {
     command -v systemctl >/dev/null 2>&1 || return 0
 
-    storage_log_info "Pausing NAS storage watchdog during Stage 1 install..."
+    # Only announce the pause when the watchdog is actually running; a stale or
+    # never-installed unit is torn down quietly (the reason for this probe).
+    local state
+    state="$(sudo systemctl is-active mediastack-storage-watchdog.service 2>/dev/null)" || true
+    case "$state" in
+        active|activating|reloading|deactivating)
+            storage_log_info "Pausing NAS storage watchdog during Stage 1 install..."
+            ;;
+    esac
+
+    # Defensively stop and disable even when it looks inactive: a leftover unit
+    # from a prior NAS install must not fire while setup churns services.
     sudo systemctl stop mediastack-storage-watchdog.service >/dev/null 2>&1 || true
     sudo systemctl disable mediastack-storage-watchdog.service >/dev/null 2>&1 || true
-    local state rc=0
+
+    # Verify it is genuinely inactive. Fail closed if it is still active OR its
+    # state cannot be verified (empty/error) — never continue on an unknown state.
+    local rc=0
     state="$(sudo systemctl is-active mediastack-storage-watchdog.service 2>/dev/null)" || rc=$?
     case "$state" in
-        inactive|failed|unknown)
-            return 0
-            ;;
+        inactive|failed|unknown) return 0 ;;
         active|activating|reloading|deactivating)
             storage_log_err "NAS storage watchdog is still active; refusing to continue while setup may stop/start protected services."
-            return 1
-            ;;
+            return 1 ;;
         *)
             storage_log_err "Could not verify NAS storage watchdog inactive state (systemctl exit ${rc}); refusing to continue."
-            return 1
-            ;;
+            return 1 ;;
     esac
 }
 
 storage_install_watchdog() {
     storage_is_nas || return 0
+    if ! storage_watchdog_enabled; then
+        # Disabled by config: tear down any unit left from a prior enabled run
+        # (stop+disable is fail-safe when nothing is installed) and skip install.
+        storage_pause_watchdog_for_install || true
+        storage_log_info "NAS storage watchdog disabled by configuration; not installing."
+        return 0
+    fi
     local script="$SCRIPT_DIR/scripts/storage-watchdog.sh"
     local unit="/etc/systemd/system/mediastack-storage-watchdog.service"
     local libexec_dir="/usr/local/libexec/mediastack"

@@ -21,6 +21,11 @@ if ! storage_is_nas; then
     exit 0
 fi
 
+if ! storage_watchdog_enabled; then
+    echo "$(date '+%F %T') [storage-watchdog] STORAGE_WATCHDOG=false; exiting"
+    exit 0
+fi
+
 STATE_DIR="$SCRIPT_DIR/config/state"
 LOCKFILE="$STATE_DIR/storage-watchdog.lock"
 STATE_FILE="$STATE_DIR/storage-watchdog-stopped"
@@ -132,6 +137,10 @@ protected_running_count() {
     printf '%s\n' "$count"
 }
 
+managed_service_count() {
+    storage_data_services | grep -c .
+}
+
 stop_managed_services() {
     local running svc stopped=false
     running="$(compose_running)"
@@ -201,9 +210,20 @@ watchdog_main() {
                     stopped_for_failure=false
                     ok_since=0
                     boot_recovery_done=true
-                elif ! $boot_recovery_done && [[ "$(protected_running_count)" == "0" ]]; then
-                    log "no NAS-dependent services are running after boot; starting expected service set"
-                    start_managed_services
+                elif ! $boot_recovery_done; then
+                    # One-time reconciliation once NAS is stable. The managed set
+                    # is the user's known NAS-dependent services
+                    # (storage_data_services), so ensure ALL of them are running
+                    # rather than only recovering the all-stopped case. Something
+                    # other than the watchdog can leave a subset stopped (e.g. a
+                    # setup re-run that stops services but restarts only jellyfin),
+                    # and the old all-or-nothing guard skipped recovery forever
+                    # whenever even one service was up. start_managed_services is
+                    # idempotent — it starts only the members that are not running.
+                    if (( $(protected_running_count) < $(managed_service_count) )); then
+                        log "reconciling NAS-dependent services after boot; starting any that are not running"
+                        start_managed_services
+                    fi
                     ok_since=0
                     boot_recovery_done=true
                 fi

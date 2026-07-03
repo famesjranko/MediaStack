@@ -19,7 +19,7 @@ scenario_begin "$CURRENT_SCENARIO"
 
 WIZARD="$REPO_ROOT/scripts/setup/wizard_apply.py"
 PRESETS_SRC="$REPO_ROOT/scripts/setup/presets.yml"
-CONFIG_SRC="$REPO_ROOT/config.yml"
+CONFIG_SRC="$REPO_ROOT/config/examples/config.yml"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 

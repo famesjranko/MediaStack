@@ -39,6 +39,11 @@ log_info()  { :; }
 log_warn()  { :; }
 log_error() { :; }
 
+# ui_spin normally runs its command in a background subshell (the spinner owns
+# the TTY), which discards mock side-effects (e.g. an array a stubbed sudo fills).
+# Run the wrapped command in-process so call-capturing mocks observe the calls.
+ui_spin() { shift; "$@"; }
+
 # ---------------------------------------------------------------------------
 # detect_gpu
 # ---------------------------------------------------------------------------
@@ -46,6 +51,21 @@ log_error() { :; }
 lspci() { printf '01:00.0 VGA compatible controller: NVIDIA Corporation GA104\n'; }
 GPU_TYPE=""; detect_gpu
 assert_eq "nvidia" "$GPU_TYPE" "detect_gpu: nvidia via VGA line"
+unset -f lspci
+
+lspci() {
+    printf '%s\n' \
+        '00:00.0 Host bridge: Intel Corporation Host Bridge' \
+        '00:02.0 Display controller: Intel Corporation UHD Graphics' \
+        '01:00.0 VGA compatible controller: NVIDIA Corporation GA104' \
+        '02:00.0 3D controller: NVIDIA Corporation GA104' \
+        '03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 14'
+}
+JELLYFIN_GPU=amd
+GPU_TYPE=""; detect_gpu
+assert_eq "nvidia amd intel" "${GPU_CANDIDATES[*]}" "detect_gpu: mixed vendors are deduplicated in priority order"
+assert_eq "amd" "$GPU_TYPE" "detect_gpu: configured available vendor becomes the default"
+unset JELLYFIN_GPU
 unset -f lspci
 
 lspci() { printf '06:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 14\n'; }
@@ -633,17 +653,57 @@ log_error() { :; }
 
 # --- nvidia_driver_source: none / debian / foreign ---
 command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac; }
+dpkg-query() { return 1; }
 assert_eq "none" "$(nvidia_driver_source)" "nvidia_driver_source: no nvidia-smi → none"
-unset -f command
+unset -f command dpkg-query
 
 command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac; }
 nvidia-smi() { return 0; }
 dpkg-query() { printf 'install ok installed'; }
 assert_eq "debian" "$(nvidia_driver_source)" "nvidia_driver_source: nvidia-driver package present → debian"
+if nvidia_driver_healthy; then
+    pass "nvidia_driver_healthy: healthy runtime is independent of Debian ownership"
+else
+    fail "nvidia_driver_healthy: healthy runtime is independent of Debian ownership"
+fi
+nvidia-smi() { [[ "$*" == *"--query-gpu"* ]] && printf '535.100\n' || return 1; }
+assert_eq "debian" "$(nvidia_driver_source)" "nvidia_driver_source: unhealthy Debian driver retains Debian ownership"
+if nvidia_driver_healthy; then
+    fail "nvidia_driver_healthy: failing nvidia-smi -L is unhealthy"
+else
+    pass "nvidia_driver_healthy: failing nvidia-smi -L is unhealthy"
+fi
 unset -f dpkg-query
 dpkg-query() { return 1; }
 assert_eq "foreign" "$(nvidia_driver_source)" "nvidia_driver_source: non-packaged driver → foreign"
+assert_eq "535.100" "$(nvidia_driver_version)" "nvidia_driver_version: returns one normalized version"
+nvidia-smi() { printf '535.100\n550.20\n'; }
+if nvidia_driver_version >/dev/null; then
+    fail "nvidia_driver_version: rejects mixed loaded driver versions"
+else
+    pass "nvidia_driver_version: rejects mixed loaded driver versions"
+fi
 unset -f dpkg-query nvidia-smi command
+
+# --- apply_nvidia_patch: normalized multi-GPU version and strict failure status ---
+PATCH_TEST_DIR=$(mktemp -d)
+nvidia_patch_prepare_repo() { return 0; }
+nvidia_patch_export_run_tree() { mkdir -p "$PATCH_TEST_DIR/run"; printf '%s' "$PATCH_TEST_DIR/run"; }
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac; }
+nvidia-smi() { printf '550.90\n550.90\n'; }
+bash() { PATCH_COMPAT_ARG="${3:-}"; return 0; }
+sudo() { return 0; }
+SCRIPT_DIR="$PATCH_TEST_DIR/root"
+mkdir -p "$SCRIPT_DIR"
+rc=0; apply_nvidia_patch || rc=$?
+assert_eq "0" "$rc" "apply_nvidia_patch: successful NVENC patch returns success"
+assert_eq "550.90" "$PATCH_COMPAT_ARG" "apply_nvidia_patch: duplicate GPU versions normalize before compatibility check"
+sudo() { return 1; }
+rc=0; apply_nvidia_patch || rc=$?
+assert_eq "1" "$rc" "apply_nvidia_patch: failed NVENC patch returns failure"
+rm -rf "$PATCH_TEST_DIR"
+unset -f nvidia_patch_prepare_repo nvidia_patch_export_run_tree command nvidia-smi bash sudo
+unset PATCH_TEST_DIR PATCH_COMPAT_ARG rc
 
 # Deterministic Debian release seams for the resolver/non-free assertions.
 _debian_codename() { printf 'bookworm'; }
@@ -700,6 +760,7 @@ unset PATCH_CALLED rc
 
 # --- install_nvidia_drivers_apt: fresh install → standard + reboot, no patch ---
 command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac; }
+dpkg-query() { return 1; }
 check_secure_boot() { printf 'disabled'; }
 ensure_debian_nonfree() { return 0; }
 _resolve_debian_nvidia_driver() { printf 'nvidia-driver firmware-misc-nonfree'; }
@@ -717,8 +778,33 @@ assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt: fresh ap
 assert_eq "true" "$NEEDS_REBOOT" "install_nvidia_drivers_apt: fresh install with nouveau active → reboot required"
 assert_eq "0" "$PATCH_CALLED" "install_nvidia_drivers_apt: fresh Standard install never patches"
 unset -f command check_secure_boot ensure_debian_nonfree _resolve_debian_nvidia_driver \
-    _install_nvidia_container_toolkit nouveau_is_active apply_nvidia_patch sudo
+    _install_nvidia_container_toolkit nouveau_is_active apply_nvidia_patch sudo dpkg-query
 unset PATCH_CALLED rc NEEDS_REBOOT
+
+# --- install_nvidia_drivers_apt repair: one reinstall, no toolkit package transaction ---
+nvidia_driver_source() { printf 'debian'; }
+check_secure_boot() { printf 'disabled'; }
+ensure_debian_nonfree() { return 0; }
+_nvidia_debian_repair_packages() { printf '%s\n' nvidia-driver libnvidia-encode1:amd64; }
+_nvidia_toolkit_healthy() { return 0; }
+TOOLKIT_CONFIGURES=0
+_configure_nvidia_container_toolkit() { TOOLKIT_CONFIGURES=$((TOOLKIT_CONFIGURES + 1)); return 0; }
+REPAIR_CALLS=()
+sudo() { REPAIR_CALLS+=("$*"); return 0; }
+GPU_TYPE=nvidia
+NVIDIA_DRIVER_MODE=""
+rc=0; install_nvidia_drivers_apt repair || rc=$?
+assert_eq "0" "$rc" "install_nvidia_drivers_apt repair: succeeds"
+assert_contains "${REPAIR_CALLS[*]}" "apt-get update -qq" "install_nvidia_drivers_apt repair: refreshes apt metadata"
+assert_contains "${REPAIR_CALLS[*]}" "apt-get install -y -qq --reinstall nvidia-driver libnvidia-encode1:amd64" "install_nvidia_drivers_apt repair: reinstalls existing driver/userspace packages once"
+assert_eq "1" "$TOOLKIT_CONFIGURES" "install_nvidia_drivers_apt repair: configures toolkit once"
+assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt repair: persists Standard mode"
+unset -f nvidia_driver_source check_secure_boot ensure_debian_nonfree _nvidia_debian_repair_packages \
+    _nvidia_toolkit_healthy _configure_nvidia_container_toolkit sudo
+unset TOOLKIT_CONFIGURES REPAIR_CALLS GPU_TYPE NVIDIA_DRIVER_MODE rc
+source "$REPO_ROOT/scripts/setup/gpu.sh"
+set +e
+set +u
 
 # --- Standard → Unlock conversion: purge exact driver packages, preserve toolkit ---
 dpkg-query() {
@@ -727,6 +813,7 @@ nvidia-driver ii
 nvidia-kernel-dkms ii
 libcuda1:amd64 ii
 libnvidia-encode1:amd64 ii
+cuda-toolkit-12-5 ii
 nvidia-container-toolkit ii
 nvidia-container-toolkit-base ii
 libnvidia-container-tools ii
@@ -749,8 +836,17 @@ case "$_pkg_list" in
         pass "_nvidia_debian_driver_packages: excludes toolkit and mesa alternatives"
         ;;
 esac
+_repair_pkg_list=$(_nvidia_debian_repair_packages | tr '\n' ' ')
+assert_contains "$_repair_pkg_list" "libcuda1:amd64" "_nvidia_debian_repair_packages: includes Debian CUDA runtime"
+assert_contains "$_repair_pkg_list" "glx-alternative-nvidia" "_nvidia_debian_repair_packages: includes Debian GLX userspace"
+case "$_repair_pkg_list" in
+    *cuda-toolkit*|*nvidia-container-toolkit*|*libnvidia-container*)
+        fail "_nvidia_debian_repair_packages: excludes CUDA SDK and container toolkit packages"
+        ;;
+    *) pass "_nvidia_debian_repair_packages: excludes CUDA SDK and container toolkit packages" ;;
+esac
 unset -f dpkg-query
-unset _pkg_list
+unset _pkg_list _repair_pkg_list
 
 sudo() { return 0; }
 lsmod() { printf 'nvidia_uvm 1 0\nsnd 1 0\n'; }
@@ -856,8 +952,14 @@ source "$REPO_ROOT/scripts/setup/gpu.sh"
 # `printf ... | sudo tee` runs sudo in a pipe subshell, so capture the written
 # source line to a temp file (a variable assignment wouldn't reach this shell).
 _nf_cap=$(mktemp)
-apt-cache() { return 0; }   # apt cannot see non-free → managed file is written
+# ensure_debian_nonfree greps the system sources file directly (apt-cache is
+# circular — our own stale managed file would make a component look "visible").
+# Point it at a temp file via the test-only seam so per-case "already present"
+# state is deterministic instead of depending on the host's real sources.list.
+_nf_src=$(mktemp)
+export MEDIASTACK_APT_SOURCES="$_nf_src"
 sudo() { if [[ "${1:-}" == "tee" ]]; then cat > "$_nf_cap"; else cat >/dev/null 2>&1 || true; fi; return 0; }
+: > "$_nf_src"   # no components visible → managed file is written
 _debian_codename() { printf 'bookworm'; }; _debian_version_id() { printf '12'; }
 : > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "contrib" "ensure_debian_nonfree: Debian 12 includes contrib"
@@ -874,17 +976,18 @@ _debian_codename() { printf 'trixie'; }; _debian_version_id() { printf '13'; }
 : > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "non-free-firmware" "ensure_debian_nonfree: Debian 13 includes non-free-firmware"
 # Partial setup: non-free visible but contrib/non-free-firmware missing → still writes.
-apt-cache() { printf ' 500 http://deb.debian.org/debian trixie/non-free amd64 Packages\n'; }
+printf 'deb http://deb.debian.org/debian trixie main non-free\n' > "$_nf_src"
 : > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "contrib" "ensure_debian_nonfree: partial setup (non-free only) still enables contrib"
 assert_contains "$_nf_line" "non-free-firmware" "ensure_debian_nonfree: partial setup still enables non-free-firmware"
 # Idempotent: when ALL required components are already visible, do not rewrite.
-apt-cache() { printf ' 500 http://deb.debian.org/debian trixie/contrib amd64 Packages\n 500 http://deb.debian.org/debian trixie/non-free amd64 Packages\n 500 http://deb.debian.org/debian trixie/non-free-firmware amd64 Packages\n'; }
+printf 'deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware\n' > "$_nf_src"
 : > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
 assert_eq "" "$_nf_line" "ensure_debian_nonfree: idempotent — skips when all components visible"
-rm -f "$_nf_cap"
-unset -f apt-cache sudo _debian_codename _debian_version_id
-unset _nf_cap _nf_line
+rm -f "$_nf_cap" "$_nf_src"
+unset MEDIASTACK_APT_SOURCES
+unset -f sudo _debian_codename _debian_version_id
+unset _nf_cap _nf_src _nf_line
 
 # --- ensure_debian_backports: managed source, idempotent, codename-aware ---
 _bp_cap=$(mktemp)

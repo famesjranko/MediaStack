@@ -16,7 +16,7 @@ CURRENT_SCENARIO="wizard-presets"
 scenario_begin "$CURRENT_SCENARIO"
 
 WIZARD="$REPO_ROOT/scripts/setup/wizard_apply.py"
-CONFIG_SRC="$REPO_ROOT/config.yml"
+CONFIG_SRC="$REPO_ROOT/config/examples/config.yml"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -142,17 +142,25 @@ assert_eq "50.0" \
     "$(yaml_get "$config" "c['quality_definitions']['radarr']['WEBDL-1080p']['preferred']")" \
     "1080p balanced: radarr WEBDL-1080p preferred carried from ADR-25"
 
-assert_eq "10" \
+assert_eq "0" \
     "$(yaml_get "$config" "c['custom_formats']['x264']")" \
-    "balanced size: x264 score is 10"
+    "balanced size: x264 neutral (0)"
 
-assert_eq "-25" \
+assert_eq "0" \
     "$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")" \
-    "balanced size: x265 score is -25"
+    "balanced size: x265 neutral (0 — transcoding server, and smaller files)"
 
-assert_eq "-10000" \
+assert_eq "0" \
     "$(yaml_get "$config" "c['custom_formats']['BR-DISK']")" \
-    "balanced size: BR-DISK blocks"
+    "balanced size: BR-DISK not hard-blocked (size envelope gates it)"
+
+assert_eq "-100" \
+    "$(yaml_get "$config" "c['custom_formats']['LQ']")" \
+    "balanced size: LQ is a soft penalty (-100), not a hard block"
+
+assert_eq "-10" \
+    "$(yaml_get "$config" "c['custom_formats']['No-RlsGroup']")" \
+    "balanced size: No-RlsGroup slight nudge (-10)"
 
 # =========================================================================
 # 1080p Large — best non-Remux 1080p (the old "quality", renamed Large).
@@ -179,9 +187,13 @@ assert_eq '["english", "french"]' \
     "$(yaml_get "$config" "c['bazarr']['languages']")" \
     "1080p large: bazarr languages"
 
-assert_eq "-50" \
+assert_eq "0" \
     "$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")" \
-    "large size: x265 strong penalty"
+    "large size: x265 neutral (0 — scores are size-uniform)"
+
+assert_eq "-100" \
+    "$(yaml_get "$config" "c['custom_formats']['LQ']")" \
+    "large size: LQ soft penalty (-100), not a hard block"
 
 assert_eq "5" \
     "$(yaml_get "$config" "c['custom_formats']['Repack/Proper']")" \
@@ -391,7 +403,9 @@ before_indexers_text=$(qonly_section_text "$config" "indexers")
 before_bazarr_text=$(qonly_section_text "$config" "bazarr")
 before_bitrate=$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")
 before_qname=$(yaml_get "$config" "c['quality_profile']['name']")
-before_x265=$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")
+# Custom-format scores are now size-independent, so prove the cell re-composed via
+# a size-varying BOUND instead (SDTV is in every cell's SD floor: balanced 8.0 -> large 10.0).
+before_sdtv=$(yaml_get "$config" "c['quality_definitions']['radarr']['SDTV']['preferred']")
 
 # Change cell: 1080p balanced -> 720p large (resolution AND size both move).
 python3 "$WIZARD" --quality-only --resolution 720p --size large --config "$config" >/dev/null 2>&1
@@ -401,14 +415,14 @@ assert_eq "720p Large" "$(yaml_get "$config" "c['quality_profile']['name']")" \
     "quality-only: profile name recomposed to '720p Large'"
 assert_eq "1001" "$(yaml_get "$config" "c['quality_profile']['cutoff_id']")" \
     "quality-only: cutoff_id follows 720p ceiling (1001)"
-assert_eq "-50" "$(yaml_get "$config" "c['custom_formats']['x265 (HD)']")" \
-    "quality-only: custom-format scores follow the large size (-50)"
+assert_eq "10.0" "$(yaml_get "$config" "c['quality_definitions']['radarr']['SDTV']['preferred']")" \
+    "quality-only: size-varying bounds follow the large size (radarr SDTV preferred 10.0)"
 [[ "$before_qname" != "720p Large" ]] \
     && pass "quality-only: profile name actually changed (was '$before_qname')" \
     || fail "quality-only: profile name actually changed" "still '$before_qname'"
-[[ "$before_x265" != "-50" ]] \
-    && pass "quality-only: x265 score actually changed (was '$before_x265')" \
-    || fail "quality-only: x265 score actually changed" "still '$before_x265'"
+[[ "$before_sdtv" != "10.0" ]] \
+    && pass "quality-only: size-varying bound actually changed (SDTV was '$before_sdtv')" \
+    || fail "quality-only: size-varying bound actually changed" "still '$before_sdtv'"
 
 # Everything else byte-identical.
 assert_eq "$before_indexers_text" "$(qonly_section_text "$config" "indexers")" \

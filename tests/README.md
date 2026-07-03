@@ -395,7 +395,8 @@ Current units:
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
 - **manage-updates** — covers the day-2 "Manage updates" feature (ADR-30): `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` truth table and hardened running-digest extraction, and the launcher's WireGuard/non-updatable exclusion from "Update all" (sources `mediastack` via its `BASH_SOURCE` guard). Pure bash + python3; no Docker/network.
-- **launcher-hardware** — covers the `./mediastack` day-2 "Manage hardware transcoding" surface: the post-install menu exposes it, the submenu offers configure/change and NVIDIA repatch where relevant, and configure/change dispatches to the transcoding recovery path. Pure bash; no Docker/network.
+- **launcher-hardware / nvidia-maintenance** — cover the day-2 hardware surface, Unlock-only visibility/dispatch guards, default-No cancellation, resolve-before-stop ordering, unload failure cleanup, one installer/toolkit execution, and expected-version marker persistence. Pure bash; no Docker/network.
+- **launcher-uninstall / uninstall-system-cleanup** — cover launcher routing/result reporting, root-only ledger reads, selective UFW/APT/sysctl/Samba cleanup, teardown failure rollback, and Stage 3 routing precedence.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
 - **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.
 - **remote-web-state** (`tests/unit/remote-web-state.sh`) — exercises `write_env()` remote marker rules and `print_access_info` output for unchecked, ready, skipped, and LAN-only states.
@@ -434,10 +435,17 @@ GPU-flow integration isn't covered by `fresh-install` (DinD has no GPU passthrou
 Focused hardware transcoding units:
 
 ```bash
-bash tests/unit/gpu-branching.sh && bash tests/unit/nvidia-patch.sh && bash tests/unit/launcher-hardware.sh && bash tests/unit/wizard-flow.sh && bash tests/unit/stage3-flow.sh && bash tests/unit/stage3-marker.sh && bash tests/unit/reboot.sh && bash tests/unit/stage3-summary.sh && bash tests/unit/setup-resume-routing.sh && bash tests/unit/stage3-transcode.sh && bash tests/unit/stage3-gpu-content.sh
+bash tests/unit/gpu-branching.sh && bash tests/unit/nvidia-patch.sh && bash tests/unit/nvidia-maintenance.sh && bash tests/unit/launcher-hardware.sh && bash tests/unit/wizard-flow.sh && bash tests/unit/stage3-flow.sh && bash tests/unit/stage3-marker.sh && bash tests/unit/reboot.sh && bash tests/unit/stage3-summary.sh && bash tests/unit/setup-resume-routing.sh && bash tests/unit/stage3-transcode.sh && bash tests/unit/stage3-gpu-content.sh
 ```
 
 Hardware transcoding coverage uses Bash units, stubs, API fixtures, automatic FFmpeg smoke-test stubs, `vainfo` parser fixtures, and captured Jellyfin FFmpeg/transcode log fallback fixtures. `stage3-transcode.sh` verifies parser evidence, automatic proof, and codec capability probing for `qsv`, `vaapi`, and `nvenc`; `stage3-flow.sh` verifies Intel QSV-to-VAAPI fallback routing and Jellyfin codec-specific API fields. Real GPU transcode proof still requires a real host because DinD has no physical Intel/AMD/NVIDIA GPU passthrough.
+
+Focused Stage 3 PTY coverage includes the single-vendor paths, NVIDIA ownership states,
+and `wizard-ui-stage3-multi-gpu`, which proves the detected-only vendor menu routes to the selection:
+
+```bash
+./tests/run.sh --no-preload wizard-ui-stage3-intel wizard-ui-stage3-amd wizard-ui-stage3-nvidia-standard wizard-ui-stage3-nvidia-existing wizard-ui-stage3-multi-gpu
+```
 
 Focused hardware-transcoding DinD regression gate:
 

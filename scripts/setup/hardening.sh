@@ -9,6 +9,68 @@
 # setup_samba()     — Optional SMB share. Needs credentials + DATA_DIR from
 #                     .env; runs after the wizard.
 
+MEDIASTACK_STATE_DIR=/etc/mediastack
+MEDIASTACK_STATE_FILE="$MEDIASTACK_STATE_DIR/install-state"
+MEDIASTACK_APT_AUTO_CONF=/etc/apt/apt.conf.d/21mediastack-auto-upgrades
+MEDIASTACK_APT_POLICY_CONF=/etc/apt/apt.conf.d/51mediastack-unattended-upgrades
+MEDIASTACK_SYSCTL_CONF=/etc/sysctl.d/90-mediastack-hardening.conf
+MEDIASTACK_UFW_AFTER_RULES=/etc/ufw/after.rules
+
+_ms_state_get() {
+    local key="$1"
+    sudo awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; found=1; exit} END {if (!found) exit 1}' \
+        "$MEDIASTACK_STATE_FILE" 2>/dev/null
+}
+
+_ms_state_set() {
+    local key="$1" value="$2" tmp
+    [[ "$key" =~ ^[A-Z0-9_]+$ && "$value" != *$'\n'* && "$value" != *$'\r'* ]] || return 1
+    tmp=$(mktemp)
+    if sudo test -f "$MEDIASTACK_STATE_FILE"; then
+        # shellcheck disable=SC2024 # output intentionally goes to the user-owned temp file
+        sudo awk -F= -v key="$key" '$1 != key' "$MEDIASTACK_STATE_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
+    fi
+    printf '%s=%s\n' "$key" "$value" >>"$tmp"
+    sudo install -d -m 0755 "$MEDIASTACK_STATE_DIR" \
+        && sudo install -m 0600 "$tmp" "$MEDIASTACK_STATE_FILE"
+    local rc=$?
+    rm -f "$tmp"
+    return "$rc"
+}
+
+_ms_root_sha256() {
+    sudo sha256sum "$1" 2>/dev/null | awk '{print $1}'
+}
+
+_ms_stream_sha256() {
+    sha256sum | awk '{print $1}'
+}
+
+_ufw_rule_hash() {
+    LC_ALL=C sudo ufw show added 2>/dev/null | sed -n '/^ufw /p' | _ms_stream_sha256
+}
+
+_ufw_defaults() {
+    LC_ALL=C sudo ufw status verbose 2>/dev/null \
+        | sed -n 's/^Default: \([^ ]*\) (incoming), \([^ ]*\) (outgoing).*/\1 \2/p' \
+        | head -1
+}
+
+_ms_ufw_allow() {
+    # ufw prints "Rule added"/"Skipping adding existing rule" to stdout on each
+    # call; suppress that per-rule noise (the caller logs a single summary line).
+    # stderr is preserved so genuine ufw errors still surface.
+    sudo ufw allow "$@" >/dev/null || return 1
+    sudo test -f "$MEDIASTACK_STATE_FILE" || return 0
+    local rule="allow $*" count i
+    count=$(_ms_state_get UFW_RULE_COUNT 2>/dev/null || echo 0)
+    for ((i = 1; i <= count; i++)); do
+        [[ "$(_ms_state_get "UFW_RULE_$i" 2>/dev/null || true)" == "$rule" ]] && return 0
+    done
+    count=$((count + 1))
+    _ms_state_set "UFW_RULE_$count" "$rule" && _ms_state_set UFW_RULE_COUNT "$count"
+}
+
 # ---------------------------------------------------------------------------
 # UFW firewall
 # ---------------------------------------------------------------------------
@@ -113,13 +175,13 @@ ufw_allow_ssh_port() {
 
     ufw_valid_port "$port" || return 0
 
-    sudo ufw allow from 10.0.0.0/8 to any port "$port" proto tcp comment 'SSH (LAN)' >/dev/null
-    sudo ufw allow from 172.16.0.0/12 to any port "$port" proto tcp comment 'SSH (LAN)' >/dev/null
-    sudo ufw allow from 192.168.0.0/16 to any port "$port" proto tcp comment 'SSH (LAN)' >/dev/null
+    _ms_ufw_allow from 10.0.0.0/8 to any port "$port" proto tcp comment MediaStack:SSH-LAN >/dev/null
+    _ms_ufw_allow from 172.16.0.0/12 to any port "$port" proto tcp comment MediaStack:SSH-LAN >/dev/null
+    _ms_ufw_allow from 192.168.0.0/16 to any port "$port" proto tcp comment MediaStack:SSH-LAN >/dev/null
 
     if [[ -n "$active_client_ip" && "$active_server_port" == "$port" ]] \
         && ! ufw_rfc1918_ipv4 "$active_client_ip"; then
-        sudo ufw allow from "$active_client_ip" to any port "$port" proto tcp comment 'SSH (current client)' >/dev/null
+        _ms_ufw_allow from "$active_client_ip" to any port "$port" proto tcp comment MediaStack:SSH-current-client >/dev/null
     fi
 }
 
@@ -145,45 +207,48 @@ setup_ufw_ssh_rules() {
     local ssh_port
     for ssh_port in "${ssh_ports[@]}"; do
         ufw_allow_ssh_port "$ssh_port" "$active_client_ip" "$active_server_port"
-        sudo ufw delete allow "$ssh_port/tcp" >/dev/null 2>&1 || true
     done
 }
 
 setup_ufw() {
     if ! command -v ufw &>/dev/null; then
-        log_info "Installing ufw..."
-        sudo apt-get install -y -qq ufw >/dev/null 2>&1
+        ui_spin "Installing ufw..." sudo apt-get install -y -qq ufw
     fi
 
-    if sudo ufw status 2>/dev/null | grep -q "Status: active" \
-       && sudo ufw status 2>/dev/null | grep -q "45876/tcp"; then
-        setup_ufw_ssh_rules
-        if ufw_docker_rules_installed; then
-            log_skip "UFW already configured (service, SSH, and Docker rules found)"
-            return
+    if [[ "$(_ms_state_get UFW_DEFAULTS_APPLIED 2>/dev/null || true)" == "true" \
+        && "$(_ufw_defaults)" != "deny allow" ]]; then
+        log_warn "UFW default policy changed after setup; leaving UFW unchanged"
+        return 0
+    fi
+
+    if sudo ufw status 2>/dev/null | grep -q 'MediaStack:Beszel-agent' \
+        && ufw_docker_rules_installed; then
+        if [[ "$(_ufw_defaults)" == "deny allow" ]]; then
+            log_skip "UFW already configured"
+        else
+            log_warn "UFW default policy changed after setup; leaving it unchanged"
         fi
-        log_info "UFW service rules found; repairing Docker LAN-only restrictions..."
-        setup_ufw_docker_rules
-        return
+        return 0
     fi
 
     log_info "Configuring UFW firewall..."
-
-    sudo ufw --force reset >/dev/null 2>&1
-
     sudo ufw default deny incoming >/dev/null
     sudo ufw default allow outgoing >/dev/null
+    _ms_state_set UFW_DEFAULTS_APPLIED true
 
     setup_ufw_ssh_rules
-    sudo ufw allow 80/tcp >/dev/null           # HTTP / Let's Encrypt
-    sudo ufw allow 443/tcp >/dev/null          # HTTPS
+    _ms_ufw_allow 80/tcp comment MediaStack:HTTP-ACME >/dev/null
+    _ms_ufw_allow 443/tcp comment MediaStack:HTTPS >/dev/null
     # Configurable ports (TORRENT_PORT, WG_PORT) are opened by
     # setup_ufw_service_ports() after the wizard sets their values.
-    sudo ufw allow from 172.16.0.0/12 to any port 45876 proto tcp >/dev/null  # Beszel hub->agent (Docker bridge->host)
+    _ms_ufw_allow from 172.16.0.0/12 to any port 45876 proto tcp comment MediaStack:Beszel-agent >/dev/null
 
-    sudo ufw --force enable >/dev/null
+    if ! sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+        sudo ufw --force enable >/dev/null
+        _ms_state_set UFW_ENABLED_BY_MEDIASTACK true
+    fi
 
-    setup_ufw_docker_rules
+    setup_ufw_docker_rules || return 1
 
     log_ok "UFW firewall enabled"
 }
@@ -248,6 +313,7 @@ setup_ufw_docker_rules() {
 -A MEDIASTACK-DOCKER-RESTRICT -j RETURN
 
 COMMIT
+# END MEDIASTACK-DOCKER-RULES
 RULES
     fi
 
@@ -275,26 +341,34 @@ RULES
 
 setup_unattended_upgrades() {
     if ! command -v unattended-upgrade &>/dev/null; then
-        log_info "Installing unattended-upgrades..."
-        sudo apt-get install -y -qq unattended-upgrades >/dev/null 2>&1
+        ui_spin "Installing unattended-upgrades..." sudo apt-get install -y -qq unattended-upgrades
     fi
 
-    local auto_conf="/etc/apt/apt.conf.d/20auto-upgrades"
-    if sudo grep -q 'MediaStack' "$auto_conf" 2>/dev/null; then
-        log_skip "Unattended-upgrades already configured"
+    if sudo test -e "$MEDIASTACK_APT_AUTO_CONF" \
+        || sudo test -e "$MEDIASTACK_APT_POLICY_CONF"; then
+        if sudo test -f "$MEDIASTACK_APT_AUTO_CONF" \
+            && sudo test -f "$MEDIASTACK_APT_POLICY_CONF" \
+            && [[ "$(_ms_root_sha256 "$MEDIASTACK_APT_AUTO_CONF")" == "$(_ms_state_get APT_AUTO_SHA256 2>/dev/null || true)" \
+            && "$(_ms_root_sha256 "$MEDIASTACK_APT_POLICY_CONF")" == "$(_ms_state_get APT_POLICY_SHA256 2>/dev/null || true)" ]]; then
+            log_skip "Unattended-upgrades already configured"
+        else
+            log_warn "MediaStack unattended-upgrades files are incomplete or changed; leaving them unchanged"
+        fi
         return
     fi
 
     log_info "Configuring automatic security updates..."
 
-    sudo tee "$auto_conf" >/dev/null <<'EOF'
+    sudo tee "$MEDIASTACK_APT_AUTO_CONF" >/dev/null <<'EOF'
 // MediaStack - automatic security updates
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
 
-    sudo tee /etc/apt/apt.conf.d/50unattended-upgrades >/dev/null <<'EOF'
+    sudo tee "$MEDIASTACK_APT_POLICY_CONF" >/dev/null <<'EOF'
+// MediaStack - security-only unattended upgrades
+#clear Unattended-Upgrade::Allowed-Origins;
 Unattended-Upgrade::Allowed-Origins {
     "${distro_id}:${distro_codename}-security";
 };
@@ -309,6 +383,14 @@ Unattended-Upgrade::Automatic-Reboot "false";
 Unattended-Upgrade::Remove-Unused-Dependencies "false";
 EOF
 
+    _ms_state_set APT_AUTO_SHA256 "$(_ms_root_sha256 "$MEDIASTACK_APT_AUTO_CONF")"
+    _ms_state_set APT_POLICY_SHA256 "$(_ms_root_sha256 "$MEDIASTACK_APT_POLICY_CONF")"
+    local apt_dump
+    apt_dump=$(apt-config dump)
+    grep -q 'APT::Periodic::Unattended-Upgrade "1"' <<<"$apt_dump" \
+        && grep -q 'Unattended-Upgrade::Automatic-Reboot "false"' <<<"$apt_dump" \
+        || { log_error "MediaStack unattended-upgrades policy is not effective"; return 1; }
+
     log_ok "Automatic security updates configured"
 }
 
@@ -317,15 +399,40 @@ EOF
 # ---------------------------------------------------------------------------
 
 setup_sysctl_hardening() {
-    local conf="/etc/sysctl.d/90-mediastack-hardening.conf"
+    local conf="$MEDIASTACK_SYSCTL_CONF"
 
     if [[ -f "$conf" ]]; then
-        log_skip "Sysctl hardening already applied"
+        if [[ "$(_ms_state_get SYSCTL_FILE_CREATED 2>/dev/null || true)" == "true" ]] \
+            && [[ "$(_ms_root_sha256 "$conf")" == "$(_ms_state_get SYSCTL_FILE_SHA256 2>/dev/null || true)" ]]; then
+            log_skip "Sysctl hardening already applied"
+        else
+            log_warn "Existing $conf is not owned by MediaStack; leaving it unchanged"
+        fi
         return
     fi
 
     log_info "Applying kernel hardening (sysctl)..."
 
+    local keys=(
+        net.ipv4.tcp_syncookies
+        net.ipv4.conf.all.accept_redirects
+        net.ipv4.conf.default.accept_redirects
+        net.ipv4.conf.all.send_redirects
+        net.ipv4.conf.default.send_redirects
+        net.ipv4.conf.all.rp_filter
+        net.ipv4.conf.default.rp_filter
+        net.ipv4.icmp_echo_ignore_broadcasts
+        net.ipv4.conf.all.log_martians
+        net.ipv4.conf.default.log_martians
+    )
+    local key state_key
+    for key in "${keys[@]}"; do
+        state_key="SYSCTL_BEFORE_${key^^}"
+        state_key="${state_key//./_}"
+        _ms_state_set "$state_key" "$(sudo sysctl -n "$key")"
+    done
+
+    _ms_state_set SYSCTL_FILE_CREATED true
     sudo tee "$conf" >/dev/null <<'EOF'
 # MediaStack — kernel hardening
 # Does NOT touch ip_forward (Docker + WireGuard need it enabled)
@@ -351,6 +458,7 @@ net.ipv4.conf.all.log_martians = 1
 net.ipv4.conf.default.log_martians = 1
 EOF
 
+    _ms_state_set SYSCTL_FILE_SHA256 "$(_ms_root_sha256 "$conf")"
     sudo sysctl --system >/dev/null 2>&1
 
     log_ok "Kernel hardening applied"
@@ -365,6 +473,9 @@ verify_gpu_runtime() {
 
     local daemon_json="/etc/docker/daemon.json"
     if [[ ! -f "$daemon_json" ]]; then
+        if ! command -v nvidia-ctk &>/dev/null; then
+            return  # nvidia-ctk not installed yet — Stage 3 will configure the runtime
+        fi
         log_warn "daemon.json missing - attempting nvidia-ctk runtime configure..."
         sudo nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
         sudo systemctl restart docker 2>/dev/null || true
@@ -399,13 +510,13 @@ setup_ufw_service_ports() {
     command -v ufw &>/dev/null || [[ -x /usr/sbin/ufw ]] || return
 
     local torrent_port="${TORRENT_PORT:-6881}"
-    sudo ufw allow "$torrent_port/tcp" >/dev/null 2>&1
-    sudo ufw allow "$torrent_port/udp" >/dev/null 2>&1
+    _ms_ufw_allow "$torrent_port/tcp" comment MediaStack:Torrent-TCP >/dev/null 2>&1
+    _ms_ufw_allow "$torrent_port/udp" comment MediaStack:Torrent-UDP >/dev/null 2>&1
 
     local domain="${DOMAIN:-example.com}"
     if [[ -n "$domain" && "$domain" != "example.com" ]]; then
         local wg_port="${WG_PORT:-51820}"
-        sudo ufw allow "$wg_port/udp" >/dev/null 2>&1
+        _ms_ufw_allow "$wg_port/udp" comment MediaStack:WireGuard >/dev/null 2>&1
     fi
 
     sudo ufw reload >/dev/null 2>&1
@@ -417,6 +528,100 @@ setup_ufw_service_ports() {
 }
 
 # ---------------------------------------------------------------------------
+# Pre-install ownership ledger — call once before setup_hardening().
+# ---------------------------------------------------------------------------
+
+record_pre_install_state() {
+    sudo test -f "$MEDIASTACK_STATE_FILE" && return 0
+    if [[ "${STAGE_1_COMPLETE:-}" == "1" ]]; then
+        log_error "Completed install has no ownership ledger; refusing to record already-modified host state"
+        return 1
+    fi
+
+    local defaults="deny allow" incoming outgoing rules_hash tmp
+    rules_hash=$(printf '' | _ms_stream_sha256)
+    if command -v ufw >/dev/null 2>&1 || [[ -x /usr/sbin/ufw ]]; then
+        # Only read live state when UFW is active — inactive UFW has no Default line
+        # in `ufw status verbose`, so _ufw_defaults returns empty. Keep the "deny allow"
+        # sentinel (nothing to restore on uninstall) when UFW is inactive.
+        if sudo ufw status 2>/dev/null | grep -q 'Status: active'; then
+            defaults=$(_ufw_defaults)
+            rules_hash=$(_ufw_rule_hash)
+        fi
+    fi
+    read -r incoming outgoing <<<"$defaults"
+    [[ -n "$incoming" && -n "$outgoing" && "$rules_hash" =~ ^[0-9a-f]{64}$ ]] \
+        || { log_error "Could not read UFW pre-install state"; return 1; }
+
+    tmp=$(mktemp)
+    cat >"$tmp" <<EOF
+STATE_FORMAT=1
+UFW_RULES_BEFORE_SHA256=$rules_hash
+UFW_DEFAULT_INCOMING=$incoming
+UFW_DEFAULT_OUTGOING=$outgoing
+UFW_DEFAULTS_APPLIED=false
+UFW_ENABLED_BY_MEDIASTACK=false
+UFW_RULE_COUNT=0
+SYSCTL_FILE_CREATED=false
+SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK=false
+SAMBA_OWNERSHIP_RECORDED=false
+SAMBA_CONFIGURED=false
+SAMBA_SETUP_PENDING=false
+EOF
+    sudo install -d -m 0755 "$MEDIASTACK_STATE_DIR" \
+        && sudo install -m 0600 "$tmp" "$MEDIASTACK_STATE_FILE"
+    local rc=$?
+    rm -f "$tmp"
+    return "$rc"
+}
+
+validate_install_state() {
+    sudo test -f "$MEDIASTACK_STATE_FILE" \
+        && [[ "$(_ms_state_get STATE_FORMAT 2>/dev/null || true)" == "1" ]] \
+        && [[ "$(_ms_state_get UFW_RULES_BEFORE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] \
+        && [[ -n "$(_ms_state_get UFW_DEFAULT_INCOMING 2>/dev/null || true)" ]] \
+        && [[ -n "$(_ms_state_get UFW_DEFAULT_OUTGOING 2>/dev/null || true)" ]] \
+        || return 1
+
+    local key value count i
+    for key in UFW_DEFAULTS_APPLIED UFW_ENABLED_BY_MEDIASTACK SYSCTL_FILE_CREATED \
+        SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK SAMBA_OWNERSHIP_RECORDED SAMBA_CONFIGURED; do
+        [[ "$(_ms_state_get "$key" 2>/dev/null || true)" =~ ^(true|false)$ ]] || return 1
+    done
+    count=$(_ms_state_get UFW_RULE_COUNT 2>/dev/null || true)
+    [[ "$count" =~ ^[0-9]+$ ]] || return 1
+    for ((i = 1; i <= count; i++)); do
+        [[ "$(_ms_state_get "UFW_RULE_$i" 2>/dev/null || true)" == allow\ *MediaStack:* ]] || return 1
+    done
+    if [[ "$(_ms_state_get SYSCTL_FILE_CREATED)" == "true" ]]; then
+        [[ "$(_ms_state_get SYSCTL_FILE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] || return 1
+        for key in TCP_SYNCOOKIES CONF_ALL_ACCEPT_REDIRECTS CONF_DEFAULT_ACCEPT_REDIRECTS \
+            CONF_ALL_SEND_REDIRECTS CONF_DEFAULT_SEND_REDIRECTS CONF_ALL_RP_FILTER \
+            CONF_DEFAULT_RP_FILTER ICMP_ECHO_IGNORE_BROADCASTS CONF_ALL_LOG_MARTIANS \
+            CONF_DEFAULT_LOG_MARTIANS; do
+            _ms_state_get "SYSCTL_BEFORE_NET_IPV4_$key" >/dev/null 2>&1 || return 1
+        done
+    fi
+    for key in APT_AUTO_SHA256 APT_POLICY_SHA256; do
+        value=$(_ms_state_get "$key" 2>/dev/null || true)
+        [[ -z "$value" || "$value" =~ ^[0-9a-f]{64}$ ]] || return 1
+    done
+    if [[ "$(_ms_state_get SAMBA_OWNERSHIP_RECORDED)" == "true" ]]; then
+        for key in SAMBA_SERVICE_WAS_ENABLED SAMBA_SERVICE_WAS_ACTIVE SAMBA_USER_PREEXISTED \
+            SAMBA_PASSDB_PREEXISTED SAMBA_GROUP_PREEXISTED SAMBA_SETUP_PENDING \
+            SAMBA_PASSDB_CREATED_BY_MEDIASTACK SAMBA_GROUP_ADDED_BY_MEDIASTACK; do
+            [[ "$(_ms_state_get "$key" 2>/dev/null || true)" =~ ^(true|false)$ ]] || return 1
+        done
+        [[ -n "$(_ms_state_get SAMBA_USER 2>/dev/null || true)" ]] || return 1
+    fi
+    if [[ "$(_ms_state_get SAMBA_CONFIGURED)" == "true" ]]; then
+        [[ "$(_ms_state_get SAMBA_OWNERSHIP_RECORDED 2>/dev/null || true)" == "true" ]] || return 1
+        [[ "$(_ms_state_get SAMBA_INCLUDE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] || return 1
+        [[ "$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] || return 1
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Public orchestrator — called before the wizard
 # ---------------------------------------------------------------------------
 
@@ -424,12 +629,24 @@ setup_hardening() {
     log_info "Applying OS hardening..."
     echo ""
 
-    setup_ufw
-    setup_unattended_upgrades
-    setup_sysctl_hardening
-    verify_gpu_runtime
+    # Both are user choices (wizard prompts / day-2 toggles). Absent flag =>
+    # true so existing installs stay hardened after upgrade. verify_gpu_runtime
+    # is intentionally NOT here — it is a GPU check, not security hardening, and
+    # is called on its own in setup.sh regardless of these toggles.
+    if [[ "${UFW_ENABLED:-true}" == "true" ]]; then
+        setup_ufw
+    else
+        log_skip "UFW firewall disabled by user choice"
+    fi
 
-    log_ok "OS hardening complete"
+    if [[ "${HARDENING_ENABLED:-true}" == "true" ]]; then
+        setup_unattended_upgrades
+        setup_sysctl_hardening
+    else
+        log_skip "System hardening (auto-updates + kernel sysctl) disabled by user choice"
+    fi
+
+    log_ok "OS hardening step complete"
 }
 
 # ---------------------------------------------------------------------------
@@ -467,14 +684,12 @@ setup_samba() {
             log_info "SMB_ENABLED=false - removing MediaStack samba config..."
             sudo rm -f "$SAMBA_INCLUDE_FILE"
             sudo systemctl reload smbd >/dev/null 2>&1 || true
+            if [[ "$(_ms_state_get SAMBA_CONFIGURED 2>/dev/null || true)" == "true" ]]; then
+                _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
+            fi
             log_ok "MediaStack samba config removed (user samba config preserved)"
         fi
         return
-    fi
-
-    if ! command -v smbd &>/dev/null; then
-        log_info "Installing samba..."
-        sudo apt-get install -y -qq samba >/dev/null 2>&1
     fi
 
     local admin_user="${JELLYFIN_ADMIN_USER:-admin}"
@@ -512,11 +727,30 @@ setup_samba() {
         && sudo grep -Fxq "$include_line" "$SAMBA_MAIN_CONF" 2>/dev/null; then
         if sudo grep -Fxq "[$share_name]" "$SAMBA_INCLUDE_FILE" 2>/dev/null \
             && sudo grep -Fxq "   path = $share_path" "$SAMBA_INCLUDE_FILE" 2>/dev/null; then
-            log_skip "Samba already configured"
+            if [[ "$(_ms_state_get SAMBA_SETUP_PENDING 2>/dev/null || true)" == "true" ]]; then
+                local expected_hash
+                expected_hash=$(_ms_state_get SAMBA_INCLUDE_SHA256 2>/dev/null || true)
+                if [[ ! "$expected_hash" =~ ^[0-9a-f]{64}$ ]] \
+                    || [[ "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")" != "$expected_hash" ]]; then
+                    log_warn "Interrupted Samba setup has an edited or unverifiable include; leaving it unchanged"
+                    return 0
+                fi
+                # Resume below: user/group, service, firewall, and final ledger
+                # writes are idempotent and may not have completed before interruption.
+            elif [[ "$(_ms_state_get SAMBA_OWNERSHIP_RECORDED 2>/dev/null || true)" == "true" ]]; then
+                _ms_state_set SAMBA_INCLUDE_SHA256 "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")"
+                _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
+                _ms_state_set SAMBA_CONFIGURED true
+                log_skip "Samba already configured"
+                return 0
+            else
+                log_skip "Samba already configured"
+                return 0
+            fi
         else
             log_warn "Samba already configured with a different MediaStack share scope; leaving existing SMB config unchanged."
+            return 0
         fi
-        return
     fi
 
     # Same hardcoded-1000 trap as create_data_dirs: when .env hasn't been
@@ -527,17 +761,74 @@ setup_samba() {
 
     log_info "Configuring SMB file share..."
 
+    local ownership_recorded passdb_preexisted group_preexisted gid_group
+    ownership_recorded=$(_ms_state_get SAMBA_OWNERSHIP_RECORDED 2>/dev/null || echo false)
+    if [[ "$ownership_recorded" == "false" ]]; then
+        local samba_was_present=false service_was_enabled=false service_was_active=false user_preexisted=false
+        passdb_preexisted=false
+        command -v smbd &>/dev/null && samba_was_present=true
+        if $samba_was_present; then
+            sudo systemctl is-enabled smbd >/dev/null 2>&1 && service_was_enabled=true
+            sudo systemctl is-active smbd >/dev/null 2>&1 && service_was_active=true
+            sudo pdbedit -L -u "$admin_user" >/dev/null 2>&1 && passdb_preexisted=true
+        fi
+        id "$admin_user" &>/dev/null && user_preexisted=true
+        gid_group=$(getent group "$pgid" | cut -d: -f1)
+        group_preexisted=true
+        if [[ -n "$gid_group" && "$user_preexisted" == "true" ]]; then
+            id -nG "$admin_user" | tr ' ' '\n' | grep -Fxq "$gid_group" || group_preexisted=false
+        elif [[ -n "$gid_group" ]]; then
+            group_preexisted=false
+        fi
+        _ms_state_set SAMBA_SERVICE_WAS_ENABLED "$service_was_enabled"
+        _ms_state_set SAMBA_SERVICE_WAS_ACTIVE "$service_was_active"
+        _ms_state_set SAMBA_USER "$admin_user"
+        _ms_state_set SAMBA_USER_PREEXISTED "$user_preexisted"
+        _ms_state_set SAMBA_PASSDB_PREEXISTED "$passdb_preexisted"
+        _ms_state_set SAMBA_GROUP "$gid_group"
+        _ms_state_set SAMBA_GROUP_PREEXISTED "$group_preexisted"
+        _ms_state_set SAMBA_SETUP_PENDING true
+        _ms_state_set SAMBA_PASSDB_CREATED_BY_MEDIASTACK false
+        _ms_state_set SAMBA_GROUP_ADDED_BY_MEDIASTACK false
+        _ms_state_set SAMBA_OWNERSHIP_RECORDED true
+        if ! $samba_was_present; then
+            _ms_state_set SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK true
+            ui_spin "Installing samba..." sudo apt-get install -y -qq samba
+        fi
+    else
+        if [[ "$(_ms_state_get SAMBA_USER)" != "$admin_user" ]]; then
+            log_warn "Samba owner changed after setup; leaving existing Samba configuration unchanged"
+            return 0
+        fi
+        if ! command -v smbd &>/dev/null; then
+            if [[ "$(_ms_state_get SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK)" != "true" ]]; then
+                log_warn "Recorded Samba package is missing; leaving state unchanged"
+                return 0
+            fi
+            ui_spin "Retrying Samba installation..." sudo apt-get install -y -qq samba
+        fi
+        passdb_preexisted=$(_ms_state_get SAMBA_PASSDB_PREEXISTED)
+        group_preexisted=$(_ms_state_get SAMBA_GROUP_PREEXISTED)
+        gid_group=$(_ms_state_get SAMBA_GROUP)
+    fi
+
     if ! id "$admin_user" &>/dev/null; then
-        sudo useradd -M -s /usr/sbin/nologin "$admin_user" 2>/dev/null || true
+        [[ "$(_ms_state_get SAMBA_USER_PREEXISTED)" == "false" ]] \
+            || { log_warn "Pre-existing Samba OS user was removed; leaving state unchanged"; return 0; }
+        sudo useradd -M -s /usr/sbin/nologin "$admin_user"
     fi
-
-    local gid_group
-    gid_group=$(getent group "$pgid" | cut -d: -f1)
-    if [[ -n "$gid_group" ]]; then
-        sudo usermod -aG "$gid_group" "$admin_user" 2>/dev/null || true
+    if [[ -n "$gid_group" && "$group_preexisted" == "false" ]] \
+        && ! id -nG "$admin_user" | tr ' ' '\n' | grep -Fxq "$gid_group"; then
+        sudo usermod -aG "$gid_group" "$admin_user"
+        _ms_state_set SAMBA_GROUP_ADDED_BY_MEDIASTACK true
     fi
-
-    printf '%s\n%s\n' "$admin_pw" "$admin_pw" | sudo smbpasswd -a -s "$admin_user" >/dev/null 2>&1
+    if [[ "$passdb_preexisted" == "false" ]] \
+        && ! sudo pdbedit -L -u "$admin_user" >/dev/null 2>&1; then
+        printf '%s\n%s\n' "$admin_pw" "$admin_pw" | sudo smbpasswd -a -s "$admin_user" >/dev/null 2>&1
+        _ms_state_set SAMBA_PASSDB_CREATED_BY_MEDIASTACK true
+    elif [[ "$passdb_preexisted" == "true" ]]; then
+        log_warn "Samba user '$admin_user' already exists; preserving its existing password"
+    fi
 
     # Write the [Media] share to the dedicated include file. NO [global]
     # block: that would silently override the user's main-conf [global] on
@@ -558,6 +849,7 @@ setup_samba() {
    create mask = 0664
    directory mask = 0775
 EOF
+    _ms_state_set SAMBA_INCLUDE_SHA256 "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")"
 
     # Idempotently add the include line to main smb.conf (append-only — never
     # overwrite). Detection keys on the `include = <path>` line itself, so the
@@ -574,10 +866,249 @@ EOF
     sudo systemctl reload smbd >/dev/null 2>&1 || true
 
     # LAN-only SMB access
-    sudo ufw allow from 10.0.0.0/8 to any port 445 proto tcp comment 'SMB (LAN)' >/dev/null 2>&1
-    sudo ufw allow from 172.16.0.0/12 to any port 445 proto tcp comment 'SMB (LAN)' >/dev/null 2>&1
-    sudo ufw allow from 192.168.0.0/16 to any port 445 proto tcp comment 'SMB (LAN)' >/dev/null 2>&1
+    _ms_ufw_allow from 10.0.0.0/8 to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
+    _ms_ufw_allow from 172.16.0.0/12 to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
+    _ms_ufw_allow from 192.168.0.0/16 to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
     sudo ufw reload >/dev/null 2>&1
 
+    _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
+    _ms_state_set SAMBA_CONFIGURED true
+    _ms_state_set SAMBA_SETUP_PENDING false
+
     log_ok "SMB share configured: \\\\<server-ip>\\${share_name} -> ${share_path}"
+}
+
+# ---------------------------------------------------------------------------
+# Uninstall: reverse all MediaStack system changes
+# ---------------------------------------------------------------------------
+
+_uninstall_ufw() {
+    local numbers=() number defaults incoming outgoing before current count i rule args=()
+    mapfile -t numbers < <(LC_ALL=C sudo ufw status numbered 2>/dev/null \
+        | sed -n '/# MediaStack:/s/^\[[[:space:]]*\([0-9][0-9]*\)\].*/\1/p' | sort -rn)
+    for number in "${numbers[@]}"; do
+        sudo ufw --force delete "$number" >/dev/null || return 1
+    done
+    count=$(_ms_state_get UFW_RULE_COUNT 2>/dev/null || echo 0)
+    for ((i = 1; i <= count; i++)); do
+        rule=$(_ms_state_get "UFW_RULE_$i") || return 1
+        read -r -a args <<<"$rule"
+        sudo ufw --force delete "${args[@]}" >/dev/null 2>&1 || true
+    done
+    LC_ALL=C sudo ufw show added 2>/dev/null | grep -Fq 'MediaStack:' && return 1
+
+    if sudo test -f "$MEDIASTACK_UFW_AFTER_RULES"; then
+        sudo sed -i '/^# MEDIASTACK-DOCKER-RULES/,/^# END MEDIASTACK-DOCKER-RULES$/d' "$MEDIASTACK_UFW_AFTER_RULES" || return 1
+    fi
+    sudo ufw reload >/dev/null 2>&1 || return 1
+    while sudo iptables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1; do
+        sudo iptables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT || return 1
+    done
+    if sudo iptables -L MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1; then
+        sudo iptables -F MEDIASTACK-DOCKER-RESTRICT \
+            && sudo iptables -X MEDIASTACK-DOCKER-RESTRICT || return 1
+    fi
+    sudo grep -q '^# MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER_RULES" 2>/dev/null && return 1
+    sudo iptables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1 && return 1
+
+    defaults=$(_ufw_defaults)
+    read -r incoming outgoing <<<"$defaults"
+    if [[ "$(_ms_state_get UFW_DEFAULTS_APPLIED)" == "true" ]]; then
+        if [[ "$incoming" == "deny" ]]; then
+            sudo ufw default "$(_ms_state_get UFW_DEFAULT_INCOMING)" incoming >/dev/null || return 1
+        else
+            log_warn "UFW incoming default changed after install; preserving '$incoming'"
+        fi
+        if [[ "$outgoing" == "allow" ]]; then
+            sudo ufw default "$(_ms_state_get UFW_DEFAULT_OUTGOING)" outgoing >/dev/null || return 1
+        else
+            log_warn "UFW outgoing default changed after install; preserving '$outgoing'"
+        fi
+    fi
+
+    before=$(_ms_state_get UFW_RULES_BEFORE_SHA256)
+    current=$(_ufw_rule_hash)
+    if [[ "$(_ms_state_get UFW_ENABLED_BY_MEDIASTACK)" == "true" ]] \
+        && sudo ufw status 2>/dev/null | grep -q 'Status: active'; then
+        defaults=$(_ufw_defaults)
+        if [[ "$current" == "$before" \
+            && "$defaults" == "$(_ms_state_get UFW_DEFAULT_INCOMING) $(_ms_state_get UFW_DEFAULT_OUTGOING)" ]]; then
+            sudo ufw --force disable >/dev/null || return 1
+        else
+            log_warn "UFW gained user changes after install; leaving it active"
+        fi
+    fi
+
+    # SSH lockout guard: we just deleted MediaStack's SSH allow rules. If UFW is
+    # still active and enforcing default-deny (we did NOT disable it — the user
+    # added their own rules, or the firewall pre-dates MediaStack), a remote
+    # admin could lose SSH. Re-assert an allow for the current SSH session's
+    # source and for the detected SSH port(s) from the private LAN ranges. These
+    # are left UNTAGGED on purpose so a future uninstall/toggle never strips them
+    # (which would re-introduce the lockout) — they become the user's own rules.
+    if sudo ufw status 2>/dev/null | grep -q 'Status: active'; then
+        local ssh_incoming ssh_port ssh_cidr ssh_client ssh_sport ssh_kept=false
+        read -r ssh_incoming _ < <(_ufw_defaults)
+        if [[ "$ssh_incoming" == "deny" ]]; then
+            if [[ -n "${SSH_CONNECTION:-}" ]]; then
+                read -r ssh_client _ _ ssh_sport _ <<<"$SSH_CONNECTION"
+                # Accept IPv6 sessions too (ufw_valid_ip_literal, matching the
+                # install path's detect_active_ssh_client). Restricting to
+                # ufw_valid_ipv4 here would skip the session allow for a remote
+                # admin on an IPv6-only SSH connection and lock them out.
+                if ufw_valid_ip_literal "$ssh_client" && ufw_valid_port "$ssh_sport"; then
+                    sudo ufw allow from "$ssh_client" to any port "$ssh_sport" proto tcp >/dev/null 2>&1 \
+                        && ssh_kept=true
+                fi
+            fi
+            while read -r ssh_port; do
+                [[ -n "$ssh_port" ]] || continue
+                for ssh_cidr in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
+                    sudo ufw allow from "$ssh_cidr" to any port "$ssh_port" proto tcp >/dev/null 2>&1 \
+                        && ssh_kept=true
+                done
+            done < <(detect_ssh_server_ports)
+            [[ "$ssh_kept" == "true" ]] \
+                && log_warn "UFW left active (default-deny); preserved SSH access (LAN + current session) so you are not locked out"
+        fi
+    fi
+    log_ok "MediaStack UFW rules removed; unrelated rules preserved"
+}
+
+_uninstall_apt() {
+    local path key expected
+    for path in "$MEDIASTACK_APT_AUTO_CONF" "$MEDIASTACK_APT_POLICY_CONF"; do
+        [[ "$path" == "$MEDIASTACK_APT_AUTO_CONF" ]] && key=APT_AUTO_SHA256 || key=APT_POLICY_SHA256
+        sudo test -e "$path" || continue
+        expected=$(_ms_state_get "$key") || return 1
+        if [[ "$(_ms_root_sha256 "$path")" != "$expected" ]]; then
+            log_error "Edited MediaStack APT file preserved: $path"
+            return 1
+        fi
+        sudo rm -f "$path" || return 1
+    done
+    sudo rm -f \
+        /etc/apt/sources.list.d/mediastack-nonfree.list \
+        /etc/apt/sources.list.d/mediastack-backports.list \
+        || true
+    log_ok "MediaStack apt sources and unattended-upgrades policy removed"
+}
+
+_uninstall_sysctl() {
+    [[ "$(_ms_state_get SYSCTL_FILE_CREATED)" == "true" ]] || return 0
+    local conf="$MEDIASTACK_SYSCTL_CONF"
+    sudo test -e "$conf" || return 0
+    if [[ "$(_ms_root_sha256 "$conf")" != "$(_ms_state_get SYSCTL_FILE_SHA256)" ]]; then
+        log_error "Edited MediaStack sysctl file preserved: $conf"
+        return 1
+    fi
+
+    local keys=(
+        net.ipv4.tcp_syncookies:1
+        net.ipv4.conf.all.accept_redirects:0
+        net.ipv4.conf.default.accept_redirects:0
+        net.ipv4.conf.all.send_redirects:0
+        net.ipv4.conf.default.send_redirects:0
+        net.ipv4.conf.all.rp_filter:1
+        net.ipv4.conf.default.rp_filter:1
+        net.ipv4.icmp_echo_ignore_broadcasts:1
+        net.ipv4.conf.all.log_martians:1
+        net.ipv4.conf.default.log_martians:1
+    ) item key applied state_key current
+    for item in "${keys[@]}"; do
+        key="${item%%:*}"; applied="${item#*:}"
+        state_key="SYSCTL_BEFORE_${key^^}"; state_key="${state_key//./_}"
+        local before; before=$(_ms_state_get "$state_key" 2>/dev/null || true)
+        current=$(sysctl -n "$key" 2>/dev/null)   # reading sysctl needs no root
+        if [[ "$current" == "$applied" ]]; then
+            if [[ -n "$before" ]]; then
+                sudo sysctl -w "$key=$before" >/dev/null || return 1
+            fi
+            # Empty before = key was at kernel default; conf removal below reverts on reboot
+        else
+            log_warn "sysctl $key changed after install; preserving '$current'"
+        fi
+    done
+    sudo rm -f "$conf" || return 1
+    log_ok "MediaStack kernel hardening removed"
+}
+
+_uninstall_samba() {
+    [[ "$(_ms_state_get SAMBA_OWNERSHIP_RECORDED)" == "true" ]] || return 0
+    if [[ "$(_ms_state_get SAMBA_SETUP_PENDING)" == "true" ]]; then
+        log_error "Samba setup is incomplete; rerun setup to finish it before uninstalling"
+        return 1
+    fi
+    local expected current adopted=false user group
+    expected=$(_ms_state_get SAMBA_INCLUDE_SHA256 2>/dev/null || true)
+    if sudo test -e "$SAMBA_INCLUDE_FILE"; then
+        if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]] \
+            || [[ "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")" != "$expected" ]]; then
+            log_error "Edited or unverifiable MediaStack Samba include preserved: $SAMBA_INCLUDE_FILE"
+            return 1
+        fi
+    fi
+    current=$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)
+    [[ "$current" == "$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)" ]] || adopted=true
+
+    sudo rm -f "$SAMBA_INCLUDE_FILE" || return 1
+    if sudo test -e "$SAMBA_MAIN_CONF"; then
+        sudo sed -i '/^# MEDIASTACK include - managed by setup\.sh$/d' "$SAMBA_MAIN_CONF" \
+            && sudo sed -i '\#^include = /etc/samba/smb\.conf\.d/mediastack\.conf$#d' "$SAMBA_MAIN_CONF" || return 1
+    fi
+    user=$(_ms_state_get SAMBA_USER)
+    if [[ "$(_ms_state_get SAMBA_PASSDB_CREATED_BY_MEDIASTACK)" == "true" ]] \
+        && sudo pdbedit -L -u "$user" >/dev/null 2>&1; then
+        sudo smbpasswd -x "$user" >/dev/null 2>&1 || return 1
+    fi
+    group=$(_ms_state_get SAMBA_GROUP)
+    if [[ -n "$group" && "$(_ms_state_get SAMBA_GROUP_ADDED_BY_MEDIASTACK)" == "true" ]] \
+        && id -nG "$user" 2>/dev/null | tr ' ' '\n' | grep -Fxq "$group"; then
+        sudo gpasswd -d "$user" "$group" >/dev/null 2>&1 || return 1
+    fi
+
+    if [[ "$(_ms_state_get SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK)" == "true" ]] \
+        && command -v smbd >/dev/null 2>&1; then
+        if $adopted; then
+            log_warn "Samba has non-MediaStack configuration; preserving the package"
+        else
+            sudo apt-get remove -y -qq samba >/dev/null 2>&1 || return 1
+        fi
+    else
+        if [[ "$(_ms_state_get SAMBA_SERVICE_WAS_ENABLED)" == "false" ]] \
+            && sudo systemctl is-enabled smbd >/dev/null 2>&1; then
+            sudo systemctl disable smbd >/dev/null 2>&1 || return 1
+        fi
+        if [[ "$(_ms_state_get SAMBA_SERVICE_WAS_ACTIVE)" == "false" ]] \
+            && sudo systemctl is-active smbd >/dev/null 2>&1; then
+            sudo systemctl stop smbd >/dev/null 2>&1 || return 1
+        else
+            sudo systemctl reload smbd >/dev/null 2>&1 || true
+        fi
+    fi
+    log_ok "MediaStack Samba configuration removed; Linux account preserved"
+}
+
+uninstall_system_cleanup() {
+    validate_install_state || { log_error "Missing or invalid MediaStack ownership ledger; refusing host cleanup"; return 1; }
+    local failed=0 svc
+    _uninstall_ufw || { log_error "UFW cleanup failed"; failed=1; }
+    _uninstall_apt || { log_error "APT cleanup failed"; failed=1; }
+    _uninstall_sysctl || { log_error "sysctl cleanup failed"; failed=1; }
+    _uninstall_samba || { log_error "Samba cleanup failed"; failed=1; }
+
+    for svc in mediastack-storage-watchdog mediastack-setup; do
+        if sudo test -f "/etc/systemd/system/${svc}.service"; then
+            sudo systemctl stop "${svc}.service" 2>/dev/null || failed=1
+            sudo systemctl disable "${svc}.service" 2>/dev/null || failed=1
+            sudo rm -f "/etc/systemd/system/${svc}.service" || failed=1
+        fi
+    done
+    sudo rm -f /etc/sudoers.d/mediastack-storage-watchdog || failed=1
+    sudo rm -rf /usr/local/libexec/mediastack || failed=1
+    sudo rm -f /etc/profile.d/mediastack-setup-result.sh || failed=1
+    sudo systemctl daemon-reload 2>/dev/null || failed=1
+
+    (( failed == 0 )) || { log_error "Host cleanup incomplete; ownership ledger retained for retry"; return 1; }
+    log_ok "MediaStack system artefacts removed"
 }

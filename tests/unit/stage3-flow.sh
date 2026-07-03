@@ -13,10 +13,22 @@ CURRENT_SCENARIO="stage3-flow"
 scenario_begin "$CURRENT_SCENARIO"
 
 [[ -f "$REPO_ROOT/scripts/setup/stages/stage3.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
-# stack.sh defines gpu_brand_label, which _stage3_offer uses for the "Detected GPU"
-# box brand casing; source it so the offer test resolves the helper (production
-# always has stack.sh sourced via setup.sh).
+# gpu_brand_label (used by _stage3_offer for the "Detected GPU" box brand casing)
+# now lives in gpu.sh, but sourcing all of gpu.sh here would clobber the
+# gpu_render_device_* helpers that the S3-08 blocks below deliberately drive
+# without gpu.sh loaded. Provide just the brand-label helper for the offer test.
 [[ -f "$REPO_ROOT/scripts/setup/stack.sh" ]] && source "$REPO_ROOT/scripts/setup/stack.sh"
+if ! type gpu_brand_label >/dev/null 2>&1; then
+    gpu_brand_label() {
+        case "${1:-}" in
+            nvidia) printf 'NVIDIA' ;;
+            amd)    printf 'AMD' ;;
+            intel)  printf 'Intel' ;;
+            none|"") printf 'none' ;;
+            *)      printf '%s' "$1" ;;
+        esac
+    }
+fi
 
 set +e
 set +u
@@ -24,6 +36,24 @@ set +u
 if ! type stage3_offer_choices >/dev/null 2>&1; then
     stage3_offer_choices() { printf '__not_implemented__'; }
 fi
+
+GPU_CANDIDATES=(nvidia amd intel)
+GPU_TYPE=amd
+GPU_MENU_CAPTURE=$(mktemp)
+ui_choose() {
+    shift
+    printf '%s\n%s' "${UI_CHOOSE_DEFAULT_INDEX:-}" "$*" > "$GPU_MENU_CAPTURE"
+    printf '%s\n' "Intel — Quick Sync"
+}
+_stage3_choose_gpu_vendor
+assert_eq "intel" "$GPU_TYPE" "S3-01: multi-GPU menu routes to the selected vendor"
+assert_eq "2" "$(head -1 "$GPU_MENU_CAPTURE")" "S3-01: configured available vendor is the multi-GPU default"
+assert_contains "$(tail -1 "$GPU_MENU_CAPTURE")" "NVIDIA — NVENC" "S3-01: multi-GPU menu includes detected NVIDIA"
+assert_contains "$(tail -1 "$GPU_MENU_CAPTURE")" "AMD — VAAPI" "S3-01: multi-GPU menu includes detected AMD"
+assert_contains "$(tail -1 "$GPU_MENU_CAPTURE")" "Intel — Quick Sync" "S3-01: multi-GPU menu includes detected Intel"
+unset -f ui_choose
+rm -f "$GPU_MENU_CAPTURE"
+unset GPU_CANDIDATES GPU_TYPE GPU_MENU_CAPTURE
 if ! type stage3_tell_me_more_copy >/dev/null 2>&1; then
     stage3_tell_me_more_copy() { printf '__not_implemented__'; }
 fi
@@ -80,10 +110,10 @@ skip_copy="$(stage3_skip_summary_copy)"
 if [[ "$skip_copy" == "__not_implemented__" ]]; then
     skip "S3-09: skip copy pending Stage 3 controller"
 else
-    if [[ "$skip_copy" == *"./setup.sh --transcoding"* ]]; then
-        assert_contains "$skip_copy" "Hardware transcoding skipped. Jellyfin will use software transcoding. Run ./setup.sh --transcoding to try again." "REC-03: skip copy names transcoding recovery command"
+    if [[ "$skip_copy" == *"Manage hardware transcoding"* ]]; then
+        assert_contains "$skip_copy" "Hardware transcoding skipped. Jellyfin will use software transcoding. Choose Manage hardware transcoding (GPU) from the menu to try again." "REC-03: skip copy names transcoding recovery route"
     else
-        skip "REC-03: skip copy names ./setup.sh --transcoding pending recovery hook"
+        skip "REC-03: skip copy names hardware transcoding recovery route pending recovery hook"
     fi
 fi
 
@@ -513,7 +543,7 @@ configured_mode=""
 ui_log() { :; }
 ui_banner() { :; }
 _stage3_offer() { printf '%s\n' "Configure hardware transcoding"; }
-_stage3_choose_nvidia_mode() { printf 'unlock'; }
+_stage3_choose_nvidia_action() { printf 'unlock'; }
 nvidia_driver_source() { printf 'debian'; }
 prepare_nvidia_debian_to_unlock() { prepare_calls=$((prepare_calls + 1)); return 0; }
 install_nvidia_drivers() { install_calls=$((install_calls + 1)); return 0; }
@@ -525,7 +555,7 @@ run_stage3
 assert_eq "1" "$prepare_calls" "S3-08: Standard→Unlock conversion prepares Debian driver removal"
 assert_eq "1" "$install_calls" "S3-08: Standard→Unlock conversion runs patch-managed installer after prepare"
 assert_eq "unlock" "$configured_mode" "S3-08: Standard→Unlock conversion records Unlock mode"
-unset -f ui_log ui_banner _stage3_offer _stage3_choose_nvidia_mode nvidia_driver_source \
+unset -f ui_log ui_banner _stage3_offer _stage3_choose_nvidia_action nvidia_driver_source \
     prepare_nvidia_debian_to_unlock install_nvidia_drivers apply_nvidia_patch verify_gpu_usable \
     _stage3_configure_and_verify _stage3_fallback
 unset GPU_TYPE NEEDS_REBOOT prepare_calls install_calls configured_mode
@@ -538,7 +568,7 @@ marker_args=""
 ui_log() { :; }
 ui_banner() { :; }
 _stage3_offer() { printf '%s\n' "Configure hardware transcoding"; }
-_stage3_choose_nvidia_mode() { printf 'unlock'; }
+_stage3_choose_nvidia_action() { printf 'unlock'; }
 nvidia_driver_source() { printf 'debian'; }
 prepare_nvidia_debian_to_unlock() { prepare_calls=$((prepare_calls + 1)); NEEDS_REBOOT=true; return 0; }
 install_nvidia_drivers() { install_calls=$((install_calls + 1)); return 0; }
@@ -550,7 +580,7 @@ run_stage3
 assert_eq "1" "$prepare_calls" "S3-08: Standard→Unlock conversion can queue reboot after prepare"
 assert_eq "0" "$install_calls" "S3-08: Standard→Unlock reboot path defers patch-managed install"
 assert_eq "unlock:run" "$marker_args" "S3-08: Standard→Unlock reboot path writes Unlock run marker"
-unset -f ui_log ui_banner _stage3_offer _stage3_choose_nvidia_mode nvidia_driver_source \
+unset -f ui_log ui_banner _stage3_offer _stage3_choose_nvidia_action nvidia_driver_source \
     prepare_nvidia_debian_to_unlock install_nvidia_drivers stage3_set_gpu_env \
     stage3_write_nvidia_marker stage3_prompt_nvidia_reboot _stage3_fallback
 unset GPU_TYPE NEEDS_REBOOT prepare_calls install_calls marker_args
@@ -596,6 +626,64 @@ unset -f ui_log install_nvidia_drivers _stage3_nvidia_finalize_failure
 SCRIPT_DIR="$prev_script_dir"
 unset finalize_failure_calls GPU_TYPE prev_script_dir
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+
+# Post-reboot NVIDIA finalize: driver verifies + patch applies but the final
+# test-transcode proof comes back inconclusive. A verified driver must NOT drop
+# to CPU software just because proof-gathering raced the Jellyfin restart.
+prev_script_dir="${SCRIPT_DIR:-}"
+SCRIPT_DIR="$TMP_ROOT/nvidia-finalize-proof-inconclusive"
+mkdir -p "$SCRIPT_DIR"
+finalize_failure_calls=0
+gpu_env_calls=()
+NVIDIA_DRIVER_MODE=unlock
+ui_log() { :; }
+nvidia-smi() { return 0; }
+sudo() { return 0; }
+docker() { return 0; }
+stage3_marker_driver_mode() { printf 'unlock'; }
+stage3_marker_install_source() { printf ''; }
+stage3_marker_expected_driver_version() { printf ''; }
+apply_nvidia_patch() { return 0; }
+verify_gpu_usable() { GPU_TYPE=nvidia; return 0; }
+_stage3_apply_runtime_override() { return 0; }
+stage3_probe_capabilities() { return 0; }
+_stage3_configure_jellyfin() { return 0; }
+_stage3_wait_for_jellyfin_encoding() { return 0; }
+stage3_verify_transcode_evidence() { return 1; }
+stage3_set_gpu_env() { gpu_env_calls+=("$1:$2:$3:$4"); return 0; }
+stage3_remove_nvidia_marker() { :; }
+_stage3_print_final_summary() { :; }
+_stage3_nvidia_finalize_failure() { finalize_failure_calls=$((finalize_failure_calls + 1)); return 0; }
+stage3_finalize_nvidia
+assert_eq "0" "$finalize_failure_calls" "S3-08: inconclusive test transcode does not fall back to software"
+assert_contains "${gpu_env_calls[*]}" "nvidia:complete:nvidia:nvenc" "S3-08: inconclusive test transcode still records NVENC complete"
+unset -f ui_log nvidia-smi sudo docker stage3_marker_driver_mode stage3_marker_install_source stage3_marker_expected_driver_version apply_nvidia_patch verify_gpu_usable _stage3_apply_runtime_override stage3_probe_capabilities _stage3_configure_jellyfin _stage3_wait_for_jellyfin_encoding stage3_verify_transcode_evidence stage3_set_gpu_env stage3_remove_nvidia_marker _stage3_print_final_summary _stage3_nvidia_finalize_failure
+SCRIPT_DIR="$prev_script_dir"
+unset finalize_failure_calls gpu_env_calls NVIDIA_DRIVER_MODE GPU_TYPE prev_script_dir
+source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+
+# Post-reboot driver-settle wait: the nvidia module can lag a few seconds behind
+# the resume service, so a not-yet-ready driver must be retried (bounded) rather
+# than read as a failure.
+smi_attempts=0
+sleep() { :; }
+nvidia-smi() { smi_attempts=$((smi_attempts + 1)); (( smi_attempts >= 3 )) && return 0; return 1; }
+STAGE3_NVIDIA_SMI_TIMEOUT=20
+if _stage3_wait_for_nvidia_smi; then
+    pass "S3-08: driver-settle wait returns success once nvidia-smi comes up"
+else
+    fail "S3-08: driver-settle wait returns success once nvidia-smi comes up"
+fi
+assert_eq "3" "$smi_attempts" "S3-08: driver-settle wait retries nvidia-smi until it responds"
+nvidia-smi() { return 1; }
+STAGE3_NVIDIA_SMI_TIMEOUT=4
+if _stage3_wait_for_nvidia_smi; then
+    fail "S3-08: driver-settle wait gives up when nvidia-smi never responds"
+else
+    pass "S3-08: driver-settle wait gives up when nvidia-smi never responds"
+fi
+unset -f sleep nvidia-smi
+unset smi_attempts STAGE3_NVIDIA_SMI_TIMEOUT
 
 for terminal_choice in "Skip for now" "Use software transcoding"; do
     gpu_env_calls=()
@@ -879,6 +967,69 @@ fi
 assert_eq "2" "$verify_attempts" "S3-08: Stage 3 timeout performs bounded verification attempts"
 unset -f _stage3_verify_jellyfin_encoding sleep
 unset verify_attempts sleep_calls STAGE3_ENCODING_VERIFY_TIMEOUT STAGE3_ENCODING_VERIFY_INTERVAL
+
+source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+nvidia_update_dir=$(mktemp -d)
+SCRIPT_DIR="$nvidia_update_dir"
+stage3_write_nvidia_marker unlock run-update 550.90
+command() { [[ "${1:-}:${2:-}" == "-v:nvidia-smi" ]] && return 0; builtin command "$@"; }
+nvidia-smi() { return 0; }
+nvidia_driver_version() { printf '535.100'; }
+install_nvidia_drivers() { UPDATE_FINALIZE_INSTALLS=$((UPDATE_FINALIZE_INSTALLS + 1)); }
+apply_nvidia_patch() { UPDATE_FINALIZE_PATCHES=$((UPDATE_FINALIZE_PATCHES + 1)); }
+_stage3_nvidia_finalize_failure() { UPDATE_FINALIZE_FAILURES=$((UPDATE_FINALIZE_FAILURES + 1)); }
+ui_log() { :; }
+UPDATE_FINALIZE_INSTALLS=0
+UPDATE_FINALIZE_PATCHES=0
+UPDATE_FINALIZE_FAILURES=0
+stage3_finalize_nvidia
+assert_eq "0" "$UPDATE_FINALIZE_INSTALLS" "FIN-03: update finalization never reinstalls the driver"
+assert_eq "0" "$UPDATE_FINALIZE_PATCHES" "FIN-03: version mismatch never patches the loaded driver"
+assert_eq "1" "$UPDATE_FINALIZE_FAILURES" "FIN-03: version mismatch uses finalization failure path"
+nvidia_driver_version() { printf '550.90'; }
+apply_nvidia_patch() { UPDATE_FINALIZE_PATCHES=$((UPDATE_FINALIZE_PATCHES + 1)); return 1; }
+stage3_finalize_nvidia
+assert_eq "1" "$UPDATE_FINALIZE_PATCHES" "FIN-03: matching update attempts the Unlock patch once"
+assert_eq "2" "$UPDATE_FINALIZE_FAILURES" "FIN-03: failed Unlock patch uses finalization failure path"
+unset -f command nvidia-smi nvidia_driver_version install_nvidia_drivers apply_nvidia_patch \
+    _stage3_nvidia_finalize_failure ui_log
+unset UPDATE_FINALIZE_INSTALLS UPDATE_FINALIZE_PATCHES UPDATE_FINALIZE_FAILURES
+rm -rf "$nvidia_update_dir"
+unset nvidia_update_dir
+source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+nvidia_driver_version() { printf '550.90'; }
+ui_box() { :; }
+ui_log() { :; }
+
+NVIDIA_MENU_FILE=$(mktemp)
+ui_choose() { printf '%s' "$*" > "$NVIDIA_MENU_FILE"; printf '%s\n' "Use installed driver 550.90 (recommended)"; }
+assert_eq "use" "$(_stage3_choose_nvidia_action debian healthy)" \
+    "S3-02: healthy Debian driver defaults to reuse"
+assert_contains "$(cat "$NVIDIA_MENU_FILE")" "Replace with Unlock NVENC" \
+    "S3-02: healthy Debian menu offers Unlock replacement"
+
+ui_choose() { printf '%s' "$*" > "$NVIDIA_MENU_FILE"; printf '%s\n' "Repair/reinstall Debian driver (recommended)"; }
+assert_eq "repair" "$(_stage3_choose_nvidia_action debian unhealthy)" \
+    "S3-02: unhealthy Debian driver defaults to one repair"
+assert_contains "$(cat "$NVIDIA_MENU_FILE")" "Use software transcoding" \
+    "S3-02: unhealthy Debian menu offers software fallback"
+
+ui_choose() { printf '%s' "$*" > "$NVIDIA_MENU_FILE"; printf '%s\n' "Use existing driver with user-managed updates"; }
+assert_eq "use-existing" "$(_stage3_choose_nvidia_action foreign healthy)" \
+    "S3-02: healthy externally managed driver can be used without mutation"
+assert_contains "$(cat "$NVIDIA_MENU_FILE")" "Reinstall (remove existing" \
+    "S3-02: externally managed driver menu offers reinstall (remove + choose driver mode)"
+
+ui_choose() { printf '%s' "$*" > "$NVIDIA_MENU_FILE"; printf '%s\n' "Use software transcoding"; }
+assert_eq "software" "$(_stage3_choose_nvidia_action foreign unhealthy)" \
+    "S3-02: unhealthy externally managed driver defaults to software"
+case "$(cat "$NVIDIA_MENU_FILE")" in
+    *foreign*|*"Use existing"*) fail "S3-02: unhealthy external-driver menu avoids internal terminology and unsafe reuse" ;;
+    *) pass "S3-02: unhealthy external-driver menu avoids internal terminology and unsafe reuse" ;;
+esac
+unset -f nvidia_driver_version ui_box ui_log ui_choose
+rm -f "$NVIDIA_MENU_FILE"
+unset NVIDIA_MENU_FILE
 
 scenario_end "$CURRENT_SCENARIO"
 summary

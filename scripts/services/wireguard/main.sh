@@ -38,7 +38,8 @@ configure_wireguard() {
     # tunnel. Pairing it with a restrictive tier silently neutralizes the
     # tier's server-side enforcement, which is almost certainly user error.
     if [[ "$per_client_fw" == "false" && "$access_tier" != "full-lan" ]]; then
-        log_warn "WG_PER_CLIENT_FIREWALL=false with WG_ACCESS_TIER='$access_tier' disables the tier's server-side enforcement - peers will reach more than the tier name suggests. If you wanted full tunnel, also set WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0'."
+        log_warn "WG_PER_CLIENT_FIREWALL=false with tier '$access_tier' disables server-side enforcement - peers reach more than the tier implies."
+        log_warn "For a full tunnel, set WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0' instead."
     fi
 
     # Readiness probe. v15 has no /api/health; use GET /api/client with Basic
@@ -103,7 +104,8 @@ for c in clients:
         if tier_ips=$(wg_firewall_ips_for_tier "$access_tier" "$lan_cidr" "$server_lan_ip"); then
             _wg_set_peer_firewall_ips "$wg_url" "$wg_user" "$wg_pw" "$peer_id" "$tier_ips" || return 1
         else
-            log_warn "WG_ACCESS_TIER='$access_tier' missing required env (need WG_LAN_CIDR for full-lan, WG_SERVER_LAN_IP otherwise); leaving initial peer restricted until .env is fixed"
+            log_warn "WG_ACCESS_TIER='$access_tier' missing required env - initial peer left restricted."
+            log_warn "Set WG_LAN_CIDR (full-lan) or WG_SERVER_LAN_IP (other tiers) in .env, then re-run."
             return 1
         fi
     fi

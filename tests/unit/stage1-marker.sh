@@ -87,9 +87,13 @@ _wizard_run_discovery() { :; }
 _stage1_show_system() { :; }
 _stage1_collect_admin() { :; }
 _stage1_collect_storage() { :; }
+_stage1_collect_subtitles() { :; }
+_stage1_collect_smb() { :; }
 _stage1_collect_quality() { :; }
-_stage1_collect_qbit() { :; }
+_stage1_collect_indexers() { :; }
 _stage1_collect_image_channel() { :; }
+_stage1_collect_qbit() { :; }
+_stage1_collect_security() { :; }
 _stage1_confirm() { _STAGE1_CONFIRM_ACTION=Install; }
 _stage1_install() { INSTALL_CALLED=true; WIZARD_RAN_INSTALL=true; }
 run_stage1; rc=$?

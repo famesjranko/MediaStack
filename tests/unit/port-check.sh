@@ -25,8 +25,8 @@ setup_sandbox() {
     cp "$REPO_ROOT/scripts/port-check.sh" "$TMP_DIR/sandbox/scripts/"
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/"
     cp "$REPO_ROOT/scripts/lib/ui.sh" "$TMP_DIR/sandbox/scripts/lib/"
-    cp "$REPO_ROOT/scripts/lib/ui_fallback.sh" "$TMP_DIR/sandbox/scripts/lib/"
-    cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/"  # common.sh + ui_fallback.sh source it
+    cp "$REPO_ROOT/scripts/lib/ui_render_fallback.sh" "$TMP_DIR/sandbox/scripts/lib/"
+    cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/"  # common.sh + ui_render_fallback.sh source it
     cat > "$TMP_DIR/sandbox/bin/getent" <<'STUB'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "ahosts" ]]; then
@@ -102,26 +102,26 @@ fi
 # No-domain mode should still give pre-install users useful forwarding
 # diagnostics: probe 80/443 by temporary listener rather than pretending
 # remote ports are unknowable until a domain exists.
-if echo "$output" | grep -q "TCP 80 (router forwarding)"; then
+if echo "$output" | grep -q "TCP 80 (HTTP)"; then
     pass "port-check.sh probes TCP 80/443 when no domain"
 else
-    fail "port-check.sh probes TCP 80/443 when no domain" "expected router-forwarding TCP 80 check in output"
+    fail "port-check.sh probes TCP 80/443 when no domain" "expected TCP 80 (HTTP) check in output"
 fi
 
 # ---- Test 2: exits cleanly with DOMAIN=example.com ----
 setup_sandbox "DOMAIN=example.com"
 output=$(run_port_check)
-if echo "$output" | grep -q "TCP 443 (router forwarding)"; then
+if echo "$output" | grep -q "TCP 443 (HTTPS)"; then
     pass "port-check.sh treats DOMAIN=example.com as no-domain pre-install probe"
 else
-    fail "port-check.sh treats DOMAIN=example.com as no-domain pre-install probe" "expected router-forwarding TCP 443 check in output"
+    fail "port-check.sh treats DOMAIN=example.com as no-domain pre-install probe" "expected TCP 443 (HTTPS) check in output"
 fi
 
 # ---- Test 3: exits cleanly with a real-looking domain ----
 setup_sandbox "DOMAIN=test.example.org"
 output=$(run_port_check)
 # Real domains use HTTP(S) probes against the service hostnames.
-if echo "$output" | grep -q "TCP 80 (HTTP:"; then
+if echo "$output" | grep -q "HTTP jellyfin."; then
     pass "port-check.sh checks TCP 80 when domain is set"
 else
     fail "port-check.sh checks TCP 80 when domain is set"
@@ -137,7 +137,7 @@ fi
 # ---- Test 4: handles single-quoted domain in .env ----
 setup_sandbox "DOMAIN='quoted.example.org'"
 output=$(run_port_check)
-if echo "$output" | grep -q "TCP 80 (HTTP:"; then
+if echo "$output" | grep -q "HTTP jellyfin."; then
     pass "port-check.sh handles single-quoted DOMAIN in .env"
 else
     fail "port-check.sh handles single-quoted DOMAIN in .env"

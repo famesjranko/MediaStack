@@ -153,7 +153,7 @@ print(json.dumps({
     "max_active_downloads": int(os.environ["MAX_DL"]),
     "max_active_uploads": int(os.environ["MAX_UL"]),
     "max_active_torrents": int(os.environ["MAX_TOTAL"]),
-    "upnp": True,
+    "upnp": False,
     "preallocate_all": True,
     "bypass_auth_subnet_whitelist": "172.16.0.0/12",
     "bypass_auth_subnet_whitelist_enabled": True,

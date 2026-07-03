@@ -122,6 +122,12 @@ resolutions:
 # The 720p/1080p balanced+large rows are ADR-25's calibrated values, carried over;
 # the SD-floor rows and compact's non-WEB rows are derived from the scalar model.
 # Tables are full (SD → 1080p); composition MASKS them to the resolution's tiers.
+#
+# custom_format_scores are intentionally IDENTICAL across all three sizes —
+# release-quality scoring is size-independent; the size axis is the bounds
+# envelope only. No format hard-blocks by default (only -10000 would, and none
+# is used); oversized releases are gated by the bounds. Kept as three blocks
+# (not shared) so a future preset could diverge them (e.g. a 4K size). See ADR-43.
 # ---------------------------------------------------------------------------
 sizes:
   compact:
@@ -131,8 +137,8 @@ sizes:
       "Repack/Proper":  5
       "x264":           0
       "x265 (HD)":      0
-      "BR-DISK":        -10000
-      "LQ":             -10000
+      "BR-DISK":        0
+      "LQ":             -100
       "No-RlsGroup":    -10
       "Obfuscated":     -10
     bounds:
@@ -170,12 +176,12 @@ sizes:
     description: "Recommended for most users."
     custom_format_scores:
       "Repack/Proper":  5
-      "x264":           10
-      "x265 (HD)":      -25
-      "BR-DISK":        -10000
-      "LQ":             -10000
-      "No-RlsGroup":    -25
-      "Obfuscated":     -25
+      "x264":           0
+      "x265 (HD)":      0
+      "BR-DISK":        0
+      "LQ":             -100
+      "No-RlsGroup":    -10
+      "Obfuscated":     -10
     bounds:
       sonarr:
         SDTV:          { min: 1.0,  preferred: 8.0,  max: 25.0 }
@@ -211,12 +217,12 @@ sizes:
     description: "Largest files, best quality within your chosen resolution."
     custom_format_scores:
       "Repack/Proper":  5
-      "x264":           10
-      "x265 (HD)":      -50
-      "BR-DISK":        -10000
-      "LQ":             -10000
-      "No-RlsGroup":    -25
-      "Obfuscated":     -25
+      "x264":           0
+      "x265 (HD)":      0
+      "BR-DISK":        0
+      "LQ":             -100
+      "No-RlsGroup":    -10
+      "Obfuscated":     -10
     bounds:
       sonarr:
         SDTV:          { min: 1.0,  preferred: 10.0, max: 30.0  }

@@ -7,6 +7,22 @@
 # detect_env()  — non-interactive auto-detection, sets shell variables.
 # write_env()   — writes .env from globals set by detect_env + wizard.
 
+# Seed the live config.yml from its tracked template if absent. config.yml is
+# gitignored and mutated in place by the wizard (quality preset, min_free_space,
+# bitrate, wizard_completed), so it is seeded — not tracked — like the service
+# pre-seeds. "only if absent": re-runs keep the user's edits; a fresh template
+# has no wizard_completed key, so a reinstall runs the wizard fresh. Called at the
+# top of run_wizard AND run_stage1/run_stage2 (the stages that read/mutate it) so
+# the wizard-ui PTY fixtures — which invoke run_stageN directly, bypassing
+# run_wizard — get a config.yml too. Defined here because env_gen.sh is the one
+# lib every setup + stage entrypoint (and their unit tests) already source. No-op
+# if the template is missing (minimal unit-test fixtures) so it never trips set -e.
+seed_root_config() {
+    [[ -f "$SCRIPT_DIR/config.yml" ]] && return 0
+    [[ -f "$SCRIPT_DIR/config/examples/config.yml" ]] || return 0
+    cp "$SCRIPT_DIR/config/examples/config.yml" "$SCRIPT_DIR/config.yml"
+}
+
 detect_env() {
     _ENV_TZ=$(timedatectl show --property=Timezone --value 2>/dev/null || echo "Etc/UTC")
     _ENV_PUID=$(id -u)
@@ -246,11 +262,12 @@ PY
         prev_storage_expected_fstype=""
     fi
 
-    local storage_mode storage_app_wiring storage_mountpoint storage_sentinel
+    local storage_mode storage_app_wiring storage_mountpoint storage_sentinel storage_watchdog
     storage_mode="${_WIZ_STORAGE_MODE:-local}"
     storage_app_wiring="${_WIZ_STORAGE_APP_WIRING:-managed}"
     storage_mountpoint="${_WIZ_STORAGE_MOUNTPOINT:-${_WIZ_DATA_DIR}}"
     storage_sentinel="${_WIZ_STORAGE_SENTINEL:-${_WIZ_DATA_DIR}/.mediastack-storage-ready}"
+    storage_watchdog="${_WIZ_STORAGE_WATCHDOG:-true}"
     if [[ "$storage_app_wiring" == "manual" && "$storage_mode" != "nas" ]]; then
         storage_mountpoint=""
         storage_sentinel=""
@@ -391,6 +408,7 @@ MEDIASTACK_NPM_IP=${mediastack_npm_ip}
 # --- Storage ---
 STORAGE_MODE=${storage_mode}
 STORAGE_APP_WIRING=${storage_app_wiring}
+STORAGE_WATCHDOG=${storage_watchdog}
 STORAGE_PROTOCOL=${_WIZ_STORAGE_PROTOCOL:-}
 STORAGE_MOUNTPOINT='${storage_mountpoint}'
 STORAGE_NFS_HOST='${_WIZ_STORAGE_NFS_HOST:-}'
@@ -456,6 +474,10 @@ BAZARR_ENABLED=${_WIZ_BAZARR_ENABLED:-false}
 # --- SMB file share (LAN only) ---
 SMB_ENABLED=${_WIZ_SMB_ENABLED:-false}
 SMB_SHARE_SCOPE=${_WIZ_SMB_SHARE_SCOPE:-data}
+
+# --- host security (opt-in via wizard / day-2 toggles; default on) ---
+UFW_ENABLED=${_WIZ_UFW_ENABLED:-true}
+HARDENING_ENABLED=${_WIZ_HARDENING_ENABLED:-true}
 
 # --- autoheal sidecar ---
 AUTOHEAL_ENABLED=${AUTOHEAL_ENABLED:-true}

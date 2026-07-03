@@ -107,7 +107,7 @@ before_containers="$(docker ps -aq --filter name=ms-dry-run | wc -l)"
 host_env_before="absent"; [[ -f .env ]] && host_env_before="present"
 
 steps="$(mktemp)"; raw="$(mktemp)"; plain="$(mktemp)"
-printf '%s\n' '[{"expect":"What would you like to do"},{"send":"11\n"}]' > "$steps"
+printf '%s\n' '[{"expect":"What would you like to do"},{"send":"8\n"}]' > "$steps"
 
 walk_rc=0
 timeout 200 python3 tests/lib/wizard_pty.py \

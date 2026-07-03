@@ -48,10 +48,11 @@ EOF
 
 write_summary_env "ready" "complete" "intel" "qsv" ""
 intel_output="$(print_final_summary)"
-assert_contains "$intel_output" "Stage 1" "FIN-01: summary includes Stage 1"
+assert_contains "$intel_output" "Core media server" "FIN-01: summary includes core media server"
 assert_contains "$intel_output" "Hardware transcoding" "FIN-01: summary labels hardware transcoding separately"
-assert_contains "$intel_output" "complete" "FIN-01: Stage 1 complete label"
-assert_contains "$intel_output" "ready" "FIN-01: Stage 2 ready label"
+assert_contains "$intel_output" "Remote access" "FIN-01: summary labels remote access"
+assert_contains "$intel_output" "complete" "FIN-01: core media server complete label"
+assert_contains "$intel_output" "ready" "FIN-01: remote access ready label"
 assert_contains "$intel_output" "complete (Intel QSV)" "FIN-01: Intel summary label"
 assert_contains "$intel_output" "https://jellyfin.gate.test" "FIN-01: ready state prints Jellyfin remote URL"
 assert_contains "$intel_output" "https://seerr.gate.test" "FIN-01: ready state prints Seerr remote URL"
@@ -70,7 +71,7 @@ assert_contains "$nvidia_output" "complete (NVIDIA NVENC)" "FIN-01: NVIDIA compl
 
 write_summary_env "skipped" "skipped" "" "" ""
 skipped_output="$(print_final_summary)"
-assert_contains "$skipped_output" "skipped - run ./setup.sh --remote to retry" "FIN-01: Stage 2 skipped label"
+assert_contains "$skipped_output" "skipped - choose Features & settings -> Add remote access to retry" "FIN-01: Stage 2 skipped label"
 assert_contains "$skipped_output" "skipped - software transcoding" "FIN-01: hardware transcoding skipped label"
 if [[ "$skipped_output" == *"https://jellyfin.gate.test"* || "$skipped_output" == *"https://seerr.gate.test"* ]]; then
     fail "FIN-01: skipped remote state does not print remote URLs"
@@ -80,7 +81,7 @@ fi
 
 write_summary_env "failed" "skipped" "" "" ""
 failed_output="$(print_final_summary)"
-assert_contains "$failed_output" "failed - run ./setup.sh --remote to retry" "FIN-01: Stage 2 failed label"
+assert_contains "$failed_output" "failed - choose Features & settings -> Add remote access to retry" "FIN-01: Stage 2 failed label"
 if [[ "$failed_output" == *"https://jellyfin.gate.test"* || "$failed_output" == *"https://seerr.gate.test"* ]]; then
     fail "FIN-01: failed remote state does not print remote URLs"
 else

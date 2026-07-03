@@ -53,7 +53,11 @@ StandardError=journal+console
 WantedBy=multi-user.target
 EOF
     sudo systemctl daemon-reload
-    sudo systemctl enable mediastack-setup.service
+    # systemctl enable prints "Created symlink ..." to stderr; suppress it (the
+    # log_ok below is the user-facing confirmation) but warn on real failure.
+    if ! sudo systemctl enable mediastack-setup.service >/dev/null 2>&1; then
+        log_warn "Could not enable the post-reboot resume service; choose Install MediaStack from the menu after reboot to finish."
+    fi
     log_ok "Scheduled: setup.sh will resume automatically after reboot"
 }
 
@@ -132,11 +136,43 @@ PROFILE_EOF
 write_setup_result() {
     local status="$1"  # "ok" or "error"
     local result_file="$SCRIPT_DIR/.setup-result"
-    local script_dir_q
+    local script_dir_q lan_ip
 
     script_dir_q=$(_shell_single_quote "$SCRIPT_DIR")
+    lan_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+    lan_ip="${lan_ip:-<this-server-ip>}"
 
-    local _c _r='\033[0m'
+    # The post-reboot service runs only to finalize GPU (NVIDIA) transcoding, so
+    # report that outcome on the login banner — otherwise "completed" gives no
+    # sign whether the NVENC/patch step (the whole reason for the reboot) worked.
+    # A failed patch/driver finalize sets STAGE_3_GPU_STATE=fallback but the run
+    # still exits "ok" (the LAN media server is fine on software transcoding), so
+    # surface that as a warning line rather than letting it look fully clean.
+    local _tc_state _tc_gpu _tc_mode tc_line="" tc_warn=""
+    _tc_state=$(grep -oP '^STAGE_3_GPU_STATE=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "\"'")
+    case "$_tc_state" in
+        complete)
+            _tc_gpu=$(grep -oP '^JELLYFIN_GPU=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "\"'")
+            _tc_mode=$(grep -oP '^NVIDIA_DRIVER_MODE=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "\"'")
+            case "$_tc_gpu" in
+                nvidia) tc_line="NVIDIA NVENC"
+                        if [[ "$_tc_mode" == "unlock" ]]; then
+                            if [[ -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched" ]]; then
+                                tc_line+=" (session limit NOT removed - patch failed; retry via Manage hardware transcoding)"
+                            else
+                                tc_line+=" - session limit removed (patch applied)"
+                            fi
+                        fi ;;
+                intel)  tc_line="Intel QSV" ;;
+                amd)    tc_line="AMD VAAPI" ;;
+            esac
+            ;;
+        fallback)
+            tc_warn="Hardware transcoding did NOT finalize - using software. See: journalctl -u mediastack-setup --no-pager"
+            ;;
+    esac
+
+    local _c _r='\033[0m' _y='\033[1;33m'
     if [[ "$status" == "ok" ]]; then
         _c='\033[0;32m'
         {
@@ -145,7 +181,10 @@ write_setup_result() {
             printf "  ${_c}|${_r}%-52s${_c}|${_r}\n" "  MediaStack setup completed successfully!"
             printf "  ${_c}+====================================================+${_r}\n"
             printf '\n'
-            printf "  Run:          cd %s && docker ps\n" "$script_dir_q"
+            [[ -n "$tc_line" ]] && printf "  Hardware transcoding: %s\n\n" "$tc_line"
+            [[ -n "$tc_warn" ]] && printf "  ${_y}! %s${_r}\n\n" "$tc_warn"
+            printf "  Open your dashboard:  http://%s:3000\n" "$lan_ip"
+            printf "  Manage MediaStack:    cd %s && ./mediastack\n" "$script_dir_q"
             printf '\n'
         } > "$result_file"
     else

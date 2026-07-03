@@ -17,7 +17,7 @@ Turnkey media server for home networks. One command takes bare Debian to a fully
 
 MediaStack turns a fresh Debian server into a complete home media stack: Jellyfin, Seerr, Sonarr, Radarr, qBittorrent, monitoring, remote access, and the supporting services they need. It is designed for non-technical users who should not have to edit service config files by hand.
 
-`./mediastack` opens the guided launcher. `setup.sh --full` installs Docker, detects GPU hardware, creates the storage layout, hardens the host, starts the containers, and wires services together through their APIs. Storage can be local, managed NFS/NAS, or advanced manual. `config.yml` remains the source of truth for what gets configured.
+To use, run `./mediastack`. This presents a menu where you can install MediaStack or run readiness checks. The installer detects the GPU, creates the storage layout, hardens the host, starts the containers, and configures the services. Storage can be local, NAS (NFS), or manual. After install, the day-2 menu is available to check status, update services, toggle features, run diagnostics, add remote access, and uninstall.
 
 ---
 
@@ -34,6 +34,9 @@ cd MediaStack
 > [!NOTE]
 > **Requirements:** Debian Server (headless), 50 GB+ free disk space, internet connection.
 
+> [!TIP]
+> **Enhanced menus (optional):** run `./mediastack` and select **Get enhanced menus** to install [gum](https://github.com/charmbracelet/gum) for arrow-key menus instead of numbered lists. The launcher detects it automatically — no config needed.
+
 <details>
 <summary><strong>Scripted / automation install</strong></summary>
 
@@ -47,6 +50,8 @@ Run setup directly if you do not want the launcher menu:
 ```
 
 `./setup.sh` auto-detects whether Docker is installed and offers to install it if missing. Both paths reach the same wizard.
+
+To remove MediaStack, use `./mediastack` → **Uninstall MediaStack**. It preserves `data/`, service `config/`, and the checkout, and removes only host changes recorded as MediaStack-owned. If host configuration was edited afterward, uninstall preserves it and reports what needs manual review.
 
 </details>
 

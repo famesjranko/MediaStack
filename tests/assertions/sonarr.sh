@@ -71,8 +71,7 @@ except Exception: pass" 2>/dev/null)
 import sys, json
 p = json.load(sys.stdin)
 expected = {
-    'Repack/Proper': 5, 'x264': 10, 'x265 (HD)': -25,
-    'BR-DISK': -10000, 'LQ': -10000, 'No-RlsGroup': -25, 'Obfuscated': -25
+    'Repack/Proper': 5, 'LQ': -100, 'No-RlsGroup': -10, 'Obfuscated': -10
 }
 items = {fi['name']: fi['score'] for fi in p.get('formatItems', []) if fi.get('score', 0) != 0}
 wrong = []

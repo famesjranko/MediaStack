@@ -83,6 +83,37 @@ else
     pass "storage_nas_ok: rejects sentinel outside mountpoint"
 fi
 
+# --- STORAGE_WATCHDOG opt-out gate (findmnt still stubbed; sentinel is outside
+# the mountpoint from the block above, so storage_nas_ok fails here) ---
+STORAGE_EXPECTED_SOURCE="192.0.2.10:/exports/mediastack-fixture"
+unset STORAGE_WATCHDOG
+if storage_watchdog_enabled; then
+    pass "storage_watchdog_enabled: absent flag defaults to enabled"
+else
+    fail "storage_watchdog_enabled: absent flag defaults to enabled"
+fi
+
+STORAGE_WATCHDOG=false
+if storage_watchdog_enabled; then
+    fail "storage_watchdog_enabled: false disables"
+else
+    pass "storage_watchdog_enabled: false disables"
+fi
+
+if storage_guard_before_start 2>/dev/null; then
+    pass "storage_guard_before_start: watchdog off -> allows start despite failing nas_ok"
+else
+    fail "storage_guard_before_start: watchdog off -> allows start despite failing nas_ok"
+fi
+
+STORAGE_WATCHDOG=true
+if storage_guard_before_start 2>/dev/null; then
+    fail "storage_guard_before_start: watchdog on -> refuses start when nas_ok fails"
+else
+    pass "storage_guard_before_start: watchdog on -> refuses start when nas_ok fails"
+fi
+unset STORAGE_WATCHDOG
+
 unset -f findmnt
 
 DATA_DIR="$TMP_DIR/mount-repair"
@@ -176,6 +207,49 @@ assert_eq "1" "$MOUNT_REPAIR_CONFIRM_PROMPTS" "storage_mount_nfs: declined repai
 unset -f findmnt sudo ui_confirm log_warn log_info log_ok log_error
 unset DATA_DIR STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_NFS_HOST STORAGE_NFS_EXPORT STORAGE_NFS_OPTS STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE STORAGE_SENTINEL
 unset MOUNT_REPAIR_CALLS MOUNT_REPAIR_CONFIRM_PROMPTS MOUNT_REPAIR_SOURCE MOUNT_REPAIR_FSTYPE
+
+# --- storage_probe_nas: non-destructive verification (never mounts the real
+#     mountpoint; temp-mounts, checks, classifies, unmounts) ---
+ui_spin() { shift; "$@"; }          # run the wrapped command, drop the label
+log_ok() { :; }; log_info() { :; }; log_error() { :; }; log_warn() { :; }
+STORAGE_NFS_HOST=192.0.2.10
+STORAGE_NFS_EXPORT=/exports/mediastack
+STORAGE_NFS_OPTS="vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec"
+PROBE_NC_RC=0 PROBE_MOUNT_RC=0
+nc() { return "$PROBE_NC_RC"; }
+sudo() { case "$1" in mount) return "$PROBE_MOUNT_RC" ;; *) return 0 ;; esac; }
+
+# probe_opts must fail-fast: no hard, forced soft + short timeo/retrans.
+probe_opts_out="$(storage_probe_opts "$STORAGE_NFS_OPTS")"
+case "$probe_opts_out" in
+    *hard*) fail "storage_probe_opts: strips hard from probe options" "$probe_opts_out" ;;
+    *soft,timeo=50,retrans=2) pass "storage_probe_opts: forces fail-fast soft mount" ;;
+    *) fail "storage_probe_opts: forces fail-fast soft mount" "$probe_opts_out" ;;
+esac
+
+PROBE_NC_RC=0 PROBE_MOUNT_RC=0
+if storage_probe_nas && [[ "$_STORAGE_PROBE_CLASS" == "empty" ]]; then
+    pass "storage_probe_nas: all checks green returns 0 and classifies the share"
+else
+    fail "storage_probe_nas: all checks green returns 0 and classifies the share"
+fi
+
+PROBE_NC_RC=1 PROBE_MOUNT_RC=0
+if storage_probe_nas; then
+    fail "storage_probe_nas: unreachable NAS fails the probe"
+else
+    pass "storage_probe_nas: unreachable NAS fails the probe"
+fi
+
+PROBE_NC_RC=0 PROBE_MOUNT_RC=1
+if storage_probe_nas; then
+    fail "storage_probe_nas: unmountable export fails the probe"
+else
+    pass "storage_probe_nas: unmountable export fails the probe"
+fi
+
+unset -f ui_spin nc sudo log_ok log_info log_error log_warn
+unset STORAGE_NFS_HOST STORAGE_NFS_EXPORT STORAGE_NFS_OPTS PROBE_NC_RC PROBE_MOUNT_RC _STORAGE_PROBE_CLASS
 
 SCRIPT_DIR="$TMP_DIR/storage-env-set"
 mkdir -p "$SCRIPT_DIR"
@@ -319,6 +393,19 @@ case "$helper_content" in
         ;;
 esac
 
+# --- Disabled watchdog: install is a no-op that tears down any prior unit ---
+WATCHDOG_INSTALL_PAUSED=false
+storage_pause_watchdog_for_install() { WATCHDOG_INSTALL_PAUSED=true; return 0; }
+STORAGE_MODE=nas STORAGE_WATCHDOG=false
+if storage_install_watchdog >/dev/null 2>&1 && $WATCHDOG_INSTALL_PAUSED; then
+    pass "storage_install_watchdog: disabled flag skips install and tears down stale unit"
+else
+    fail "storage_install_watchdog: disabled flag skips install and tears down stale unit"
+fi
+unset -f storage_pause_watchdog_for_install
+unset STORAGE_MODE STORAGE_WATCHDOG
+source "$REPO_ROOT/scripts/setup/storage.sh"
+
 WATCHDOG_SYSTEMCTL_LOG="$TMP_DIR/watchdog-systemctl.log"
 WATCHDOG_SYSTEMCTL_STATE=inactive
 WATCHDOG_SYSTEMCTL_QUERY_FAIL=false
@@ -440,7 +527,7 @@ unset WATCHDOG_DOCKER_LOG WATCHDOG_FAKEBIN MEDIASTACK_WATCHDOG_SOURCE_ONLY STORA
 ui_log() { :; }
 ui_choose() { printf '%s\n' "Use local storage instead"; }
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() { return 1; }
+storage_probe_nas() { return 1; }
 findmnt() { return 1; }
 _WIZ_PREV_DATA_DIR="$TMP_DIR/local-root"
 _WIZ_DATA_DIR="$TMP_DIR/failed-nas-mount"
@@ -458,7 +545,7 @@ assert_eq "$TMP_DIR/local-root" "$_WIZ_STORAGE_MOUNTPOINT" "wizard NAS mount fai
 assert_eq "" "$_WIZ_STORAGE_NFS_HOST" "wizard NAS mount failure fallback: clears NFS host"
 assert_eq "" "$_WIZ_STORAGE_NFS_EXPORT" "wizard NAS mount failure fallback: clears NFS export"
 assert_eq "$TMP_DIR/local-root/.mediastack-storage-ready" "$_WIZ_STORAGE_SENTINEL" "wizard NAS mount failure fallback: resets local sentinel"
-unset -f ui_log ui_choose storage_ensure_nfs_common storage_mount_nfs findmnt
+unset -f ui_log ui_choose storage_ensure_nfs_common storage_probe_nas findmnt
 
 ui_log() { :; }
 ui_choose() { printf '%s\n' "Use local storage instead"; }
@@ -483,9 +570,10 @@ unset -f ui_log ui_choose storage_ensure_nfs_common findmnt
 ui_log() { :; }
 ui_choose() { printf '%s\n' "Retry with the same settings"; }
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() {
+storage_probe_nas() {
     MOUNT_ATTEMPTS=$((MOUNT_ATTEMPTS + 1))
-    [[ "$MOUNT_ATTEMPTS" -ge 2 ]]
+    [[ "$MOUNT_ATTEMPTS" -ge 2 ]] || return 1
+    _STORAGE_PROBE_CLASS=empty
 }
 findmnt() { return 1; }
 MOUNT_ATTEMPTS=0
@@ -503,7 +591,7 @@ _stage1_preflight_nas_choice
 assert_eq "2" "$MOUNT_ATTEMPTS" "wizard NAS mount failure: retry with same settings retries mount"
 assert_eq "nas" "$_WIZ_STORAGE_MODE" "wizard NAS mount retry: keeps NAS mode after successful retry"
 assert_eq "$TMP_DIR/retry-nas" "$_WIZ_DATA_DIR" "wizard NAS mount retry: keeps selected NAS mountpoint"
-unset -f ui_log ui_choose storage_ensure_nfs_common storage_mount_nfs findmnt
+unset -f ui_log ui_choose storage_ensure_nfs_common storage_probe_nas findmnt
 unset MOUNT_ATTEMPTS
 
 ui_log() { :; }
@@ -511,17 +599,18 @@ ui_choose() { printf '%s\n' "Edit NAS settings and retry"; }
 ui_input_validated() {
     case "${1:-}" in
         "Local mountpoint for NAS storage") printf '%s\n' "$TMP_DIR/edited-nas" ;;
-        "NAS host/IP") printf '%s\n' "192.0.2.10" ;;
-        "NFS export path") printf '%s\n' "/exports/edited" ;;
+        "NAS host/IP (e.g. 192.168.1.50 or nas.local)") printf '%s\n' "192.0.2.10" ;;
+        "NFS export path (the remote path your NAS exports, e.g. /exports/mediastack)") printf '%s\n' "/exports/edited" ;;
         "NFS mount options") printf '%s\n' "vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec" ;;
         "NAS sentinel file") printf '%s\n' "${2:-}" ;;
         *) printf '%s\n' "${2:-}" ;;
     esac
 }
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() {
+storage_probe_nas() {
     MOUNT_ATTEMPTS=$((MOUNT_ATTEMPTS + 1))
-    [[ "$MOUNT_ATTEMPTS" -ge 2 ]]
+    [[ "$MOUNT_ATTEMPTS" -ge 2 ]] || return 1
+    _STORAGE_PROBE_CLASS=empty
 }
 findmnt() { return 1; }
 MOUNT_ATTEMPTS=0
@@ -541,7 +630,7 @@ assert_eq "$TMP_DIR/edited-nas" "$_WIZ_DATA_DIR" "wizard NAS edit retry: updates
 assert_eq "192.0.2.10" "$_WIZ_STORAGE_NFS_HOST" "wizard NAS edit retry: updates host"
 assert_eq "/exports/edited" "$_WIZ_STORAGE_NFS_EXPORT" "wizard NAS edit retry: updates export"
 assert_eq "$TMP_DIR/edited-nas/.mediastack-storage-ready" "$_WIZ_STORAGE_SENTINEL" "wizard NAS edit retry: resets sentinel default to edited mountpoint"
-unset -f ui_log ui_choose ui_input_validated storage_ensure_nfs_common storage_mount_nfs findmnt
+unset -f ui_log ui_choose ui_input_validated storage_ensure_nfs_common storage_probe_nas findmnt
 unset MOUNT_ATTEMPTS
 
 ui_log() { :; }
@@ -550,7 +639,7 @@ storage_ensure_nfs_common() {
     NFS_COMMON_ATTEMPTS=$((NFS_COMMON_ATTEMPTS + 1))
     [[ "$NFS_COMMON_ATTEMPTS" -ge 2 ]]
 }
-storage_mount_nfs() { return 0; }
+storage_probe_nas() { _STORAGE_PROBE_CLASS=empty; return 0; }
 findmnt() { return 1; }
 NFS_COMMON_ATTEMPTS=0
 mkdir -p "$TMP_DIR/nfs-common-retry"
@@ -566,7 +655,7 @@ _WIZ_STORAGE_SENTINEL="$_WIZ_DATA_DIR/.mediastack-storage-ready"
 _stage1_preflight_nas_choice
 assert_eq "2" "$NFS_COMMON_ATTEMPTS" "wizard nfs-common failure: retry installing NAS support retries dependency check"
 assert_eq "nas" "$_WIZ_STORAGE_MODE" "wizard nfs-common retry: keeps NAS mode after successful retry"
-unset -f ui_log ui_choose storage_ensure_nfs_common storage_mount_nfs findmnt
+unset -f ui_log ui_choose storage_ensure_nfs_common storage_probe_nas findmnt
 unset NFS_COMMON_ATTEMPTS
 
 ui_log() { :; }
@@ -575,7 +664,7 @@ ui_choose() {
     printf '%s\n' "Use a new mediastack/ subfolder on this NAS (recommended)"
 }
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() { return 0; }
+storage_probe_nas() { _STORAGE_PROBE_CLASS="conflict:media"; return 0; }
 storage_classify_data_root() { printf '%s\n' "conflict:media"; }
 findmnt() { return 1; }
 RESOLVE_PROMPTS=0
@@ -594,16 +683,17 @@ _stage1_preflight_nas_choice
 assert_eq "0" "$RESOLVE_PROMPTS" "wizard manual NAS: nonstandard share does not force managed-layout resolver"
 assert_eq "$TMP_DIR/manual-conflict-nas" "$_WIZ_DATA_DIR" "wizard manual NAS: keeps selected existing NAS root"
 assert_eq "manual" "$_WIZ_STORAGE_APP_WIRING" "wizard manual NAS: keeps manual app wiring"
-unset -f ui_log ui_choose storage_ensure_nfs_common storage_mount_nfs storage_classify_data_root findmnt
+unset -f ui_log ui_choose storage_ensure_nfs_common storage_probe_nas storage_classify_data_root findmnt
 unset RESOLVE_PROMPTS
 
 ui_log() { :; }
 log_info() { :; }
 ui_choose() { printf '%s\n' "Use local storage instead"; }
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() {
+storage_probe_nas() {
     STAGE1_REPAIR_SOURCE="127.0.0.1:/exports/media"
     STAGE1_REPAIR_FSTYPE="nfs4"
+    _STORAGE_PROBE_CLASS="nonempty"
     return 0
 }
 storage_classify_data_root() { printf '%s\n' "nonempty"; }
@@ -632,7 +722,6 @@ STAGE1_REPAIR_SOURCE="192.0.2.99:/exports/old"
 STAGE1_REPAIR_FSTYPE="nfs4"
 STORAGE_EXPECTED_SOURCE="$STAGE1_REPAIR_SOURCE"
 STORAGE_EXPECTED_FSTYPE="$STAGE1_REPAIR_FSTYPE"
-_WIZ_STORAGE_PREFLIGHT_MOUNTED_BY_SETUP=false
 _WIZ_PREV_DATA_DIR="$TMP_DIR/local-root-7"
 _WIZ_DATA_DIR="$TMP_DIR/repaired-conflict-nas"
 _WIZ_STORAGE_MODE=nas
@@ -643,15 +732,11 @@ _WIZ_STORAGE_NFS_HOST=127.0.0.1
 _WIZ_STORAGE_NFS_EXPORT=/exports/media
 _WIZ_STORAGE_NFS_OPTS=vers=4.2
 _WIZ_STORAGE_SENTINEL="$_WIZ_DATA_DIR/.mediastack-storage-ready"
-STAGE1_REPAIR_MOUNTPOINT="$_WIZ_STORAGE_MOUNTPOINT"
 _stage1_preflight_nas_choice
 assert_eq "$TMP_DIR/local-root-7" "$_WIZ_DATA_DIR" "wizard repaired NAS conflict fallback: switches to previous local data dir"
 assert_eq "local" "$_WIZ_STORAGE_MODE" "wizard repaired NAS conflict fallback: resets storage mode"
-assert_contains "$(cat "$STAGE1_REPAIR_SUDO_LOG")" "sudo umount $STAGE1_REPAIR_MOUNTPOINT" "wizard repaired NAS conflict fallback: unmounts setup-repaired NAS"
-assert_eq "" "$STAGE1_REPAIR_SOURCE" "wizard repaired NAS conflict fallback: leaves no repaired NAS mounted"
-assert_eq "false" "${_WIZ_STORAGE_PREFLIGHT_MOUNTED_BY_SETUP:-false}" "wizard repaired NAS conflict fallback: clears setup mount marker"
-unset -f ui_log log_info ui_choose storage_ensure_nfs_common storage_mount_nfs storage_classify_data_root findmnt sudo
-unset STAGE1_REPAIR_SUDO_LOG STAGE1_REPAIR_SOURCE STAGE1_REPAIR_FSTYPE STAGE1_REPAIR_MOUNTPOINT STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE
+unset -f ui_log log_info ui_choose storage_ensure_nfs_common storage_probe_nas storage_classify_data_root findmnt sudo
+unset STAGE1_REPAIR_SUDO_LOG STAGE1_REPAIR_SOURCE STAGE1_REPAIR_FSTYPE STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE
 source "$REPO_ROOT/scripts/setup/storage.sh"
 
 env_val_from() {
@@ -765,8 +850,8 @@ ui_choose() {
 ui_input_validated() {
     case "${1:-}" in
         "Local mountpoint for NAS storage") printf '%s\n' "$TMP_DIR/final-edited-nas" ;;
-        "NAS host/IP") printf '%s\n' "192.0.2.10" ;;
-        "NFS export path") printf '%s\n' "/exports/edited" ;;
+        "NAS host/IP (e.g. 192.168.1.50 or nas.local)") printf '%s\n' "192.0.2.10" ;;
+        "NFS export path (the remote path your NAS exports, e.g. /exports/mediastack)") printf '%s\n' "/exports/edited" ;;
         "NFS mount options") printf '%s\n' "vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec" ;;
         "NAS sentinel file") printf '%s\n' "${2:-}" ;;
         *) printf '%s\n' "${2:-}" ;;
@@ -777,7 +862,10 @@ storage_preflight_nas() {
     [[ "$FINAL_PREFLIGHT_ATTEMPTS" -ge 2 ]]
 }
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() { return 0; }
+# The "Edit" action runs _stage1_preflight_nas_choice, which calls storage_probe_nas
+# (the real one was re-armed by the mid-file re-source); stub it so the re-verify
+# passes without a real network probe.
+storage_probe_nas() { _STORAGE_PROBE_CLASS=empty; return 0; }
 findmnt() { return 1; }
 FINAL_PREFLIGHT_ATTEMPTS=0
 mkdir -p "$TMP_DIR/final-edited-nas"
@@ -788,7 +876,7 @@ assert_eq "nas" "$(env_val_from "$SCRIPT_DIR/.env" STORAGE_MODE)" "wizard final 
 assert_eq "$TMP_DIR/final-edited-nas" "$(env_val_from "$SCRIPT_DIR/.env" DATA_DIR)" "wizard final NAS preflight: edit rewrites data dir"
 assert_eq "192.0.2.10" "$(env_val_from "$SCRIPT_DIR/.env" STORAGE_NFS_HOST)" "wizard final NAS preflight: edit rewrites NFS host"
 assert_eq "/exports/edited" "$(env_val_from "$SCRIPT_DIR/.env" STORAGE_NFS_EXPORT)" "wizard final NAS preflight: edit rewrites NFS export"
-unset -f ui_log ui_choose ui_input_validated storage_preflight_nas storage_ensure_nfs_common storage_mount_nfs findmnt
+unset -f ui_log ui_choose ui_input_validated storage_preflight_nas storage_ensure_nfs_common storage_probe_nas findmnt
 unset FINAL_PREFLIGHT_ATTEMPTS
 
 ui_log() { :; }
@@ -804,7 +892,9 @@ storage_preflight_nas() {
     [[ "$FINAL_PREFLIGHT_ATTEMPTS" -ge 2 ]]
 }
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() { return 0; }
+# ui_confirm=yes routes through _stage1_collect_manual_storage ->
+# _stage1_preflight_nas_choice, which calls storage_probe_nas; stub it.
+storage_probe_nas() { _STORAGE_PROBE_CLASS=empty; return 0; }
 storage_classify_data_root() { printf '%s\n' "empty"; }
 findmnt() { return 1; }
 FINAL_PREFLIGHT_ATTEMPTS=0
@@ -814,17 +904,19 @@ assert_eq "2" "$FINAL_PREFLIGHT_ATTEMPTS" "wizard final NAS preflight: manual NA
 assert_eq "nas" "$(env_val_from "$SCRIPT_DIR/.env" STORAGE_MODE)" "wizard final NAS preflight: manual guard keeps NAS mode"
 assert_eq "manual" "$(env_val_from "$SCRIPT_DIR/.env" STORAGE_APP_WIRING)" "wizard final NAS preflight: manual guard writes manual app wiring"
 assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" UNPACKERR_TORRENT_PATHS)" "wizard final NAS preflight: manual guard clears Unpackerr managed path"
-unset -f ui_log ui_choose ui_confirm storage_preflight_nas storage_ensure_nfs_common storage_mount_nfs storage_classify_data_root findmnt
+unset -f ui_log ui_choose ui_confirm storage_preflight_nas storage_ensure_nfs_common storage_probe_nas storage_classify_data_root findmnt
 unset FINAL_PREFLIGHT_ATTEMPTS
 
 ui_log() {
     printf '%s %s\n' "${1:-}" "${*:2}" >> "$NAS_EXPORT_INFO_LOG"
 }
+# The export-path explanation moved from a ui_log line into the intro ui_box.
+ui_box() { printf '%s\n' "$@" >> "$NAS_EXPORT_INFO_LOG"; }
 ui_input_validated() {
     case "${1:-}" in
         "Local mountpoint for NAS storage") printf '%s\n' "$TMP_DIR/nas-export-default" ;;
-        "NAS host/IP") printf '%s\n' "192.0.2.10" ;;
-        "NFS export path")
+        "NAS host/IP (e.g. 192.168.1.50 or nas.local)") printf '%s\n' "192.0.2.10" ;;
+        "NFS export path (the remote path your NAS exports, e.g. /exports/mediastack)")
             printf '%s:%s\n' "$NAS_EXPORT_DEFAULT_LABEL" "${2:-}" >> "$NAS_EXPORT_DEFAULT_LOG"
             printf '%s\n' "/exports/entered"
             ;;
@@ -840,7 +932,7 @@ unset _WIZ_STORAGE_MOUNTPOINT _WIZ_STORAGE_NFS_EXPORT _WIZ_PREV_STORAGE_MOUNTPOI
 _WIZ_DATA_DIR=""
 _stage1_collect_nas_settings
 assert_eq "first:" "$(sed -n '1p' "$NAS_EXPORT_DEFAULT_LOG")" "wizard NAS export prompt: first run has blank default"
-assert_contains "$(cat "$NAS_EXPORT_INFO_LOG")" "This is the NAS export path, not the local mountpoint." "wizard NAS export prompt: explains export path"
+assert_contains "$(cat "$NAS_EXPORT_INFO_LOG")" "the shared folder on the NAS (its NFS export path)" "wizard NAS export prompt: explains export path"
 
 NAS_EXPORT_DEFAULT_LABEL="previous"
 unset _WIZ_STORAGE_MOUNTPOINT _WIZ_STORAGE_NFS_EXPORT _WIZ_PREV_STORAGE_MOUNTPOINT
@@ -860,17 +952,17 @@ ui_input_validated() {
         *) printf '%s\n' "${2:-}" ;;
     esac
 }
+# SMB collection is its own Stage-1 section (_stage1_collect_smb) since the
+# d96bcc1 split — Bazarr/subtitles moved out, so match the SMB enable prompt by
+# text rather than by call order.
 ui_confirm() {
-    SMB_CONFIRM_COUNT=$((SMB_CONFIRM_COUNT + 1))
-    case "$SMB_CONFIRM_COUNT" in
-        1) return 1 ;; # Bazarr
-        2) return 0 ;; # SMB
-        *) return 0 ;;
+    case "${1:-}" in
+        "Enable SMB"*) return 0 ;; # enable SMB
+        *) return 1 ;;
     esac
 }
 ui_choose() {
     case "${1:-}" in
-        "Where should MediaStack"*) printf '%s\n' "Local disk" ;;
         "SMB needs TCP port 445"*) printf '%s\n' "Retry port check" ;;
         "Choose SMB share scope:"*) printf '%s\n' "Full system (/) - advanced admin access to the whole server." ;;
         *) printf '%s\n' "${2:-}" ;;
@@ -880,18 +972,17 @@ validate_smb_port() {
     SMB_PORT_CHECKS=$((SMB_PORT_CHECKS + 1))
     [[ "$SMB_PORT_CHECKS" -ge 2 ]]
 }
-SMB_CONFIRM_COUNT=0
 SMB_PORT_CHECKS=0
 _WIZ_DATA_DIR=""
 _WIZ_STORAGE_MODE=""
 _WIZ_SMB_ENABLED=""
 _WIZ_SMB_SHARE_SCOPE=""
-_stage1_collect_storage >/dev/null 2>&1
+_stage1_collect_smb >/dev/null 2>&1
 assert_eq "2" "$SMB_PORT_CHECKS" "wizard SMB conflict: retry port check reruns validator"
 assert_eq "true" "$_WIZ_SMB_ENABLED" "wizard SMB conflict: successful retry enables SMB"
 assert_eq "system" "$_WIZ_SMB_SHARE_SCOPE" "wizard SMB conflict: successful retry continues to scope choice"
 unset -f ui_section ui_log ui_input_validated ui_confirm ui_choose validate_smb_port
-unset SMB_CONFIRM_COUNT SMB_PORT_CHECKS
+unset SMB_PORT_CHECKS
 
 scenario_end "$CURRENT_SCENARIO"
 summary

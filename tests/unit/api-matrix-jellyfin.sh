@@ -57,7 +57,10 @@ assert_eq '3' "$(<"$ATTEMPTS_FILE")" "Jellyfin VirtualFolders retries until the 
 assert_eq '2' "$(<"$SLEEPS_FILE")" "Jellyfin VirtualFolders waits once per transient failure"
 assert_contains "$(<"$COMMANDS_FILE")" '--max-time 3' "Jellyfin VirtualFolders retry bounds each request"
 
-printf '5\n' > "$TMP_DIR/failures-left"
+# Exhaust the whole budget: fail one more time than the retry ceiling so the
+# call stays bounded. Assertions track _JFM_READY_RETRIES so the count and the
+# implementation can't silently drift apart.
+printf '%s\n' "$(( _JFM_READY_RETRIES + 1 ))" > "$TMP_DIR/failures-left"
 printf '0\n' > "$ATTEMPTS_FILE"
 printf '0\n' > "$SLEEPS_FILE"
 : > "$COMMANDS_FILE"
@@ -66,8 +69,8 @@ if _jfm_libraries 'api-key' >/dev/null; then
 else
     pass "Jellyfin VirtualFolders retry fails after the bounded attempt count"
 fi
-assert_eq '5' "$(<"$ATTEMPTS_FILE")" "Jellyfin VirtualFolders stops after five failed requests"
-assert_eq '5' "$(<"$SLEEPS_FILE")" "Jellyfin VirtualFolders preserves its bounded backoff cadence"
+assert_eq "$_JFM_READY_RETRIES" "$(<"$ATTEMPTS_FILE")" "Jellyfin VirtualFolders stops after the bounded number of failed requests"
+assert_eq "$_JFM_READY_RETRIES" "$(<"$SLEEPS_FILE")" "Jellyfin VirtualFolders preserves its bounded backoff cadence"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

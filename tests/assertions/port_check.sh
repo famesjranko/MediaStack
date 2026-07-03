@@ -12,16 +12,22 @@ assert_port_check() {
         fail "port-check.sh exits 0" "exit code $pc_exit"
     fi
 
-    if echo "$pc_output" | grep -q '\[PASS\].*TCP 80'; then
+    # port-check.sh uses shared status glyphs (✓ / [OK]) rather than a literal
+    # [PASS], and the has-domain branch labels the checks "HTTP <host>" /
+    # "HTTPS <host>" with a "reachable" detail (the public-IP branch uses
+    # "TCP 80 (HTTP)" / "TCP 443 (HTTPS)"). Match the "reachable" detail — emitted
+    # only by check_pass — instead of the removed [PASS] token. ("HTTP " with a
+    # trailing space never matches an "HTTPS " line, so 80 and 443 stay distinct.)
+    if echo "$pc_output" | grep -qE '(HTTP [^ ]*\.test|TCP 80 \(HTTP\)).*reachable'; then
         pass "port-check: TCP 80 reachable"
     else
-        fail "port-check: TCP 80 reachable" "$(echo "$pc_output" | grep 'TCP 80')"
+        fail "port-check: TCP 80 reachable" "$(echo "$pc_output" | grep -iE 'HTTP')"
     fi
 
-    if echo "$pc_output" | grep -q '\[PASS\].*TCP 443'; then
+    if echo "$pc_output" | grep -qE '(HTTPS [^ ]*\.test|TCP 443 \(HTTPS\)).*reachable'; then
         pass "port-check: TCP 443 reachable"
     else
-        fail "port-check: TCP 443 reachable" "$(echo "$pc_output" | grep 'TCP 443')"
+        fail "port-check: TCP 443 reachable" "$(echo "$pc_output" | grep -iE 'HTTPS')"
     fi
 
     if echo "$pc_output" | grep -q '6881'; then

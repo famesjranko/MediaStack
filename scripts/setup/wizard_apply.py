@@ -279,12 +279,13 @@ INDEXERS_SECTION_COMMENT = [
 # as the indexers section is shared above.
 QUALITY_PROFILE_SECTION_TITLE = "Quality Profile"
 QUALITY_DEFINITIONS_SECTION_TITLE = "Quality Definitions — per-tier file-size bounds"
-CUSTOM_FORMATS_SECTION_TITLE = "Custom Formats — TRaSH Guides scoring"
+CUSTOM_FORMATS_SECTION_TITLE = "Custom Formats — release-quality scoring"
 CUSTOM_FORMATS_SECTION_COMMENT = [
-    "Scores custom release attributes within a quality tier. Higher scores are",
-    "preferred; negative scores penalise. -10000 effectively blocks.",
-    "Set to 0 to disable a format's scoring (format still exists but is neutral).",
-    "Delete this section to skip custom format configuration entirely.",
+    "Scores release attributes to STEER selection within a quality tier. Higher",
+    "scores are preferred; negative scores penalise but do NOT block. No default",
+    "format hard-blocks — file size is gated by the quality_definitions bounds,",
+    "not here. (-10000 still hard-blocks if you want it; none does by default.)",
+    "Set a score to 0 to make a format neutral. Delete this section to skip.",
     "",
     "Format definitions: scripts/lib/arr/custom_formats.yml",
 ]

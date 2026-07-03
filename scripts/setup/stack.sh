@@ -416,9 +416,9 @@ pull_images() {
     if (( total > 0 && present == total )); then
         log_ok "All ${total} images already present locally - skipping pull"
         if [[ "$image_channel" == "latest" ]]; then
-            log_info "Latest channel selected - run ./scripts/update.sh to refresh upstream tags."
+            log_info "Latest channel selected - choose Manage updates from the menu to refresh upstream tags."
         else
-            log_info "Stable channel selected - update MediaStack, then run ./scripts/update.sh to pull newer tested digests."
+            log_info "Stable channel selected - update MediaStack, then choose Manage updates from the menu to pull newer tested digests."
         fi
         return 0
     elif (( present > 0 && present < total )); then
@@ -446,7 +446,7 @@ pull_images() {
     log_warn "Continuing with cached images (if any). Services with missing images will not start."
     log_info "You can retry manually later: docker compose ${profiles[*]} pull --policy missing"
     if [[ "$image_channel" == "latest" ]]; then
-        log_info "Latest channel selected - retry with ./scripts/update.sh when registry access recovers."
+        log_info "Latest channel selected - retry from Manage updates in the menu when registry access recovers."
     else
         log_info "Stable channel selected - retry after updating MediaStack or restoring registry access."
     fi
@@ -616,12 +616,35 @@ PY
     return 0
 }
 
+# Seed live service configs from the tracked templates under
+# config/examples/defaults/. Copies each template to its live path only if the
+# live file is absent (never clobbers a user's config). The live copies are
+# gitignored and get wiped on uninstall; the templates survive (config/examples/
+# is the only path the wipe preserves), so a wipe -> reinstall re-seeds cleanly.
+# Kept log-free and dependency-free (find/cp/mkdir + $SCRIPT_DIR only) so it is
+# safe to call from bare contexts such as the test harness's
+# create_config_dirs_in_dind (which runs under set -e without common.sh).
+seed_config_from_templates() {
+    local tpl_root="$SCRIPT_DIR/config/examples/defaults"
+    [[ -d "$tpl_root" ]] || return 0
+    local f dest
+    while IFS= read -r -d '' f; do
+        dest="$SCRIPT_DIR/config/${f#"$tpl_root/"}"
+        [[ -f "$dest" ]] || { mkdir -p "$(dirname "$dest")"; cp "$f" "$dest"; }
+    done < <(find "$tpl_root" -type f -print0)
+}
+
 create_config_dirs() {
     log_info "Creating config directories..."
     local services=(jellyfin sonarr radarr jackett qbittorrent seerr unpackerr homepage portainer wireguard ddns-updater bazarr uptime-kuma beszel)
     for svc in "${services[@]}"; do
         mkdir -p "$SCRIPT_DIR/config/${svc}"
     done
+    # Re-create the live pre-seed files (fail2ban jails/filters/action, homepage
+    # YAML, jackett ServerConfig, qbittorrent conf/categories) from their tracked
+    # templates. Must run before clear_qbittorrent_managed_seed_for_manual_storage
+    # (edits the seeded qbt files) and before start_stack/configure.sh.
+    seed_config_from_templates
     if declare -F repair_ddns_updater_config_permissions >/dev/null; then
         repair_ddns_updater_config_permissions
     else
@@ -634,10 +657,6 @@ create_config_dirs() {
     mkdir -p "$SCRIPT_DIR/config/npm/letsencrypt"
     mkdir -p "$SCRIPT_DIR/config/jellyfin/cache"
     clear_qbittorrent_managed_seed_for_manual_storage
-
-    # fail2ban configs are shipped with the repo, ensure dirs exist
-    mkdir -p "$SCRIPT_DIR/config/fail2ban/jail.d"
-    mkdir -p "$SCRIPT_DIR/config/fail2ban/filter.d"
 
     # Pre-create log-source dirs so fail2ban mounts them before the
     # producing services (NPM/Jellyfin/Seerr) create them on first run.
@@ -670,49 +689,9 @@ create_config_dirs() {
     # The official Seerr image writes /app/config as uid/gid 1000.
     sudo chown -R 1000:1000 "$SCRIPT_DIR/config/seerr"
 
-    # Seed Homepage configs before first container start. Homepage's image
-    # writes its own defaults (GitHub/Reddit/YouTube bookmarks, basic widgets)
-    # on first start if these files are missing. Write them only if absent.
-    local hp_dir="$SCRIPT_DIR/config/homepage"
-    [[ -f "$hp_dir/bookmarks.yaml" ]] || echo '[]' > "$hp_dir/bookmarks.yaml"
-    [[ -f "$hp_dir/docker.yaml" ]]    || echo '{}' > "$hp_dir/docker.yaml"
-    if [[ ! -f "$hp_dir/widgets.yaml" ]]; then
-        cat > "$hp_dir/widgets.yaml" <<'WIDGETS'
-- greeting:
-    text_size: xl
-    text: MediaStack
-- datetime:
-    text_size: lg
-    format:
-      dateStyle: long
-      timeStyle: short
-      hour12: true
-- resources:
-    cpu: true
-    memory: true
-    cputemp: true
-    network: true
-    expanded: true
-    refresh: 3000
-    disk: /data
-WIDGETS
-    fi
-    if [[ ! -f "$hp_dir/settings.yaml" ]]; then
-        cat > "$hp_dir/settings.yaml" <<'SETTINGS'
-title: MediaStack
-theme: dark
-color: slate
-headerStyle: clean
-background:
-  image: https://images.unsplash.com/photo-1502790671504-542ad42d5189?auto=format&fit=crop&w=2560&q=80
-  blur: sm
-  brightness: 30
-  opacity: 30
-cardBlur: sm
-iconStyle: theme
-statusStyle: dot
-SETTINGS
-    fi
+    # Homepage YAML (bookmarks/docker/widgets/settings) is seeded from the
+    # templates by seed_config_from_templates above — including the dashboard
+    # layout: block, which the old inline heredoc omitted.
 
     log_ok "Config directories created"
 }
@@ -760,7 +739,6 @@ start_stack() {
 }
 
 wait_all_healthy() {
-    log_info "Waiting for services to become healthy (up to 2 minutes)..."
     local timeout=120
     local elapsed=0
     local interval=5
@@ -773,8 +751,10 @@ wait_all_healthy() {
         expected_services=$(docker compose "${profiles[@]}" ps --all --services 2>/dev/null || true)
     fi
 
+    local _spin_i=0 _fc=${#_G_SPIN[@]}
+
     while (( elapsed < timeout )); do
-        local status_report failed waiting no_health missing
+        local status_report failed waiting restarting no_health missing
         status_report=$(docker compose "${profiles[@]}" ps --all --format json 2>/dev/null | \
             EXPECTED_SERVICES="$expected_services" python3 -c "
 import json
@@ -796,6 +776,7 @@ for line in sys.stdin:
 seen = set()
 failed = []
 waiting = []
+restarting = []
 no_health = []
 
 for svc in records:
@@ -820,6 +801,8 @@ for svc in records:
             no_health.append(label)
     elif state in ('exited', 'dead'):
         failed.append(f'{label}({state})')
+    elif state == 'restarting':
+        restarting.append(label)
     elif state:
         waiting.append(f'{label}({state})')
     else:
@@ -831,25 +814,28 @@ if not records and not expected:
 
 print('failed\\t' + ' '.join(failed))
 print('waiting\\t' + ' '.join(waiting))
+print('restarting\\t' + ' '.join(restarting))
 print('no_health\\t' + ' '.join(no_health))
 print('missing\\t' + ' '.join(missing))
-" 2>/dev/null || printf 'failed\tcompose-status-unavailable\nwaiting\t\nno_health\t\nmissing\t\n')
+" 2>/dev/null || printf 'failed\tcompose-status-unavailable\nwaiting\t\nrestarting\t\nno_health\t\nmissing\t\n')
 
         failed=""
         waiting=""
+        restarting=""
         no_health=""
         missing=""
         while IFS=$'\t' read -r key value; do
             case "$key" in
-                failed) failed="$value" ;;
-                waiting) waiting="$value" ;;
-                no_health) no_health="$value" ;;
-                missing) missing="$value" ;;
+                failed)     failed="$value" ;;
+                waiting)    waiting="$value" ;;
+                restarting) restarting="$value" ;;
+                no_health)  no_health="$value" ;;
+                missing)    missing="$value" ;;
             esac
         done <<< "$status_report"
 
         if [[ -n "$failed" || -n "$missing" ]]; then
-            echo ""
+            echo -ne "\r\033[K"
             [[ -n "$failed" ]] && log_warn "Some services stopped unexpectedly: ${failed}"
             [[ -n "$missing" ]] && log_warn "Some expected services are missing: ${missing}"
             log_info "Current container state:"
@@ -857,8 +843,13 @@ print('missing\\t' + ' '.join(missing))
             return 1
         fi
 
+        # restarting containers (e.g. beszel-agent before its key is configured)
+        # are not a blocker — configure.sh will complete their initialisation.
         if [[ -z "$waiting" ]]; then
-            if [[ -n "$no_health" ]]; then
+            echo -ne "\r\033[K"
+            if [[ -n "$restarting" ]]; then
+                log_ok "Services ready — ${restarting} still initializing (configure.sh will complete setup)"
+            elif [[ -n "$no_health" ]]; then
                 log_ok "All services healthy/running (no healthcheck: ${no_health})"
             else
                 log_ok "All services healthy!"
@@ -866,28 +857,19 @@ print('missing\\t' + ' '.join(missing))
             return 0
         fi
 
-        echo -ne "\r  Waiting... (${elapsed}s) Still starting: ${waiting}    "
-        sleep "$interval"
+        # Animate spinner during the poll interval (0.08s per frame, ~62 frames for 5s)
+        local _fmt="${waiting// / · }"
+        local _ticks=$(( interval * 1000 / 80 ))
+        for (( _t=0; _t < _ticks; _t++ )); do
+            echo -ne "\r  ${_UI_CYAN}${_G_SPIN[$(( _spin_i % _fc ))]}${_UI_RESET}  Waiting for services (${elapsed}s/${timeout}s) — ${_fmt}\033[K"
+            (( _spin_i = _spin_i + 1 ))
+            sleep 0.08
+        done
         (( elapsed += interval ))
     done
 
-    echo ""
-    log_warn "Some services may still be starting. Check: docker compose ps"
-}
-
-# Map a GPU vendor token (nvidia|amd|intel|none) -> its conventional brand
-# casing for user-facing boxes. Single source of truth so the brand is never
-# spelled three ways again (the "Detected GPU" box, the transcoding summary row
-# and the access-info line all read through this). The catch-all echoes any
-# unexpected value unchanged so a future vendor never prints an empty brand.
-gpu_brand_label() {
-    case "${1:-}" in
-        nvidia) printf 'NVIDIA' ;;
-        amd)    printf 'AMD' ;;
-        intel)  printf 'Intel' ;;
-        none|"") printf 'none' ;;
-        *)      printf '%s' "$1" ;;
-    esac
+    echo -ne "\r\033[K"
+    log_warn "Some services may still be starting after ${timeout}s. Check the menu: Manage stack."
 }
 
 # Map REMOTE_WEB_STATE -> a human label. Single source of truth for the Stage 2
@@ -897,8 +879,8 @@ remote_state_label() {
     local remote_state="${1-${REMOTE_WEB_STATE:-}}"
     case "$remote_state" in
         ready) printf 'ready' ;;
-        skipped) printf 'skipped - run ./setup.sh --remote to retry' ;;
-        failed) printf 'failed - run ./setup.sh --remote to retry' ;;
+        skipped) printf 'skipped - choose Features & settings -> Add remote access to retry' ;;
+        failed) printf 'failed - choose Features & settings -> Add remote access to retry' ;;
         unchecked|"") printf 'not configured' ;;
         *) printf 'not configured' ;;
     esac
@@ -974,10 +956,14 @@ print_final_summary() {
         remote_ready=true
     fi
 
+    # Labelled by name (not "Stage N") and ordered to match how setup actually
+    # runs: core media server -> hardware transcoding -> remote access. The old
+    # numbering was misleading (transcoding ran second but was unnumbered, remote
+    # ran third but was "Stage 2").
     local rows=(
-        "$(ui_kv 'Stage 1' "$stage1_label")"
-        "$(ui_kv 'Stage 2' "$stage2_label")"
+        "$(ui_kv 'Core media server' "$stage1_label")"
         "$(ui_kv 'Hardware transcoding' "$transcoding_label")"
+        "$(ui_kv 'Remote access' "$stage2_label")"
         "$(ui_kv 'Homepage' "$homepage")"
         "$(ui_kv 'Jellyfin LAN' "$jellyfin_lan")"
     )
@@ -1158,10 +1144,7 @@ print_access_info() {
 
     if [[ "$public_indexers_enabled" != "true" ]]; then
         echo -e "  ${YELLOW}No search indexers configured${NC} - Sonarr/Radarr can't find releases yet."
-        echo "  Add them: copy entries from config/examples/public-indexers.yml into"
-        echo "  config.yml, then run ./scripts/configure.sh (re-runs are safe - already-"
-        echo "  configured services are skipped, never overwritten)."
-        echo "  Or enable them anytime from the launcher:"
+        echo "  Enable them anytime from the launcher:"
         echo "    ./mediastack -> Features & settings -> Search indexers"
         echo ""
     fi
@@ -1175,11 +1158,11 @@ print_access_info() {
             echo -e "  ${BOLD}Jellyfin${NC}         https://jellyfin.${domain}"
             echo -e "  ${BOLD}Seerr${NC}            https://seerr.${domain}"
         elif [[ "$remote_state" == "skipped" ]]; then
-            echo "  HTTPS skipped. LAN + VPN work. Run ./setup.sh --remote to try again."
+            echo "  HTTPS skipped. LAN + VPN work. Choose Features & settings -> Add remote access from the menu to try again."
         elif [[ "$remote_state" == "failed" ]]; then
-            echo "  HTTPS setup failed. LAN + VPN work. Run ./setup.sh --remote after fixing the issue."
+            echo "  HTTPS setup failed. LAN + VPN work. Choose Features & settings -> Add remote access from the menu after fixing the issue."
         else
-            echo "  Remote access: not yet configured -- run ./setup.sh --remote"
+            echo "  Remote access: not yet configured -- choose Features & settings -> Add remote access from the menu"
         fi
         echo ""
     fi
@@ -1217,7 +1200,7 @@ print_access_info() {
     if [[ "$remote_ready" != "true" ]]; then
         echo ""
         echo -e "  ${BOLD}You can stop here. Your media server works on the LAN.${NC}"
-        echo "  To enable remote access (HTTPS, VPN), run setup.sh again."
+        echo "  To enable remote access (HTTPS, VPN), choose Features & settings -> Add remote access from the menu."
         echo ""
     fi
     echo -e "${CYAN}$(_g_repeat 65 "$_G_DH")${NC}"

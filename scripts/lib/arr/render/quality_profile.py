@@ -49,7 +49,21 @@ def main() -> int:
         "upgradeAllowed": upgrade_allowed,
         "cutoff": cutoff_id,
         "items": new_items,
-        "minFormatScore": 0,
+        # Carry the template profile's language through. Dropping it makes
+        # Radarr/Sonarr store the profile with a null language, which Radarr
+        # renders as a blank " is wanted, but found <lang>" rejection on every
+        # release, and Sonarr treats as "no filter" (grabs any language). Fall
+        # back to Original (id -2, each title's native TMDB language) when the
+        # template itself has none — Sonarr's stock profiles ship null.
+        "language": profile.get("language") or {"id": -2, "name": "Original"},
+        # Reject floor. Custom-format scores STEER selection; they must not act as
+        # hidden hard-blocks (file size is gated by the quality_definitions bounds,
+        # not here). -1000 sits below any realistic penalty stack (the default
+        # scores bottom out around -120) so nothing is score-blocked by default,
+        # while staying above -10000 for anyone who deliberately sets a format to
+        # that hard-block value. Do NOT raise to 0 — that would turn every negative
+        # score into a hard reject. See docs/reference/quality-bounds.md.
+        "minFormatScore": -1000,
         "cutoffFormatScore": 0,
         "minUpgradeFormatScore": 1,
         "formatItems": profile.get("formatItems", []),

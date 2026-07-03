@@ -105,7 +105,7 @@ chmod +x /tmp/fakebin/docker
 rm -f config/state/storage-watchdog-stopped
 rm -f $docker_log $log_path
 PATH=/tmp/fakebin:\$PATH STORAGE_CHECK_INTERVAL=1 STORAGE_OK_STABLE=0 timeout 3 ./scripts/storage-watchdog.sh >$log_path 2>&1 || true
-grep -q \"no NAS-dependent services are running after boot\" $log_path
+grep -q \"reconciling NAS-dependent services after boot\" $log_path
 grep -q \"docker compose up -d jellyfin\" $docker_log
 grep -q \"docker compose up -d seerr\" $docker_log
 ! grep -q \"docker compose up -d bazarr\" $docker_log
@@ -144,6 +144,28 @@ run_scenario() {
     else
         skip "NAS: disposable NFS fixture starts" "kernel NFS server unavailable inside DinD"
         return 0
+    fi
+
+    # storage_probe_nas is the wizard's non-destructive verification: it must
+    # confirm the share works WITHOUT mounting the real mountpoint (run while
+    # $mountpoint is still unmounted, before the install-time preflight).
+    if dind_exec "timeout 30 bash -lc '
+set -euo pipefail
+sudo() { \"\$@\"; }
+ui_spin() { shift; \"\$@\"; }
+ui_log() { printf \"%s\\n\" \"\$*\"; }
+set -a
+source .env
+set +a
+source scripts/lib/common.sh
+source scripts/setup/storage.sh
+storage_probe_nas
+findmnt -rn -M $mountpoint >/dev/null 2>&1 && { echo PROBE_MOUNTED_REAL; exit 3; }
+exit 0
+'"; then
+        pass "NAS: probe verifies the share without mounting the real mountpoint"
+    else
+        fail "NAS: probe verifies the share without mounting the real mountpoint" "$(dind_exec "findmnt -rn -M $mountpoint -o SOURCE,FSTYPE || true")"
     fi
 
     nas_storage_preflight || return 1

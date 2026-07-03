@@ -300,4 +300,91 @@ else:
             log_ok "Homepage network widget: $host_iface"
         fi
     fi
+
+    # Toggle cputemp based on whether the host exposes a readable thermal sensor.
+    # /sys is bind-mounted host-scoped, but VMs (and some bare-metal boards) have
+    # no thermal_zone*/temp, which leaves Homepage's temp widget broken ("Max"
+    # with no reading). Detect on the host and disable the widget when absent.
+    if [[ -f "$widgets_file" ]] && grep -q "cputemp:" "$widgets_file"; then
+        local has_temp=false _z
+        for _z in /sys/class/thermal/thermal_zone*/temp; do
+            [[ -r "$_z" && -n "$(cat "$_z" 2>/dev/null)" ]] && { has_temp=true; break; }
+        done
+        if grep -q "cputemp: $has_temp" "$widgets_file"; then
+            log_skip "Homepage cputemp already $has_temp"
+        else
+            sed -i "s/cputemp: .*/cputemp: $has_temp/" "$widgets_file"
+            if $has_temp; then
+                log_ok "Homepage cputemp enabled"
+            else
+                log_ok "Homepage cputemp disabled (no host thermal sensor)"
+            fi
+        fi
+    fi
+
+    # NAS storage label: on NAS installs with the storage watchdog running, show
+    # the header /data disk readout as its own labeled "NAS" block (NFS-backed
+    # storage). Gated like cputemp — local installs, and NAS without the
+    # watchdog, keep disk folded into the main resources widget.
+    local nas_label=false
+    if storage_is_nas && systemctl is-active --quiet mediastack-storage-watchdog.service 2>/dev/null; then
+        nas_label=true
+    fi
+    _homepage_apply_nas_label "$widgets_file" "$nas_label"
+}
+
+# Split the header /data disk readout into a labeled "NAS" resources block
+# (want=true) or fold it back into the main resources widget (want=false).
+# Idempotent; a pure function of the widgets file + want flag (unit-tested in
+# tests/unit/homepage-nas-label.sh). /data is the in-container mount path.
+_homepage_apply_nas_label() {
+    local widgets_file="$1" want="$2" nas_result
+    [[ -f "$widgets_file" ]] || return 0
+    nas_result=$(WIDGETS_FILE="$widgets_file" NAS_LABEL="$want" python3 -c '
+import os, yaml
+
+want_nas = os.environ["NAS_LABEL"] == "true"
+path = os.environ["WIDGETS_FILE"]
+with open(path) as f:
+    widgets = yaml.safe_load(f) or []
+
+DISK, LABEL = "/data", "NAS"
+main_res, nas_idx = None, None
+for i, item in enumerate(widgets):
+    if not isinstance(item, dict) or "resources" not in item:
+        continue
+    r = item["resources"] or {}
+    if r.get("label") == LABEL and "disk" in r:
+        nas_idx = i
+    elif "cpu" in r or "memory" in r:
+        main_res = r
+
+changed = False
+if want_nas:
+    if main_res is not None and "disk" in main_res:
+        del main_res["disk"]; changed = True
+    if nas_idx is None:
+        widgets.append({"resources": {"label": LABEL, "disk": DISK, "expanded": True}})
+        changed = True
+else:
+    if nas_idx is not None:
+        widgets.pop(nas_idx); changed = True
+    if main_res is not None and main_res.get("disk") != DISK:
+        main_res["disk"] = DISK; changed = True
+
+if not changed:
+    print("SKIP")
+else:
+    with open(path, "w") as f:
+        yaml.safe_dump(widgets, f, default_flow_style=False, sort_keys=False)
+    print("OK")
+') || return 0
+    case "$nas_result" in
+        SKIP) log_skip "Homepage NAS storage label already correct" ;;
+        OK) if [[ "$want" == true ]]; then
+                log_ok "Homepage NAS storage label enabled"
+            else
+                log_ok "Homepage NAS storage label reset (not NAS+watchdog)"
+            fi ;;
+    esac
 }

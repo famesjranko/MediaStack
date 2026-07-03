@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/ui-box-alignment.sh
 #
-# Regression for F-005. _ui_strip_ansi (scripts/lib/ui_fallback.sh) was a silent
+# Regression for F-005. _ui_strip_ansi (scripts/lib/ui_render_fallback.sh) was a silent
 # no-op due to three independent bugs: (1) the CSI introducer was written as the
 # regex '\\[' (a literal backslash) instead of '\['; (2) under non-C locales the
 # CSI byte-range classes [ -/] and [@-~] do not match via bash =~; and (3) the
@@ -33,8 +33,8 @@ echo -e "${CYAN}${BOLD}▶ scenario: ui-box-alignment${NC}"
 # the palette and glyph vocabulary are frozen at source time.
 export UI_FORCE_COLOR=1
 export UI_FORCE_GLYPHS=1
-# shellcheck source=../../scripts/lib/ui_fallback.sh
-source "$REPO_ROOT/scripts/lib/ui_fallback.sh"
+# shellcheck source=../../scripts/lib/ui_render_fallback.sh
+source "$REPO_ROOT/scripts/lib/ui_render_fallback.sh"
 
 # Independent visible-width oracle (perl), not the function under test.
 _oracle_len() { printf '%b' "$1" | perl -CS -pe 's/\e\[[0-9:;<=>?]*[ -\/]*[@-~]//g; s/\R//g' | perl -CS -ne 'print length'; }
@@ -65,10 +65,10 @@ else
 fi
 
 # --- ui_box + ui_kv: every rendered line is one visible width ---
-box="$(_ui_box_impl 'Detected your system' \
-    "$(_ui_kv_impl 'Hostname' 'mediabox')" \
-    "$(_ui_kv_impl 'OS' 'Debian GNU/Linux 13 (trixie)')" \
-    "$(_ui_kv_impl 'Timezone' 'Etc/UTC')")"
+box="$(_render_box 'Detected your system' \
+    "$(_render_kv 'Hostname' 'mediabox')" \
+    "$(_render_kv 'OS' 'Debian GNU/Linux 13 (trixie)')" \
+    "$(_render_kv 'Timezone' 'Etc/UTC')")"
 widths="$(printf '%s\n' "$box" | grep -E '│|╭|╰' | while IFS= read -r l; do _oracle_len "$l"; echo; done | sort -u)"
 distinct="$(printf '%s\n' "$widths" | grep -c .)"
 assert_eq "1" "$distinct" "ui_box+ui_kv: all box lines render at one visible width (F-005)"
@@ -81,7 +81,7 @@ assert_eq "1" "$distinct" "ui_box+ui_kv: all box lines render at one visible wid
 # (NOT the function under test), and count the visible chars before the sentinel.
 _ui_kv_value_col() {
     local stripped prefix
-    stripped="$(printf '%b' "$(_ui_kv_impl "$1" 'SENTINEL')" | perl -CS -pe 's/\e\[[0-9:;<=>?]*[ -\/]*[@-~]//g; s/\R//g')"
+    stripped="$(printf '%b' "$(_render_kv "$1" 'SENTINEL')" | perl -CS -pe 's/\e\[[0-9:;<=>?]*[ -\/]*[@-~]//g; s/\R//g')"
     prefix="${stripped%%SENTINEL*}"
     printf '%s' "${#prefix}"
 }

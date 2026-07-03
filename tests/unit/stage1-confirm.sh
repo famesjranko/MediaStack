@@ -45,11 +45,13 @@ _stage1_confirm
 CONFIRM_CAPTURE=$(cat "$CONFIRM_FILE")
 
 assert_eq "Install" "$_STAGE1_CONFIRM_ACTION" "stage1-confirm: UI_DEMO chooses Install"
-assert_contains "$CONFIRM_CAPTURE" "Stage 1: Install Plan" "stage1-confirm: title"
+assert_contains "$CONFIRM_CAPTURE" "Core Media Server: Install Plan" "stage1-confirm: title"
 assert_contains "$CONFIRM_CAPTURE" "Image channel" "stage1-confirm: image channel shown"
 assert_contains "$CONFIRM_CAPTURE" "stable" "stage1-confirm: image channel value"
 assert_contains "$CONFIRM_CAPTURE" "5-7 minutes on first run" "stage1-confirm: time estimate"
 assert_contains "$CONFIRM_CAPTURE" "no public access - LAN only" "stage1-confirm: LAN-only copy"
+assert_contains "$CONFIRM_CAPTURE" "Firewall" "stage1-confirm: firewall row shown in plan"
+assert_contains "$CONFIRM_CAPTURE" "Hardening" "stage1-confirm: hardening row shown in plan"
 
 # WR-07: when 'docker compose config --services' returns nothing, the wizard
 # must fail loudly with log_error + exit 1 rather than fall back to a

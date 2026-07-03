@@ -31,6 +31,7 @@ _stage1_read_limit() {
 }
 
 run_stage1() {
+    seed_root_config   # ensure live config.yml exists before the wizard mutates it (env_gen.sh)
     # Sentinel convention: STAGE_1_COMPLETE is unset OR empty when Stage 1
     # has not yet completed; literal "1" means complete. env_gen.sh writes
     # the empty value (see 'STAGE_1_COMPLETE=${prev_stage1}' where
@@ -50,7 +51,7 @@ run_stage1() {
         return 0
     fi
 
-    ui_banner "MediaStack - Stage 1: Core LAN" "Working media server in 5-7 minutes"
+    ui_banner "MediaStack - Core Media Server" "Working media server in 5-7 minutes"
 
     _wizard_run_discovery
     _stage1_show_system
@@ -58,9 +59,13 @@ run_stage1() {
     while true; do
         _stage1_collect_admin
         _stage1_collect_storage
+        _stage1_collect_subtitles
+        _stage1_collect_smb
         _stage1_collect_quality
+        _stage1_collect_indexers
         _stage1_collect_image_channel
         _stage1_collect_qbit
+        _stage1_collect_security
 
         local action
         _stage1_confirm
@@ -69,8 +74,7 @@ run_stage1() {
             Install) break ;;
             Back) continue ;;
             Abort)
-                _stage1_cleanup_preflight_nas_mount
-                log_info "Setup aborted - re-run setup.sh to try again"
+                log_info "Setup aborted - choose Install MediaStack from the menu to try again"
                 exit 0
                 ;;
         esac
@@ -101,6 +105,8 @@ _demo_stage1_noninteractive() {
     _WIZ_BAZARR_ENABLED="${_WIZ_PREV_BAZARR:-false}"
     _WIZ_SMB_ENABLED="${_WIZ_PREV_SMB:-false}"
     _WIZ_SMB_SHARE_SCOPE="${_WIZ_PREV_SMB_SHARE_SCOPE:-data}"
+    _WIZ_UFW_ENABLED="${_WIZ_PREV_UFW:-true}"
+    _WIZ_HARDENING_ENABLED="${_WIZ_PREV_HARDENING:-true}"
     _WIZ_WG_HOST=""
     _WIZ_WG_PORT="51820"
     _WIZ_WG_DNS="1.1.1.1"
@@ -150,8 +156,15 @@ _demo_stage1_noninteractive() {
 }
 
 _stage1_show_system() {
-    local hostname_value os_value docker_value ram_value root_free data_path data_free
+    local hostname_value os_value docker_value ram_value root_free data_path data_free gateway_value
     hostname_value=$(hostname)
+    # LAN gateway = the router the user logs into for port forwarding. The `via`
+    # address of the default route ($3) — reliable on any host with a default
+    # route; empty (shown as "unknown") only if there's no route configured.
+    # `|| true`: under `set -euo pipefail` a missing/erroring `ip` would make this
+    # standalone assignment abort the whole wizard. Empty gateway is fine (shows
+    # "unknown").
+    gateway_value=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}' || true)
     os_value=$(awk -F= '/^PRETTY_NAME=/ {gsub(/"/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null || echo "unknown")
     docker_value=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',')
     # Report total RAM in GB (one decimal) so it matches the preflight RAM check
@@ -164,6 +177,7 @@ _stage1_show_system() {
     ui_box "Detected your system" \
         "$(ui_kv 'Hostname' "$hostname_value")" \
         "$(ui_kv 'LAN IP' "${_ENV_HOST_ADDRESS:-unknown}")" \
+        "$(ui_kv 'Router (gateway)' "${gateway_value:-unknown}")" \
         "$(ui_kv 'Public IP' "${_NET_PUBLIC_IP:-not detected - fine for LAN-only}")" \
         "$(ui_kv 'OS' "$os_value")" \
         "$(ui_kv 'Docker version' "${docker_value:-unknown}")" \
@@ -184,7 +198,7 @@ _stage1_show_system() {
             _WIZ_TZ=$(ui_input_validated "Timezone" "$tz_default" validate_timezone)
             ;;
         "Abort")
-            log_info "Setup aborted - re-run setup.sh to try again"
+            log_info "Setup aborted - choose Install MediaStack from the menu to try again"
             exit 0
             ;;
         *)
@@ -194,95 +208,151 @@ _stage1_show_system() {
 }
 
 _stage1_collect_admin() {
-    ui_section 1 6 "Admin identity"
+    # Collect username, email, then password, and finish with a persistent review
+    # of all three so the user sees them together and accepts them at once or
+    # starts the section over. Without the review the entered values scroll away
+    # (the gum backend clears each input widget after submit), so the earlier
+    # answers appear to "disappear".
+    #
+    # WR-08 / #95: NEVER auto-generate the shared admin credential — it is the one
+    # password for every service, so the user must set it (no default; a bare
+    # Enter is rejected). Validated against the strictest service floor
+    # (validate_admin_password: >=12 chars, >=2 char types, no single quote).
+    # Shown as typed (user preference) and printed in the final summary anyway.
+    # In UI_DEMO/--demo the ui_* helpers return their demo defaults, so nothing
+    # blocks (the DEMO=1 non-interactive installer uses _demo_stage1_noninteractive
+    # and never calls this function).
+    local choice email_default
+    while true; do
+        ui_section 1 10 "Admin identity"
 
-    local email_default
-    _WIZ_ADMIN_USER=$(ui_input_validated \
-        "Admin username" \
-        "${_WIZ_ADMIN_USER:-${_WIZ_PREV_USER:-admin}}" \
-        validate_admin_user)
+        # Echo each captured value as a persistent line right after entry so the
+        # details accumulate on screen as you go. The gum backend clears its input
+        # widget after submit, so without these confirmation lines the earlier
+        # answers vanish; these stay and double as the final review above the
+        # accept prompt.
+        _WIZ_ADMIN_USER=$(ui_input_validated \
+            "Admin username" \
+            "${_WIZ_ADMIN_USER:-${_WIZ_PREV_USER:-admin}}" \
+            validate_admin_user)
+        ui_kv "Username" "$_WIZ_ADMIN_USER"
 
-    email_default="${_WIZ_ADMIN_EMAIL:-${_WIZ_PREV_EMAIL:-}}"
-    if [[ -z "$email_default" || "${email_default,,}" =~ @(example\.com|example\.net|example\.org)$ ]]; then
-        email_default=""
-    fi
-    _WIZ_ADMIN_EMAIL=$(ui_input_validated \
-        "Admin email (for SSL certs and service login)" \
-        "$email_default" \
-        validate_admin_email)
+        email_default="${_WIZ_ADMIN_EMAIL:-${_WIZ_PREV_EMAIL:-}}"
+        if [[ -z "$email_default" || "${email_default,,}" =~ @(example\.com|example\.net|example\.org)$ ]]; then
+            email_default=""
+        fi
+        _WIZ_ADMIN_EMAIL=$(ui_input_validated \
+            "Admin email (for SSL certs and service login)" \
+            "$email_default" \
+            validate_admin_email)
+        ui_kv "Email" "$_WIZ_ADMIN_EMAIL"
 
-    # WR-08 / #95: NEVER auto-generate the shared admin credential. It is the single
-    # password for Jellyfin/Sonarr/Radarr/qBittorrent/Portainer/etc, so the user must
-    # set it themselves — there is NO default (a bare Enter is rejected by the
-    # validator), which means the install can never proceed on a password the user did
-    # not choose. The value is validated against the strictest service floor
-    # (validate_admin_password: >=12 chars, no single quote — Portainer's minimum) and
-    # confirmed by re-entry. Both reads are masked (ui_password = read -rsp), so the
-    # secret never lands in terminal scrollback. Non-TTY input exhaustion is handled by
-    # ui_password_validated's #93 guard: an empty default rejected twice yields a clean
-    # UI_EXIT_INPUT_EXHAUSTED, so the confirm loop below can never spin off a TTY.
-    if [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]]; then
-        # Simulation / non-interactive walk-through only (--demo / UI_DEMO=1); a real
-        # --full install never reaches this branch. A valid placeholder keeps the demo
-        # flow moving without prompting. (The DEMO=1 non-interactive INSTALLER uses
-        # _demo_stage1_noninteractive and never calls this function.)
-        _WIZ_ADMIN_PW="DemoAdminPassword123"
-    else
-        local pw confirm
-        while true; do
-            pw=$(ui_password_validated \
-                "Admin password (min 12 chars, no single quotes)" \
-                "" \
-                validate_admin_password)
-            confirm=$(ui_password "Confirm admin password" "")
-            [[ "$pw" == "$confirm" ]] && break
-            ui_log warn "Passwords did not match - please try again."
-        done
-        _WIZ_ADMIN_PW="$pw"
+        ui_log info "Password rules: 12+ characters, mix at least 2 of lowercase / UPPERCASE / digits / symbols, no single quotes."
+        _WIZ_ADMIN_PW=$(ui_input_validated \
+            "Admin password" \
+            "" \
+            validate_admin_password \
+            "DemoAdminPassword123")
+        ui_kv "Password" "$_WIZ_ADMIN_PW"
+
+        echo ""
+        choice=$(ui_choose "Use these admin details?" "Use these details" "Re-enter")
+        [[ "$choice" == "Use these details" ]] && break
+    done
+}
+
+# Thin wrapper: collect storage, then let the user accept or re-enter (mirrors
+# _stage1_collect_admin). The per-choice ui_kv echoes live INSIDE _once so they
+# pile up interleaved with the prompts (like admin), not as one block here.
+# Re-enter re-runs the whole section — the same idempotent re-run the outer
+# plan-box Back loop does (storage_mount_nfs early-returns when mounted).
+_stage1_collect_storage() {
+    while true; do
+        _stage1_collect_storage_once
+        # Managed NAS confirms its own choices inside the NAS sub-flow, so its
+        # "Re-enter" only revisits the NFS options + watchdog (not the whole
+        # connection flow). Every other path uses this generic confirm, whose
+        # "Re-enter" re-opens the storage menu.
+        if [[ "${_WIZ_STORAGE_MODE:-}" == "nas" && "${_WIZ_STORAGE_APP_WIRING:-}" == "managed" ]]; then
+            break
+        fi
+        echo ""
+        local _confirm
+        _confirm=$(ui_choose "Use these storage choices?" "Use these details" "Re-enter")
+        [[ "$_confirm" == "Use these details" ]] && break
+    done
+}
+
+_stage1_collect_storage_once() {
+    ui_section 2 10 "Storage"
+
+    # Loop the storage menu so the NAS sub-flow's "Back to storage options" can
+    # bring the user straight back here to pick a different backend.
+    local storage_choice local_default
+    while true; do
+        local_default="${_WIZ_DATA_DIR:-${_WIZ_PREV_DATA_DIR:-/data}}"
+        if [[ "${_WIZ_STORAGE_MODE:-local}" != "local" ]]; then
+            local_default="${_WIZ_PREV_DATA_DIR:-/data}"
+        fi
+        storage_choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Where should MediaStack store media and downloads?" \
+            "Local disk (${local_default}) (recommended)" \
+            "Network/NAS storage (NFS) - MediaStack manages mount checks and service protection." \
+            "Advanced manual storage - install apps but skip app-level storage wiring." \
+            "Quit installer")
+
+        case "$storage_choice" in
+            "Network/NAS"*)
+                _WIZ_STORAGE_MODE="nas"
+                _WIZ_STORAGE_APP_WIRING="managed"
+                _WIZ_STORAGE_PROTOCOL="nfs"
+                # Returns 0 once the NAS is verified + confirmed (or classification
+                # rerouted to local/manual); returns 1 for "Back to storage options",
+                # which re-shows this menu on the next loop.
+                _stage1_collect_nas_managed && break
+                ;;
+            "Advanced manual"*)
+                _stage1_collect_manual_storage
+                break
+                ;;
+            "Quit"*)
+                log_info "Setup aborted - choose Install MediaStack from the menu to try again"
+                exit 0
+                ;;
+            *)
+                _WIZ_STORAGE_MODE="local"
+                _WIZ_STORAGE_APP_WIRING="managed"
+                _WIZ_STORAGE_PROTOCOL=""
+                _WIZ_DATA_DIR=$(ui_input_validated \
+                    "Data directory" \
+                    "$local_default" \
+                    validate_data_dir)
+                _stage1_reset_local_storage_fields
+                break
+                ;;
+        esac
+    done
+    # Consolidated storage summary line. The NAS host:export is echoed per-field
+    # inside _stage1_collect_nas_settings, so it isn't repeated here. Managed NAS
+    # already prints this inside its own confirm loop, so skip it to avoid a dupe.
+    if ! [[ "${_WIZ_STORAGE_MODE:-}" == "nas" && "${_WIZ_STORAGE_APP_WIRING:-}" == "managed" ]]; then
+        ui_kv "Storage" "${_WIZ_STORAGE_MODE:-local} at ${_WIZ_DATA_DIR:-/data} (${_WIZ_STORAGE_APP_WIRING:-managed} wiring)"
     fi
 }
 
-_stage1_collect_storage() {
-    ui_section 2 6 "Storage + optional services"
+# Subtitles (Bazarr): enable + language list live together so the toggle and the
+# setting it gates form one coherent section (mirrors _stage1_collect_admin).
+_stage1_collect_subtitles() {
+    while true; do
+        _stage1_collect_subtitles_once
+        echo ""
+        local _confirm
+        _confirm=$(ui_choose "Use these subtitle choices?" "Use these details" "Re-enter")
+        [[ "$_confirm" == "Use these details" ]] && break
+    done
+}
 
-    local storage_choice local_default
-    local_default="${_WIZ_DATA_DIR:-${_WIZ_PREV_DATA_DIR:-/data}}"
-    if [[ "${_WIZ_STORAGE_MODE:-local}" != "local" ]]; then
-        local_default="${_WIZ_PREV_DATA_DIR:-/data}"
-    fi
-    storage_choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Where should MediaStack store media and downloads?" \
-        "Local disk (${local_default}) (recommended)" \
-        "Network/NAS storage (NFS) - MediaStack manages mount checks and service protection." \
-        "Advanced manual storage - install apps but skip app-level storage wiring." \
-        "Quit installer")
-
-    case "$storage_choice" in
-        "Network/NAS"*)
-            _WIZ_STORAGE_MODE="nas"
-            _WIZ_STORAGE_APP_WIRING="managed"
-            _WIZ_STORAGE_PROTOCOL="nfs"
-            _stage1_collect_nas_settings
-            _stage1_preflight_nas_choice
-            ;;
-        "Advanced manual"*)
-            _stage1_collect_manual_storage
-            ;;
-        "Quit"*)
-            log_info "Setup aborted - re-run setup.sh to try again"
-            exit 0
-            ;;
-        *)
-            _stage1_cleanup_preflight_nas_mount
-            _WIZ_STORAGE_MODE="local"
-            _WIZ_STORAGE_APP_WIRING="managed"
-            _WIZ_STORAGE_PROTOCOL=""
-            _WIZ_DATA_DIR=$(ui_input_validated \
-                "Data directory" \
-                "$local_default" \
-                validate_data_dir)
-            _stage1_reset_local_storage_fields
-            ;;
-    esac
+_stage1_collect_subtitles_once() {
+    ui_section 3 10 "Subtitles (Bazarr)"
 
     local bazarr_default="no"
     if [[ "${_WIZ_BAZARR_ENABLED:-${_WIZ_PREV_BAZARR:-false}}" == "true" ]]; then
@@ -300,6 +370,50 @@ _stage1_collect_storage() {
     else
         _WIZ_BAZARR_ENABLED="false"
     fi
+    ui_kv "Subtitles (Bazarr)" "$([[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]] && echo enabled || echo disabled)"
+
+    # Only ask for subtitle languages when Bazarr is enabled (#100): the value
+    # feeds render_bazarr alone, so prompting after the user declined Bazarr asks
+    # for something inert and contradicts the choice just made. When Bazarr is
+    # off, keep a stored default so a later `./setup.sh` that enables Bazarr still
+    # has a sensible language list.
+    if [[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]]; then
+        _WIZ_SUBTITLE_LANGS=$(ui_input_validated \
+            "Subtitle languages (comma-separated, e.g. english,spanish,french)" \
+            "${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}" \
+            validate_subtitle_langs)
+    else
+        _WIZ_SUBTITLE_LANGS="${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}"
+    fi
+    # ui_input_validated echoes the raw input (the validator only returns 0/1),
+    # so lowercase the accepted value here: Bazarr's LANG_MAP lookup is
+    # case-sensitive over lowercase keys, and the value reaches config.yml
+    # verbatim. ${,,} folds casing only (commas/spaces untouched; wizard_apply.py
+    # strips per-token whitespace) — not validity, but the DEMO/non-TTY
+    # short-circuit returns the literal 'english' default, so nothing invalid
+    # can slip through unvalidated.
+    _WIZ_SUBTITLE_LANGS="${_WIZ_SUBTITLE_LANGS,,}"
+    # Use an if (not `[[ ]] && ui_kv`): this is the function's last statement, so a
+    # false trailing test would make the function return 1 and abort the wizard
+    # under `set -e` whenever Bazarr is disabled (the default).
+    if [[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]]; then
+        ui_kv "Subtitle langs" "${_WIZ_SUBTITLE_LANGS:-english}"
+    fi
+}
+
+# File sharing (SMB): enable + share scope in one section.
+_stage1_collect_smb() {
+    while true; do
+        _stage1_collect_smb_once
+        echo ""
+        local _confirm
+        _confirm=$(ui_choose "Use these file-sharing choices?" "Use these details" "Re-enter")
+        [[ "$_confirm" == "Use these details" ]] && break
+    done
+}
+
+_stage1_collect_smb_once() {
+    ui_section 4 10 "File sharing (SMB)"
 
     local smb_default="no"
     if [[ "${_WIZ_SMB_ENABLED:-${_WIZ_PREV_SMB:-false}}" == "true" ]]; then
@@ -328,7 +442,7 @@ _stage1_collect_storage() {
                     "Quit installer")
                 case "$smb_action" in
                     "Retry"*) continue ;;
-                    "Quit"*) log_info "Setup aborted - re-run setup.sh to try again"; exit 0 ;;
+                    "Quit"*) log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
                     *)
                         _WIZ_SMB_ENABLED="false"
                         _WIZ_SMB_SHARE_SCOPE="${_WIZ_SMB_SHARE_SCOPE:-${_WIZ_PREV_SMB_SHARE_SCOPE:-data}}"
@@ -342,45 +456,184 @@ _stage1_collect_storage() {
             break
         fi
     done
+    if [[ "${_WIZ_SMB_ENABLED:-false}" == "true" ]]; then
+        ui_kv "File share (SMB)" "on (${_WIZ_SMB_SHARE_SCOPE:-data})"
+    else
+        ui_kv "File share (SMB)" "off"
+    fi
 }
 
 _stage1_collect_nas_settings() {
     local previous_mountpoint="${_WIZ_STORAGE_MOUNTPOINT:-${_WIZ_PREV_STORAGE_MOUNTPOINT:-}}"
+
+    # Frame the three things NAS setup needs before the first prompt (house style:
+    # a ui_box, like the public-indexers panel). Each answer is echoed with ui_kv
+    # right after entry (mirrors _stage1_collect_admin) so choices accumulate on
+    # screen as a running summary — the gum backend clears each input widget after
+    # submit, so without these the answers would vanish before the mount preflight.
+    ui_box "Network/NAS storage (NFS)" \
+        "MediaStack will connect to your NAS and store your media there." \
+        "You'll need three things:" \
+        "  - your NAS address (IP or hostname)" \
+        "  - the shared folder on the NAS (its NFS export path)" \
+        "  - where it should appear on this server (the mountpoint, e.g. /data)"
+    echo ""
+
     _WIZ_DATA_DIR=$(ui_input_validated \
         "Local mountpoint for NAS storage" \
         "${_WIZ_STORAGE_MOUNTPOINT:-${_WIZ_PREV_STORAGE_MOUNTPOINT:-${_WIZ_DATA_DIR:-${_WIZ_PREV_DATA_DIR:-/data}}}}" \
         validate_nas_mountpoint)
     _WIZ_STORAGE_MOUNTPOINT="$_WIZ_DATA_DIR"
+    ui_kv "NAS mountpoint" "$_WIZ_STORAGE_MOUNTPOINT"
+    echo ""
+
     _WIZ_STORAGE_NFS_HOST=$(ui_input_validated \
-        "NAS host/IP" \
+        "NAS host/IP (e.g. 192.168.1.50 or nas.local)" \
         "${_WIZ_STORAGE_NFS_HOST:-${_WIZ_PREV_STORAGE_NFS_HOST:-}}" \
         validate_nfs_host)
-    ui_log info "Enter the remote path exported by your NAS, for example /exports/mediastack. This is the NAS export path, not the local mountpoint."
+    ui_kv "NAS host/IP" "$_WIZ_STORAGE_NFS_HOST"
+    echo ""
+
     _WIZ_STORAGE_NFS_EXPORT=$(ui_input_validated \
-        "NFS export path" \
+        "NFS export path (the remote path your NAS exports, e.g. /exports/mediastack)" \
         "${_WIZ_STORAGE_NFS_EXPORT:-${_WIZ_PREV_STORAGE_NFS_EXPORT:-}}" \
         validate_nfs_export)
-    _WIZ_STORAGE_NFS_OPTS=$(ui_input_validated \
-        "NFS mount options" \
-        "${_WIZ_STORAGE_NFS_OPTS:-${_WIZ_PREV_STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}}" \
-        validate_nfs_options)
+    ui_kv "NFS export" "$_WIZ_STORAGE_NFS_EXPORT"
+
+    # NFS mount options and the watchdog toggle are collected AFTER the connection
+    # is verified and confirmed (_stage1_collect_nas_options). Seed the recommended
+    # defaults here so the verification probe has something to mount with.
+    _WIZ_STORAGE_NFS_OPTS="${_WIZ_STORAGE_NFS_OPTS:-${_WIZ_PREV_STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}}"
+
+    # The safety marker is the watchdog's internal sentinel; users never name it.
+    # Always default it under the mountpoint (silently).
     local sentinel_default="${_WIZ_DATA_DIR}/.mediastack-storage-ready"
     if [[ -n "${_WIZ_STORAGE_SENTINEL:-}" && "$previous_mountpoint" == "$_WIZ_STORAGE_MOUNTPOINT" ]]; then
         sentinel_default="$_WIZ_STORAGE_SENTINEL"
     elif [[ -n "${_WIZ_PREV_STORAGE_SENTINEL:-}" && "${_WIZ_PREV_STORAGE_MOUNTPOINT:-}" == "$_WIZ_STORAGE_MOUNTPOINT" ]]; then
         sentinel_default="$_WIZ_PREV_STORAGE_SENTINEL"
     fi
-    while true; do
-        _WIZ_STORAGE_SENTINEL=$(ui_input_validated \
-            "NAS sentinel file" \
-            "$sentinel_default" \
-            validate_storage_sentinel)
-        if storage_path_is_under_mountpoint "$_WIZ_STORAGE_SENTINEL" "$_WIZ_STORAGE_MOUNTPOINT"; then
-            break
-        fi
-        ui_log warn "NAS sentinel must be inside the selected NAS mountpoint (${_WIZ_STORAGE_MOUNTPOINT})."
+    if ! storage_path_is_under_mountpoint "$sentinel_default" "$_WIZ_STORAGE_MOUNTPOINT"; then
         sentinel_default="${_WIZ_STORAGE_MOUNTPOINT}/.mediastack-storage-ready"
+    fi
+    _WIZ_STORAGE_SENTINEL="$sentinel_default"
+}
+
+# Managed-NAS orchestrator: a small state machine so the final review can send
+# the user back to any layer. connection -> options -> review. The review box
+# lists every choice and its menu confirms or jumps back to a specific layer.
+# Returns 0 when confirmed (or classification rerouted to local/manual), 1 when
+# the user chooses "Change storage type" (caller re-shows the storage menu).
+# Nothing is mounted or configured here; confirming only locks in the _WIZ_*
+# choices (the probe is non-destructive; the real mount is deferred to install).
+_stage1_collect_nas_managed() {
+    local step=connection action
+    while true; do
+        case "$step" in
+            connection)
+                _stage1_collect_nas_settings
+                echo ""
+                _stage1_preflight_nas_choice
+                # A probe failure or a non-empty-share reroute may have switched
+                # away from managed NAS (to local, or to manual app wiring). If so
+                # it's already resolved and there is nothing to review here.
+                [[ "${_WIZ_STORAGE_MODE:-}" == "nas" && "${_WIZ_STORAGE_APP_WIRING:-managed}" == "managed" ]] || return 0
+                step=options
+                ;;
+            options)
+                echo ""
+                _stage1_collect_nas_options
+                step=review
+                ;;
+            review)
+                echo ""
+                _stage1_nas_review_box
+                action=$(ui_choose "Lock in these storage choices?" \
+                    "Confirm and continue" \
+                    "Change NFS options / watchdog" \
+                    "Change NAS address, export or mount point" \
+                    "Change storage type" \
+                    "Abort installation")
+                case "$action" in
+                    "Confirm"*)        return 0 ;;
+                    "Change NFS"*)     step=options ;;
+                    "Change NAS"*)     step=connection ;;
+                    "Change storage"*) return 1 ;;
+                    "Abort"*)          log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
+                esac
+                ;;
+        esac
     done
+}
+
+# Consolidated review of the managed-NAS choices, shown before the lock-in menu.
+# Reuses the ui_box + ui_kv pattern from _stage1_show_system.
+_stage1_nas_review_box() {
+    local wd
+    [[ "${_WIZ_STORAGE_WATCHDOG:-true}" == "false" ]] && wd="off" || wd="on"
+    ui_box "Storage choices to lock in" \
+        "$(ui_kv 'Storage' 'Network/NAS (NFS)')" \
+        "$(ui_kv 'NAS server' "${_WIZ_STORAGE_NFS_HOST}:${_WIZ_STORAGE_NFS_EXPORT}")" \
+        "$(ui_kv 'Mount point' "${_WIZ_DATA_DIR}")" \
+        "$(ui_kv 'NFS options' "${_WIZ_STORAGE_NFS_OPTS}")" \
+        "$(ui_kv 'Watchdog' "$wd")"
+}
+
+# NFS options + watchdog, asked only after the connection is verified and the
+# user has confirmed the NAS. The verification probe ran on the recommended
+# options, so "yes" needs no re-check; custom options are unproven and re-probed.
+_stage1_collect_nas_options() {
+    local nfs_opts_default
+    nfs_opts_default="${_WIZ_STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
+
+    if ui_confirm "Use the recommended NFS mount options?" "yes"; then
+        _WIZ_STORAGE_NFS_OPTS="$nfs_opts_default"
+    else
+        ui_log warn "Custom NFS options are advanced and unsupported - if the mount misbehaves with these, that is on you. The recommended defaults suit almost everyone."
+        while true; do
+            _WIZ_STORAGE_NFS_OPTS=$(ui_input_validated \
+                "NFS mount options" \
+                "$nfs_opts_default" \
+                validate_nfs_options)
+            if _stage1_reprobe_with_current_opts; then
+                break
+            fi
+            local retry
+            retry=$(ui_choose "Could not verify the NAS with those options. What now?" \
+                "Edit the options" \
+                "Use the recommended options instead")
+            if [[ "$retry" == "Use the recommended"* ]]; then
+                _WIZ_STORAGE_NFS_OPTS="$nfs_opts_default"
+                break
+            fi
+        done
+    fi
+    ui_kv "NFS options" "$_WIZ_STORAGE_NFS_OPTS"
+
+    echo ""
+    local watchdog_default="yes"
+    [[ "${_WIZ_STORAGE_WATCHDOG:-${_WIZ_PREV_STORAGE_WATCHDOG:-true}}" == "false" ]] && watchdog_default="no"
+    ui_log info "The NAS watchdog stops your media services if the NAS disconnects and restarts them when it returns. Recommended."
+    if ui_confirm "Enable the NAS mount watchdog?" "$watchdog_default"; then
+        _WIZ_STORAGE_WATCHDOG="true"
+    else
+        _WIZ_STORAGE_WATCHDOG="false"
+        ui_log warn "Watchdog disabled: MediaStack will NOT stop or protect data services if the NAS drops mid-run."
+    fi
+    [[ "${_WIZ_STORAGE_WATCHDOG:-true}" == "false" ]] && ui_kv "NAS watchdog" "off" || ui_kv "NAS watchdog" "on"
+}
+
+# Re-run the non-destructive probe with the user's just-entered custom options,
+# then restore the caller's STORAGE_* env. Returns 0 if the probe passes.
+_stage1_reprobe_with_current_opts() {
+    local prev_host="${STORAGE_NFS_HOST:-}" prev_export="${STORAGE_NFS_EXPORT:-}" prev_opts="${STORAGE_NFS_OPTS:-}"
+    export STORAGE_NFS_HOST="$_WIZ_STORAGE_NFS_HOST"
+    export STORAGE_NFS_EXPORT="$_WIZ_STORAGE_NFS_EXPORT"
+    export STORAGE_NFS_OPTS="$_WIZ_STORAGE_NFS_OPTS"
+    local rc=0
+    storage_probe_nas || rc=1
+    STORAGE_NFS_HOST="$prev_host"; STORAGE_NFS_EXPORT="$prev_export"; STORAGE_NFS_OPTS="$prev_opts"
+    return $rc
 }
 
 _stage1_reset_local_storage_fields() {
@@ -392,6 +645,7 @@ _stage1_reset_local_storage_fields() {
     _WIZ_STORAGE_NFS_EXPORT=""
     _WIZ_STORAGE_NFS_OPTS=""
     _WIZ_STORAGE_SENTINEL="${_WIZ_DATA_DIR}/.mediastack-storage-ready"
+    _WIZ_STORAGE_WATCHDOG="true"
 }
 
 _stage1_reset_manual_storage_fields() {
@@ -403,39 +657,32 @@ _stage1_reset_manual_storage_fields() {
     _WIZ_STORAGE_NFS_EXPORT=""
     _WIZ_STORAGE_NFS_OPTS=""
     _WIZ_STORAGE_SENTINEL=""
+    _WIZ_STORAGE_WATCHDOG="true"
 }
 
 _stage1_collect_manual_storage() {
     _WIZ_STORAGE_APP_WIRING="manual"
     ui_log warn "Advanced manual storage skips Jellyfin libraries, Sonarr/Radarr root folders, qBittorrent paths/categories, Seerr links, and Unpackerr path wiring."
+    ui_log warn "You take responsibility for app-level storage wiring here: MediaStack will not create or manage media/download paths, and fixing any misconfiguration is on you."
 
     if ui_confirm "Still enable NAS mount guard/watchdog for this manual storage?" "no"; then
         ui_log info "MediaStack will verify the NAS mount/sentinel and protect data services, but app storage paths stay manual."
         _WIZ_STORAGE_MODE="nas"
         _WIZ_STORAGE_PROTOCOL="nfs"
+        _WIZ_STORAGE_WATCHDOG="true"
+        _WIZ_STORAGE_NFS_OPTS="${_WIZ_STORAGE_NFS_OPTS:-${_WIZ_PREV_STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}}"
         if [[ -z "${_WIZ_STORAGE_NFS_HOST:-}" || -z "${_WIZ_STORAGE_NFS_EXPORT:-}" ]]; then
             _stage1_collect_nas_settings
         fi
         _stage1_preflight_nas_choice
         _WIZ_STORAGE_APP_WIRING="manual"
     else
-        _stage1_cleanup_preflight_nas_mount
         _WIZ_DATA_DIR=$(ui_input_validated \
             "Container data mount root" \
             "${_WIZ_DATA_DIR:-${_WIZ_PREV_DATA_DIR:-/data}}" \
             validate_data_dir)
         _stage1_reset_manual_storage_fields
     fi
-}
-
-_stage1_cleanup_preflight_nas_mount() {
-    if [[ "${_WIZ_STORAGE_PREFLIGHT_MOUNTED_BY_SETUP:-false}" != "true" ]]; then
-        return 0
-    fi
-    if [[ -n "${_WIZ_STORAGE_MOUNTPOINT:-}" ]] && findmnt -rn -M "$_WIZ_STORAGE_MOUNTPOINT" >/dev/null 2>&1; then
-        sudo umount "$_WIZ_STORAGE_MOUNTPOINT" 2>/dev/null || sudo umount -l "$_WIZ_STORAGE_MOUNTPOINT" 2>/dev/null || true
-    fi
-    _WIZ_STORAGE_PREFLIGHT_MOUNTED_BY_SETUP=false
 }
 
 _stage1_preflight_nas_choice() {
@@ -449,9 +696,6 @@ _stage1_preflight_nas_choice() {
     local prev_expected_source="${STORAGE_EXPECTED_SOURCE:-}"
     local prev_expected_fstype="${STORAGE_EXPECTED_FSTYPE:-}"
 
-    local was_mounted=false
-    local had_mismatched_mount=false
-
     while true; do
         export DATA_DIR="$_WIZ_DATA_DIR"
         export STORAGE_MODE="nas"
@@ -462,14 +706,6 @@ _stage1_preflight_nas_choice() {
         export STORAGE_MOUNTPOINT="${_WIZ_STORAGE_MOUNTPOINT:-$_WIZ_DATA_DIR}"
         export STORAGE_EXPECTED_SOURCE=""
         export STORAGE_EXPECTED_FSTYPE=""
-        was_mounted=false
-        had_mismatched_mount=false
-        if findmnt -rn -M "$STORAGE_MOUNTPOINT" >/dev/null 2>&1; then
-            was_mounted=true
-            if ! storage_mount_matches; then
-                had_mismatched_mount=true
-            fi
-        fi
 
         if ! storage_ensure_nfs_common; then
             ui_log warn "Could not install nfs-common, which is required for managed NAS storage."
@@ -482,14 +718,18 @@ _stage1_preflight_nas_choice() {
             case "$fallback" in
                 "Retry"*) continue ;;
                 "Advanced manual"*) _stage1_collect_manual_storage ;;
-                "Quit"*) log_info "Setup aborted - re-run setup.sh to try again"; exit 0 ;;
+                "Quit"*) log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
                 *) _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"; _stage1_reset_local_storage_fields ;;
             esac
             DATA_DIR="$prev_data"; STORAGE_MODE="$prev_mode"; STORAGE_NFS_HOST="$prev_host"; STORAGE_NFS_EXPORT="$prev_export"; STORAGE_NFS_OPTS="$prev_opts"; STORAGE_SENTINEL="$prev_sentinel"; STORAGE_MOUNTPOINT="$prev_mountpoint"; STORAGE_EXPECTED_SOURCE="$prev_expected_source"; STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
             return 0
         fi
-        if ! storage_mount_nfs; then
-            ui_log warn "Could not mount NAS storage now."
+        # Verify only — never mount the real mountpoint during the wizard. The
+        # probe temp-mounts elsewhere, so a changed export can't collide with a
+        # prior mount and we never ask the user to detach anything. The real
+        # /data mount happens at install (storage_preflight_nas).
+        if ! storage_probe_nas; then
+            ui_log warn "Could not verify NAS storage."
             local fallback
             fallback=$(ui_choose "NAS mount failed. What should setup do?" \
                 "Edit NAS settings and retry" \
@@ -503,7 +743,7 @@ _stage1_preflight_nas_choice() {
                 "Advanced manual"*)
                     _stage1_collect_manual_storage
                     ;;
-                "Quit"*) log_info "Setup aborted - re-run setup.sh to try again"; exit 0 ;;
+                "Quit"*) log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
                 *)
                     _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"
                     _stage1_reset_local_storage_fields
@@ -515,18 +755,13 @@ _stage1_preflight_nas_choice() {
         break
     done
 
-    if { ! $was_mounted || $had_mismatched_mount; } && storage_mount_matches; then
-        _WIZ_STORAGE_PREFLIGHT_MOUNTED_BY_SETUP=true
-    fi
-
-    local classification
-    classification=$(storage_classify_data_root "${_WIZ_STORAGE_MOUNTPOINT:-$_WIZ_DATA_DIR}")
+    local classification="${_STORAGE_PROBE_CLASS:-empty}"
     case "$classification" in
         empty)
-            ui_log ok "NAS share is empty and ready for MediaStack."
+            ui_log ok "NAS connection verified - NAS share is empty and ready for MediaStack."
             ;;
         mediastack)
-            ui_log ok "NAS share already has a MediaStack-style media/torrents layout."
+            ui_log ok "NAS connection verified - NAS share already has a MediaStack-style media/torrents layout."
             ;;
         conflict:*)
             ui_log warn "NAS share has a blocking conflict at ${classification#conflict:}."
@@ -568,12 +803,10 @@ _stage1_resolve_nonstandard_nas_root() {
             _stage1_collect_manual_storage
             ;;
         "Quit"*)
-            _stage1_cleanup_preflight_nas_mount
-            log_info "Setup aborted - re-run setup.sh to try again"
+            log_info "Setup aborted - choose Install MediaStack from the menu to try again"
             exit 0
             ;;
         *)
-            _stage1_cleanup_preflight_nas_mount
             _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"
             _stage1_reset_local_storage_fields
             ui_log info "Continuing with local storage at $_WIZ_DATA_DIR"
@@ -628,7 +861,7 @@ _stage1_final_nas_preflight() {
                 continue
                 ;;
             "Quit"*)
-                log_info "Setup aborted - re-run setup.sh to try again"
+                log_info "Setup aborted - choose Install MediaStack from the menu to try again"
                 exit 0
                 ;;
             *)
@@ -642,7 +875,17 @@ _stage1_final_nas_preflight() {
 }
 
 _stage1_collect_quality() {
-    ui_section 3 6 "Library quality + subtitles"
+    while true; do
+        _stage1_collect_quality_once
+        echo ""
+        local _confirm
+        _confirm=$(ui_choose "Use these library choices?" "Use these details" "Re-enter")
+        [[ "$_confirm" == "Use these details" ]] && break
+    done
+}
+
+_stage1_collect_quality_once() {
+    ui_section 5 10 "Library quality"
 
     # Two orthogonal axes (resolution → size), menus built dynamically from
     # scripts/setup/presets.yml. Shared with the day-2 launcher so the two can't
@@ -654,46 +897,45 @@ _stage1_collect_quality() {
         _WIZ_QUALITY_RESOLUTION="${_WIZ_QUALITY_RESOLUTION:-1080p}"
         _WIZ_QUALITY_SIZE="${_WIZ_QUALITY_SIZE:-balanced}"
     fi
+    ui_kv "Quality" "${_WIZ_QUALITY_RESOLUTION:-1080p} ${_WIZ_QUALITY_SIZE:-balanced}"
+}
 
-    # Only ask for subtitle languages when Bazarr is enabled (#100): the value
-    # feeds render_bazarr alone, so prompting after the user declined Bazarr asks
-    # for something inert and contradicts the choice just made. When Bazarr is
-    # off, keep a stored default so a later `./setup.sh` that enables Bazarr still
-    # has a sensible language list. _WIZ_BAZARR_ENABLED is set in
-    # _stage1_collect_storage, which always runs before this section.
-    if [[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]]; then
-        _WIZ_SUBTITLE_LANGS=$(ui_input_validated \
-            "Subtitle languages (comma-separated, e.g. english,spanish,french)" \
-            "${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}" \
-            validate_subtitle_langs)
-    else
-        _WIZ_SUBTITLE_LANGS="${_WIZ_SUBTITLE_LANGS:-${SUBTITLE_LANGUAGES:-english}}"
-    fi
-    # ui_input_validated echoes the raw input (the validator only returns 0/1),
-    # so lowercase the accepted value here: Bazarr's LANG_MAP lookup is
-    # case-sensitive over lowercase keys, and the value reaches config.yml
-    # verbatim. ${,,} folds casing only (commas/spaces untouched; wizard_apply.py
-    # strips per-token whitespace) — not validity, but the DEMO/non-TTY
-    # short-circuit returns the literal 'english' default, so nothing invalid
-    # can slip through unvalidated.
-    _WIZ_SUBTITLE_LANGS="${_WIZ_SUBTITLE_LANGS,,}"
+# Search indexers: its own section (public trackers are a search feature, not a
+# quality or subtitles setting). Enable-only — no config sub-layer.
+_stage1_collect_indexers() {
+    while true; do
+        _stage1_collect_indexers_once
+        echo ""
+        local _confirm
+        _confirm=$(ui_choose "Use this indexer choice?" "Use these details" "Re-enter")
+        [[ "$_confirm" == "Use these details" ]] && break
+    done
+}
+
+_stage1_collect_indexers_once() {
+    ui_section 6 10 "Search indexers"
 
     local indexer_default="no"
     if [[ "${_WIZ_PUBLIC_INDEXERS_ENABLED:-${_WIZ_PREV_PUBLIC_INDEXERS:-false}}" == "true" ]]; then
         indexer_default="yes"
     fi
-    ui_log info "Skip this and Sonarr/Radarr start with no search sources until you add indexers to config.yml (see config/examples/public-indexers.yml) and re-run ./scripts/configure.sh."
-    ui_log warn "Public tracker laws, site rules, and ISP policies vary. Enable this preset only for indexers and content you are legally allowed to use."
-    if ui_confirm "Enable the example public-tracker indexer preset?" "$indexer_default"; then
+    ui_box "Public tracker indexers (optional)" \
+        "Adds example public trackers so Sonarr/Radarr can search" \
+        "right away. Skip and add your own later from the menu." \
+        "" \
+        "Laws, site rules, and ISP policies vary - enable only" \
+        "for content you are legally allowed to use."
+    if ui_confirm "Enable the example public-tracker indexers?" "$indexer_default"; then
         _WIZ_PUBLIC_INDEXERS_ENABLED="true"
     else
         _WIZ_PUBLIC_INDEXERS_ENABLED="false"
-        ui_log info "No indexers enabled. Add them later in config.yml, then run ./scripts/configure.sh."
+        ui_log info "No indexers enabled - add your own later from Features & settings -> Search indexers."
     fi
+    ui_kv "Public indexers" "$([[ "${_WIZ_PUBLIC_INDEXERS_ENABLED:-false}" == "true" ]] && echo enabled || echo disabled)"
 }
 
 _stage1_collect_image_channel() {
-    ui_section 4 6 "Image updates"
+    ui_section 7 10 "Image updates"
 
     local current_channel default_index channel_choice
     current_channel="${_WIZ_IMAGE_CHANNEL:-${_WIZ_PREV_IMAGE_CHANNEL:-stable}}"
@@ -710,10 +952,21 @@ _stage1_collect_image_channel() {
         Latest*) _WIZ_IMAGE_CHANNEL="latest" ;;
         *)       _WIZ_IMAGE_CHANNEL="stable" ;;
     esac
+    ui_kv "Image updates" "$_WIZ_IMAGE_CHANNEL"
 }
 
 _stage1_collect_qbit() {
-    ui_section 5 6 "qBittorrent limits + peer port"
+    while true; do
+        _stage1_collect_qbit_once
+        echo ""
+        local _confirm
+        _confirm=$(ui_choose "Use these qBittorrent settings?" "Use these details" "Re-enter")
+        [[ "$_confirm" == "Use these details" ]] && break
+    done
+}
+
+_stage1_collect_qbit_once() {
+    ui_section 8 10 "qBittorrent limits + peer port"
 
     local dl_default ul_default suggested_dl suggested_ul
     suggested_dl="${_WIZ_DL_LIMIT:-${_WIZ_PREV_DL:-0}}"
@@ -732,11 +985,17 @@ _stage1_collect_qbit() {
 
     _WIZ_DL_LIMIT=$(_stage1_read_limit "qBittorrent download limit MB/s (0 = unlimited)" "${dl_default:-0}")
     _WIZ_UL_LIMIT=$(_stage1_read_limit "qBittorrent upload limit MB/s (0 = unlimited)" "${ul_default:-0}")
+    local _dl_disp="${_WIZ_DL_LIMIT:-0}" _ul_disp="${_WIZ_UL_LIMIT:-0}"
+    [[ "$_dl_disp" == "0" ]] && _dl_disp="unlimited" || _dl_disp="${_dl_disp} MB/s"
+    [[ "$_ul_disp" == "0" ]] && _ul_disp="unlimited" || _ul_disp="${_ul_disp} MB/s"
+    ui_kv "Download limit" "$_dl_disp"
+    ui_kv "Upload limit" "$_ul_disp"
 
     _WIZ_TORRENT_PORT=$(ui_input_validated \
         "qBittorrent peer port" \
         "${_WIZ_TORRENT_PORT:-${_WIZ_PREV_TORRENT_PORT:-6881}}" \
         validate_torrent_port)
+    ui_kv "Peer port" "${_WIZ_TORRENT_PORT:-6881}"
 
     # qBittorrent isn't running yet (we haven't even reached the install
     # plan) — so this is a true local-availability check ("is the port free
@@ -749,8 +1008,51 @@ _stage1_collect_qbit() {
     fi
 }
 
+_stage1_collect_security() {
+    ui_section 9 10 "Security"
+
+    # Both default to yes (recommended). Absent prev value => yes so existing
+    # installs keep their firewall/hardening. Session value wins on a Back loop.
+    local ufw_default="yes"
+    [[ "${_WIZ_UFW_ENABLED:-${_WIZ_PREV_UFW:-true}}" == "true" ]] || ufw_default="no"
+    ui_log info "The UFW firewall blocks unexpected inbound connections. Your media"
+    ui_log info "web UIs (from the LAN) and SSH stay reachable; only unsolicited"
+    ui_log info "traffic to other ports is dropped. Recommended."
+    if ui_confirm "Set up the UFW firewall?" "$ufw_default"; then
+        _WIZ_UFW_ENABLED="true"
+    else
+        _WIZ_UFW_ENABLED="false"
+    fi
+
+    local hardening_default="yes"
+    [[ "${_WIZ_HARDENING_ENABLED:-${_WIZ_PREV_HARDENING:-true}}" == "true" ]] || hardening_default="no"
+    ui_log info "System hardening enables automatic security updates and applies"
+    ui_log info "conservative kernel network-hardening settings (sysctl). It does"
+    ui_log info "not auto-reboot. Recommended."
+    if ui_confirm "Apply system hardening (auto security updates + kernel hardening)?" "$hardening_default"; then
+        _WIZ_HARDENING_ENABLED="true"
+    else
+        _WIZ_HARDENING_ENABLED="false"
+    fi
+
+    ui_kv "Firewall" "$([[ "${_WIZ_UFW_ENABLED:-true}" == "true" ]] && echo enabled || echo disabled)"
+    ui_kv "System hardening" "$([[ "${_WIZ_HARDENING_ENABLED:-true}" == "true" ]] && echo enabled || echo disabled)"
+}
+
 _stage1_confirm() {
-    ui_section 6 6 "Confirm install plan"
+    ui_section 10 10 "Confirm install plan"
+
+    # _stage1_preflight_nas_choice exports DATA_DIR/STORAGE_* (so the NAS mount
+    # helper sees them) and restores them to their pre-preflight values — which are
+    # EMPTY on a fresh install — without dropping the export attribute, so they
+    # linger in the environment. docker compose gives the process environment
+    # precedence over --env-file, so a leaked empty DATA_DIR turns the compose bind
+    # "${DATA_DIR}:/data" into ":/data" ("invalid spec: :/data") and the config
+    # below reports zero services -> the misleading "Cannot enumerate services"
+    # abort. Drop them here so the install plan reflects .env.example; the real
+    # install re-derives them from the _WIZ_* values when it writes and sources .env.
+    unset DATA_DIR STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_NFS_HOST STORAGE_NFS_EXPORT \
+          STORAGE_NFS_OPTS STORAGE_SENTINEL STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE
 
     local -a compose_args=(--env-file "$SCRIPT_DIR/.env.example")
     if [[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]]; then
@@ -775,12 +1077,14 @@ _stage1_confirm() {
     service_count=$(printf '%s\n' "$services_raw" | awk 'NF {count++} END {print count + 0}')
     image_count=$(docker compose "${compose_args[@]}" config --images 2>/dev/null | awk 'NF {count++} END {print count + 0}')
 
-    ui_box "Stage 1: Install Plan" \
+    ui_box "Core Media Server: Install Plan" \
         "$(ui_kv 'Services' "${service_count:-0} core containers")" \
         "$(ui_kv 'Images' "${image_count:-0}")" \
         "$(ui_kv 'Image channel' "${_WIZ_IMAGE_CHANNEL:-stable}")" \
         "$(ui_kv 'Storage' "${_WIZ_STORAGE_MODE:-local} at ${_WIZ_DATA_DIR:-/data} (${_WIZ_STORAGE_APP_WIRING:-managed} app wiring)")" \
         "$(ui_kv 'Indexer preset' "$([[ "${_WIZ_PUBLIC_INDEXERS_ENABLED:-false}" == "true" ]] && echo enabled || echo disabled)")" \
+        "$(ui_kv 'Firewall' "$([[ "${_WIZ_UFW_ENABLED:-true}" == "true" ]] && echo enabled || echo disabled)")" \
+        "$(ui_kv 'Hardening' "$([[ "${_WIZ_HARDENING_ENABLED:-true}" == "true" ]] && echo enabled || echo disabled)")" \
         "$(ui_kv 'Time' '5-7 minutes on first run')" \
         "$(ui_kv 'Access' 'no public access - LAN only')" \
         "$(ui_kv 'Result' 'Working media server on your LAN')"
@@ -792,7 +1096,7 @@ _stage1_confirm() {
 }
 
 _stage1_install() {
-    log_info "Stage 1: installing your media server..."
+    log_info "Installing your core media server..."
     # Global read by setup.sh::main() to decide post-install steps, not here.
     # shellcheck disable=SC2034
     WIZARD_RAN_INSTALL=true
@@ -807,6 +1111,11 @@ _stage1_install() {
 
     storage_pause_watchdog_for_install || return 1
     _stage1_final_nas_preflight
+
+    # Apply the firewall/hardening the user chose in the wizard BEFORE the stack
+    # starts, so published management ports are never exposed unprotected. .env
+    # (with UFW_ENABLED/HARDENING_ENABLED) was sourced by _stage1_source_env above.
+    setup_hardening
 
     stop_existing_stack
     create_data_dirs
@@ -877,22 +1186,44 @@ _stage1_install() {
             probe_ok=true
             log_ok "Jellyfin admin user authenticated at http://${_ENV_HOST_ADDRESS}:8096"
         else
-            log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set - configure.sh may have left services half-configured. Check 'docker compose logs jellyfin' and re-run setup.sh."
+            log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set - configure.sh may have left services half-configured. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
         fi
     elif curl --max-time 5 -fsS "http://${_ENV_HOST_ADDRESS}:8096/health" >/dev/null 2>&1; then
         # Fallback only — JELLYFIN_API_KEY missing means configure.sh did
         # not reach the jellyfin step, so do not flip the marker.
-        log_warn "Jellyfin /health responded but JELLYFIN_API_KEY is empty - admin user was not created. Check 'docker compose logs jellyfin' and re-run setup.sh."
+        log_warn "Jellyfin /health responded but JELLYFIN_API_KEY is empty - admin user was not created. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
     else
-        log_warn "Jellyfin didn't respond at http://${_ENV_HOST_ADDRESS}:8096/health within 5s. Check container logs: docker compose logs jellyfin"
+        log_warn "Jellyfin didn't respond at http://${_ENV_HOST_ADDRESS}:8096/health within 5s. View logs from the menu: Manage stack -> Tail logs (live)"
     fi
 
     if $probe_ok; then
         sed -i 's/^STAGE_1_COMPLETE=$/STAGE_1_COMPLETE=1/' "$SCRIPT_DIR/.env"
-        log_ok "Stage 1 complete (STAGE_1_COMPLETE=1)"
+        log_ok "Core media server ready (STAGE_1_COMPLETE=1)"
     else
-        log_warn "Stage 1 marker NOT set - re-run setup.sh after fixing"
+        log_warn "Stage 1 marker NOT set - choose Install MediaStack from the menu after fixing"
     fi
 
+    # Host-level LAN services belong to Stage 1: the user chose the SMB share in
+    # the Stage 1 wizard, so configure it (and the service-port firewall rules)
+    # here — before print_access_info advertises the share — instead of tacking
+    # it on after the final summary at the very end of setup.
+    [[ "${UFW_ENABLED:-true}" == "true" ]] && setup_ufw_service_ports
+    setup_samba
+
     print_access_info
+
+    # Surface configure.sh failures that were buried mid-scroll. configure.sh
+    # writes .configure_issues only when at least one service had warnings; we
+    # delete it here so stale state never bleeds into a later ./mediastack info.
+    local _issues_file="$SCRIPT_DIR/.configure_issues"
+    if [[ -s "$_issues_file" ]]; then
+        echo ""
+        echo -e "${YELLOW}${BOLD}  ⚠  Services that need attention:${NC}"
+        while IFS='|' read -r _ilabel _; do
+            echo -e "    ${YELLOW}$(_ui_status_token warn)${NC}  $_ilabel"
+        done < "$_issues_file"
+        rm -f "$_issues_file"
+        echo    "    Re-run MediaStack setup to retry (already-configured services are skipped)."
+        echo ""
+    fi
 }

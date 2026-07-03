@@ -12,6 +12,9 @@
 #   ./setup.sh --full   # Full setup from bare Debian (installs Docker)
 #   ./setup.sh --remote # Retry remote access setup after Stage 1
 #   ./setup.sh --transcoding # Retry hardware transcoding setup after Stage 1
+#   ./setup.sh --nvidia-unlock-update  # Update the Unlock driver (guarded)
+#   ./setup.sh --nvidia-unlock-repatch # Reapply the reviewed Unlock patch (guarded)
+#   ./setup.sh --uninstall   # Tear down stack and remove recorded MediaStack host changes
 # =============================================================================
 set -euo pipefail
 
@@ -109,6 +112,42 @@ main() {
     check_not_root
     check_debian
 
+    if [[ "${1:-}" == "--uninstall" ]]; then
+        prompt_sudo_cache
+        if ! validate_install_state; then
+            log_error "Missing or invalid MediaStack ownership ledger; uninstall made no changes."
+            log_info "To reset this install, use 'Full reset — wipe everything and reinstall' from the menu."
+            record_launcher_outcome failed
+            return 1
+        fi
+        if ! nuke_existing_install "uninstall"; then
+            record_launcher_outcome failed
+            return 1
+        fi
+        if ! uninstall_system_cleanup; then
+            record_launcher_outcome failed
+            return 1
+        fi
+        if ! sudo rm -f "$MEDIASTACK_STATE_DIR/storage.env" \
+            || ! sudo rm -f "$MEDIASTACK_STATE_FILE"; then
+            log_error "System cleanup finished but the ownership ledger could not be removed."
+            record_launcher_outcome failed
+            return 1
+        fi
+        sudo rmdir "$MEDIASTACK_STATE_DIR" 2>/dev/null || true
+        # True uninstall: also remove config/ runtime state (app databases +
+        # embedded credentials) so a later reinstall is clean. Media in DATA_DIR
+        # is never touched. examples/ is preserved.
+        wipe_config_runtime
+        # config.yml is the gitignored live copy (seeded from config/examples/
+        # config.yml); removing it makes reinstall re-seed a pristine template.
+        rm -f "$SCRIPT_DIR/.env" "$SCRIPT_DIR/config.yml" \
+            "$SCRIPT_DIR/.nvidia-finalize-pending" \
+            "$SCRIPT_DIR/.nvidia-nvenc-unpatched" "$SCRIPT_DIR/.setup-result"
+        record_launcher_outcome completed
+        return 0
+    fi
+
     if stage3_marker_exists; then
         if stage3_marker_ready_to_finalize; then
             cleanup_post_reboot
@@ -137,6 +176,16 @@ main() {
         return $?
     fi
 
+    if [[ "${1:-}" == "--nvidia-unlock-update" ]]; then
+        run_nvidia_unlock_maintenance update
+        return $?
+    fi
+
+    if [[ "${1:-}" == "--nvidia-unlock-repatch" ]]; then
+        run_nvidia_unlock_maintenance repatch
+        return $?
+    fi
+
     # Initialise globals BEFORE pre-flight so PRE-07's stash_gpu_type has a
     # defined destination. In --full mode, GPU_TYPE is re-stashed after base
     # packages install pciutils so bare Debian hosts do not miss GPUs.
@@ -145,6 +194,10 @@ main() {
     FULL_MODE=false
     if [[ "${1:-}" == "--full" ]]; then
         FULL_MODE=true
+    fi
+    FULL_WIPE_MODE=false
+    if [[ "${1:-}" == "--wipe" ]]; then
+        FULL_WIPE_MODE=true
     fi
 
     # Auto-promote to --full when Docker/Compose is missing AND we're on an
@@ -200,38 +253,46 @@ main() {
         check_docker
         check_compose
     fi
-    local existing_install_rc=0
-    detect_existing_install || existing_install_rc=$?
-    case "${RECOVERY_MENU_ACTION:-}" in
-        continue)
-            return 0
-            ;;
-        completed|abort)
-            return "$existing_install_rc"
-            ;;
-        wipe)
-            if (( existing_install_rc != 0 )); then
+    if $FULL_WIPE_MODE; then
+        nuke_existing_install "full-wipe" || return $?
+    else
+        local existing_install_rc=0
+        detect_existing_install || existing_install_rc=$?
+        case "${RECOVERY_MENU_ACTION:-}" in
+            continue)
+                return 0
+                ;;
+            completed|abort)
                 return "$existing_install_rc"
-            fi
-            ;;
-        "")
-            if (( existing_install_rc != 0 )); then
-                return "$existing_install_rc"
-            fi
-            ;;
-        *)
-            if (( existing_install_rc != 0 )); then
-                return "$existing_install_rc"
-            fi
-            ;;
-    esac
+                ;;
+            wipe)
+                if (( existing_install_rc != 0 )); then
+                    return "$existing_install_rc"
+                fi
+                ;;
+            "")
+                if (( existing_install_rc != 0 )); then
+                    return "$existing_install_rc"
+                fi
+                ;;
+            *)
+                if (( existing_install_rc != 0 )); then
+                    return "$existing_install_rc"
+                fi
+                ;;
+        esac
+    fi
     # --- end pre-flight ---
+
+    # Always run base package install — idempotent (apt skips already-installed
+    # packages) and ensures packages added in newer versions land on wipe+reinstall
+    # and existing installs, not just first-time bare installs.
+    install_base_packages
 
     if $FULL_MODE; then
         log_info "Full setup mode: installing prerequisites..."
         echo ""
 
-        install_base_packages
         check_internet_reachability
         install_docker
         check_docker
@@ -247,15 +308,23 @@ main() {
 
     # Ensure python3-yaml is available for configure.sh
     if ! python3 -c "import yaml" 2>/dev/null; then
-        log_info "Installing python3-yaml (needed for config parsing)..."
-        sudo apt-get install -y -qq python3-yaml >/dev/null 2>&1
+        ui_spin "Installing python3-yaml..." sudo apt-get install -y -qq python3-yaml
     fi
 
     # check_disk_space replaced by check_disk_floor in pre-flight battery (PRE-01).
     detect_host_memory
     echo ""
 
-    setup_hardening
+    record_pre_install_state
+    # GPU runtime check is not gated by the hardening toggles; keep its
+    # pre-wizard timing. Fresh installs apply setup_hardening inside
+    # _stage1_install (after the wizard collects the UFW/hardening choice,
+    # before the stack is exposed). A completed re-run never reaches
+    # _stage1_install, so re-affirm hardening here from the persisted .env flags.
+    verify_gpu_runtime
+    if [[ "${STAGE_1_COMPLETE:-}" == "1" ]]; then
+        setup_hardening
+    fi
     echo ""
 
     detect_env
@@ -279,8 +348,10 @@ main() {
         storage_pause_watchdog_for_install || return 1
     fi
 
-    setup_ufw_service_ports
-    setup_samba
+    # setup_ufw_service_ports + setup_samba now run inside Stage 1
+    # (_stage1_install, before print_access_info) so the SMB share the user chose
+    # in the wizard is configured with the rest of Stage 1, not after the final
+    # summary. The markerless late-install fallback below still runs them itself.
 
     if [[ "${WIZARD_RAN_INSTALL:-false}" == "true" ]]; then
         if $_is_post_reboot; then
@@ -305,6 +376,12 @@ main() {
         return 0
     fi
 
+    # Apply the chosen hardening before the stack is exposed (the wizard has
+    # run and written UFW_ENABLED/HARDENING_ENABLED to .env by now). The primary
+    # path applies this inside _stage1_install; this mirrors it for the
+    # markerless late-install fallback.
+    setup_hardening
+
     stop_existing_stack
     create_data_dirs
     create_config_dirs
@@ -322,6 +399,9 @@ main() {
     echo ""
     log_info "Running auto-configuration..."
     "$SCRIPT_DIR/scripts/configure.sh"
+
+    [[ "${UFW_ENABLED:-true}" == "true" ]] && setup_ufw_service_ports
+    setup_samba
 
     print_access_info
 

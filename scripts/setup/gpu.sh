@@ -4,7 +4,8 @@
 # Sourced by setup.sh. Depends on $SCRIPT_DIR and scripts/lib/common.sh
 # being loaded by the caller.
 #
-# Globals set: GPU_TYPE ("nvidia"|"amd"|"intel"|"none"), NEEDS_REBOOT (bool).
+# Globals set: GPU_CANDIDATES (transient vendor array),
+# GPU_TYPE ("nvidia"|"amd"|"intel"|"none"), NEEDS_REBOOT (bool).
 
 _GPU_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib/nvidia_patch.sh
@@ -13,27 +14,57 @@ unset _GPU_HELPER_DIR
 
 detect_gpu() {
     GPU_TYPE="none"
+    GPU_CANDIDATES=()
 
     if ! command -v lspci &>/dev/null; then
         log_warn "lspci not found (install pciutils) - cannot detect GPU"
         return
     fi
 
-    local gpu_lines
-    gpu_lines=$(lspci 2>/dev/null | grep -Ei 'VGA|3D|Display' || true)
+    local gpu_lines vendor
+    gpu_lines=$(lspci 2>/dev/null | grep -Ei '(VGA compatible controller|3D controller|Display controller):' || true)
 
-    if echo "$gpu_lines" | grep -qi 'nvidia'; then
-        GPU_TYPE="nvidia"
-        log_ok "NVIDIA GPU detected: $(echo "$gpu_lines" | grep -i nvidia | head -1 | sed 's/.*: //')"
-    elif echo "$gpu_lines" | grep -qEi 'amd|radeon'; then
-        GPU_TYPE="amd"
-        log_ok "AMD GPU detected: $(echo "$gpu_lines" | grep -Ei 'amd|radeon' | head -1 | sed 's/.*: //')"
-    elif echo "$gpu_lines" | grep -qi 'intel'; then
-        GPU_TYPE="intel"
-        log_ok "Intel GPU detected"
-    else
+    for vendor in nvidia amd intel; do
+        case "$vendor" in
+            nvidia) grep -qi 'nvidia' <<< "$gpu_lines" && GPU_CANDIDATES+=(nvidia) ;;
+            amd) grep -qEi 'amd|radeon' <<< "$gpu_lines" && GPU_CANDIDATES+=(amd) ;;
+            intel) grep -qi 'intel' <<< "$gpu_lines" && GPU_CANDIDATES+=(intel) ;;
+        esac
+    done
+
+    if (( ${#GPU_CANDIDATES[@]} == 0 )); then
         log_info "No dedicated GPU detected - Jellyfin will use software transcoding"
+        return
     fi
+
+    GPU_TYPE="${GPU_CANDIDATES[0]}"
+    if gpu_candidate_available "${JELLYFIN_GPU:-none}"; then
+        GPU_TYPE="$JELLYFIN_GPU"
+    fi
+
+    if (( ${#GPU_CANDIDATES[@]} == 1 )); then
+        log_ok "$(gpu_brand_label "$GPU_TYPE") GPU detected"
+    else
+        log_ok "Supported GPUs detected: ${GPU_CANDIDATES[*]}"
+    fi
+}
+
+gpu_candidate_available() {
+    local wanted="${1:-}" candidate
+    for candidate in "${GPU_CANDIDATES[@]:-}"; do
+        [[ "$candidate" == "$wanted" ]] && return 0
+    done
+    return 1
+}
+
+gpu_brand_label() {
+    case "${1:-}" in
+        nvidia) printf 'NVIDIA' ;;
+        amd)    printf 'AMD' ;;
+        intel)  printf 'Intel' ;;
+        none|"") printf 'none' ;;
+        *)      printf '%s' "$1" ;;
+    esac
 }
 
 gpu_render_device_for_vendor() {
@@ -102,6 +133,9 @@ gpu_persisted_render_device() {
 # Echoes one of: enabled, disabled, unavailable.
 check_secure_boot() {
     if ! command -v mokutil &>/dev/null; then
+        sudo apt-get install -y -qq mokutil >/dev/null 2>&1 || true
+    fi
+    if ! command -v mokutil &>/dev/null; then
         echo "unavailable"
         return
     fi
@@ -161,6 +195,15 @@ nvidia_modules_installed() {
     ls /lib/modules/"$(uname -r)"/extra/nvidia*.ko* &>/dev/null && return 0
     dkms status 2>/dev/null | grep -qi "nvidia.*installed" && return 0
     return 1
+}
+
+_install_nvidia_run_file() {
+    local run_file="$1" driver_version="$2" temp_dir="$3"
+    # ui_spin captures output to a log and surfaces it on failure, so the noisy
+    # "Uncompressing..."/dpkg output stays hidden behind the spinner.
+    ui_spin "Installing NVIDIA driver ${driver_version} (compiling kernel module)..." \
+        sudo sh "$run_file" --silent --dkms --no-x-check --no-cc-version-check \
+        --no-nouveau-check --no-install-compat32-libs --tmpdir "$temp_dir"
 }
 
 # Check NVIDIA's supportedchips.html for a driver version to determine
@@ -254,8 +297,8 @@ _resolve_nvidia_driver() {
     fi
 
     _run_file="${_nvidia_tmp}/NVIDIA-Linux-x86_64-${_driver_ver}.run"
-    log_info "Downloading NVIDIA driver ${_driver_ver} (this may take a few minutes)..."
-    if ! curl -fSL -o "$_run_file" "$_driver_url"; then
+    if ! ui_spin "Downloading NVIDIA driver ${_driver_ver} (~380MB, may take a few minutes)..." \
+        curl -fsSL -o "$_run_file" "$_driver_url"; then
         log_error "Failed to download driver ${_driver_ver}"
         return 1
     fi
@@ -316,30 +359,36 @@ ensure_debian_nonfree() {
         _components="contrib non-free"
     fi
 
-    # Skip only when EVERY required component is already visible to apt. A partial
-    # setup (e.g. non-free present but contrib or non-free-firmware missing) must
-    # still be fixed, so a bare "*non-free*" match is not enough. Components show
-    # as "<suite>/<component> <arch>" in `apt-cache policy` URL lines; the trailing
-    # space keeps "non-free" from matching "non-free-firmware".
-    local _policy _comp _missing=0
-    _policy=$(apt-cache policy 2>/dev/null || true)
+    # Only add components not already in the system's sources. Checking
+    # apt-cache policy is circular: our own old file makes a component "visible",
+    # so we'd never clean up the stale entry. Grep /etc/apt/sources.list directly
+    # instead. Regex: component must be a whole word (space or line boundary) so
+    # "non-free" doesn't accidentally match inside "non-free-firmware".
+    local _comp _active_sources
+    # MEDIASTACK_APT_SOURCES is a test-only seam; production reads the real file.
+    local _sources_file="${MEDIASTACK_APT_SOURCES:-/etc/apt/sources.list}"
+    _active_sources=$(grep -v '^\s*#' "$_sources_file" 2>/dev/null || true)
+    local _needed=()
     for _comp in $_components; do
-        case "$_policy" in
-            *"/$_comp "*) ;;
-            *) _missing=1 ;;
-        esac
+        if ! echo "$_active_sources" | grep -qE "(^|\s)${_comp}(\s|$)"; then
+            _needed+=("$_comp")
+        fi
     done
-    if [[ "$_missing" -eq 0 ]]; then
+
+    if [[ ${#_needed[@]} -eq 0 ]]; then
+        # All components already in sources.list — remove stale mediastack file
+        sudo rm -f /etc/apt/sources.list.d/mediastack-nonfree.list
         return 0
     fi
 
+    local _needed_str="${_needed[*]}"
     local _source_line
-    printf -v _source_line 'deb http://deb.debian.org/debian %s %s\n' "$_codename" "$_components"
+    printf -v _source_line 'deb http://deb.debian.org/debian %s %s\n' "$_codename" "$_needed_str"
     if ! sudo tee /etc/apt/sources.list.d/mediastack-nonfree.list >/dev/null <<< "$_source_line"; then
         log_error "Failed to add Debian non-free apt source"
         return 1
     fi
-    log_ok "Enabled Debian components: ${_components}"
+    log_ok "Enabled Debian components: ${_needed_str}"
     return 0
 }
 
@@ -382,7 +431,7 @@ _nvidia_blacklist_nouveau() {
         log_error "Failed to write nouveau blacklist"
         return 1
     fi
-    if ! sudo update-initramfs -u 2>/dev/null; then
+    if ! ui_spin "Updating initramfs (nouveau blacklist)..." sudo update-initramfs -u; then
         log_error "Failed to update initramfs after nouveau blacklist"
         return 1
     fi
@@ -390,8 +439,14 @@ _nvidia_blacklist_nouveau() {
 }
 
 install_nvidia_drivers() {
-    if command -v nvidia-smi &>/dev/null; then
-        log_ok "NVIDIA drivers already installed: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo 'unknown version')"
+    # Short-circuit only when the driver actually WORKS, not merely when the
+    # nvidia-smi binary exists. After prepare_nvidia_debian_to_unlock purges the
+    # Debian driver (or a foreign uninstall), the binary can linger while the
+    # driver is gone — a bare `command -v nvidia-smi` would then wrongly report
+    # "already installed" and skip the real .run install, leaving apply_nvidia_patch
+    # with no version to patch. nvidia_driver_healthy checks nvidia-smi -L works.
+    if nvidia_driver_healthy; then
+        log_ok "NVIDIA drivers already installed: $(nvidia_driver_version 2>/dev/null || echo 'unknown version')"
         # Still need nvidia-container-toolkit
         if ! _install_nvidia_container_toolkit; then
             GPU_TYPE="none"
@@ -426,8 +481,7 @@ install_nvidia_drivers() {
             return 1
         fi
         log_info "Resuming NVIDIA driver install (post-reboot)..."
-        log_info "Installing NVIDIA driver ${_driver_ver} (compiling kernel module)..."
-        if ! sudo sh "$_run_file" --silent --dkms --no-x-check --no-cc-version-check --no-nouveau-check --no-install-compat32-libs --tmpdir "$_nvidia_tmp"; then
+        if ! _install_nvidia_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp"; then
             log_error "NVIDIA driver installation failed"
             log_warn "Falling back to software transcoding"
             GPU_TYPE="none"
@@ -463,8 +517,8 @@ install_nvidia_drivers() {
             ;;
     esac
 
-    log_info "Installing kernel headers and build prerequisites..."
-    if ! sudo apt-get install -y -qq "linux-headers-$(uname -r)" build-essential dkms pkg-config libglvnd-dev >/dev/null; then
+    if ! ui_spin "Installing kernel headers and build prerequisites..." \
+        sudo apt-get install -y -qq "linux-headers-$(uname -r)" build-essential dkms pkg-config libglvnd-dev; then
         log_error "Failed to install NVIDIA kernel build prerequisites"
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"
@@ -518,8 +572,7 @@ EOF
     fi
 
     # Nouveau is gone — install now
-    log_info "Installing NVIDIA driver ${_driver_ver} (compiling kernel module)..."
-    if ! sudo sh "$_run_file" --silent --dkms --no-x-check --no-cc-version-check --no-nouveau-check --no-install-compat32-libs --tmpdir "$_nvidia_tmp"; then
+    if ! _install_nvidia_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp"; then
         log_error "NVIDIA driver installation failed"
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"
@@ -547,6 +600,18 @@ _nvidia_toolkit_healthy() {
     return 0
 }
 
+_configure_nvidia_container_toolkit() {
+    if ! ui_spin "Configuring Docker NVIDIA runtime..." \
+        sudo nvidia-ctk runtime configure --runtime=docker; then
+        log_error "Failed to configure nvidia-container-toolkit runtime"
+        return 1
+    fi
+    if ! sudo systemctl restart docker; then
+        log_error "Failed to restart Docker after nvidia-container-toolkit configuration"
+        return 1
+    fi
+}
+
 _install_nvidia_container_toolkit() {
     if _nvidia_toolkit_healthy; then
         log_ok "nvidia-container-toolkit already installed"
@@ -567,54 +632,58 @@ _install_nvidia_container_toolkit() {
             return 1
         fi
 
-        if ! sudo apt-get update -qq; then
+        if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then
             log_error "Failed to update apt metadata for nvidia-container-toolkit"
             return 1
         fi
-        if ! sudo apt-get install -y -qq --reinstall \
+        if ! ui_spin "Installing nvidia-container-toolkit..." \
+            sudo apt-get install -y -qq --reinstall \
             libnvidia-container1 libnvidia-container-tools \
-            nvidia-container-toolkit-base nvidia-container-toolkit >/dev/null; then
+            nvidia-container-toolkit-base nvidia-container-toolkit; then
             log_error "Failed to install nvidia-container-toolkit"
             return 1
         fi
 
-        # Configure Docker runtime
-        if ! sudo nvidia-ctk runtime configure --runtime=docker; then
-            log_error "Failed to configure nvidia-container-toolkit runtime"
-            return 1
-        fi
-        if ! sudo systemctl restart docker; then
-            log_error "Failed to restart Docker after nvidia-container-toolkit configuration"
-            return 1
-        fi
+        _configure_nvidia_container_toolkit || return 1
         log_ok "nvidia-container-toolkit installed and configured"
         return 0
     fi
 }
 
-# Classify any installed NVIDIA driver by source so "Standard" stays honest.
-# Echoes "debian" (the nvidia-driver metapackage is installed — MediaStack's own
-# Standard install), "foreign" (a working driver MediaStack does not recognize as
-# its Debian-managed install — a manual .run, or a Debian driver set up without the
-# metapackage), or "none". Conservative: an unrecognized Debian stack reads as
-# "foreign", which is safe (we never claim or auto-modify it).
+# Classify NVIDIA ownership independently of runtime health.
 nvidia_driver_source() {
-    if ! command -v nvidia-smi &>/dev/null || ! nvidia-smi -L &>/dev/null; then
-        printf 'none'
-        return 0
-    fi
     local _st
     _st=$(dpkg-query -W -f='${Status}' nvidia-driver 2>/dev/null || true)
     case "$_st" in
-        *"install ok installed"*) printf 'debian' ;;
-        *) printf 'foreign' ;;
+        *"install ok installed"*) printf 'debian'; return 0 ;;
     esac
+    command -v nvidia-smi &>/dev/null && printf 'foreign' || printf 'none'
+}
+
+nvidia_driver_healthy() {
+    command -v nvidia-smi &>/dev/null && nvidia-smi -L &>/dev/null
+}
+
+nvidia_driver_version() {
+    local versions
+    versions=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null \
+        | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' | sort -u) || return 1
+    [[ -n "$versions" && "$versions" != *$'\n'* ]] || return 1
+    printf '%s' "$versions"
 }
 
 _nvidia_debian_driver_packages() {
     dpkg-query -W -f='${binary:Package} ${db:Status-Abbrev}\n' '*nvidia*' '*cuda*' 'glx-*' 2>/dev/null \
         | awk '$2 == "ii" {print $1}' \
         | grep -Ev '^(nvidia-container-toolkit|nvidia-container-toolkit-base|libnvidia-container-tools|libnvidia-container1(:amd64)?|glx-alternative-mesa)$' \
+        | sort -u
+}
+
+_nvidia_debian_repair_packages() {
+    dpkg-query -W -f='${binary:Package} ${db:Status-Abbrev}\n' 2>/dev/null \
+        | awk '$2 == "ii" {print $1}' \
+        | grep -E '^(nvidia-|libnvidia-|libcuda1(:|$)|lib(glx|egl|gles)-nvidia|xserver-xorg-video-nvidia|firmware-nvidia-|glx-alternative-nvidia|glx-diversions)' \
+        | grep -Ev '^(nvidia-container-toolkit|nvidia-container-toolkit-base|libnvidia-container[^:]*)(:.*)?$' \
         | sort -u
 }
 
@@ -636,13 +705,16 @@ prepare_nvidia_debian_to_unlock() {
         return 0
     fi
 
-    log_info "Removing Debian NVIDIA driver packages before Unlock install..."
     sudo apt-mark manual nvidia-container-toolkit nvidia-container-toolkit-base \
         libnvidia-container-tools libnvidia-container1 >/dev/null 2>&1 || true
-    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y "${_pkgs[@]}" >/dev/null; then
+    if ! ui_spin "Removing Debian NVIDIA driver packages..." \
+        sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq "${_pkgs[@]}"; then
         log_error "Failed to remove Debian NVIDIA driver packages"
         return 1
     fi
+    # Purge removed /usr/bin/nvidia-smi; clear bash's cached path so later
+    # command lookups (install_nvidia_drivers' health check) don't see a phantom.
+    hash -r
 
     if _nvidia_unload_loaded_modules; then
         log_ok "Loaded Debian NVIDIA modules unloaded"
@@ -712,14 +784,17 @@ _resolve_debian_nvidia_driver() {
 # Return 2 signals a pre-existing non-Debian driver — the caller decides whether
 # to keep it (mode "existing") or abort. May set NEEDS_REBOOT=true.
 install_nvidia_drivers_apt() {
+    local operation="${1:-install}"
     local _source
     _source=$(nvidia_driver_source)
     case "$_source" in
         debian)
-            log_ok "Debian-managed NVIDIA driver already installed: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo unknown)"
-            if ! _install_nvidia_container_toolkit; then GPU_TYPE="none"; return 1; fi
-            NVIDIA_DRIVER_MODE="standard"
-            return 0
+            if [[ "$operation" != "repair" ]]; then
+                log_ok "Debian-managed NVIDIA driver already installed: $(nvidia_driver_version 2>/dev/null || echo unknown)"
+                if ! _install_nvidia_container_toolkit; then GPU_TYPE="none"; return 1; fi
+                NVIDIA_DRIVER_MODE="standard"
+                return 0
+            fi
             ;;
         foreign)
             # A working driver exists but MediaStack did not install it via apt;
@@ -758,6 +833,29 @@ install_nvidia_drivers_apt() {
         return 1
     fi
 
+    if [[ "$operation" == "repair" ]]; then
+        local _repair_packages=()
+        mapfile -t _repair_packages < <(_nvidia_debian_repair_packages)
+        if (( ${#_repair_packages[@]} == 0 )); then
+            log_error "No installed Debian NVIDIA packages were found to repair"
+            GPU_TYPE="none"
+            return 1
+        fi
+        if ! ui_spin "Repairing Debian NVIDIA driver packages..." \
+            sudo apt-get install -y -qq --reinstall "${_repair_packages[@]}"; then
+            log_error "Failed to repair the Debian NVIDIA driver packages"
+            GPU_TYPE="none"
+            return 1
+        fi
+        if ! _nvidia_toolkit_healthy || ! _configure_nvidia_container_toolkit; then
+            log_error "NVIDIA container toolkit repair failed"
+            GPU_TYPE="none"
+            return 1
+        fi
+        NVIDIA_DRIVER_MODE="standard"
+        return 0
+    fi
+
     # If the normal candidate can't drive this (too-new) GPU, enable a managed
     # backports source and refresh apt so the resolver can see a newer candidate.
     # Without this, backports escalation is unreachable on a clean host (the
@@ -774,9 +872,9 @@ install_nvidia_drivers_apt() {
 
     local _install_args
     _install_args=$(_resolve_debian_nvidia_driver)
-    log_info "Installing Debian NVIDIA driver via apt (${_install_args})..."
     # shellcheck disable=SC2086  # _install_args is a controlled arg list (may include "-t <release>")
-    if ! sudo apt-get install -y -qq $_install_args >/dev/null; then
+    if ! ui_spin "Installing Debian NVIDIA driver via apt (${_install_args})..." \
+        sudo apt-get install -y -qq $_install_args; then
         log_error "Failed to install the Debian nvidia-driver package"
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"
@@ -805,10 +903,27 @@ install_nvidia_drivers_apt() {
 
 # Apply nvidia-patch to remove NVENC session limits on consumer GPUs
 # See: https://github.com/keylase/nvidia-patch
+# Apply the NVENC/NvFBC Unlock patches, and keep the single source of truth for
+# the "session limit not removed" marker in sync. The marker is read by the login
+# banner (reboot.sh) and ./mediastack; centralizing it here means every caller —
+# stage3 finalize, the inline path, and the recovery "Reapply Unlock patch" — stays
+# consistent (a successful repatch clears it; a failure sets it). rc 0 = applied.
 apply_nvidia_patch() {
+    local _marker="$SCRIPT_DIR/.nvidia-nvenc-unpatched" _rc=0
+    # Suspend errexit for the impl call: callers reach this bare under a top-level
+    # `set -e` (setup.sh --nvidia-unlock-repatch → run_nvidia_unlock_maintenance →
+    # here), where a bare `_apply_nvidia_patch_impl; _rc=$?` would abort before the
+    # marker is touched, leaving a false "patch applied" banner state.
+    _apply_nvidia_patch_impl || _rc=$?
+    if (( _rc == 0 )); then rm -f "$_marker"; else touch "$_marker"; fi
+    return "$_rc"
+}
+
+_apply_nvidia_patch_impl() {
     # Only run if NVIDIA drivers are loaded
     if ! command -v nvidia-smi &>/dev/null; then
-        return
+        log_warn "NVIDIA driver is not loaded - cannot apply Unlock patch"
+        return 1
     fi
 
     local patch_dir="$SCRIPT_DIR/.nvidia-patch"
@@ -816,20 +931,20 @@ apply_nvidia_patch() {
 
     if ! nvidia_patch_prepare_repo "$patch_dir"; then
         log_warn "nvidia-patch verification failed - skip (update MediaStack or clean .nvidia-patch)"
-        return
+        return 1
     fi
 
     patch_run_dir=$(nvidia_patch_export_run_tree "$patch_dir") || {
         log_warn "nvidia-patch export failed - skip"
-        return
+        return 1
     }
 
     local driver_ver
-    driver_ver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo "")
+    driver_ver=$(nvidia_driver_version 2>/dev/null || true)
     if [[ -z "$driver_ver" ]]; then
         log_warn "Cannot detect NVIDIA driver version - skipping patch"
         rm -rf "$patch_run_dir"
-        return
+        return 1
     fi
 
     log_info "NVIDIA driver version: $driver_ver"
@@ -838,7 +953,7 @@ apply_nvidia_patch() {
     if ! bash "$patch_run_dir/patch.sh" -c "$driver_ver" &>/dev/null; then
         log_warn "nvidia-patch does not support driver $driver_ver - skipping"
         rm -rf "$patch_run_dir"
-        return
+        return 1
     fi
 
     # Apply NVENC patch (removes encoding session limit)
@@ -847,6 +962,8 @@ apply_nvidia_patch() {
         log_ok "NVENC patch applied (encoding session limit removed)"
     else
         log_warn "NVENC patch failed (may already be applied or unsupported)"
+        rm -rf "$patch_run_dir"
+        return 1
     fi
 
     # Apply NvFBC patch (enables framebuffer capture on consumer GPUs)
@@ -860,6 +977,7 @@ apply_nvidia_patch() {
     fi
 
     rm -rf "$patch_run_dir"
+    return 0
 }
 
 install_intel_drivers() {
@@ -874,11 +992,12 @@ install_intel_drivers() {
         if ! ensure_debian_nonfree; then
             return 1
         fi
-        if ! sudo apt-get update -qq; then
+        if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then
             log_error "Failed to update apt metadata for Intel media drivers"
             return 1
         fi
-        if ! sudo apt-get install -y -qq intel-media-va-driver-non-free vainfo >/dev/null; then
+        if ! ui_spin "Installing intel-media-va-driver-non-free..." \
+            sudo apt-get install -y -qq intel-media-va-driver-non-free vainfo; then
             log_error "Failed to install Intel media drivers"
             return 1
         fi
@@ -901,11 +1020,12 @@ install_amd_drivers() {
         if ! ensure_debian_nonfree; then
             return 1
         fi
-        if ! sudo apt-get update -qq; then
+        if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then
             log_error "Failed to update apt metadata for AMD VAAPI drivers"
             return 1
         fi
-        if ! sudo apt-get install -y -qq mesa-va-drivers vainfo >/dev/null; then
+        if ! ui_spin "Installing mesa-va-drivers..." \
+            sudo apt-get install -y -qq mesa-va-drivers vainfo; then
             log_error "Failed to install AMD VAAPI drivers"
             return 1
         fi

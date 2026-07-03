@@ -26,17 +26,24 @@ wizard_ui_stage1_local_write_steps() {
         stage1_admin_username ENTER \
         stage1_admin_email owner@lan.test \
         stage1_admin_password MaskMe-Secret-Pw123 \
-        stage1_admin_password_confirm MaskMe-Secret-Pw123 \
+        stage1_admin_confirm 1 \
         stage1_storage_location 1 \
         stage1_data_directory /tmp/ms-wizard-local-data \
+        stage1_storage_confirm 1 \
         stage1_bazarr ENTER \
+        stage1_subtitle_confirm 1 \
         stage1_smb ENTER \
+        stage1_smb_confirm 1 \
         stage1_quality_resolution 1 stage1_quality_size 1 \
+        stage1_quality_confirm 1 \
         stage1_indexers ENTER \
+        stage1_indexers_confirm 1 \
         stage1_image_channel 1 \
         stage1_qbt_download ENTER \
         stage1_qbt_upload ENTER \
         stage1_qbt_port ENTER \
+        stage1_qbit_confirm 1 \
+        stage1_security_ufw ENTER stage1_security_hardening ENTER \
         stage1_proceed 1
 }
 
@@ -62,7 +69,7 @@ run_scenario() {
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "Where should MediaStack store media and downloads?" "wizard-ui stage1 local: storage menu shown"
     assert_contains "$transcript" "Local disk (/data)" "wizard-ui stage1 local: local storage option shown"
-    assert_contains "$transcript" "Stage 1: Install Plan" "wizard-ui stage1 local: confirm plan shown"
+    assert_contains "$transcript" "Core Media Server: Install Plan" "wizard-ui stage1 local: confirm plan shown"
     assert_contains "$transcript" "local at /tmp/ms-wizard-local-data" "wizard-ui stage1 local: plan summarizes local storage"
 
     assert_eq "local" "$(env_get STORAGE_MODE)" "wizard-ui stage1 local: STORAGE_MODE=local"
@@ -73,13 +80,13 @@ run_scenario() {
     assert_eq "false" "$(env_get BAZARR_ENABLED)" "wizard-ui stage1 local: Bazarr disabled by default"
     assert_eq "false" "$(env_get SMB_ENABLED)" "wizard-ui stage1 local: SMB disabled by prompt"
 
-    # Issue #6: the admin password is collected via the masked ui_password_validated.
+    # The admin password is now collected visibly (ui_input_validated) by design —
+    # a single shared home-server admin password, ease-of-use over masking.
     # Positive control — the typed value was accepted and persisted:
     assert_eq "MaskMe-Secret-Pw123" "$(env_get JELLYFIN_ADMIN_PASSWORD)" "wizard-ui stage1 local: typed admin password persisted"
-    # Masking proof — the typed value must NOT be echoed into the terminal transcript
-    # (it would appear here under the old read -rp; read -rsp suppresses it).
+    # Visible-by-design proof — the typed value is shown in the prompt transcript.
     case "$transcript" in
-        *MaskMe-Secret-Pw123*) fail "AUDIT: stage1 admin password is masked (not echoed to terminal scrollback)" "typed password leaked into transcript" ;;
-        *)                     pass "AUDIT: stage1 admin password is masked (not echoed to terminal scrollback)" ;;
+        *MaskMe-Secret-Pw123*) pass "wizard-ui stage1 local: admin password shown (visible by design)" ;;
+        *)                     fail "wizard-ui stage1 local: admin password shown (visible by design)" "expected typed password visible in transcript" ;;
     esac
 }

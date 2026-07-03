@@ -88,25 +88,48 @@ _should_configure() {
     [[ "$list" == *" $svc "* ]]
 }
 
+_CONFIGURE_OK=()
+_CONFIGURE_WARN=()
+
+_record_configure_result() {
+    local _label="${1%%|*}" _flag="${1##*|}" _w0="$2" _forced_warn="${3:-0}"
+    if (( _forced_warn || _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )); then
+        _CONFIGURE_WARN+=("$_label|$_flag")
+    else
+        _CONFIGURE_OK+=("$_label")
+    fi
+}
+
+# Runs a configure_* function and records the service label in _CONFIGURE_OK
+# or _CONFIGURE_WARN based on whether it emitted any log_warn/log_error calls.
+# Usage: _run_configure "Label|--only-flag" configure_fn [args...]
+_run_configure() {
+    local _service="$1"; shift
+    local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
+    local _rc=0
+    "$@" || _rc=$?
+    _record_configure_result "$_service" "$_w0"
+    return "$_rc"
+}
+
 # =============================================================================
 # Main
 # =============================================================================
 
 main() {
+    rm -f "$SCRIPT_DIR/.configure_issues"
     echo -e "${CYAN}"
     echo "  ${_G_DTL}$(_g_repeat 42 "$_G_DH")${_G_DTR}"
     echo "  ${_G_DV}    MediaStack Auto-Configuration         ${_G_DV}"
     echo "  ${_G_DBL}$(_g_repeat 42 "$_G_DH")${_G_DBR}"
     echo -e "${NC}"
-    log_info "Reading config from: config.yml"
+    log_info "Reading your settings"
     if storage_is_manual; then
         log_warn "Advanced manual app wiring: skipping MediaStack's app-level storage wiring."
     fi
     if [[ -n "$ONLY_SERVICES" ]]; then
         log_info "Targeted run: ${ONLY_SERVICES}"
     fi
-    log_info "Waiting for services..."
-
     _should_configure qbittorrent && wait_for_service "qBittorrent" "http://localhost:8080"
     _should_configure jackett     && wait_for_service "Jackett"     "http://localhost:9117"
     _should_configure sonarr      && wait_for_service "Sonarr"      "http://localhost:8989"
@@ -119,12 +142,16 @@ main() {
     # Portainer first: it has a 5-minute admin creation timeout from first
     # start. Running it before the slower services (indexer adds, Jellyfin
     # library scan) maximises the chance of hitting that window.
-    _should_configure portainer   && configure_portainer
+    _should_configure portainer   && _run_configure "Portainer|portainer"     configure_portainer
 
-    _should_configure qbittorrent && configure_qbittorrent
-    _should_configure jackett     && configure_jackett
+    _should_configure qbittorrent && _run_configure "qBittorrent|qbittorrent" configure_qbittorrent
+    _should_configure jackett     && _run_configure "Jackett|jackett"         configure_jackett
+    local _sonarr_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR )) _sonarr_warn=0
     _should_configure sonarr      && configure_sonarr
+    (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _sonarr_w0 )) && _sonarr_warn=1
+    local _radarr_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR )) _radarr_warn=0
     _should_configure radarr      && configure_radarr
+    (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _radarr_w0 )) && _radarr_warn=1
 
     # Indexer phase — Sonarr and Radarr add the same Jackett-fronted trackers,
     # and on save each *arr synchronously fetches caps through Jackett to the
@@ -133,67 +160,89 @@ main() {
     # halves wall time compared to the previous serial Sonarr→Radarr flow. The
     # configure_arr_indexers helper itself already streams [OK]/[WARN] lines as
     # workers finish, so the user sees progress instead of a long silence.
+    local -A _ix_warn=()
     if { _should_configure sonarr && [[ -n "${SONARR_API_KEY:-}" ]]; } \
         || { _should_configure radarr && [[ -n "${RADARR_API_KEY:-}" ]]; }; then
         echo ""
         echo -e "${BOLD}Adding Sonarr + Radarr indexers (in parallel)...${NC}"
-        local _ix_pids=()
+        local _ix_pids=() _ix_apps=()
         if _should_configure sonarr && [[ -n "${SONARR_API_KEY:-}" ]]; then
             local tv_cats; tv_cats=$(cfg_field "categories.tv")
-            configure_arr_indexers "sonarr" "http://localhost:8989/api/v3" "${SONARR_API_KEY}" "$tv_cats" &
+            ( local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ));
+              configure_arr_indexers "sonarr" "http://localhost:8989/api/v3" "${SONARR_API_KEY}" "$tv_cats"
+              (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0 )) ) &
             _ix_pids+=($!)
+            _ix_apps+=(sonarr)
         fi
         if _should_configure radarr && [[ -n "${RADARR_API_KEY:-}" ]]; then
             local movie_cats; movie_cats=$(cfg_field "categories.movies")
-            configure_arr_indexers "radarr" "http://localhost:7878/api/v3" "${RADARR_API_KEY}" "$movie_cats" &
+            ( local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ));
+              configure_arr_indexers "radarr" "http://localhost:7878/api/v3" "${RADARR_API_KEY}" "$movie_cats"
+              (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0 )) ) &
             _ix_pids+=($!)
+            _ix_apps+=(radarr)
         fi
-        for _ix_pid in "${_ix_pids[@]}"; do wait "$_ix_pid" 2>/dev/null; done
+        local _ix_i
+        for _ix_i in "${!_ix_pids[@]}"; do
+            wait "${_ix_pids[$_ix_i]}" 2>/dev/null || _ix_warn["${_ix_apps[$_ix_i]}"]=1
+        done
     fi
 
     if _should_configure bazarr; then
         if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx bazarr; then
             wait_for_service "Bazarr" "http://localhost:6767"
-            configure_bazarr
+            _run_configure "Bazarr|bazarr" configure_bazarr
         fi
     fi
 
-    _should_configure jellyfin && configure_jellyfin
+    _should_configure jellyfin && _run_configure "Jellyfin|jellyfin" configure_jellyfin
 
     # Jellyfin connection in Sonarr/Radarr — needs JELLYFIN_API_KEY (exported
     # by configure_jellyfin above) and the *arr API keys (exported earlier).
     if storage_is_manual; then
         log_skip "Sonarr/Radarr Jellyfin notifications skipped (manual app wiring)"
     else
-        _should_configure sonarr && \
+        if _should_configure sonarr; then
+            local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
             configure_arr_jellyfin_connection "sonarr" "http://localhost:8989/api/v3" "${SONARR_API_KEY:-}"
-        _should_configure radarr && \
+            (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )) && _sonarr_warn=1
+        fi
+        if _should_configure radarr; then
+            local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
             configure_arr_jellyfin_connection "radarr" "http://localhost:7878/api/v3" "${RADARR_API_KEY:-}"
+            (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )) && _radarr_warn=1
+        fi
     fi
+
+    _sonarr_warn=$(( _sonarr_warn || ${_ix_warn[sonarr]:-0} ))
+    _radarr_warn=$(( _radarr_warn || ${_ix_warn[radarr]:-0} ))
+    local _result_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
+    _should_configure sonarr && _record_configure_result "Sonarr|sonarr" "$_result_w0" "$_sonarr_warn"
+    _should_configure radarr && _record_configure_result "Radarr|radarr" "$_result_w0" "$_radarr_warn"
 
     if _should_configure seerr; then
         if storage_is_manual; then
             log_skip "Seerr setup skipped (manual app wiring)"
         else
             sleep 3  # Jellyfin may have just restarted - let auth endpoints stabilise
-            configure_seerr
+            _run_configure "Seerr|seerr" configure_seerr
         fi
     fi
-    _should_configure homepage && configure_homepage
+    _should_configure homepage && _run_configure "Homepage|homepage" configure_homepage
 
     if _should_configure npm; then
         if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx npm; then
             wait_for_service "NPM" "http://localhost:81"
-            configure_npm
+            _run_configure "NPM|npm" configure_npm
         fi
     fi
-    _should_configure ddns-updater && configure_ddns_updater
+    _should_configure ddns-updater && _run_configure "DDNS Updater|ddns-updater" configure_ddns_updater
 
     if _should_configure wireguard; then
         if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx wireguard; then
             wait_for_healthy "WireGuard" "wireguard" "http://localhost:51821"
-            if ! configure_wireguard; then
-                log_error "WireGuard access-tier enforcement failed; fix the warnings above and rerun ./scripts/configure.sh --only wireguard"
+            if ! _run_configure "WireGuard|wireguard" configure_wireguard; then
+                log_error "WireGuard access-tier enforcement failed; fix the warnings above, then choose Features & settings -> Add remote access from the menu"
                 return 1
             fi
         fi
@@ -201,12 +250,12 @@ main() {
 
     if _should_configure uptime-kuma; then
         wait_for_healthy "Uptime Kuma" "uptime-kuma" "http://localhost:3001"
-        configure_uptime_kuma
+        _run_configure "Uptime Kuma|uptime-kuma" configure_uptime_kuma
     fi
 
     if _should_configure beszel; then
         wait_for_service "Beszel" "http://localhost:8090"
-        configure_beszel
+        _run_configure "Beszel|beszel" configure_beszel
     fi
 
     if [[ -z "$ONLY_SERVICES" ]]; then
@@ -237,13 +286,33 @@ main() {
 
     echo ""
     echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
-    echo -e "${GREEN}${BOLD}  Auto-configuration complete!${NC}"
+    if (( ${#_CONFIGURE_WARN[@]} == 0 )); then
+        echo -e "${GREEN}${BOLD}  Auto-configuration complete!${NC}"
+    else
+        echo -e "${YELLOW}${BOLD}  Auto-configuration complete (with warnings)${NC}"
+    fi
     echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
     echo ""
-    echo "  To change settings later, edit config.yml and re-run:"
-    echo "    ./scripts/configure.sh"
+    local _svc _wlabel
+    for _svc in "${_CONFIGURE_OK[@]}";   do
+        echo -e "  ${GREEN}$(_ui_status_token ok)${NC}  $_svc"
+    done
+    for _svc in "${_CONFIGURE_WARN[@]}"; do
+        _wlabel="${_svc%%|*}"
+        echo -e "  ${YELLOW}$(_ui_status_token warn)${NC}  $_wlabel"
+    done
+    echo ""
+    echo "  To retry these or change settings later, re-run MediaStack setup"
+    echo "  (already-configured services are skipped)."
     echo ""
     echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
+
+    # Write issues file so stage1.sh can surface them after the final banner.
+    local _issues_file="$SCRIPT_DIR/.configure_issues"
+    rm -f "$_issues_file"
+    for _svc in "${_CONFIGURE_WARN[@]}"; do
+        printf '%s\n' "$_svc" >> "$_issues_file"
+    done
 }
 
 main

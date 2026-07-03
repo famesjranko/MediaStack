@@ -101,6 +101,19 @@ validate_admin_password() {
         ui_log warn "Password must be at least 12 characters (Portainer requires this)."
         return 1
     fi
+    # Uptime Kuma uses check-password-strength and rejects passwords with only
+    # one character type as "Too weak". Require at least 2 of: lowercase,
+    # uppercase, digits, symbols — so all-lowercase strings like qwertyuiopas
+    # are caught here rather than failing silently at provision time.
+    local types=0
+    [[ "$value" =~ [a-z] ]]        && (( types += 1 )) || true
+    [[ "$value" =~ [A-Z] ]]        && (( types += 1 )) || true
+    [[ "$value" =~ [0-9] ]]        && (( types += 1 )) || true
+    [[ "$value" =~ [^a-zA-Z0-9] ]] && (( types += 1 )) || true
+    if (( types < 2 )); then
+        ui_log warn "Password must use at least 2 character types (lowercase, uppercase, digits, symbols). Example: MyPass12 or pass123!"
+        return 1
+    fi
     return 0
 }
 

@@ -102,7 +102,7 @@ fi
 
 write_setup_result ok
 ok_result="$(cat "$expected_result")"
-assert_contains "$ok_result" "cd '$SCRIPT_DIR' && docker ps" "reboot result ok: command uses actual checkout path"
+assert_contains "$ok_result" "cd '$SCRIPT_DIR' && ./mediastack" "reboot result ok: command uses actual checkout path"
 if [[ "$ok_result" == *"cd ~/MediaStack"* ]]; then
     fail "reboot result ok: command does not hardcode home checkout"
 else

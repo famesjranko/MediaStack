@@ -53,7 +53,7 @@ if [[ -f "$marker" ]]; then
     install_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("install_source"))' "$marker" 2>/dev/null)
     mode=$(stat -c '%a' "$marker")
 
-    assert_eq "2" "$schema" "FIN-02: marker schema is 2"
+    assert_eq "3" "$schema" "FIN-02: marker schema is 3"
     assert_eq "nvidia" "$gpu_type" "FIN-02: marker gpu_type is nvidia"
     assert_eq "nvenc" "$encoder" "FIN-02: marker encoder is nvenc"
     assert_eq "unlock" "$driver_mode" "FIN-02: marker records nvidia_driver_mode (default unlock)"
@@ -73,6 +73,12 @@ if [[ -f "$marker" ]]; then
         pass "FIN-02: marker contains no secrets"
     fi
 fi
+
+stage3_write_nvidia_marker unlock run-update 550.90 >/dev/null 2>&1
+assert_eq "550.90" "$(stage3_marker_expected_driver_version)" \
+    "FIN-03: update marker records expected driver version"
+assert_eq "run-update" "$(stage3_marker_install_source)" \
+    "FIN-03: update marker identifies verify-only post-reboot flow"
 
 if stage3_marker_ready_to_finalize; then
     fail "FIN-03: same-boot NVIDIA marker does not finalize immediately"
@@ -145,7 +151,7 @@ assert_contains "$stage3_source" "Restarting Jellyfin..." "FIN-03: finalize Jell
 assert_contains "$stage3_source" "Running test transcode..." "FIN-03: finalize transcode copy"
 assert_contains "$stage3_source" "NVIDIA NVENC configured and verified." "FIN-03: finalize success copy"
 assert_contains "$stage3_source" "Post-reboot GPU finalization complete." "FIN-03: finalize complete copy"
-assert_contains "$stage3_source" "NVIDIA finalization did not complete. MediaStack is falling back to software transcoding; check journalctl -u mediastack-setup --no-pager, then re-run setup after fixing the driver/runtime issue." "FIN-03: finalize failure copy"
+assert_contains "$stage3_source" "NVIDIA finalization did not complete. MediaStack is falling back to software transcoding; check journalctl -u mediastack-setup --no-pager, fix the driver/runtime issue, then choose Manage hardware transcoding (GPU) from the menu." "FIN-03: finalize failure copy"
 
 schedule_calls=0
 banner_calls=0
@@ -163,6 +169,8 @@ sudo() {
         reboot_calls=$((reboot_calls + 1))
     fi
 }
+sleep_calls=0
+sleep() { sleep_calls=$((sleep_calls + 1)); }
 
 stage3_write_nvidia_marker >/dev/null 2>&1
 NEEDS_REBOOT=true
@@ -178,8 +186,13 @@ banner_calls=0
 notice_calls=0
 confirm_calls=0
 reboot_calls=0
+sleep_calls=0
 STAGE3_TEST_REBOOT_CHOICE="Reboot now"
-stage3_prompt_nvidia_reboot >/dev/null 2>&1
+# </dev/null forces a non-TTY stdin so [[ -t 0 ]] is false: the countdown must be
+# skipped (no sleep) but the reboot must still fire. Guards the non-interactive
+# determinism fix (#197 item 4) — the old code always slept 10x here.
+stage3_prompt_nvidia_reboot >/dev/null 2>&1 </dev/null
+assert_eq "0" "$sleep_calls" "FIN-02: non-interactive reboot-now skips the 10s countdown (no sleep)"
 assert_eq "1" "$schedule_calls" "FIN-02: reboot-now option schedules post-reboot resume"
 assert_eq "1" "$banner_calls" "FIN-02: reboot-now option installs post-reboot banner"
 assert_eq "1" "$notice_calls" "FIN-02: reboot-now option prints reboot notice"

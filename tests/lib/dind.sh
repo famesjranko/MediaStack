@@ -83,16 +83,33 @@ dind_copy_repo() {
     echo -e "${BLUE}[dind]${NC} copying repo to /root/MediaStack"
     docker exec "$DIND_NAME" mkdir -p /root/MediaStack
     # Exclude: .git, .env (host's local), nvidia-patch clone, any backups,
-    # runtime subdirs of config/ that are gitignored. Pre-seeded config files
-    # under config/{jackett,qbittorrent,fail2ban} must be included — they're
-    # tracked in git despite config/*/ being gitignored.
+    # runtime subdirs of config/ that are gitignored. The pre-seed *templates*
+    # under config/examples/defaults/ must be included — create_config_dirs (and
+    # create_config_dirs_in_dind) seed the live config/{fail2ban,homepage,jackett,
+    # qbittorrent} copies from them. config/examples/ is not excluded below, so
+    # the templates always reach DinD.
     tar --exclude=./.git \
         --exclude=./.nvidia-patch \
         --exclude=./.env \
         --exclude=./backups \
         --exclude=./tests/.dind-state \
+        --exclude=./config/portainer \
+        --exclude=./config/beszel \
         -cf - -C "$REPO_ROOT" . \
         | docker exec -i "$DIND_NAME" tar -xf - -C /root/MediaStack
+    # Detect a broken copy (PIPESTATUS covers both ends regardless of pipefail).
+    # Without this a partial/failed extract goes unnoticed and every later
+    # `docker exec -w /root/MediaStack` chdir-fails, cascading across the shared
+    # DinD in --reset-between runs.
+    local st=("${PIPESTATUS[@]}")
+    if [[ "${st[0]}" -ne 0 || "${st[1]}" -ne 0 ]]; then
+        echo -e "${RED}[dind]${NC} repo copy tar pipe failed (host tar=${st[0]}, container tar=${st[1]})"
+        return 1
+    fi
+    if ! docker exec -w /root/MediaStack "$DIND_NAME" test -f docker-compose.yml; then
+        echo -e "${RED}[dind]${NC} repo copy incomplete: /root/MediaStack/docker-compose.yml missing"
+        return 1
+    fi
 }
 
 # Run a command inside the DinD with /root/MediaStack as CWD.
@@ -161,8 +178,19 @@ dind_reset() {
     # Prune runs while /root/MediaStack still exists (dind_exec sets it as CWD).
     dind_exec 'ids=$(docker ps -aq); [ -n "$ids" ] && docker rm -f $ids >/dev/null 2>&1; true' || true
     dind_exec 'docker volume prune -f >/dev/null 2>&1; docker network prune -f >/dev/null 2>&1; true' || true
-    dind_exec "rm -rf /root/MediaStack" || true
-    dind_copy_repo
+    # The prior scenario's containers bind-mount config/* under the repo dir; if
+    # `docker rm -f` hasn't fully released them, `rm -rf` hits a busy mountpoint
+    # and leaves a dirty tree the copy then lands on. Lazily unmount any leftover
+    # mounts under the dir, then delete — retry once if the first rm fails.
+    # ponytail: one unmount+retry covers the rm/rm-f race; escalate to a full
+    # dind_down/dind_up only if this proves insufficient in practice.
+    local _unmount='for m in $(findmnt -rno TARGET 2>/dev/null | grep "^/root/MediaStack" | sort -r); do umount -l "$m" 2>/dev/null; done; true'
+    dind_exec "$_unmount" || true
+    if ! dind_exec "rm -rf /root/MediaStack"; then
+        dind_exec "$_unmount" || true
+        dind_exec "rm -rf /root/MediaStack" || true
+    fi
+    dind_copy_repo || return 1
     dind_strip_services
 }
 

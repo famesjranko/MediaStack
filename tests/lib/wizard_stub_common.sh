@@ -100,6 +100,10 @@ ms_stub_stage1_storage() {
     validate_smb_port() { return 0; }
     storage_ensure_nfs_common() { return 0; }
     storage_mount_nfs() { return 0; }
+    # The wizard verifies via storage_probe_nas (non-destructive) instead of
+    # mounting; drive its classification from the (stubbable) classifier so the
+    # existing-share scenario's empty/mediastack/conflict cases still work.
+    storage_probe_nas() { _STORAGE_PROBE_CLASS="$(storage_classify_data_root "${DATA_DIR:-/data}")"; return 0; }
     storage_preflight_nas() { return 0; }
 }
 
@@ -118,4 +122,10 @@ ms_stub_stage1_install() {
     }
     generate_override() { printf 'services: {}\n' > docker-compose.override.yml; log_info "stub generate_override $1"; }
     storage_install_watchdog() { log_info "stub storage_install_watchdog"; }
+    # Relocated into _stage1_install (setup_hardening runs before the stack is
+    # exposed; ufw/samba after STAGE_1_COMPLETE, before print_access_info); stub
+    # so they don't touch ufw/sysctl/samba in the sandbox.
+    setup_hardening() { log_info "stub setup_hardening"; }
+    setup_ufw_service_ports() { log_info "stub setup_ufw_service_ports"; }
+    setup_samba() { log_info "stub setup_samba"; }
 }

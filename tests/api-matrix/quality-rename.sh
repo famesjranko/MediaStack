@@ -120,9 +120,12 @@ matrix_quality_rename() {
     assert_eq "$seed_count" "$after_count" \
         "$label rename: profile count unchanged (no duplicate created)"
 
-    # The NEW size's custom-format score landed on the renamed id — the score
-    # path apply_cell.py never exercised. Balanced scores x265 (HD) at -25 (the
-    # seed was compact at 0, so this also proves the score was re-attached).
-    assert_eq "-25" "$(_qr_score "$base" "$key" "$new_id" "x265 (HD)")" \
-        "$label rename: balanced size's x265 score (-25) attached to the renamed profile"
+    # Managed scores re-attached to the renamed id — the score path apply_cell.py
+    # never exercised. Custom-format scores are now size-uniform, so this can't
+    # prove a size-DISTINCT value; instead it proves RE-ATTACHMENT: the rename PUT
+    # zeroes every formatItems score (main.sh), so a non-zero score afterward can
+    # only come from configure_arr_format_scores re-running. LQ=-100 is the probe
+    # (a zero-valued format like x265 couldn't distinguish "applied" from "zeroed").
+    assert_eq "-100" "$(_qr_score "$base" "$key" "$new_id" "LQ")" \
+        "$label rename: managed score (LQ=-100) re-attached to the renamed profile"
 }

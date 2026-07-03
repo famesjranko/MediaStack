@@ -103,8 +103,12 @@ validate_admin_email "alice@example.co"; rc=$?
 assert_eq "0" "$rc" "validate_admin_email (WR-02): accepts 2-char TLD"
 
 reset_warn
+validate_admin_password "longenough12"; rc=$?
+assert_eq "0" "$rc" "validate_admin_password: accepts 12+ chars with 2 character types"
+
+reset_warn
 validate_admin_password "longenoughpw"; rc=$?
-assert_eq "0" "$rc" "validate_admin_password: accepts 12+ chars"
+assert_eq "1" "$rc" "validate_admin_password: rejects 12+ chars with only 1 character type"
 
 reset_warn
 validate_admin_password "11charssss"; rc=$?

@@ -30,6 +30,8 @@ log_info()  { :; }
 log_warn()  { :; }
 log_error() { :; }
 log_skip()  { :; }
+_ms_state_set() { :; }
+_ms_state_get() { echo false; }
 
 # ===========================================================================
 # setup_ufw — skip path repairs SSH policy when service + Docker markers exist
@@ -89,7 +91,7 @@ assert_eq "true" "$found_ssh_10" "setup_ufw: skip path — repairs active SSH po
 assert_eq "true" "$found_ssh_172" "setup_ufw: skip path — repairs active SSH port allow for 172.16.0.0/12"
 assert_eq "true" "$found_ssh_192" "setup_ufw: skip path — repairs active SSH port allow for 192.168.0.0/16"
 assert_eq "true" "$found_active_client" "setup_ufw: skip path — preserves current non-private SSH client IP"
-assert_eq "true" "$found_ssh_broad_delete" "setup_ufw: skip path — removes stale broad SSH allow"
+assert_eq "false" "$found_ssh_broad_delete" "setup_ufw: skip path — preserves pre-existing broad SSH allow"
 unset -f sudo ufw
 unset SSH_CONNECTION
 
@@ -134,7 +136,7 @@ for c in "${UFW_CALLS[@]}"; do
     [[ "$c" == *"delete allow 22/tcp"* ]] && found_ssh_broad_delete=true
 done
 assert_eq "false" "$found_reset" "setup_ufw: active marker repair — no firewall reset"
-assert_eq "true" "$found_ssh_broad_delete" "setup_ufw: active marker repair — removes stale broad SSH allow"
+assert_eq "false" "$found_ssh_broad_delete" "setup_ufw: active marker repair — preserves broad SSH allow"
 assert_contains "$DOCKER_RULES" "# MEDIASTACK-DOCKER-RULES" "setup_ufw: active marker repair — writes missing Docker rules block"
 assert_contains "$DOCKER_RULES" "-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT" "setup_ufw: active marker repair — writes DOCKER-USER jump"
 unset -f sudo ufw
@@ -287,6 +289,50 @@ log_warn() { :; }
 unset -f sudo ufw
 
 # ===========================================================================
+# setup_ufw — reentrancy (day-2 OFF -> ON): the mediastack UFW toggle resets
+# UFW_DEFAULTS_APPLIED on the OFF path precisely so a later ON reconfigures.
+# A stale "true" latch + non-'deny allow' defaults (what a full _uninstall_ufw
+# leaves behind) trips the early-return guard and the firewall never comes back.
+# ===========================================================================
+
+# Case A: post-reset ledger (UFW_DEFAULTS_APPLIED=false) -> setup_ufw proceeds.
+UFW_CALLS=()
+_ms_state_get() { echo false; }          # reset latch
+_ufw_defaults() { echo ""; }             # inactive UFW reports no defaults
+sudo() {
+    if [[ "${1:-}" == "ufw" ]]; then
+        UFW_CALLS+=("$*")
+        [[ "${2:-}" == "status" ]] && echo "Status: inactive"
+        return 0
+    fi
+    return 0
+}
+ufw() { UFW_CALLS+=("ufw $*"); return 0; }
+SSH_CONNECTION=""
+setup_ufw
+found_configure=false
+for c in "${UFW_CALLS[@]}"; do [[ "$c" == *"default deny incoming"* ]] && found_configure=true; done
+assert_eq "true" "$found_configure" "setup_ufw: reentrancy — reset latch (DEFAULTS_APPLIED=false) lets a re-enable reconfigure"
+unset -f sudo ufw _ms_state_get _ufw_defaults
+
+# Case B: stale latch (UFW_DEFAULTS_APPLIED=true) + non-'deny allow' defaults
+# -> early return, no reconfigure (this is the bug the OFF-path reset avoids).
+UFW_CALLS=()
+_ms_state_get() { [[ "$1" == "UFW_DEFAULTS_APPLIED" ]] && echo true || echo false; }
+_ufw_defaults() { echo "allow allow"; }
+sudo() { [[ "${1:-}" == "ufw" ]] && UFW_CALLS+=("$*"); return 0; }
+ufw() { UFW_CALLS+=("ufw $*"); return 0; }
+setup_ufw; ufw_rc=$?
+found_configure=false
+for c in "${UFW_CALLS[@]}"; do [[ "$c" == *"default deny incoming"* ]] && found_configure=true; done
+assert_eq "0" "$ufw_rc" "setup_ufw: reentrancy — stale latch returns cleanly (leaves UFW unchanged)"
+assert_eq "false" "$found_configure" "setup_ufw: reentrancy — stale latch (DEFAULTS_APPLIED=true) blocks reconfigure (why OFF must reset it)"
+unset -f sudo ufw _ms_state_get _ufw_defaults
+# Restore the module-level ledger stubs for the tests below.
+_ms_state_set() { :; }
+_ms_state_get() { echo false; }
+
+# ===========================================================================
 # setup_ufw — fresh path (verify correct ufw commands called)
 # ===========================================================================
 
@@ -333,7 +379,7 @@ for c in "${UFW_CALLS[@]}"; do
     [[ "$c" == *"allow from 172.16.0.0/12 to any port 22 proto tcp"* ]] && found_ssh_172=true
     [[ "$c" == *"allow from 192.168.0.0/16 to any port 22 proto tcp"* ]] && found_ssh_192=true
 done
-assert_eq "true" "$found_reset" "setup_ufw: fresh path — ufw reset called"
+assert_eq "false" "$found_reset" "setup_ufw: fresh path — preserves pre-existing UFW rules"
 assert_eq "true" "$found_enable" "setup_ufw: fresh path — ufw enable called"
 assert_eq "false" "$found_8096" "setup_ufw: fresh path — Jellyfin 8096 not directly allowed"
 assert_eq "false" "$found_3000" "setup_ufw: fresh path — Homepage 3000 not directly allowed"
@@ -458,6 +504,9 @@ unset -f sudo
 
 WRITTEN_FILES=()
 sudo() {
+    if [[ "${1:-}" == "test" ]]; then
+        return 1
+    fi
     if [[ "${1:-}" == "grep" ]]; then
         return 1
     fi
@@ -472,14 +521,14 @@ sudo() {
 WRITTEN_FILES=()
 setup_unattended_upgrades
 
-found_20=false
-found_50=false
+found_auto=false
+found_policy=false
 for f in "${WRITTEN_FILES[@]}"; do
-    [[ "$f" == *"20auto-upgrades"* ]] && found_20=true
-    [[ "$f" == *"50unattended-upgrades"* ]] && found_50=true
+    [[ "$f" == *"21mediastack-auto-upgrades"* ]] && found_auto=true
+    [[ "$f" == *"51mediastack-unattended-upgrades"* ]] && found_policy=true
 done
-assert_eq "true" "$found_20" "setup_unattended_upgrades: fresh — writes 20auto-upgrades"
-assert_eq "true" "$found_50" "setup_unattended_upgrades: fresh — writes 50unattended-upgrades"
+assert_eq "true" "$found_auto" "setup_unattended_upgrades: fresh — writes owned periodic drop-in"
+assert_eq "true" "$found_policy" "setup_unattended_upgrades: fresh — writes owned policy drop-in"
 unset -f sudo
 
 # ===========================================================================
@@ -767,6 +816,42 @@ setup_samba
 assert_eq "0" "${#SAMBA_CALLS[@]}" "setup_samba: skip is comment-independent (detects bare include line, no marker)"
 unset -f sudo smbd
 
+# A matching include from an interrupted run must resume the remaining
+# idempotent work instead of taking the completed-install fast path forever.
+PENDING_HASH=$(sha256sum "$SAMBA_INCLUDE_FILE" | awk '{print $1}')
+PENDING_CALLS=(); PENDING_STATE=()
+_ms_state_get() {
+    case "$1" in
+        SAMBA_SETUP_PENDING|SAMBA_OWNERSHIP_RECORDED|SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK) echo true ;;
+        SAMBA_USER) echo testadmin ;;
+        SAMBA_PASSDB_PREEXISTED|SAMBA_GROUP_PREEXISTED) echo false ;;
+        SAMBA_GROUP) echo media ;;
+        SAMBA_INCLUDE_SHA256) echo "$PENDING_HASH" ;;
+    esac
+}
+_ms_state_set() { PENDING_STATE+=("$1=$2"); }
+sudo() {
+    case "${1:-}" in
+        grep|install|tee|sha256sum) command "$@" ;;
+        pdbedit) return 0 ;;
+        testparm) echo effective ;;
+        systemctl|ufw) PENDING_CALLS+=("$*"); return 0 ;;
+        *) return 0 ;;
+    esac
+}
+smbd() { :; }
+id() { [[ "${1:-}" == -nG ]] && echo media; return 0; }
+getent() { echo 'media:x:1000:'; }
+SMB_ENABLED=true; JELLYFIN_ADMIN_USER=testadmin; JELLYFIN_ADMIN_PASSWORD=testpass; DATA_DIR=/data; PGID=1000
+setup_samba
+assert_contains "${PENDING_CALLS[*]}" "systemctl enable --now smbd" \
+    "setup_samba: interrupted matching config resumes remaining work"
+assert_contains "${PENDING_STATE[*]}" "SAMBA_SETUP_PENDING=false" \
+    "setup_samba: successful resume clears the pending ledger state"
+unset -f sudo smbd id getent
+_ms_state_get() { echo false; }
+_ms_state_set() { :; }
+
 # ===========================================================================
 # setup_samba — fresh path: writes include file (NOT main smb.conf) + appends
 # the include line to main conf without overwriting it.
@@ -805,6 +890,7 @@ sudo() {
         # call into the array.
         tee)     shift; command tee "$@" >/dev/null; return 0 ;;
         smbpasswd) shift; smbpasswd "$@"; return $? ;;
+        pdbedit) return 1 ;;
         systemctl) SAMBA_CALLS+=("systemctl $2"); return 0 ;;
         ufw) SAMBA_CALLS+=("ufw $*"); return 0 ;;
         *) return 0 ;;

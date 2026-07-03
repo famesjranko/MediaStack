@@ -15,6 +15,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
+# print_access_info calls gpu_brand_label, which now lives in gpu.sh.
+source "$REPO_ROOT/scripts/setup/gpu.sh"
 
 set +e
 set +u
@@ -41,7 +43,7 @@ assert_contains "$output" ":8096" "stage1-completion: includes Jellyfin LAN URL"
 assert_contains "$output" "Portainer        http://" "stage1-completion: includes Portainer URL"
 assert_contains "$output" "mediaadmin / (admin password above)" "stage1-completion: Portainer login uses wizard admin username + points at the admin password"
 assert_contains "$output" "You can stop here. Your media server works on the LAN." "stage1-completion: completion message"
-assert_contains "$output" "To enable remote access (HTTPS, VPN), run setup.sh again." "stage1-completion: retry hint"
+assert_contains "$output" "To enable remote access (HTTPS, VPN), choose Features & settings -> Add remote access from the menu." "stage1-completion: retry hint"
 
 cat > "$TMP_DIR/.env" <<'EOF'
 JELLYFIN_ADMIN_PASSWORD='GeneratedPassword123'

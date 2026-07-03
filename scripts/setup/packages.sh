@@ -5,8 +5,7 @@
 # being loaded by the caller.
 
 install_base_packages() {
-    log_info "Installing base packages..."
-    sudo apt-get update -qq
+    ui_spin "Updating package lists..." sudo apt-get update -qq
     # Self-heal an inconsistent dpkg/apt state before installing. An interrupted install or a
     # driver-mode switch (e.g. Standard<->Unlock leaving the old driver stack half-removed) can
     # leave packages half-configured, which makes the install below fail with "Unmet
@@ -16,18 +15,25 @@ install_base_packages() {
         sudo dpkg --configure -a >/dev/null 2>&1 || true
         sudo apt-get install -f -y -qq >/dev/null 2>&1 || true
     fi
-    # Note: samba is intentionally NOT installed here. setup_samba() in
-    # hardening.sh installs it on-demand only when SMB_ENABLED=true, so
-    # the wizard's port-445 conflict check stays meaningful (otherwise
-    # we'd install samba up-front, smbd would auto-bind 445, and the
-    # check would always flag a conflict — by a daemon we just installed).
-    sudo apt-get install -y -qq curl ca-certificates gnupg lsb-release sudo pciutils python3-yaml python3-bcrypt gettext-base ufw unattended-upgrades git htop bind9-dnsutils smartmontools >/dev/null
+    # Note: samba and unattended-upgrades are intentionally NOT installed here.
+    # setup_samba() installs samba on-demand only when SMB_ENABLED=true (so the
+    # wizard's port-445 conflict check stays meaningful). setup_unattended_upgrades()
+    # installs unattended-upgrades on-demand only when HARDENING_ENABLED=true —
+    # installing it up-front would let Debian's postinst enable /etc/apt/apt.conf.d/
+    # 20auto-upgrades, running generic auto security-updates even when the user
+    # declined hardening (an incomplete opt-out).
+    ui_spin "Installing base packages..." sudo apt-get install -y -qq \
+        curl ca-certificates gnupg lsb-release sudo pciutils python3-yaml python3-bcrypt \
+        gettext-base ufw git htop bind9-dnsutils smartmontools mokutil
     log_ok "Base packages installed"
 
-    if ! command -v speedtest-cli &>/dev/null; then
-        sudo apt-get install -y -qq speedtest-cli >/dev/null 2>&1 \
-            || pip3 install speedtest-cli >/dev/null 2>&1 \
-            || log_warn "Could not install speedtest-cli - speed test will be unavailable"
+    # Optional fallback speed-test tool. The wizard's primary method is a
+    # curl+Cloudflare measurement (needs no package); librespeed-cli is used
+    # only if the curl method fails. (The old Ookla speedtest-cli was dropped:
+    # Ookla now HTTP-403s that deprecated client.)
+    if ! command -v librespeed-cli &>/dev/null; then
+        sudo apt-get install -y -qq librespeed-cli >/dev/null 2>&1 \
+            || log_warn "Could not install librespeed-cli - speed test will use the built-in curl method only"
     fi
 }
 
@@ -78,14 +84,16 @@ install_docker() {
         log_info "Installing Docker..."
     fi
 
-    configure_docker_apt_repo
-    sudo apt-get update -qq
+    ui_spin "Adding Docker apt repository..." configure_docker_apt_repo
+    ui_spin "Updating package lists..."       sudo apt-get update -qq
 
     if $docker_present; then
-        sudo apt-get install -y -qq docker-compose-plugin >/dev/null
+        ui_spin "Installing Docker Compose plugin..." \
+            sudo apt-get install -y -qq docker-compose-plugin
         log_ok "Docker Compose plugin installed"
     else
-        sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null
+        ui_spin "Installing Docker..." \
+            sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
         log_ok "Docker installed"
     fi
 

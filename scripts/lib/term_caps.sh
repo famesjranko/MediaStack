@@ -2,7 +2,7 @@
 # MediaStack terminal-capability detection (single source of truth)
 # =============================================================================
 # Decides whether the current terminal can render ANSI colour (and, from PR-B
-# onward, unicode glyphs). Both scripts/lib/common.sh and scripts/lib/ui_fallback.sh
+# onward, unicode glyphs). Both scripts/lib/common.sh and scripts/lib/ui_render_fallback.sh
 # source this file and gate their own palettes on the predicates here, so the
 # decision lives in exactly one place.
 #
@@ -14,7 +14,7 @@
 #   - every environment read uses a `${VAR:-}` / `${VAR+x}` default so an unset
 #     var never trips `set -u`.
 #
-# Include-guarded: common.sh + ui_fallback.sh (via ui.sh) both source it during
+# Include-guarded: common.sh + ui_render_fallback.sh (via ui.sh) both source it during
 # a single `./setup.sh`, so it is sourced 2-3 times per process.
 
 [[ -n "${_TERM_CAPS_SOURCED:-}" ]] && return 0
@@ -96,6 +96,23 @@ else
     _G_SPIN=('|' '/' '-' '\')
 fi
 
+# --- ANSI color palette (shared by all rendering backends) ------------------
+# Frozen here at source time. Both ui_render_fallback.sh and ui_render_gum.sh
+# source term_caps.sh, so defining the palette here makes it available to any
+# code regardless of which backend is active.
+if _color_enabled; then
+    _UI_RESET='\033[0m'
+    _UI_BOLD='\033[1m'
+    _UI_RED='\033[0;31m'
+    _UI_GREEN='\033[0;32m'
+    _UI_YELLOW='\033[1;33m'
+    _UI_BLUE='\033[0;94m'
+    _UI_CYAN='\033[0;36m'
+    _UI_GRAY='\033[0;90m'
+else
+    _UI_RESET='' _UI_BOLD='' _UI_RED='' _UI_GREEN='' _UI_YELLOW='' _UI_BLUE='' _UI_CYAN='' _UI_GRAY=''
+fi
+
 # _ui_status_token — the leading marker for a log line, unified across the
 # wizard (ui_log) and the configure-time helpers (common.sh log_*). In glyph
 # mode it is the icon (✓ ! ✗ • →); in ASCII mode it is the bracket tag
@@ -116,7 +133,7 @@ _ui_status_token() {  # $1 = level
 }
 
 # _g_repeat <width> <char> — emit <char> repeated <width> times. For horizontal
-# rules / box borders drawn OUTSIDE the ui_fallback layer (configure.sh,
+# rules / box borders drawn OUTSIDE the ui_render_fallback layer (configure.sh,
 # stack.sh, stage2.sh etc., which source common.sh but not ui.sh). Uses a gated
 # _G_* char so the rule degrades to ASCII with everything else.
 _g_repeat() {  # $1 = width, $2 = char (default _G_H)

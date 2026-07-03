@@ -43,7 +43,9 @@ chmod +x $fixture"
   {"expect": "Switch default channel to Upstream tags\\?"},
   {"send": "y\n"},
   {"expect": "Press Enter to return to menu"},
-  {"send": "\n"}
+  {"send": "\n"},
+  {"expect": "Manage updates:"},
+  {"send": "6\n"}
 ]
 JSON'
 

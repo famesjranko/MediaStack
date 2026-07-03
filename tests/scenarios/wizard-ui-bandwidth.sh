@@ -41,9 +41,9 @@ chmod +x $fixture"
     dind_exec 'cat >/tmp/wizard-bandwidth.steps.json <<"JSON"
 [
   {"expect": "What would you like to do\\?"},
-  {"send": "6\n"},
+  {"send": "4\n"},
   {"expect": "Manage features & settings"},
-  {"send": "5\n"},
+  {"send": "7\n"},
   {"expect": "Current: download 3 MB/s, upload 1 MB/s"},
   {"expect": "Download limit \\(MB/s"},
   {"send": "5\n"},
@@ -54,7 +54,9 @@ chmod +x $fixture"
   {"expect": "APPLIED dl=5 ul=2"},
   {"expect": "completed successfully"},
   {"expect": "Press Enter to return to menu"},
-  {"send": "\n"}
+  {"send": "\n"},
+  {"expect": "Manage features & settings"},
+  {"send": "8\n"}
 ]
 JSON'
 
@@ -73,7 +75,7 @@ JSON'
 
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
-    assert_contains "$transcript" "Adjust bandwidth limits (qBittorrent)" "wizard-ui bandwidth: option present in Features"
+    assert_contains "$transcript" "Adjust bandwidth: DL 3 MB/s" "wizard-ui bandwidth: option shows inline current values"
     assert_contains "$transcript" "Download limit (MB/s" "wizard-ui bandwidth: MB/s download prompt shown"
     assert_contains "$transcript" "APPLIED dl=5 ul=2" "wizard-ui bandwidth: applies the entered DL/UL via qbt_set_speed_limits"
     assert_contains "$transcript" "completed successfully" "wizard-ui bandwidth: success reported"

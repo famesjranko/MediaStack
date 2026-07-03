@@ -31,7 +31,7 @@ COPY
 }
 
 stage3_skip_summary_copy() {
-    printf 'Hardware transcoding skipped. Jellyfin will use software transcoding. Run ./setup.sh --transcoding to try again.'
+    printf 'Hardware transcoding skipped. Jellyfin will use software transcoding. Choose Manage hardware transcoding (GPU) from the menu to try again.'
 }
 
 stage3_verify_retry_choices() {
@@ -60,11 +60,13 @@ stage3_write_nvidia_marker() {
     # unlock. install_source is "apt" (Standard) or "run" (Unlock .run cache).
     local driver_mode="${1:-unlock}"
     local install_source="${2:-run}"
+    local expected_driver_version="${3:-}"
     local marker tmp
     marker="$(_stage3_marker_path)"
     tmp="${marker}.tmp"
     MARKER_PATH="$tmp" MARKER_BOOT_ID="$(stage3_current_boot_id)" \
-    MARKER_DRIVER_MODE="$driver_mode" MARKER_INSTALL_SOURCE="$install_source" python3 - <<'PY'
+    MARKER_DRIVER_MODE="$driver_mode" MARKER_INSTALL_SOURCE="$install_source" \
+    MARKER_EXPECTED_DRIVER_VERSION="$expected_driver_version" python3 - <<'PY'
 import datetime
 import json
 import os
@@ -72,7 +74,7 @@ import pathlib
 
 path = pathlib.Path(os.environ["MARKER_PATH"])
 payload = {
-    "schema": 2,
+    "schema": 3,
     "gpu_type": "nvidia",
     "nvidia_driver_mode": os.environ.get("MARKER_DRIVER_MODE", "unlock"),
     "install_source": os.environ.get("MARKER_INSTALL_SOURCE", "run"),
@@ -87,6 +89,9 @@ payload = {
         "summary",
     ],
 }
+expected = os.environ.get("MARKER_EXPECTED_DRIVER_VERSION", "")
+if expected:
+    payload["expected_driver_version"] = expected
 path.write_text(json.dumps(payload, indent=2) + "\n")
 PY
     chmod 600 "$tmp"
@@ -95,6 +100,24 @@ PY
 
 stage3_remove_nvidia_marker() {
     rm -f "$(_stage3_marker_path)"
+}
+
+# Discard a prepared-but-not-finalized NVIDIA driver setup (one that is waiting
+# for a reboot) so the user can pick a different driver mode instead of being
+# locked into finishing the pending install. Clears the finalize marker and any
+# cached .run, and removes the installed .run driver (if present) so a fresh
+# Standard/Unlock choice starts from a clean slate. The GPU hardware is still
+# detected afterwards, so run_stage3 re-offers the mode menu.
+_stage3_discard_pending_setup() {
+    ui_log info "Discarding the prepared NVIDIA driver setup..."
+    stage3_remove_nvidia_marker
+    rm -rf "$SCRIPT_DIR/.nvidia-tmp" 2>/dev/null || true
+    if command -v nvidia-uninstall >/dev/null 2>&1; then
+        ui_spin "Removing the prepared NVIDIA .run driver..." sudo nvidia-uninstall -s || true
+        # Clear bash's cached nvidia-smi path so re-detection sees it is gone.
+        hash -r
+    fi
+    NEEDS_REBOOT=false
 }
 
 stage3_marker_boot_id() {
@@ -125,6 +148,36 @@ import sys
 
 try:
     print(json.load(open(sys.argv[1])).get("nvidia_driver_mode", ""))
+except Exception:
+    print("")
+PY
+}
+
+stage3_marker_expected_driver_version() {
+    local marker
+    marker="$(_stage3_marker_path)"
+    [[ -f "$marker" ]] || return 1
+    python3 - "$marker" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    print(json.load(open(sys.argv[1])).get("expected_driver_version", ""))
+except Exception:
+    print("")
+PY
+}
+
+stage3_marker_install_source() {
+    local marker
+    marker="$(_stage3_marker_path)"
+    [[ -f "$marker" ]] || return 1
+    python3 - "$marker" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    print(json.load(open(sys.argv[1])).get("install_source", ""))
 except Exception:
     print("")
 PY
@@ -678,30 +731,30 @@ stage3_verify_transcode_evidence() {
         return 1
     fi
 
-    log_file=$(mktemp)
-    if stage3_run_encoder_smoke_test "$vendor" "$encoder" "$log_file"; then
-        rm -f "$log_file"
-        return 0
-    fi
-    rm -f "$log_file"
-
-    # Live path: poll docker logs until positive evidence appears or budget
-    # expires. _stage3_apply_runtime_override has just recreated Jellyfin;
-    # Kestrel comes up at ~5s but the encoder enumeration lines
-    # (`Available encoders: [...]`, `Available hwaccel types: [...]`) emit
-    # ~20-25s into startup. A one-shot capture run too early sees only
-    # `Found ffmpeg version` (matches the grep filter, fails the
-    # nvenc|cuda|nvidia positive check) and false-fails into fallback even
-    # when the GPU is correctly wired through.
+    # Live path: the smoke test (an active NVENC transcode via `docker exec
+    # jellyfin ffmpeg`) is the strongest proof, but a one-shot run races the
+    # container: _stage3_apply_runtime_override (and a config-driven recreate
+    # from configure.sh changing .env) has just restarted Jellyfin, so an
+    # immediate `docker exec` hits a not-yet-ready container and fails even
+    # though NVENC is correctly wired. Retry the smoke test on the poll budget
+    # so it succeeds the moment the container is up. Fall back each iteration to
+    # scanning startup logs for the encoder-enumeration lines (`Available
+    # encoders: [...]`, `Available hwaccel types: [...]`), which emit ~20-25s
+    # into startup — later than a single early capture would catch.
     local i=0 max=30
-    while (( i < max )); do
+    while :; do
         log_file=$(mktemp)
+        if stage3_run_encoder_smoke_test "$vendor" "$encoder" "$log_file"; then
+            rm -f "$log_file"
+            return 0
+        fi
         if stage3_capture_jellyfin_transcode_log "$log_source" "$log_file" \
             && stage3_transcode_log_uses_gpu "$encoder" "$log_file"; then
             rm -f "$log_file"
             return 0
         fi
         rm -f "$log_file"
+        (( i >= max )) && break
         sleep 2; (( i += 2 ))
     done
     ui_log warn "Automatic test transcode and Jellyfin log evidence were unavailable for ${vendor} ${encoder}."
@@ -720,8 +773,21 @@ _stage3_apply_runtime_override() {
     fi
 
     if command -v docker >/dev/null 2>&1; then
-        (cd "$SCRIPT_DIR" && docker compose up -d jellyfin >/dev/null 2>&1)
-        return $?
+        (cd "$SCRIPT_DIR" && docker compose up -d jellyfin >/dev/null 2>&1) || return 1
+        # Wait for the recreated container to accept `docker exec` before
+        # returning. Callers probe/transcode immediately (stage3_probe_capabilities
+        # runs codec smoke tests; stage3_verify_transcode_evidence runs the NVENC
+        # smoke test) — against a container still restarting, every codec exec
+        # fails and NVENC gets silently downgraded to h264-only (or the transcode
+        # reads as "no GPU"). Bounded; on timeout proceed anyway and let the
+        # probes/verify degrade gracefully rather than block finalize forever.
+        local _elapsed=0 _max="${STAGE3_CONTAINER_READY_TIMEOUT:-30}"
+        [[ "$_max" =~ ^[0-9]+$ ]] || _max=30
+        while ! docker exec jellyfin true >/dev/null 2>&1; do
+            (( _elapsed >= _max )) && break
+            sleep 2; (( _elapsed += 2 ))
+        done
+        return 0
     fi
 
     return 0
@@ -742,11 +808,38 @@ _stage3_offer() {
 }
 
 _stage3_tell_me_more() {
-    ui_section "Hardware transcoding"
+    # No section header here — the loop re-enters _stage3_offer immediately after,
+    # which prints the "Hardware transcoding" header; printing it here too would
+    # double it up.
     ui_log info "Intel and AMD GPUs can be configured now without reboot."
     ui_log info "NVIDIA may need one reboot before MediaStack can finish NVENC setup."
     ui_log info "MediaStack only enables a hardware encoder after verification evidence is available."
     ui_log skip "Skipping keeps Jellyfin on software transcoding."
+}
+
+_stage3_choose_gpu_vendor() {
+    declare -p GPU_CANDIDATES >/dev/null 2>&1 || return 0
+    (( ${#GPU_CANDIDATES[@]} > 1 )) || return 0
+
+    ui_section "Choose GPU"
+    local options=() vendors=() vendor default_index=1 choice
+    for vendor in "${GPU_CANDIDATES[@]}"; do
+        vendors+=("$vendor")
+        case "$vendor" in
+            nvidia) options+=("NVIDIA — NVENC") ;;
+            amd) options+=("AMD — VAAPI") ;;
+            intel) options+=("Intel — Quick Sync") ;;
+        esac
+        [[ "$vendor" == "${GPU_TYPE:-}" ]] && default_index="${#options[@]}"
+    done
+
+    choice=$(UI_CHOOSE_DEFAULT_INDEX="$default_index" ui_choose "Which GPU should Jellyfin use?" "${options[@]}")
+    case "$choice" in
+        "NVIDIA — NVENC") GPU_TYPE=nvidia ;;
+        "AMD — VAAPI") GPU_TYPE=amd ;;
+        "Intel — Quick Sync") GPU_TYPE=intel ;;
+        *) GPU_TYPE="${vendors[$((default_index - 1))]}" ;;
+    esac
 }
 
 _stage3_configure_jellyfin() {
@@ -918,7 +1011,7 @@ _stage3_fallback() {
         ui_log warn "Jellyfin hardware transcoding disable could not be verified. Check Jellyfin settings before relying on software fallback."
     fi
     _stage3_apply_runtime_override "none"
-    ui_log warn "Hardware transcoding could not be verified. Jellyfin will use software transcoding."
+    ui_log warn "Hardware transcoding could not be verified. Jellyfin will use software transcoding. Fix the driver/runtime issue, then choose Manage hardware transcoding (GPU) from the menu."
     _stage3_print_final_summary
 }
 
@@ -953,7 +1046,7 @@ _stage3_nvidia_finalize_failure() {
     fi
     _stage3_apply_runtime_override "none"
     stage3_remove_nvidia_marker
-    ui_log warn "NVIDIA finalization did not complete. MediaStack is falling back to software transcoding; check journalctl -u mediastack-setup --no-pager, then re-run setup after fixing the driver/runtime issue."
+    ui_log warn "NVIDIA finalization did not complete. MediaStack is falling back to software transcoding; check journalctl -u mediastack-setup --no-pager, fix the driver/runtime issue, then choose Manage hardware transcoding (GPU) from the menu."
     _stage3_print_final_summary
 }
 
@@ -1048,6 +1141,7 @@ _stage3_configure_intel() {
 stage3_prompt_nvidia_reboot() {
     stage3_reboot_prompt_needed || return 0
 
+    ui_section "Reboot"
     ui_box "Reboot needed to finish NVIDIA transcoding" \
         "MediaStack has prepared the NVIDIA driver setup." \
         "After reboot, setup will resume automatically." \
@@ -1064,6 +1158,18 @@ stage3_prompt_nvidia_reboot() {
             schedule_post_reboot
             install_post_reboot_banner
             print_reboot_notice
+            # Interactive users get the 10s grace window to READ the reboot notice
+            # (and a real chance to Ctrl-C) before the box goes down. On a non-
+            # interactive run there is nobody to read it and "Ctrl-C to cancel" is a
+            # no-op, so skip the countdown and reboot straight away.
+            if [[ -t 0 ]]; then
+                local _s
+                for _s in 10 9 8 7 6 5 4 3 2 1; do
+                    printf '\r  Rebooting in %2ds...  (Ctrl-C to cancel)' "$_s"
+                    sleep 1
+                done
+                printf '\r\033[K'
+            fi
             sudo reboot
             ;;
         "Reboot manually later")
@@ -1075,21 +1181,47 @@ stage3_prompt_nvidia_reboot() {
     esac
 }
 
+# Post-reboot the nvidia kernel module can take a few seconds to settle before
+# nvidia-smi responds (large VRAM, first boot after a fresh install). The resume
+# service starts After=docker.service, which is not ordered against the nvidia
+# module load, so give the driver a bounded window to come up. Without this a
+# not-yet-settled module reads as a driver failure and false-falls-back to
+# software even though the driver is fine. Returns 0 as soon as nvidia-smi works.
+_stage3_wait_for_nvidia_smi() {
+    local max="${STAGE3_NVIDIA_SMI_TIMEOUT:-20}" elapsed=0
+    [[ "$max" =~ ^[0-9]+$ ]] || max=20
+    while :; do
+        if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+            return 0
+        fi
+        (( elapsed >= max )) && return 1
+        sleep 2; (( elapsed += 2 ))
+    done
+}
+
 stage3_finalize_nvidia() {
     local proof_since
     ui_log info "Resuming hardware transcoding: NVIDIA finalization"
+
+    # Let the driver settle before any nvidia-smi-based decision below. Skip when
+    # a .run install is already pending — that path (re)installs the driver
+    # itself, so waiting for a not-yet-installed driver would just burn the budget.
+    if [[ ! -f "$SCRIPT_DIR/.nvidia-tmp/pending" ]]; then
+        _stage3_wait_for_nvidia_smi || true
+    fi
 
     # Driver mode comes from the marker (survives .env regeneration). A marker
     # that EXISTS but has no mode field is a schema-1 marker from the old patch
     # flow, so it is unlock by definition — do NOT fall back to .env there, since
     # a regenerated NVIDIA_DRIVER_MODE=standard would wrongly skip the patch. Only
     # when there is no marker at all do we consult .env.
-    local _mode
+    local _mode _install_source
     if _mode="$(stage3_marker_driver_mode 2>/dev/null)"; then
         [[ -n "$_mode" ]] || _mode="unlock"
     else
         _mode="${NVIDIA_DRIVER_MODE:-unlock}"
     fi
+    _install_source=$(stage3_marker_install_source 2>/dev/null || true)
 
     # Unlock can resume from either a cached .run installer or a Standard→Unlock
     # conversion reboot where the Debian driver was purged before any .run cache
@@ -1097,7 +1229,7 @@ stage3_finalize_nvidia() {
     # just need verification below. Ignore and clear any stale .run cache for
     # non-Unlock modes so a leftover Unlock cache can never drag a Standard
     # finalize back onto the .run path.
-    if [[ "$_mode" == "unlock" ]]; then
+    if [[ "$_mode" == "unlock" && "$_install_source" != "run-update" ]]; then
         if [[ -f "$SCRIPT_DIR/.nvidia-tmp/pending" ]] || ! { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; }; then
             GPU_TYPE="nvidia"
             if ! install_nvidia_drivers; then
@@ -1116,12 +1248,34 @@ stage3_finalize_nvidia() {
         return 0
     fi
 
+    local _expected_version _loaded_version
+    _expected_version=$(stage3_marker_expected_driver_version 2>/dev/null || true)
+    if [[ -n "$_expected_version" ]]; then
+        _loaded_version=$(nvidia_driver_version 2>/dev/null || true)
+        if [[ "$_loaded_version" != "$_expected_version" ]]; then
+            ui_log warn "Loaded NVIDIA driver version does not match the prepared update."
+            _stage3_nvidia_finalize_failure
+            return 0
+        fi
+    fi
+
     ui_log info "Restarting Docker so NVIDIA runtime is available..."
     sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
 
     GPU_TYPE="nvidia"
     if [[ "$_mode" == "unlock" ]]; then
-        apply_nvidia_patch || true
+        # The Unlock patch only removes the NVENC concurrent-session limit; the
+        # driver + NVENC library are already installed and verified above. If the
+        # patch fails, hardware NVENC still works (just capped at the stock ~3
+        # sessions) — so DON'T drop all the way to CPU software. Keep NVENC, record
+        # that the patch isn't applied (marker read by the login banner), and leave
+        # the driver in unlock mode so "Manage hardware transcoding -> Reapply
+        # Unlock patch" can retry it. Only a driver-level failure (below) falls
+        # back to software.
+        # apply_nvidia_patch manages the .nvidia-nvenc-unpatched marker itself.
+        if ! apply_nvidia_patch; then
+            ui_log warn "NVENC Unlock patch did not apply - continuing with hardware NVENC at the stock session limit (~3 simultaneous transcodes). Retry via Manage hardware transcoding -> Reapply Unlock patch."
+        fi
     fi
     verify_gpu_usable || true
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
@@ -1149,15 +1303,23 @@ stage3_finalize_nvidia() {
     ui_log info "Restarting Jellyfin..."
     (cd "$SCRIPT_DIR" && docker compose up -d jellyfin >/dev/null 2>&1) || true
 
+    # The driver is verified usable (nvidia-smi + docker runtime + verify_gpu_usable
+    # above) and Jellyfin is already configured AND confirmed on NVENC. The test
+    # transcode is PROOF, not a gate: on a slower boot the smoke test can race the
+    # Jellyfin restart, or the encoder-enumeration log lines can emit late, and it
+    # comes back inconclusive even though NVENC is correctly wired through. A
+    # failure here must NOT drop a working GPU to CPU software (same principle as
+    # the Unlock patch above). Keep NVENC, tell the user verification was
+    # inconclusive, and let them confirm by playing something.
     ui_log info "Running test transcode..."
-    if ! STAGE3_TRANSCODE_SINCE="$proof_since" stage3_verify_transcode_evidence "nvidia" "nvenc"; then
-        _stage3_nvidia_finalize_failure
-        return 0
+    if STAGE3_TRANSCODE_SINCE="$proof_since" stage3_verify_transcode_evidence "nvidia" "nvenc"; then
+        ui_log ok "NVIDIA NVENC configured and verified."
+    else
+        ui_log warn "NVIDIA NVENC is configured and enabled, but the automatic test transcode was inconclusive (this can happen when the smoke test races the Jellyfin restart). Play a video that needs transcoding to confirm, or re-check via Manage hardware transcoding (GPU)."
     fi
 
     stage3_set_gpu_env "nvidia" "complete" "nvidia" "nvenc" "$_mode"
     stage3_remove_nvidia_marker
-    ui_log ok "NVIDIA NVENC configured and verified."
     ui_log ok "Post-reboot GPU finalization complete."
     _stage3_print_final_summary
     return 0
@@ -1165,8 +1327,17 @@ stage3_finalize_nvidia() {
 
 _stage3_nvidia_mode_more_copy() {
     ui_log info "Standard driver: Debian's packaged NVIDIA driver. It updates with the system (apt) and keeps NVIDIA's official NVENC session limit - typically 3-5 simultaneous transcodes, which is plenty for a home server where most playback is direct-play."
-    ui_log info "Unlock NVENC limit: a patch-managed driver that removes the session limit, for households doing many simultaneous transcodes. It modifies NVIDIA driver binaries and must be re-applied (./scripts/nvidia-repatch.sh) after every driver update."
+    ui_log info "Unlock NVENC limit: a patch-managed driver that removes the session limit, for households doing many simultaneous transcodes. It modifies NVIDIA driver binaries and must be re-applied from Manage hardware transcoding after every driver update."
     ui_log warn "Unlock modifies NVIDIA driver binaries and may conflict with NVIDIA's terms, warranties, support expectations, or local law."
+}
+
+_stage3_confirm_unlock() {
+    ui_box "Unlock NVENC limit (advanced)" \
+        "Installs a patch-managed NVIDIA driver and modifies its binaries." \
+        "Removes the NVENC session limit, but must be re-applied after every" \
+        "driver update (Manage hardware transcoding can reapply it)." \
+        "May conflict with NVIDIA's terms, warranties, support, or local law."
+    ui_confirm "Install the patch-managed driver and apply nvidia-patch?" "no"
 }
 
 # Ask Standard vs Unlock. Echoes "standard" or "unlock" to stdout; every menu and
@@ -1193,14 +1364,7 @@ _stage3_choose_nvidia_mode() {
                 return 0
                 ;;
             *"Unlock NVENC limit"*)
-                {
-                    ui_box "Unlock NVENC limit (advanced)" \
-                        "Installs a patch-managed NVIDIA driver and modifies its binaries." \
-                        "Removes the NVENC session limit, but must be re-applied after every" \
-                        "driver update (./scripts/nvidia-repatch.sh)." \
-                        "May conflict with NVIDIA's terms, warranties, support, or local law."
-                } >&2
-                if ui_confirm "Install the patch-managed driver and apply nvidia-patch?" "no"; then
+                if _stage3_confirm_unlock >&2; then
                     printf 'unlock'
                     return 0
                 fi
@@ -1209,52 +1373,108 @@ _stage3_choose_nvidia_mode() {
             *"Tell me more"*)
                 { _stage3_nvidia_mode_more_copy; } >&2
                 ;;
+            *)
+                printf standard
+                return 0
+                ;;
         esac
     done
 }
 
-# Handle a pre-existing non-Debian NVIDIA driver (install_nvidia_drivers_apt
-# returned 2). Conservative v1: keep it (mode "existing") or skip to software —
-# no automatic .run uninstall.
-_stage3_nvidia_existing_driver() {
-    local keep
-    {
-        ui_box "Existing NVIDIA driver detected" \
-            "A working NVIDIA driver is installed that MediaStack does not recognize as its" \
-            "own Debian-managed install (e.g. a manual .run install, or a Debian driver set" \
-            "up differently). MediaStack will not manage its updates or patch state. To use" \
-            "MediaStack's Debian-managed driver instead, remove the existing driver, then" \
-            "re-run ./setup.sh --transcoding."
-    } >&2
-    keep=$(ui_choose "Use the existing NVIDIA driver?" \
-        "Use existing NVIDIA driver" \
-        "Skip GPU (software transcoding)")
-    case "$keep" in
-        *"Use existing"*)
-            if ! _install_nvidia_container_toolkit; then
-                _stage3_fallback "nvidia" "nvenc"
-                return 0
-            fi
-            GPU_TYPE="nvidia"
-            verify_gpu_usable || true
-            if [[ "${GPU_TYPE:-none}" == "nvidia" ]]; then
-                _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified (existing driver - you manage its updates)." "" "existing" || true
-            else
-                _stage3_fallback "nvidia" "nvenc"
-            fi
-            ;;
-        *)
-            _stage3_fallback "nvidia" "nvenc"
-            ;;
-    esac
-    return 0
+_stage3_nvidia_manual_guidance() {
+    ui_box "NVIDIA driver managed outside MediaStack" \
+        "MediaStack will not remove, repair, replace, or patch this driver automatically." \
+        "To switch to Standard, remove the current driver using its original uninstall" \
+        "method, then open Manage hardware transcoding (GPU) and choose Standard." \
+        "To switch to Unlock, remove it first, then choose Unlock NVENC on the same route."
+}
+
+_stage3_choose_nvidia_action() {
+    local source="$1" health="$2" choice
+    # To stderr: this function's stdout is its return value (captured by the
+    # caller), so the header must not land on stdout.
+    { ui_section "NVIDIA driver"; } >&2
+    while true; do
+        case "$source:$health" in
+            none:*) _stage3_choose_nvidia_mode; return ;;
+            debian:healthy)
+                choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "How should MediaStack use the NVIDIA driver?" \
+                    "Use installed driver $(nvidia_driver_version 2>/dev/null || echo '(version unknown)') (recommended)" \
+                    "Replace with Unlock NVENC (advanced)" \
+                    "Tell me more")
+                case "$choice" in
+                    "Use installed"*) printf use; return ;;
+                    "Replace with Unlock"*)
+                        if _stage3_confirm_unlock >&2; then printf unlock; return; fi
+                        { ui_log skip "Unlock replacement cancelled; the installed Debian driver was not changed."; } >&2
+                        ;;
+                    "Tell me more"*) { _stage3_nvidia_mode_more_copy; } >&2 ;;
+                    *) printf use; return ;;
+                esac
+                ;;
+            debian:unhealthy)
+                choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "The Debian NVIDIA driver is not healthy. What should MediaStack do?" \
+                    "Repair/reinstall Debian driver (recommended)" \
+                    "Replace with Unlock NVENC (advanced)" \
+                    "Use software transcoding" \
+                    "Tell me more")
+                case "$choice" in
+                    "Repair/reinstall"*) printf repair; return ;;
+                    "Replace with Unlock"*)
+                        if _stage3_confirm_unlock >&2; then printf unlock; return; fi
+                        { ui_log skip "Unlock replacement cancelled; the Debian driver was not changed."; } >&2
+                        ;;
+                    "Use software"*) printf software; return ;;
+                    "Tell me more"*) { _stage3_nvidia_mode_more_copy; } >&2 ;;
+                    *) printf repair; return ;;
+                esac
+                ;;
+            foreign:healthy)
+                choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "NVIDIA driver managed outside MediaStack. What should MediaStack do?" \
+                    "Use existing driver with user-managed updates" \
+                    "Reinstall (remove existing, choose driver mode)" \
+                    "Use software transcoding")
+                case "$choice" in
+                    "Use existing"*) printf use-existing; return ;;
+                    "Reinstall"*)    printf reinstall; return ;;
+                    "Use software"*) printf software; return ;;
+                    *) printf use-existing; return ;;
+                esac
+                ;;
+            foreign:unhealthy)
+                choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "NVIDIA driver managed outside MediaStack is not healthy. What should MediaStack do?" \
+                    "Reinstall (remove existing, choose driver mode)" \
+                    "Use software transcoding")
+                case "$choice" in
+                    "Reinstall"*) printf reinstall; return ;;
+                    *)            printf software; return ;;
+                esac
+                ;;
+            *) printf software; return ;;
+        esac
+    done
+}
+
+_stage3_nvidia_use_driver() {
+    local mode="$1" message="$2"
+    if ! _install_nvidia_container_toolkit; then
+        _stage3_fallback "nvidia" "nvenc"
+        return 0
+    fi
+    GPU_TYPE=nvidia
+    verify_gpu_usable || true
+    if [[ "$GPU_TYPE" == nvidia ]]; then
+        _stage3_configure_and_verify "nvidia" "nvenc" "$message" "" "$mode" || true
+    else
+        _stage3_fallback "nvidia" "nvenc"
+    fi
 }
 
 # Queue a reboot to finish NVIDIA setup, recording mode + install source in the
 # marker so finalization resumes the right path (and patches only for unlock).
 _stage3_nvidia_queue_reboot() {
-    local mode="$1" source="$2"
-    stage3_write_nvidia_marker "$mode" "$source"
+    local mode="$1" source="$2" expected_version="${3:-}"
+    stage3_write_nvidia_marker "$mode" "$source" "$expected_version"
     stage3_set_gpu_env "none" "pending" "nvidia" "nvenc" "$mode" || true
     ui_log warn "NVIDIA driver setup is ready for reboot. MediaStack will finish NVENC configuration after the reboot."
     ui_log info "Post-reboot GPU finalization queued: encoder=nvenc, test transcode, final summary."
@@ -1267,16 +1487,67 @@ _stage3_nvidia_queue_reboot() {
 # Drive NVIDIA setup: pick the driver-management mode, then install via the
 # Debian package (Standard, no patch) or the patch-managed .run (Unlock).
 _stage3_run_nvidia() {
-    local mode
-    mode=$(_stage3_choose_nvidia_mode)
+    local source health action
+    # Optional forced source (used after a reinstall uninstalls the foreign
+    # driver: nvidia-smi lingers on disk until reboot, so re-detection would
+    # still report 'foreign' and loop the menu). Treat it as a clean install.
+    source="${1:-$(nvidia_driver_source)}"
+    if [[ -n "${1:-}" ]]; then health=unhealthy; elif nvidia_driver_healthy; then health=healthy; else health=unhealthy; fi
+    action=$(_stage3_choose_nvidia_action "$source" "$health")
 
-    if [[ "$mode" == "standard" ]]; then
+    case "$action" in
+        software)
+            _stage3_fallback "nvidia" "nvenc"
+            return 0
+            ;;
+        reinstall)
+            if ! command -v nvidia-uninstall &>/dev/null; then
+                log_error "nvidia-uninstall not found — cannot remove the existing driver"
+                log_info "Remove it manually (sudo nvidia-uninstall), then open Manage hardware transcoding (GPU) from the menu"
+                _stage3_fallback "nvidia" "nvenc"
+                return 0
+            fi
+            if ! ui_spin "Removing existing NVIDIA driver..." sudo nvidia-uninstall -s; then
+                log_error "Failed to remove existing NVIDIA driver"
+                log_info "Try manually: sudo nvidia-uninstall"
+                _stage3_fallback "nvidia" "nvenc"
+                return 0
+            fi
+            # nvidia-uninstall removes /usr/bin/nvidia-smi, but bash caches the
+            # path from the earlier detection lookup — clear it so re-detection
+            # (and install_nvidia_drivers' own check) don't see a phantom driver.
+            hash -r
+            log_ok "Existing NVIDIA driver removed"
+            _stage3_run_nvidia none
+            return $?
+            ;;
+        use)
+            _stage3_nvidia_use_driver standard "NVIDIA NVENC configured and verified."
+            return 0
+            ;;
+        use-existing)
+            _stage3_nvidia_use_driver existing "NVIDIA NVENC configured and verified (you manage driver updates)."
+            return 0
+            ;;
+        repair)
+            if ! install_nvidia_drivers_apt repair; then
+                _stage3_fallback "nvidia" "nvenc"
+                return 0
+            fi
+            GPU_TYPE=nvidia
+            if nvidia_driver_healthy; then
+                _stage3_nvidia_use_driver standard "NVIDIA NVENC configured and verified after driver repair."
+            else
+                NEEDS_REBOOT=true
+                _stage3_nvidia_queue_reboot standard apt
+            fi
+            return 0
+            ;;
+    esac
+
+    if [[ "$action" == "standard" ]]; then
         local rc=0
         install_nvidia_drivers_apt || rc=$?
-        if [[ "$rc" -eq 2 ]]; then
-            _stage3_nvidia_existing_driver
-            return 0
-        fi
         if [[ "$rc" -ne 0 || "${GPU_TYPE:-none}" == "none" ]]; then
             _stage3_fallback "nvidia" "nvenc"
             return 0
@@ -1297,7 +1568,7 @@ _stage3_run_nvidia() {
     # Unlock (advanced): the patch-managed .run flow. A Debian-managed Standard
     # install is converted automatically by purging the exact installed driver
     # packages while preserving/repairing the NVIDIA container toolkit.
-    if [[ "$(nvidia_driver_source)" == "debian" ]]; then
+    if [[ "$source" == "debian" ]]; then
         if ! prepare_nvidia_debian_to_unlock; then
             _stage3_fallback "nvidia" "nvenc"
             return 0
@@ -1319,7 +1590,12 @@ _stage3_run_nvidia() {
         _stage3_nvidia_queue_reboot "unlock" "run"
         return 0
     fi
-    apply_nvidia_patch || true
+    # Patch failure keeps hardware NVENC (stock ~3-session limit), matching the
+    # finalize path — only a driver-level failure falls back to software. The
+    # marker is managed inside apply_nvidia_patch.
+    if ! apply_nvidia_patch; then
+        ui_log warn "NVENC Unlock patch did not apply - continuing with hardware NVENC at the stock session limit (~3 simultaneous transcodes). Retry via Manage hardware transcoding -> Reapply Unlock patch."
+    fi
     verify_gpu_usable || true
     if [[ "${GPU_TYPE:-none}" == "nvidia" ]]; then
         _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified." "" "unlock" || true
@@ -1347,6 +1623,12 @@ run_stage3() {
 
     local action
     while true; do
+        # When the caller already made an explicit "configure transcoding" choice
+        # (day-2 launcher menu / ./setup.sh --transcoding), the offer prompt is a
+        # redundant second gate — skip straight to the real driver selection.
+        if [[ "${STAGE3_SKIP_OFFER:-false}" == "true" ]]; then
+            break
+        fi
         # _stage3_offer prints explanatory UI to stderr and only the selected
         # answer to stdout, so command substitution does not swallow the copy.
         action=$(_stage3_offer)
@@ -1368,6 +1650,8 @@ run_stage3() {
                 ;;
         esac
     done
+
+    _stage3_choose_gpu_vendor
 
     case "${GPU_TYPE:-none}" in
         intel)

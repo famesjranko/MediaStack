@@ -360,7 +360,7 @@ print(json.dumps(body))
     if [[ "$seerr_trust_changed" == "true" ]]; then
         log_info "Restarting Seerr for trustProxy to take effect..."
         if ! docker compose restart seerr >/dev/null 2>&1; then
-            log_warn "Failed to restart Seerr - check 'docker compose logs seerr'"
+            log_warn "Failed to restart Seerr - view logs from the menu: Manage stack -> Tail logs (live)"
         else
             for _ in $(seq 1 30); do
                 curl -fsS "$seerr_url/api/v1/settings/public" >/dev/null 2>&1 && break

@@ -51,7 +51,7 @@ for class in partial transient config-dns config-port rate-limited npm-unhealthy
         STAGE2_LE_FAILED_HOSTS="seerr.gate.test"
     }
     copy="$(stage2_le_failure_copy "$class")"
-    assert_contains "$copy" "./setup.sh --remote" "S2-16: $class copy points to remote retry"
+    assert_contains "$copy" "Add remote access" "S2-16: $class copy points to remote retry"
 done
 
 reset_le_fixtures

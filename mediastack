@@ -70,6 +70,13 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
     # shellcheck disable=SC1091
     source "$SCRIPT_DIR/.env"
     set +a
+else
+    # No .env = not installed. Clear state vars that a prior launcher exported
+    # (set -a) and that this process inherited through exec — e.g. right after
+    # --uninstall re-execs the launcher. The .env file is the source of truth;
+    # a stale exported STAGE_1_COMPLETE must not keep is_installed / the menus
+    # showing an installed state after the file has been removed.
+    unset STAGE_1_COMPLETE DOMAIN JELLYFIN_GPU NVIDIA_DRIVER_MODE REMOTE_WEB_STATE
 fi
 
 # Recovery predicates (recovery_menu_remote_available / _transcoding_available).
@@ -124,12 +131,27 @@ _compose_running_summary() {
     printf '%s/%s' "$running" "$total"
 }
 
+# LAN IP (src of the default route) + gateway (router). Shared by the banner and
+# the port-forwarding submenu so the detection lives in one place. Empty when
+# offline / no default route.
+_detect_lan_ip() { ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'; }
+_detect_gateway() { ip route show default 2>/dev/null | awk '/default/ {print $3; exit}'; }
+
 render_banner() {
     local hostname_short
     hostname_short=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "unknown")
     local public_ip
     public_ip=$(_cached_public_ip)
-    local public_ip_line="Public IP:   ${public_ip:-not detected}"
+
+    # Network block shown in both states: LAN IP is how you actually reach your
+    # services; Router is the gateway you open to set up port forwarding; Public
+    # IP is your WAN address. Shown only when detected (graceful if offline).
+    local lan_ip gateway net_lines=()
+    lan_ip=$(_detect_lan_ip)
+    gateway=$(_detect_gateway)
+    [[ -n "$lan_ip" ]]  && net_lines+=("LAN IP:      ${lan_ip}")
+    [[ -n "$gateway" ]] && net_lines+=("Router:      ${gateway}")
+    net_lines+=("Public IP:   ${public_ip:-not detected}")
 
     local lines=()
     if is_installed; then
@@ -147,11 +169,11 @@ render_banner() {
             lines+=("Domain:      ${DOMAIN}")
         fi
         lines+=("Host:        ${hostname_short}")
-        lines+=("$public_ip_line")
+        lines+=("${net_lines[@]}")
     else
         lines+=("Status:      Not yet installed")
         lines+=("Host:        ${hostname_short}")
-        lines+=("$public_ip_line")
+        lines+=("${net_lines[@]}")
     fi
 
     ui_box "MediaStack - Turnkey Media Server" "${lines[@]}"
@@ -198,6 +220,22 @@ diag_readiness() {
         log_ok "Docker: $(docker --version | awk '{print $3}' | tr -d ',')"
     else
         log_warn "Docker: not installed (will be installed on first install run)"
+    fi
+
+    # GUM: optional binary that unlocks arrow-key menus (ui_render_gum.sh backend).
+    if command -v gum &>/dev/null; then
+        log_ok "GUM (optional): $(gum --version 2>/dev/null || echo installed) — arrow-key menus active"
+    else
+        log_info "GUM (optional): not installed — select 'Get enhanced menus' from the main menu to install"
+    fi
+
+    # Secure Boot: relevant for NVIDIA driver installs (unsigned module won't load).
+    if ! command -v mokutil &>/dev/null; then
+        log_warn "mokutil not installed — Secure Boot state unknown (install mokutil to verify before adding NVIDIA drivers)"
+    elif mokutil --sb-state 2>/dev/null | grep -qi enabled; then
+        log_warn "Secure Boot is ENABLED — NVIDIA kernel module will not load; disable it in UEFI firmware before adding GPU support"
+    else
+        log_ok "Secure Boot: disabled"
     fi
 }
 
@@ -272,46 +310,206 @@ diag_dns_check() {
     esac
 }
 
-diag_public_ip() {
+# Measure connection speed on demand (day-2 counterpart of the Stage-1 discovery
+# speed test). Reuses net_run_speedtest: curl+Cloudflare primary, librespeed-cli
+# fallback. Optional/best-effort, so it degrades to a warning on failure.
+diag_speedtest() {
     echo ""
-    ui_log info "Detecting public IP via api.ipify.org..."
-    if net_detect_public_ip; then
-        ui_kv "Public IP" "$_NET_PUBLIC_IP"
-        # Refresh the cached banner value too.
-        _MS_PUBLIC_IP="$_NET_PUBLIC_IP"
-        _MS_PUBLIC_IP_CHECKED=1
+    if ui_spin_fg "Measuring your connection speed (~15s)..." net_run_speedtest; then
+        ui_log ok "Download: ${_NET_DL_MBPS} Mbps | Upload: ${_NET_UL_MBPS} Mbps"
     else
-        ui_log error "Could not detect public IP - check your internet connection."
+        ui_log warn "Speed test unavailable (no internet, or both curl and librespeed-cli failed)."
     fi
 }
 
-diag_status() {
+# Probe an arbitrary TCP port from the public internet (same engine as the full
+# port-forwarding check, just for one user-chosen port). TCP only — the external
+# probe is TCP-based; reliable external UDP probing isn't available.
+diag_test_port() {
     echo ""
-    if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null 2>&1; then
-        ui_log error "Docker / Compose not available."
+    local port
+    port=$(ui_input "TCP port to test (1-65535)" "")
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+        ui_log error "Invalid port: '${port}' - enter a number from 1 to 65535."
+        return 0
+    fi
+    if ! net_detect_public_ip 2>/dev/null; then
+        ui_log warn "Could not detect public IP - cannot run an external probe."
+        return 0
+    fi
+    local pip="$_NET_PUBLIC_IP"
+    echo ""
+    ui_log info "Probing TCP ${port} on ${pip} (sudo may prompt to bind privileged ports)..."
+    case $(net_check_tcp_port_external "$port"; echo "rc:$?") in
+        rc:0) ui_log ok    "TCP ${port} - reachable, lands on this host" ;;
+        rc:1) ui_log error "TCP ${port} - no response (closed / not forwarded)" ;;
+        rc:3) ui_log error "TCP ${port} - forwarded to another device" ;;
+        rc:4) ui_log warn  "TCP ${port} - a service is already bound (partial check)" ;;
+        *)    ui_log warn  "TCP ${port} - probe unavailable (couldn't bind or external service down)" ;;
+    esac
+}
+
+# Warn when .env says GPU HW transcoding is complete but Jellyfin is actually
+# running in software mode — catches silent runtime regressions (driver update,
+# kernel upgrade, GPU hardware failure) after a successful initial setup.
+# ponytail: per-session flag so the Jellyfin API call only fires once per launcher run
+_GPU_WARN_DONE=
+_warn_gpu_runtime_fallback() {
+    [[ -z "${_GPU_WARN_DONE:-}" ]] || return 0
+    _GPU_WARN_DONE=1
+    [[ "${STAGE_3_GPU_STATE:-}" == "complete" && "${JELLYFIN_GPU:-none}" != "none" ]] || return 0
+    [[ -n "${JELLYFIN_API_KEY:-}" ]] || return 0
+    docker compose ps --filter status=running --format '{{.Name}}' 2>/dev/null | grep -q 'jellyfin' || return 0
+    local resp
+    resp=$(curl -sf --max-time 2 http://localhost:8096/System/Configuration/encoding \
+        -H "Authorization: MediaBrowser Client=\"MediaStack\", Device=\"Launcher\", DeviceId=\"mediastack-launcher\", Version=\"1.0\", Token=\"${JELLYFIN_API_KEY}\"" \
+        2>/dev/null) || return 0
+    STAGE3_RESP="$resp" python3 -c '
+import json, os, sys
+try:
+    c = json.loads(os.environ["STAGE3_RESP"])
+except Exception:
+    sys.exit(0)
+sys.exit(1 if c.get("HardwareAccelerationType") == "none" else 0)
+' && return 0
+    ui_log warn "Hardware transcoding is configured but Jellyfin is using software mode. Select 'Manage hardware transcoding (GPU)' to diagnose."
+}
+
+# MediaStack "system" state as ui_kv lines (running count, transcoding, remote
+# access, update channel, data dir + free space) for the Manage Stack box body.
+# Values come from the already-sourced .env plus quick host queries (nvidia-smi,
+# df). Echoes one ui_kv line per row so the caller can mapfile them into ui_box.
+_stack_system_lines() {
+    local summary
+    if summary=$(_compose_running_summary); then
+        ui_kv "Stack" "${summary} containers running"
+    else
+        ui_kv "Stack" "not running"
+    fi
+    local _tc _gpu="${JELLYFIN_GPU:-none}"
+    case "$_gpu" in
+        nvidia)
+            _tc="NVIDIA NVENC"
+            local _drv; _drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+            [[ -n "$_drv" ]] && _tc+=" — driver ${_drv}"
+            [[ -n "${NVIDIA_DRIVER_MODE:-}" ]] && _tc+=" (${NVIDIA_DRIVER_MODE})"
+            ;;
+        intel) _tc="Intel QSV" ;;
+        amd)   _tc="AMD VAAPI" ;;
+        *)     _tc="Software (no GPU acceleration)" ;;
+    esac
+    ui_kv "Transcoding" "$_tc"
+    local _remote
+    case "${REMOTE_WEB_STATE:-}" in
+        ready)
+            _remote="Ready"
+            [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]] && _remote+=" — ${DOMAIN}"
+            ;;
+        skipped) _remote="LAN only (remote skipped)" ;;
+        *)       _remote="LAN only" ;;
+    esac
+    ui_kv "Remote access" "$_remote"
+    ui_kv "Updates" "${IMAGE_CHANNEL:-stable} channel"
+    local _data="${DATA_DIR:-/data}" _free
+    _free=$(df -h --output=avail "$_data" 2>/dev/null | tail -1 | tr -d ' ')
+    local _dataline="$_data"
+    [[ -n "$_free" ]] && _dataline+=" — ${_free} free"
+    ui_kv "Data" "$_dataline"
+}
+
+# Per-service list: status glyph + aligned name + status word + uptime + published
+# host ports (deduped; no IPv4/IPv6 twins, no internal-only ports). Parses
+# compose's JSON output; falls back to the raw table if JSON/python3 is missing.
+_render_service_list() {
+    local profiles=()
+    _build_profile_args profiles
+    local rows
+    rows=$(docker compose "${profiles[@]}" ps --format json 2>/dev/null | python3 -c '
+import sys, json, re
+def uptime(status):
+    m = re.search(r"Up\s+(.*?)(?:\s+\(|$)", status or "")
+    if not m:
+        return ""
+    txt = m.group(1)
+    num = re.search(r"(\d+)", txt)
+    n = num.group(1) if num else "1"
+    for unit, sfx in (("second","s"),("minute","m"),("hour","h"),
+                      ("day","d"),("week","w"),("month","mo"),("year","y")):
+        if unit in txt:
+            return n + sfx
+    return txt
+rows = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+    except Exception:
+        continue
+    for it in (d if isinstance(d, list) else [d]):
+        name = it.get("Service") or it.get("Name") or "?"
+        health = (it.get("Health") or "").strip()
+        state = (it.get("State") or "").strip()
+        up = uptime(it.get("Status"))
+        if health == "healthy" or (not health and state == "running"):
+            status, cls = ("healthy" if health else "running"), "ok"
+        elif health == "starting" or state == "restarting":
+            status, cls = (health or state), "warn"
+        elif health == "unhealthy" or state in ("exited", "dead"):
+            status, cls = (health or state), "err"
+        else:
+            status, cls = (state or "unknown"), "dim"
+        seen = set(); ports = []
+        for p in (it.get("Publishers") or []):
+            pp = p.get("PublishedPort") or 0
+            if not pp:
+                continue
+            proto = p.get("Protocol") or "tcp"
+            if (pp, proto) in seen:
+                continue
+            seen.add((pp, proto))
+            ports.append((pp, "" if proto == "tcp" else "/" + proto))
+        ports.sort()
+        rows.append((name, cls, status, up, ", ".join(f"{pp}{sfx}" for pp, sfx in ports)))
+rows.sort()
+for r in rows:
+    print("\x1f".join(r))
+' 2>/dev/null)
+
+    if [[ -z "$rows" ]]; then
+        docker compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' 2>&1 || true
         return 0
     fi
 
-    local profiles=()
-    _build_profile_args profiles
+    # Split on \x1f (unit separator), not tab: tab is IFS-whitespace so bash
+    # would coalesce consecutive tabs and drop empty fields — a restarting
+    # container (empty uptime, non-empty ports) would then render its ports in
+    # the uptime column. \x1f preserves empty fields.
+    local maxn=0 _n
+    while IFS=$'\x1f' read -r _n _ _ _ _; do
+        (( ${#_n} > maxn )) && maxn=${#_n}
+    done <<<"$rows"
 
-    # One-line summary above the raw ps table so users see stack health at a
-    # glance — non-technical users get alarmed by raw "Restarting (1) Xs ago"
-    # without context.
-    local raw total running restarting
-    raw=$(docker compose "${profiles[@]}" ps --format '{{.Status}}' 2>/dev/null || true)
-    total=$(grep -c . <<<"$raw" 2>/dev/null || echo 0)
-    running=$(grep -cE '^Up\b' <<<"$raw" 2>/dev/null || echo 0)
-    restarting=$(grep -cE '^Restarting' <<<"$raw" 2>/dev/null || echo 0)
-
-    if (( total > 0 )); then
-        local summary="${running}/${total} containers running"
-        (( restarting > 0 )) && summary+=", ${restarting} restarting"
-        ui_log info "$summary"
-        echo ""
-    fi
-
-    docker compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' 2>&1 || true
+    # Pad the status glyph to a fixed visible width so the status/uptime/ports
+    # columns align across rows of differing health. ASCII tags vary 4-7 cols
+    # ([OK]..[ERROR]) -> pad to 7; unicode icons are 1 col (multibyte, so width 1
+    # means %-*s never byte-pads them and the output is identical to before).
+    local cls name st up pt tok color glyph up_disp gw=1
+    [[ "$_G_UNICODE" == 1 ]] || gw=7
+    while IFS=$'\x1f' read -r name cls st up pt; do
+        case "$cls" in
+            ok)   tok=ok;    color="$GREEN" ;;
+            warn) tok=warn;  color="$YELLOW" ;;
+            err)  tok=error; color="$RED" ;;
+            *)    tok=info;  color="$GRAY" ;;
+        esac
+        glyph="$(_ui_status_token "$tok")"
+        up_disp=""
+        [[ -n "$up" ]] && up_disp="up $up"
+        printf "  %-*s ${color}%-*s %-10s${NC} ${GRAY}%-8s${NC} ${GRAY}%s${NC}\n" \
+            "$maxn" "$name" "$gw" "$glyph" "$st" "$up_disp" "$pt"
+    done <<<"$rows"
 }
 
 # Re-print the per-service access summary (URLs, logins, remote, ports) day-2 so a
@@ -358,7 +556,8 @@ action_access_info() {
 # (both exit 0) or a deliberate abort apart from a crash (both exit non-zero), so
 # _run_setup_return plumbs an outcome token out of setup.sh:
 #   completed → genuine success    aborted → deliberate abort
-#   unchanged → nothing changed    (empty) → setup.sh said nothing
+#   unchanged → nothing changed    failed → partial/failed action
+#   (empty) → setup.sh said nothing
 # For STRICT actions (install / wipe) success must be AFFIRMED by a `completed`
 # token: a bare exit 0 with no token means the wizard was aborted before
 # finishing (e.g. quit a Stage-1 prompt after a wipe), so we must NOT call that
@@ -372,6 +571,7 @@ _show_action_result() {
         reboot-pending) ui_log warn  "Reboot to finish — hardware transcoding activates after you reboot." ;;
         aborted)        ui_log info  "${label} aborted — no changes were made." ;;
         unchanged)      ui_log info  "No changes were made." ;;
+        failed)         ui_log error "${label} did not complete. Review the errors above and retry." ;;
         *)
             if (( rc != 0 )); then
                 ui_log error "${label} exited with code ${rc}."
@@ -421,18 +621,43 @@ action_install()    {
     ui_confirm "Run the full installer now (~5-10 min, uses sudo)?" no || return 0
     _run_setup_return 1 "Install"
 }
+action_install_gum() {
+    echo ""
+    ui_log info "Installing GUM for enhanced arrow-key menus..."
+    sudo -v
+    local ok=true
+    sudo mkdir -p /etc/apt/keyrings                                                  || ok=false
+    $ok && sudo apt-get install -y -qq gnupg                                         || ok=false
+    $ok && curl -fsSL https://repo.charm.sh/apt/gpg.key \
+         | sudo gpg --yes --dearmor -o /etc/apt/keyrings/charm.gpg                  || ok=false
+    $ok && echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
+         | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null                   || ok=false
+    $ok && ui_spin "Updating package lists..." sudo apt-get update -qq               || ok=false
+    $ok && ui_spin "Installing GUM..."        sudo apt-get install -y -qq gum        || ok=false
+    if $ok; then
+        ui_log ok "GUM installed — restarting with enhanced menus..."
+        sleep 1
+        exec "$0"
+    else
+        ui_log error "GUM installation failed. Check internet connectivity and try again."
+        pause_for_menu
+    fi
+}
 action_remote()     { _run_setup_return 0 "Add remote access" --remote; }
 action_transcode()  { _run_setup_return 0 "Hardware transcoding" --transcoding; }
-# Wipe-and-reinstall: setup.sh's detect_existing_install path shows the recovery
-# menu which already has a "Wipe everything and start fresh" item gated by a
-# DESTROY-typed confirm. Reuse it (and return to the launcher afterwards). Strict:
-# the only honest "success" is a finished reinstall, affirmed by setup.sh.
-action_wipe()       { _run_setup_return 1 "Wipe / reinstall"; }
+# Uninstall wipes config/, .env, Docker volumes, and MediaStack host changes
+# (media in DATA_DIR is preserved), then drops back to the pre-install menu. That
+# makes a "reinstall" simply Uninstall -> Install, so there is no separate
+# reinstall/wipe action to maintain. Strict: the only honest "success" is a
+# finished uninstall, affirmed by setup.sh.
+action_uninstall()  { _run_setup_return 1 "Uninstall" --uninstall; }
 
 action_port_check() {
-    local rc=0
-    "$SCRIPT_DIR/scripts/port-check.sh" || rc=$?
-    _show_action_result "$rc" "Port check"
+    # port-check.sh prints its own self-contained verdict (pass/skip/fail counts,
+    # hairpin caveat, and the required-forwards box), so don't tack on the generic
+    # "completed successfully" line — it contradicts a "3 of 4 checks failed"
+    # result. Matches the other diagnostics, which pause straight to the menu.
+    "$SCRIPT_DIR/scripts/port-check.sh" || true
     pause_for_menu
 }
 action_update() {
@@ -443,6 +668,11 @@ action_update() {
 }
 action_configure() {
     echo ""
+    if ! ui_confirm "Re-run auto-configuration now?" no; then
+        ui_log info "Cancelled."
+        pause_for_menu
+        return 0
+    fi
     # Precondition: configure.sh polls each core service for 90s via
     # wait_for_service (lib/http.sh:47). If even one core service is missing,
     # the user waits 90s+ per missing service before configure.sh bails. Check
@@ -465,17 +695,62 @@ action_configure() {
         pause_for_menu
         return 0
     fi
-    ui_log info "This adds services newly enabled in config.yml. Already-configured services are detected and skipped, not changed."
+    ui_log info "This adds services newly enabled in your settings. Already-configured services are detected and skipped, not changed."
     ui_log info "To change a running service's settings, use that service's own web UI."
     local rc=0
     "$SCRIPT_DIR/scripts/configure.sh" || rc=$?
-    _show_action_result "$rc" "Re-run configuration"
+    local _issues_file="$SCRIPT_DIR/.configure_issues"
+    if [[ -s "$_issues_file" ]]; then
+        echo ""
+        ui_log warn "Re-run configuration completed with warnings — see summary above."
+        rm -f "$_issues_file"
+    else
+        _show_action_result "$rc" "Re-run configuration"
+    fi
     pause_for_menu
 }
 action_repatch() {
-    local rc=0
-    "$SCRIPT_DIR/scripts/nvidia-repatch.sh" || rc=$?
-    _show_action_result "$rc" "Repatch NVIDIA"
+    _run_setup_return 0 "Reapply NVIDIA Unlock patch" --nvidia-unlock-repatch
+}
+action_update_nvidia_driver() {
+    _run_setup_return 0 "Update NVIDIA Unlock driver" --nvidia-unlock-update
+}
+
+action_service_stop() {
+    echo ""
+    local svcs=()
+    mapfile -t svcs < <(docker compose ps --filter status=running --format '{{.Name}}' 2>/dev/null || true)
+    if (( ${#svcs[@]} == 0 )); then
+        ui_log info "No services are running."
+        pause_for_menu; return 0
+    fi
+    svcs+=("Back")
+    local choice rc=0
+    choice=$(ui_choose "Stop which service?" "${svcs[@]}")
+    [[ "$choice" == "Back"* ]] && return 0
+    docker compose stop "$choice" 2>&1 || rc=$?
+    _show_action_result "$rc" "Stop $choice"
+    pause_for_menu
+}
+
+action_service_start() {
+    echo ""
+    local svcs=()
+    mapfile -t svcs < <(docker compose ps --filter status=exited --format '{{.Name}}' 2>/dev/null || true)
+    if (( ${#svcs[@]} == 0 )); then
+        ui_log info "No stopped services."
+        pause_for_menu; return 0
+    fi
+    svcs+=("Back")
+    local choice rc=0
+    choice=$(ui_choose "Start which service?" "${svcs[@]}")
+    [[ "$choice" == "Back"* ]] && return 0
+    if ! storage_guard_before_start; then
+        pause_for_menu
+        return 0
+    fi
+    docker compose start "$choice" 2>&1 || rc=$?
+    _show_action_result "$rc" "Start $choice"
     pause_for_menu
 }
 
@@ -562,33 +837,56 @@ _feature_state() { [[ "${1:-false}" == "true" ]] && echo "ON" || echo "OFF"; }
 # always-present top-level "Manage hardware transcoding (GPU)" item is its single
 # home for both first-time add and later change, so there is no second path.
 submenu_features() {
-    clear
-    render_banner
-    local options=()
+    while true; do
+        clear
+        local _remote
+        case "${REMOTE_WEB_STATE:-}" in
+            ready)   _remote="ready (${DOMAIN:-configured})" ;;
+            skipped) _remote="LAN only (skipped)" ;;
+            *)       _remote="LAN only" ;;
+        esac
+        ui_box "MediaStack - Features & Settings" "$(ui_kv 'Remote access' "$_remote")"
+        echo ""
+        local options=()
 
-    if recovery_menu_remote_available; then
-        options+=("Add remote access (HTTPS, domain, WireGuard)")
-    fi
-    options+=("Subtitles (Bazarr): $(_feature_state "${BAZARR_ENABLED:-false}")")
-    options+=("File sharing (SMB): $(_feature_state "${SMB_ENABLED:-false}")")
-    options+=("Search indexers: $(_feature_state "${PUBLIC_INDEXERS_ENABLED:-false}")")
-    options+=("Change quality profile (resolution & size)")
-    options+=("Adjust bandwidth limits (qBittorrent)")
-    options+=("Back")
+        local _qp_name _dl _ul
+        _qp_name=$(CONFIG_FILE="$SCRIPT_DIR/config.yml" cfg_field "quality_profile.name" 2>/dev/null)
+        _dl="${QBT_DL_LIMIT:-0}"; _ul="${QBT_UL_LIMIT:-0}"
+        [[ "$_dl" == "0" ]] && _dl="unlimited" || _dl="${_dl} MB/s"
+        [[ "$_ul" == "0" ]] && _ul="unlimited" || _ul="${_ul} MB/s"
 
-    echo ""
-    local choice
-    choice=$(ui_choose "Manage features & settings:" "${options[@]}")
+        if recovery_menu_remote_available; then
+            options+=("Add remote access (HTTPS, domain, WireGuard)")
+        fi
+        options+=("Subtitles (Bazarr): $(_feature_state "${BAZARR_ENABLED:-false}")")
+        options+=("File sharing (SMB): $(_feature_state "${SMB_ENABLED:-false}")")
+        options+=("Search indexers: $(_feature_state "${PUBLIC_INDEXERS_ENABLED:-false}")")
+        options+=("Firewall (UFW): $(_feature_state "${UFW_ENABLED:-true}")")
+        options+=("System hardening: $(_feature_state "${HARDENING_ENABLED:-true}")")
+        if storage_is_nas; then
+            options+=("NAS storage watchdog: $(_feature_state "${STORAGE_WATCHDOG:-true}")")
+        fi
+        options+=("Change quality profile: ${_qp_name:-unknown}")
+        options+=("Adjust bandwidth: DL ${_dl} / UL ${_ul}")
+        options+=("Back")
 
-    case "$choice" in
-        "Add remote access"*)        action_remote ;;
-        "Subtitles (Bazarr):"*)      action_toggle_bazarr ;;
-        "File sharing (SMB):"*)      action_toggle_smb ;;
-        "Search indexers:"*)         action_toggle_indexers ;;
-        "Change quality profile"*)   action_change_quality ;;
-        "Adjust bandwidth limits"*)  action_adjust_bandwidth ;;
-        *)                           return 0 ;;
-    esac
+        echo ""
+        local choice
+        choice=$(ui_choose "Manage features & settings:" "${options[@]}")
+
+        case "$choice" in
+            "Add remote access"*)        action_remote ;;
+            "Subtitles (Bazarr):"*)      action_toggle_bazarr ;;
+            "File sharing (SMB):"*)      action_toggle_smb ;;
+            "Search indexers:"*)         action_toggle_indexers ;;
+            "Firewall (UFW):"*)          action_toggle_ufw ;;
+            "System hardening:"*)        action_toggle_hardening ;;
+            "NAS storage watchdog:"*)    action_toggle_watchdog ;;
+            "Change quality profile"*)   action_change_quality ;;
+            "Adjust bandwidth"*)         action_adjust_bandwidth ;;
+            *)                           return 0 ;;
+        esac
+    done
 }
 
 # --- Feature toggles --------------------------------------------------------
@@ -670,6 +968,113 @@ action_toggle_smb() {
     pause_for_menu
 }
 
+action_toggle_watchdog() {
+    echo ""
+    local rc=0
+    if [[ "${STORAGE_WATCHDOG:-true}" == "true" ]]; then
+        ui_confirm "Turn OFF the NAS storage watchdog? Data services will no longer be protected if the NAS drops." no || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var STORAGE_WATCHDOG false
+        _reload_env
+        ui_log info "Stopping the NAS storage watchdog (uses sudo)..."
+        storage_pause_watchdog_for_install || rc=$?
+        _show_action_result "$rc" "Disable NAS storage watchdog"
+    else
+        ui_confirm "Turn ON the NAS storage watchdog? Recommended - it protects data services if the NAS disconnects." yes || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var STORAGE_WATCHDOG true
+        _reload_env
+        ui_log info "Installing the NAS storage watchdog (uses sudo)..."
+        storage_install_watchdog || rc=$?
+        _show_action_result "$rc" "Enable NAS storage watchdog"
+    fi
+    pause_for_menu
+}
+
+action_toggle_ufw() {
+    echo ""
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/scripts/setup/hardening.sh"
+    local rc=0
+    if [[ "${UFW_ENABLED:-true}" == "true" ]]; then
+        ui_confirm "Turn OFF the UFW firewall? Rules you added yourself are kept." no || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var UFW_ENABLED false
+        _reload_env
+        ui_log info "Removing MediaStack firewall rules (uses sudo)..."
+        if _uninstall_ufw; then
+            # Reset the ownership latches so a later re-enable reconfigures
+            # cleanly — setup_ufw early-returns if UFW_DEFAULTS_APPLIED is still
+            # true with non-'deny allow' defaults after we restored the baseline.
+            _ms_state_set UFW_DEFAULTS_APPLIED false
+            _ms_state_set UFW_ENABLED_BY_MEDIASTACK false
+            _ms_state_set UFW_RULE_COUNT 0
+            if sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+                ui_log info "MediaStack's firewall rules were removed."
+                ui_log warn "UFW itself is left ENABLED because it carries rules/defaults you"
+                ui_log warn "added yourself (or it was already running before MediaStack)."
+                ui_log warn "Run 'sudo ufw disable' if you want the firewall fully off."
+            fi
+        else
+            rc=1
+        fi
+        _show_action_result "$rc" "Disable UFW firewall"
+    else
+        if ! _docker_reachable; then
+            ui_log warn "Docker isn't reachable - start the stack first (the firewall restricts Docker's published ports)."
+            pause_for_menu; return 0
+        fi
+        if ! validate_install_state; then
+            ui_log warn "No valid install ledger found - run a full install/repair before enabling the firewall."
+            pause_for_menu; return 0
+        fi
+        ui_confirm "Turn ON the UFW firewall (default-deny inbound; LAN, SSH and web stay open)?" yes || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var UFW_ENABLED true
+        _reload_env
+        ui_log info "Configuring the UFW firewall (uses sudo)..."
+        setup_ufw || rc=$?
+        # Reopen the configurable service ports only when remote access is set up
+        # (a real domain); LAN-only installs never opened them.
+        if (( rc == 0 )) && [[ "${DOMAIN:-example.com}" != "example.com" ]]; then
+            setup_ufw_service_ports || rc=$?
+        fi
+        _show_action_result "$rc" "Enable UFW firewall"
+    fi
+    pause_for_menu
+}
+
+action_toggle_hardening() {
+    echo ""
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/scripts/setup/hardening.sh"
+    local rc=0
+    if [[ "${HARDENING_ENABLED:-true}" == "true" ]]; then
+        ui_confirm "Turn OFF system hardening (auto security updates + kernel sysctl)?" no || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var HARDENING_ENABLED false
+        _reload_env
+        ui_log info "Reverting kernel hardening and the auto-update policy (uses sudo)..."
+        _uninstall_sysctl || rc=$?
+        _uninstall_apt || rc=$?
+        _show_action_result "$rc" "Disable system hardening"
+    else
+        if ! validate_install_state; then
+            ui_log warn "No valid install ledger found - run a full install/repair before enabling hardening."
+            pause_for_menu; return 0
+        fi
+        ui_confirm "Turn ON system hardening (automatic security updates + kernel network hardening)?" yes || {
+            ui_log info "No change."; pause_for_menu; return 0; }
+        _set_env_var HARDENING_ENABLED true
+        _reload_env
+        ui_log info "Applying system hardening (uses sudo)..."
+        setup_unattended_upgrades || rc=$?
+        setup_sysctl_hardening || rc=$?
+        _show_action_result "$rc" "Enable system hardening"
+    fi
+    pause_for_menu
+}
+
 action_toggle_indexers() {
     echo ""
     if ! _docker_reachable; then
@@ -688,13 +1093,13 @@ action_toggle_indexers() {
         ui_log info "remove them from the Jackett web UI if you no longer want them."
         _show_action_result "$rc" "Disable public indexers"
     else
-        ui_log info "This sets config.yml's indexer list to the bundled example preset"
-        ui_log info "(any indexers you hand-added to config.yml will be overwritten)."
+        ui_log info "This sets your indexer list to the bundled example preset"
+        ui_log info "(any indexers you added yourself will be overwritten)."
         ui_confirm "Add the example public search indexers so Sonarr/Radarr can find releases?" yes || {
             ui_log info "No change."; pause_for_menu; return 0; }
         _set_env_var PUBLIC_INDEXERS_ENABLED true
         _reload_env
-        ui_log info "Adding public indexers to config.yml..."
+        ui_log info "Adding public indexers to your settings..."
         python3 "$wiz" --indexers-only true --config "$SCRIPT_DIR/config.yml" || rc=$?
         if (( rc == 0 )); then
             ui_log info "Wiring indexers into Jackett, Sonarr and Radarr..."
@@ -816,7 +1221,7 @@ action_change_quality() {
         # No readable profile name means we can't safely target an in-place
         # rename (QP_RENAME_FROM would match nothing, and configure.sh would
         # refuse rather than orphan). Bail with a clear message instead.
-        ui_log warn "Couldn't read the current quality profile from config.yml - can't change it safely. No change."
+        ui_log warn "Couldn't read the current quality profile from your settings - can't change it safely. No change."
         pause_for_menu; return 0
     fi
     ui_log info "Current quality profile: ${cur_name}"
@@ -858,11 +1263,14 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
     ui_confirm "Apply '${new_name}' to Sonarr and Radarr now?" no || {
         ui_log info "No change."; pause_for_menu; return 0; }
 
-    ui_log info "Rewriting quality settings in config.yml..."
-    local rc=0 rename_failed="" qp_status_file=""
-    python3 "$SCRIPT_DIR/scripts/setup/wizard_apply.py" --quality-only \
+    ui_log info "Rewriting quality settings..."
+    local rc=0 rename_failed="" qp_status_file="" _qa_out _qa_line
+    _qa_out=$(python3 "$SCRIPT_DIR/scripts/setup/wizard_apply.py" --quality-only \
         --resolution "$new_res" --size "$new_size" \
-        --config "$SCRIPT_DIR/config.yml" || rc=$?
+        --config "$SCRIPT_DIR/config.yml") || rc=$?
+    while IFS= read -r _qa_line; do
+        [[ -n "$_qa_line" ]] && ui_log ok "$_qa_line"
+    done <<< "$_qa_out"
     if (( rc == 0 )); then
         ui_log info "Re-pushing '${new_name}' to Sonarr and Radarr (renaming in place, no orphan)..."
         # QP_RENAME_FROM tells configure_quality_profile to PUT the new render
@@ -898,66 +1306,257 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
 }
 
 submenu_manage_stack() {
-    clear
-    render_banner
-    echo ""
-    local choice
-    choice=$(ui_choose "Manage stack:" \
-        "Stop all services" \
-        "Start all services" \
-        "Tail logs (live)" \
-        "Back")
+    while true; do
+        clear
+        if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null 2>&1; then
+            ui_box "MediaStack - Manage Stack" "$(ui_kv 'Stack' 'Docker not available')"
+            echo ""
+        else
+            # Box banner carries the system state; the per-service list (health,
+            # uptime, ports) sits below it — folds the old "Show service status"
+            # view into this one screen.
+            local _sys=()
+            mapfile -t _sys < <(_stack_system_lines)
+            ui_box "MediaStack - Manage Stack" "${_sys[@]}"
+            echo ""
+            _render_service_list
+            echo ""
+        fi
+        local choice
+        choice=$(ui_choose "Manage stack:" \
+            "Stop a service" \
+            "Start a service" \
+            "Stop all services" \
+            "Start all services" \
+            "Tail logs (live)" \
+            "Back")
 
-    case "$choice" in
-        "Stop all services"*)  action_stack_stop ;;
-        "Start all services"*) action_stack_start ;;
-        "Tail logs"*)          action_stack_logs ;;
-        *)                     return 0 ;;
-    esac
+        case "$choice" in
+            "Stop a service"*)     action_service_stop ;;
+            "Start a service"*)    action_service_start ;;
+            "Stop all services"*)  action_stack_stop ;;
+            "Start all services"*) action_stack_start ;;
+            "Tail logs"*)          action_stack_logs ;;
+            *)                     return 0 ;;
+        esac
+    done
+}
+
+submenu_port_forwarding() {
+    while true; do
+        clear
+        local _lan _gw
+        _lan=$(_detect_lan_ip); _gw=$(_detect_gateway)
+        ui_box "MediaStack - Test Port Forwarding" \
+            "$(ui_kv 'This server (LAN IP)' "${_lan:-unknown}")" \
+            "$(ui_kv 'Router (gateway)' "${_gw:-unknown}")" \
+            "$(ui_kv 'Torrent port' "${TORRENT_PORT:-6881}")"
+        echo ""
+        local choice
+        choice=$(ui_choose "Test port forwarding:" \
+            "Test the required MediaStack ports" \
+            "Test a specific port" \
+            "Back")
+
+        case "$choice" in
+            "Test the required"*)    action_port_check ;;
+            "Test a specific port"*) diag_test_port; pause_for_menu ;;
+            *)                       return 0 ;;
+        esac
+    done
 }
 
 submenu_diagnostics() {
-    clear
-    render_banner
-    echo ""
-    local choice
-    choice=$(ui_choose "Diagnostics:" \
-        "Check domain DNS" \
-        "Show public IP" \
-        "System readiness check" \
-        "Back")
+    while true; do
+        clear
+        local _dom _remote _pip
+        if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then _dom="$DOMAIN"; else _dom="none (LAN only)"; fi
+        case "${REMOTE_WEB_STATE:-}" in
+            ready)   _remote="ready" ;;
+            skipped) _remote="not set up (skipped)" ;;
+            *)       _remote="not set up" ;;
+        esac
+        _pip=$(_cached_public_ip)
+        ui_box "MediaStack - Diagnostics" \
+            "$(ui_kv 'Public IP' "${_pip:-not detected}")" \
+            "$(ui_kv 'Domain' "$_dom")" \
+            "$(ui_kv 'Remote access' "$_remote")"
+        echo ""
+        local choice
+        choice=$(ui_choose "Diagnostics:" \
+            "Test port forwarding" \
+            "Check domain DNS" \
+            "System readiness check" \
+            "Run speed test" \
+            "Back")
 
-    case "$choice" in
-        "Check domain DNS"*)  diag_dns_check; pause_for_menu ;;
-        "Show public IP"*)    diag_public_ip; pause_for_menu ;;
-        "System readiness"*)  diag_readiness; pause_for_menu ;;
-        *)                    return 0 ;;
+        case "$choice" in
+            "Test port forwarding"*) submenu_port_forwarding ;;
+            "Check domain DNS"*)  diag_dns_check; pause_for_menu ;;
+            "System readiness"*)  diag_readiness; pause_for_menu ;;
+            "Run speed test"*)    diag_speedtest; pause_for_menu ;;
+            *)                    return 0 ;;
+        esac
+    done
+}
+
+# Show the current GPU / transcoding state above the hardware submenu actions so
+# the user can see what's configured (vendor, driver + mode, encoder, whether the
+# NVENC session-limit patch is applied, and the overall state) before choosing.
+# Values come from the already-sourced .env plus a live nvidia-smi query.
+_hw_transcoding_info() {
+    local gpu="${JELLYFIN_GPU:-none}" mode="${NVIDIA_DRIVER_MODE:-}"
+    local state="${STAGE_3_GPU_STATE:-}" lines=()
+    case "$gpu" in
+        nvidia)
+            local name drv
+            name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+            drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+            lines+=("$(ui_kv 'GPU' "${name:-NVIDIA}")")
+            lines+=("$(ui_kv 'Driver' "${drv:-unknown}${mode:+ (${mode} mode)}")")
+            lines+=("$(ui_kv 'Encoder' 'NVENC')")
+            if [[ "$mode" == "unlock" ]]; then
+                if [[ -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched" ]]; then
+                    lines+=("$(ui_kv 'Session limit' 'stock (~3) - patch not applied')")
+                else
+                    lines+=("$(ui_kv 'Session limit' 'removed (patch applied)')")
+                fi
+            fi
+            ;;
+        intel) lines+=("$(ui_kv 'GPU' 'Intel')" "$(ui_kv 'Encoder' 'QSV')") ;;
+        amd)   lines+=("$(ui_kv 'GPU' 'AMD')" "$(ui_kv 'Encoder' 'VAAPI')") ;;
+        *)     lines+=("$(ui_kv 'GPU' 'none (software transcoding)')") ;;
     esac
+    local state_label
+    case "$state" in
+        complete) state_label="active" ;;
+        pending)  state_label="pending reboot to finalize" ;;
+        fallback) state_label="software fallback (GPU not active)" ;;
+        skipped)  state_label="skipped (software)" ;;
+        *)        state_label="${state:-not configured}" ;;
+    esac
+    lines+=("$(ui_kv 'State' "$state_label")")
+    ui_box "MediaStack - Hardware Transcoding" "${lines[@]}"
 }
 
 submenu_manage_hardware() {
-    clear
-    render_banner
+    while true; do
+        clear
+        _hw_transcoding_info
+
+        local options=()
+        if stage3_pending_nvidia_reboot_same_boot; then
+            options+=("Reboot to finish hardware transcoding")
+        fi
+        options+=("Configure or change hardware transcoding")
+        if [[ "${JELLYFIN_GPU:-none}" == "nvidia" && "${NVIDIA_DRIVER_MODE:-}" == "unlock" ]]; then
+            options+=("Update NVIDIA driver + reapply Unlock patch")
+            options+=("Reapply Unlock patch only")
+        fi
+        options+=("Back")
+
+        local choice
+        choice=$(ui_choose "Manage hardware transcoding:" "${options[@]}")
+        case "$choice" in
+            "Reboot to finish hardware transcoding"*) action_transcode ;;
+            "Configure or change hardware transcoding"*) action_transcode ;;
+            "Update NVIDIA driver"*) action_update_nvidia_driver ;;
+            "Reapply Unlock patch"*) action_repatch ;;
+            *) return 0 ;;
+        esac
+    done
+}
+
+# --- Storage & data mount (NAS installs only) -------------------------------
+
+# Count NAS-dependent services (storage_data_services) currently running, so the
+# storage screen can show "N of M running" without sourcing storage-watchdog.sh
+# (its top-level guards would exit/lock on source). Prints "N of M".
+_storage_services_running() {
+    local running total=0 up=0 svc
+    running="$(docker compose ps --status running --format '{{.Name}}' 2>/dev/null)"
+    while read -r svc; do
+        [[ -n "$svc" ]] || continue
+        total=$((total + 1))
+        grep -qx "$svc" <<<"$running" && up=$((up + 1))
+    done < <(storage_data_services)
+    printf '%s of %s running' "$up" "$total"
+}
+
+# Read-only storage/data-mount status box, shown above submenu_storage. Mirrors
+# _hw_transcoding_info: every field comes from the storage_* getters already
+# sourced from scripts/setup/storage.sh (line 63). NAS-only surface.
+_storage_info() {
+    local lines=() src fstype dataline free data watch wd_unit='mediastack-storage-watchdog.service'
+    src="$(storage_expected_source)"
+    fstype="$(storage_expected_fstype)"
+    lines+=("$(ui_kv 'Storage' 'Network storage (NAS)')")
+    lines+=("$(ui_kv 'NAS source' "${src:-unknown}")")
+
+    local status
+    if storage_mount_matches; then
+        if storage_sentinel_ok; then
+            status="$fstype  (mounted, healthy)"
+        else
+            status="$fstype  (mounted, verifying…)"
+        fi
+    elif storage_mountpoint_has_mount; then
+        status="WRONG: $(storage_findmnt_source) ($(storage_findmnt_fstype)) — expected $fstype"
+    else
+        status="not mounted"
+    fi
+    lines+=("$(ui_kv 'Filesystem' "$status")")
+
+    data="${DATA_DIR:-/data}"
+    free=$(df -h --output=avail "$data" 2>/dev/null | tail -1 | tr -d ' ')
+    dataline="$data"
+    [[ -n "$free" ]] && dataline+=" — ${free} free"
+    lines+=("$(ui_kv 'Data' "$dataline")")
+
+    if ! storage_watchdog_enabled; then
+        watch="disabled"
+    elif systemctl is-active --quiet "$wd_unit" 2>/dev/null; then
+        if [[ -s "$SCRIPT_DIR/config/state/storage-watchdog-stopped" ]]; then
+            watch="running (services paused — NAS down since $(<"$SCRIPT_DIR/config/state/storage-watchdog-stopped"))"
+        else
+            watch="running"
+        fi
+    else
+        watch="stopped"
+    fi
+    lines+=("$(ui_kv 'Watchdog' "$watch")")
+    lines+=("$(ui_kv 'Services' "$(_storage_services_running)")")
+
+    ui_box "MediaStack - Storage & Data Mount" "${lines[@]}"
+}
+
+# Re-verify the NAS mount + sentinel on demand. findmnt is queried live on every
+# render, so a just-fixed mount shows immediately when the box redraws; this gives
+# the user an explicit verdict rather than making them read the box.
+action_recheck_nas() {
     echo ""
-
-    local options=()
-    if stage3_pending_nvidia_reboot_same_boot; then
-        options+=("Reboot to finish hardware transcoding")
+    echo "  Checking NAS storage…"
+    if storage_nas_ok; then
+        ui_log ok "NAS is mounted and verified."
+    else
+        ui_log warn "NAS is not currently mounted/verified. The watchdog keeps retrying — check the NAS is powered on and reachable on the network."
     fi
-    options+=("Configure or change hardware transcoding")
-    if [[ "${NVIDIA_DRIVER_MODE:-}" == "unlock" ]]; then
-        options+=("Repatch NVIDIA driver (Unlock mode)")
-    fi
-    options+=("Back")
+    pause_for_menu
+}
 
-    local choice
-    choice=$(ui_choose "Manage hardware transcoding:" "${options[@]}")
-    case "$choice" in
-        "Reboot to finish hardware transcoding"*) action_transcode ;;
-        "Configure or change hardware transcoding"*) action_transcode ;;
-        "Repatch NVIDIA"*) action_repatch ;;
-        *) return 0 ;;
-    esac
+submenu_storage() {
+    while true; do
+        clear
+        _storage_info
+
+        local options=("Re-check NAS now" "Back")
+        local choice
+        choice=$(ui_choose "Storage & data mount:" "${options[@]}")
+        case "$choice" in
+            "Re-check NAS now"*) action_recheck_nas ;;
+            *) return 0 ;;
+        esac
+    done
 }
 
 # --- Manage updates (per-service image policy + channel; ADR-30) ------------
@@ -1283,42 +1882,57 @@ _menu_switch_channel() {
 }
 
 submenu_manage_updates() {
+    # Banner first, then run the registry scan under it (the scan takes a few
+    # seconds; showing the banner first tells the user where they are).
     clear
-    render_banner
+    ui_box "MediaStack - Manage Updates" "$(ui_kv 'Update channel' "${IMAGE_CHANNEL:-stable}")"
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - cannot check for image updates."
         pause_for_menu
         return 0
     fi
-    ui_log info "Checking each image against its registry (a few seconds)..."
-    local tsv
-    tsv=$(_update_status_scan)
+    local tsv _scan_tmp
+    _scan_tmp=$(mktemp)
+    _scan_to_file() { _update_status_scan > "$_scan_tmp"; }
+    # ui_spin (background, killable): _render_spin runs the scan as a background
+    # job that receives a real SIGINT from the process group on Ctrl-C, then
+    # re-raises it so the launcher exits cleanly. (Our _render_spin no longer uses
+    # `gum spin`, so it can wrap this shell function and isn't hit by gum's
+    # spin/Ctrl-C bugs.)
+    ui_spin "Checking each image against its registry..." _scan_to_file
+    unset -f _scan_to_file
+    tsv=$(cat "$_scan_tmp"); rm -f "$_scan_tmp"
     if [[ -z "$tsv" ]]; then
         ui_log error "Could not read update status (is python3 + python3-yaml installed?)."
         pause_for_menu
         return 0
     fi
-    echo ""
-    _render_update_table "$tsv"
-    echo ""
-    local choice
-    choice=$(ui_choose "Manage updates:" \
-        "Update a service" \
-        "Update all upstream-tag services" \
-        "Pull tested Stable updates (recommended)" \
-        "Reset a service to the default channel" \
-        "Switch default channel (Stable / Upstream tags)" \
-        "Back")
 
-    case "$choice" in
-        "Update a service"*)          _menu_update_selected "$tsv" ;;
-        "Update all upstream-tag"*)   _menu_update_all "$tsv" ;;
-        "Pull tested Stable"*)        action_update ;;
-        "Reset a service to the default channel"*) _menu_reset_default "$tsv" ;;
-        "Switch default channel"*)    _menu_switch_channel ;;
-        *)                            return 0 ;;
-    esac
+    while true; do
+        clear
+        ui_box "MediaStack - Manage Updates" "$(ui_kv 'Update channel' "${IMAGE_CHANNEL:-stable}")"
+        echo ""
+        _render_update_table "$tsv"
+        echo ""
+        local choice
+        choice=$(ui_choose "Manage updates:" \
+            "Update a service" \
+            "Update all upstream-tag services" \
+            "Pull tested Stable updates (recommended)" \
+            "Reset a service to the default channel" \
+            "Switch default channel (Stable / Upstream tags)" \
+            "Back")
+
+        case "$choice" in
+            "Update a service"*)          _menu_update_selected "$tsv" ;;
+            "Update all upstream-tag"*)   _menu_update_all "$tsv" ;;
+            "Pull tested Stable"*)        action_update ;;
+            "Reset a service to the default channel"*) _menu_reset_default "$tsv" ;;
+            "Switch default channel"*)    _menu_switch_channel ;;
+            *)                            return 0 ;;
+        esac
+    done
 }
 
 # =============================================================================
@@ -1327,69 +1941,80 @@ submenu_manage_updates() {
 
 menu_pre() {
     echo ""
-    local choice
-    choice=$(ui_choose "What would you like to do?" \
-        "Install MediaStack" \
-        "System readiness check (disk, RAM, internet, GPU)" \
-        "Test port forwarding (router config)" \
-        "Check domain DNS (verify subdomain A-records)" \
-        "Show my public IP" \
-        "Quit")
+    local choice options=()
+    options+=(
+        "Install MediaStack"
+        "System readiness check (disk, RAM, internet, GPU)"
+        "Test port forwarding (router config)"
+        "Check domain DNS (verify subdomain A-records)"
+    )
+    command -v gum &>/dev/null || options+=("Get enhanced menus (install GUM)")
+    # Offer reset options when a partial install exists (.env present but Stage 1
+    # not complete) — the user landed here because of a broken/interrupted setup.
+    local _has_partial=false
+    [[ -s "$SCRIPT_DIR/.env" ]] && _has_partial=true
+    if $_has_partial; then
+        options+=("Uninstall MediaStack")
+    fi
+    options+=("Quit")
+    choice=$(ui_choose "What would you like to do?" "${options[@]}")
 
     case "$choice" in
-        "Install MediaStack"*)         action_install ;;
-        "System readiness check"*)     diag_readiness; pause_for_menu ;;
-        "Test port forwarding"*)       action_port_check ;;
-        "Check domain DNS"*)           diag_dns_check; pause_for_menu ;;
-        "Show my public IP"*)          diag_public_ip; pause_for_menu ;;
-        "Quit"*)                       echo; echo "  Goodbye."; exit 0 ;;
-        *)                             ;;  # unrecognized choice - re-render menu
+        "Install MediaStack"*)          action_install ;;
+        "System readiness check"*)      diag_readiness; pause_for_menu ;;
+        "Test port forwarding"*)        action_port_check ;;
+        "Check domain DNS"*)            diag_dns_check; pause_for_menu ;;
+        "Get enhanced menus"*)          action_install_gum ;;
+        "Uninstall MediaStack"*)        action_uninstall ;;
+        "Quit"*)                        echo; echo "  Goodbye."; exit 0 ;;
+        *)                              ;;  # unrecognized choice - re-render menu
     esac
 }
 
 menu_post() {
-    # The port-check parenthetical only honestly applies once a real domain
-    # is configured — pre-Stage-2 the script can only probe TCP 6881.
-    local pc_label="Test port forwarding (router config)"
-    if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then
-        pc_label="Test port forwarding (DNS, ports, HTTP)"
-    fi
     # Options are grouped by how often a day-2 user reaches for them, most
     # frequent first (reorder only — no visible band headers; a header as a
     # ui_choose item would consume a selection index and shift the position-based
     # PTY drivers). "View access info" MUST stay at index 1 (PTY + unit asserts).
+    # Port-forwarding tests live under Diagnostics (defaults + manual port).
     local options=(
         # Band 1 — at-a-glance / check-in
         "View access info (URLs, logins, remote, ports)"
-        "Show service status"
-        "$pc_label"
+    )
+    # NAS-gated: local installs have no mount/watchdog to inspect (data dir + free
+    # space already show in the Manage stack box). Gating also keeps the local-mode
+    # PTY scenarios' numeric selections stable.
+    if storage_is_nas; then
+        options+=("View storage & data mount (NAS source, mount health, watchdog)")
+    fi
+    options+=(
         # Band 2 — routine management
-        "Manage stack (stop, start, logs)"
+        "Manage stack (status, stop, start, logs)"
         "Manage updates (status, per-service, channel)"
         "Features & settings (quality, bandwidth, subtitles, sharing, indexers)"
         "Manage hardware transcoding (GPU)"
         # Band 3 — occasional / setup / destructive
-        "Re-run configuration to add new services"
-        "Diagnostics (public IP, DNS, readiness)"
-        "Wipe and reinstall (destructive)"
+        # "Re-run configuration to add new services"  # hidden: noisy on re-run, use Features & settings instead
+        "Diagnostics (ports, public IP, DNS, readiness)"
+        "Uninstall MediaStack"
         "Quit"
     )
 
+    _warn_gpu_runtime_fallback
     echo ""
     local choice
     choice=$(ui_choose "What would you like to do?" "${options[@]}")
 
     case "$choice" in
         "View access info"*)      action_access_info; pause_for_menu ;;
-        "Show service status"*)   diag_status; pause_for_menu ;;
-        "Test port forwarding"*)  action_port_check ;;
+        "View storage"*)          submenu_storage ;;
         "Manage updates"*)        submenu_manage_updates ;;
         "Manage hardware transcoding"*) submenu_manage_hardware ;;
-        "Re-run configuration"*)  action_configure ;;
+        # "Re-run configuration"*)  action_configure ;;
         "Diagnostics"*)           submenu_diagnostics ;;
         "Features"*)              submenu_features ;;
         "Manage stack"*)          submenu_manage_stack ;;
-        "Wipe and reinstall"*)    action_wipe ;;
+        "Uninstall"*)             action_uninstall ;;
         "Quit"*)                  echo; echo "  Goodbye."; exit 0 ;;
         *)                        ;;  # unrecognized choice - re-render menu
     esac

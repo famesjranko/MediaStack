@@ -1,8 +1,15 @@
 # =============================================================================
 # MediaStack Setup -- Recovery route helpers
 # =============================================================================
-# Sourced by setup.sh. Depends on $SCRIPT_DIR and setup modules being loaded by
-# the caller.
+# Sourced by setup.sh and the mediastack launcher. Depends on $SCRIPT_DIR and
+# setup modules being loaded by the caller.
+
+# Recovery helpers call stage3_* functions directly. setup.sh gets them via
+# wizard.sh, but the launcher sources recovery.sh standalone — pull in stage3.sh
+# here so both callers have them. Guarded: safe to re-source (functions only).
+if ! type stage3_pending_nvidia_reboot_same_boot >/dev/null 2>&1; then
+    source "$SCRIPT_DIR/scripts/setup/stages/stage3.sh"
+fi
 
 RECOVERY_MENU_ACTION="${RECOVERY_MENU_ACTION:-}"
 
@@ -174,7 +181,7 @@ run_remote_recovery() {
             stage3_prompt_pending_nvidia_reboot
         fi
     elif stage3_pending_nvidia_reboot_same_boot; then
-        log_warn "NVIDIA hardware transcoding is prepared and still needs a reboot. Run ./setup.sh --transcoding when you are ready to finish it."
+        log_warn "NVIDIA hardware transcoding is prepared and still needs a reboot. Choose Manage hardware transcoding (GPU) from the menu when you are ready to finish it."
     fi
     return "$rc"
 }
@@ -216,9 +223,100 @@ run_transcoding_recovery() {
         # Global consumed by stage3.sh reboot gating, not within recovery.sh.
         # shellcheck disable=SC2034
         NEEDS_REBOOT=true
-        stage3_prompt_nvidia_reboot
+        # A driver setup is prepared and waiting for a reboot. Let the user
+        # finish it OR change their mind (e.g. switch Unlock .run -> Standard apt)
+        # before rebooting, instead of being locked into the pending choice.
+        local _pending_action
+        _pending_action=$(ui_choose "NVIDIA driver setup is prepared and waiting for a reboot. What would you like to do?" \
+            "Finish setup (reboot now or later)" \
+            "Change driver choice (discard and start over)")
+        case "$_pending_action" in
+            "Change driver"*)
+                _stage3_discard_pending_setup
+                STAGE3_SKIP_OFFER=true run_stage3
+                return 0
+                ;;
+            *)
+                stage3_prompt_nvidia_reboot
+                return 0
+                ;;
+        esac
+    fi
+
+    # The user already chose to configure transcoding (launcher menu / CLI flag),
+    # so skip run_stage3's redundant "Configure now?" offer.
+    STAGE3_SKIP_OFFER=true run_stage3
+}
+
+_nvidia_unlock_maintenance_guard() {
+    require_stage1_complete "${1:-}" || return 1
+    if [[ "${JELLYFIN_GPU:-none}" != "nvidia" || "${NVIDIA_DRIVER_MODE:-}" != "unlock" ]]; then
+        log_warn "This action is only available for an active NVIDIA Unlock configuration."
+        return 1
+    fi
+    if stage3_marker_exists; then
+        log_warn "Finish the pending NVIDIA reboot/finalization before running this action."
+        return 1
+    fi
+    if [[ "$(nvidia_driver_source)" != "foreign" ]] || ! nvidia_driver_healthy; then
+        log_warn "The loaded Unlock driver is missing, unhealthy, or now owned by Debian packages. No changes were made."
+        return 1
+    fi
+}
+
+run_nvidia_unlock_maintenance() {
+    local action="$1"
+    case "$action" in
+        update|repatch) ;;
+        *) return 2 ;;
+    esac
+    _nvidia_unlock_maintenance_guard "--nvidia-unlock-${action}" || return 1
+    prompt_sudo_cache
+
+    if [[ "$action" == "repatch" ]]; then
+        apply_nvidia_patch
+        return $?
+    fi
+
+    check_internet_reachability
+    if ! ui_confirm "Update the NVIDIA driver and prepare Unlock patch finalization after reboot?" "no"; then
+        log_skip "NVIDIA driver update cancelled."
         return 0
     fi
 
-    run_stage3
+    local _nvidia_tmp="$SCRIPT_DIR/.nvidia-tmp/update"
+    local _driver_ver="" _run_file="" jellyfin_running=false
+    rm -rf "$_nvidia_tmp"
+    mkdir -p "$_nvidia_tmp" || return 1
+    if ! _resolve_nvidia_driver; then
+        rm -rf "$_nvidia_tmp"
+        return 1
+    fi
+
+    if (cd "$SCRIPT_DIR" && docker compose ps --status running --services 2>/dev/null | grep -qx jellyfin); then
+        jellyfin_running=true
+        (cd "$SCRIPT_DIR" && docker compose stop jellyfin) || { rm -rf "$_nvidia_tmp"; return 1; }
+    fi
+
+    if ! _nvidia_unload_loaded_modules; then
+        $jellyfin_running && (cd "$SCRIPT_DIR" && docker compose start jellyfin >/dev/null 2>&1 || true)
+        rm -rf "$_nvidia_tmp"
+        log_error "NVIDIA modules are still in use. Driver update aborted without installing anything."
+        return 1
+    fi
+
+    if ! _install_nvidia_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp" \
+        || ! _configure_nvidia_container_toolkit; then
+        $jellyfin_running && (cd "$SCRIPT_DIR" && docker compose start jellyfin >/dev/null 2>&1 || true)
+        rm -rf "$_nvidia_tmp"
+        log_error "NVIDIA driver update did not complete."
+        return 1
+    fi
+
+    rm -rf "$_nvidia_tmp"
+    $jellyfin_running && (cd "$SCRIPT_DIR" && docker compose start jellyfin >/dev/null 2>&1 || true)
+    # Read by the shared Stage 3 reboot gate after this helper returns.
+    # shellcheck disable=SC2034
+    NEEDS_REBOOT=true
+    _stage3_nvidia_queue_reboot unlock run-update "$_driver_ver"
 }

@@ -91,7 +91,7 @@ Generator: /project-stack (audit of existing codebase)
 ## Host Dependencies (installed by setup.sh --full)
 - docker-ce, docker-compose-plugin
 - python3, python3-yaml (config.yml parsing)
-- curl (API calls + healthchecks)
+- curl (API calls + healthchecks + the wizard's primary connection speed test via Cloudflare)
 - envsubst (gettext-base — legacy shell-template compatibility; variable JSON uses Python/json_body)
 - openssl (password/hash generation)
 - git (nvidia-patch reviewed commit fetch/checkout)
@@ -100,6 +100,7 @@ Generator: /project-stack (audit of existing codebase)
 - smartmontools (smartctl — disk health monitoring)
 - ufw (firewall — default deny, allow service ports, LAN-only management)
 - unattended-upgrades (automatic security-only patches)
+- librespeed-cli (optional fallback for the wizard connection speed test; primary path is curl+Cloudflare)
 - samba (optional SMB file share for LAN access)
 - nfs-common (optional, installed only when managed NAS/NFS storage is selected)
 - Optional: nvidia-driver + nvidia-container-toolkit, or vaapi drivers (GPU transcoding)
@@ -121,6 +122,10 @@ Generator: /project-stack (audit of existing codebase)
 # Retry hardware transcoding after skipped/fixed/new GPU
 ./setup.sh --transcoding
 
+# Guarded NVIDIA Unlock maintenance (normally launched from ./mediastack)
+./setup.sh --nvidia-unlock-update
+./setup.sh --nvidia-unlock-repatch
+
 # Re-configure after editing config.yml
 ./scripts/configure.sh
 
@@ -132,6 +137,7 @@ Generator: /project-stack (audit of existing codebase)
 
 # Day-2 per-service updates: ./mediastack → "Manage updates" (status, per-service, channel; ADR-30)
 # Day-2 change quality profile: ./mediastack → "Features & settings" → "Change quality profile" (resolution × size, renamed in place, no orphan)
+# Day-2 uninstall: ./mediastack → "Uninstall MediaStack" (transactional teardown; removes only recorded MediaStack host changes; data/ and config/ preserved)
 # Per-service update-availability scan (table / TSV):
 python3 scripts/image-drift.py --status
 python3 scripts/image-drift.py --status-tsv

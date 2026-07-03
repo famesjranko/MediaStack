@@ -25,7 +25,7 @@ validate_yaml() {
 
 # ─── valid config.yml parses ─────────────────────────────────────────────────
 
-validate_yaml "$REPO_ROOT/config.yml"
+validate_yaml "$REPO_ROOT/config/examples/config.yml"
 assert_eq "0" "$?" "shipped config.yml parses"
 
 # ─── bad indentation ─────────────────────────────────────────────────────────
@@ -113,6 +113,13 @@ if echo "$err_output" | grep -qE 'line [0-9]'; then
 else
     fail "YAML error includes line number" "output: $err_output"
 fi
+
+# The configure result wrapper must not turn a service failure into success.
+eval "$(sed -n '/^_record_configure_result()/,/^}/p; /^_run_configure()/,/^}/p' "$REPO_ROOT/scripts/configure.sh")"
+_CONFIGURE_OK=(); _CONFIGURE_WARN=(); _LOG_COUNTS_WARN=0; _LOG_COUNTS_ERROR=0
+configure_failure() { return 7; }
+_run_configure "Fixture|fixture" configure_failure
+assert_eq "7" "$?" "configure result wrapper preserves the service return code"
 
 # ─── summary ─────────────────────────────────────────────────────────────────
 

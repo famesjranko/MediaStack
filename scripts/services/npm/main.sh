@@ -397,9 +397,12 @@ print(json.dumps(h))
     # docker image pull. NPM image does not ship the sqlite3 CLI either, so
     # this is the most portable path. NPM's database.sqlite is owned by root
     # (the container writes as root), so we need sudo to open it for write.
-    local _ids_csv
+    local _ids_csv _sql_err _sql_rc=0
     _ids_csv=$(IFS=,; echo "${_affected[*]}")
-    if ! $_sudo python3 -c '
+    # Capture stderr so a failure's SystemExit reason lands in the log_error
+    # below instead of leaking to the terminal; discard stdout. On success
+    # stderr is empty.
+    _sql_err=$($_sudo python3 -c '
 import sqlite3, sys
 
 db_path = sys.argv[1]
@@ -437,13 +440,11 @@ try:
         raise SystemExit(f"post-update verification failed: {bad}")
     if len(rows) != len(ids):
         raise SystemExit(f"expected {len(ids)} rows after update, got {len(rows)}")
-
-    print(f"rows_verified={len(rows)}", file=sys.stderr)
 finally:
     con.close()
-' "$_db" "$_ids_csv"
-    then
-        log_error "sqlite patch via python3 failed (need sudo for $_db)"
+' "$_db" "$_ids_csv" 2>&1 >/dev/null) || _sql_rc=$?
+    if (( _sql_rc != 0 )); then
+        log_error "sqlite patch via python3 failed (need sudo for $_db)${_sql_err:+: ${_sql_err}}"
         (cd "$SCRIPT_DIR" && docker compose start npm) >/dev/null 2>&1
         return 1
     fi
@@ -516,7 +517,7 @@ if stale:
 ' 2>/dev/null)
 
     if [[ -n "$_stale_hosts" ]]; then
-        log_warn "NPM has proxy hosts for a different domain. MediaStack will warn only and will not delete or rewrite them automatically. Stale managed hosts: $_stale_hosts"
+        log_warn "NPM has proxy hosts for a different domain (kept, not auto-changed). Stale: $_stale_hosts"
     fi
     return 0
 }
@@ -1213,12 +1214,14 @@ for host in json.load(sys.stdin):
             current_findtime=$(sed -n '/\[npm-ratelimit\]/,/^\[/{s/^findtime = //p}' "$jail_file")
             current_jail_enabled=$(sed -n '/\[npm-ratelimit\]/,/^\[/{s/^enabled = //p}' "$jail_file")
             if [[ "$current_jail_enabled" != "true" ]]; then
-                log_warn "Fail2ban: npm-ratelimit jail is disabled (enabled = ${current_jail_enabled:-unset}) — rate limiting is active but bans will not fire; set enabled = true in $jail_file"
+                log_warn "Fail2ban: npm-ratelimit jail is disabled (enabled = ${current_jail_enabled:-unset})."
+                log_warn "Rate limiting is active but bans won't fire; set enabled = true in $jail_file"
             fi
             if [[ "$current_maxretry" == "$rl_maxretry" && "$current_findtime" == "$rl_findtime" ]]; then
                 log_skip "Fail2ban: npm-ratelimit jail matches config.yml (maxretry=$rl_maxretry, findtime=${rl_findtime}s)"
             else
-                log_warn "Fail2ban: npm-ratelimit jail values differ from config.yml (jail: maxretry=$current_maxretry findtime=$current_findtime, config: maxretry=$rl_maxretry findtime=$rl_findtime)"
+                log_warn "Fail2ban: npm-ratelimit jail values differ from config.yml."
+                log_warn "jail: maxretry=$current_maxretry findtime=$current_findtime; config: maxretry=$rl_maxretry findtime=$rl_findtime"
             fi
         else
             log_warn "Fail2ban: npm-ratelimit jail not found in $jail_file"

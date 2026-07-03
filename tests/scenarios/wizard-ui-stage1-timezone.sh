@@ -26,17 +26,24 @@ BASH"
         stage1_admin_username ENTER \
         stage1_admin_email owner@stage1-tz.test \
         stage1_admin_password WizardAdminPw123 \
-        stage1_admin_password_confirm WizardAdminPw123 \
+        stage1_admin_confirm 1 \
         stage1_storage_location 1 \
         stage1_data_directory /tmp/ms-wizard-tz \
+        stage1_storage_confirm 1 \
         stage1_bazarr ENTER \
+        stage1_subtitle_confirm 1 \
         stage1_smb ENTER \
+        stage1_smb_confirm 1 \
         stage1_quality_resolution 1 stage1_quality_size 1 \
+        stage1_quality_confirm 1 \
         stage1_indexers ENTER \
+        stage1_indexers_confirm 1 \
         stage1_image_channel 1 \
         stage1_qbt_download ENTER \
         stage1_qbt_upload ENTER \
         stage1_qbt_port ENTER \
+        stage1_qbit_confirm 1 \
+        stage1_security_ufw ENTER stage1_security_hardening ENTER \
         stage1_proceed 1
 
     wizard_stage1_run_pty "wizard-ui stage1 timezone" "$fixture" "$steps" "$plain_log" || return 1

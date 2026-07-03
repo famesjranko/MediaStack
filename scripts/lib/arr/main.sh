@@ -102,12 +102,40 @@ merged["name"] = rendered["name"]
 merged["cutoff"] = rendered["cutoff"]
 merged["upgradeAllowed"] = rendered["upgradeAllowed"]
 merged["items"] = rendered["items"]
+# Carry the reject floor so a day-2 cell switch also repairs a profile created
+# by the pre-fix renderer (minFormatScore 0, which hard-rejected soft-penalized
+# releases). Consistent with this branch already rewriting the profile in place.
+merged["minFormatScore"] = rendered["minFormatScore"]
 for it in merged.get("formatItems", []):
     it["score"] = 0
 print(json.dumps(merged))
 ' 2>/dev/null)
-                if [[ -n "$renamed_json" && "$renamed_json" != "null" ]] \
-                   && api_put "$base/qualityprofile/$old_id" "$key" "$renamed_json" >/dev/null 2>&1; then
+                # PUT the rename, then verify it actually landed: the live
+                # profile must show the new name AND every formatItems score at
+                # 0. If a transient dropped write (#171) leaves any managed
+                # score non-zero, the downstream configure_arr_format_scores
+                # sees "drift" and — by design — only warns, so the new size's
+                # scores never attach (e.g. x265 (HD) stuck at 0). Retry until
+                # the zeroing persists so the "empty -> PUT" hand-off is reliable.
+                local _rn_ok="" _rn_attempt
+                if [[ -n "$renamed_json" && "$renamed_json" != "null" ]]; then
+                    for _rn_attempt in 1 2 3; do
+                        api_put "$base/qualityprofile/$old_id" "$key" "$renamed_json" >/dev/null 2>&1 \
+                            || { sleep "$_rn_attempt"; continue; }
+                        if api_get "$base/qualityprofile/$old_id" "$key" 2>/dev/null \
+                            | PROFILE_NAME="$profile_name" python3 -c '
+import sys, json, os
+p = json.load(sys.stdin)
+ok = p.get("name") == os.environ["PROFILE_NAME"] \
+    and all(fi.get("score", 0) == 0 for fi in p.get("formatItems", []))
+sys.exit(0 if ok else 1)
+' 2>/dev/null; then
+                            _rn_ok=1; break
+                        fi
+                        sleep "$_rn_attempt"
+                    done
+                fi
+                if [[ -n "$_rn_ok" ]]; then
                     log_ok "Quality profile renamed in place: '$rename_from' -> '$profile_name' (cutoff ID: $cutoff_id; id $old_id kept, no orphan)"
                 else
                     log_warn "Failed to rename ${app_label} quality profile '$rename_from' -> '$profile_name'"
@@ -175,7 +203,7 @@ print("drift\t" + "; ".join(drift) if drift else "match")
 ' 2>/dev/null)
     case "${qp_status%%$'\t'*}" in
         match)
-            log_skip "$app_label quality profile '$profile_name' already matches config.yml"
+            log_skip "$app_label quality profile '$profile_name' already matches your settings"
             return 0
             ;;
         drift)
@@ -268,7 +296,7 @@ configure_quality_definitions() {
     done <<< "$plan"
 
     if (( updated == 0 )); then
-        log_skip "Quality definitions already match config.yml"
+        log_skip "Quality definitions already match your settings"
     else
         log_ok "Quality definitions updated ($updated tier(s)) for ${app^}"
     fi
@@ -386,7 +414,7 @@ except Exception:
 
     case "${status%%$'\t'*}" in
         match)
-            log_skip "$app_label format scores already match config.yml"
+            log_skip "$app_label format scores already match your settings"
             ;;
         empty)
             local put_body="${status#*$'\t'}"
@@ -502,6 +530,7 @@ print(json.dumps({
     }
 
     local _results_dir _pids=() _indexer_order=()
+    local _already_count=0
     _results_dir=$(mktemp -d)
 
     # Filter indexers by type: sonarr gets general+tv, radarr gets general+movies
@@ -511,6 +540,7 @@ print(json.dumps({
 
         if echo "$existing_indexers" | json_has_name "$indexer_id" -i; then
             log_skip "$indexer_id already in ${app^}"
+            (( _already_count++ )) || true
             continue
         fi
 
@@ -532,6 +562,7 @@ print(json.dumps({
 
     local -A _seen=()
     local _emitted=0 _expected=${#_indexer_order[@]} _any_alive
+    local _ok_count=0 _fail_count=0
     while (( _emitted < _expected )); do
         _any_alive=0
         for _pid in "${_pids[@]}"; do
@@ -546,9 +577,9 @@ print(json.dumps({
             local _result
             _result=$(cat "$_result_file" 2>/dev/null || echo "fail")
             case "$_result" in
-                ok:1)   log_ok "Indexer -> ${app^}: $indexer_id" ;;
-                ok:*)   log_ok "Indexer -> ${app^}: $indexer_id (attempt ${_result#ok:})" ;;
-                *)      log_warn "Indexer unavailable, skipped: $indexer_id -> ${app^}" ;;
+                ok:1)   log_ok   "Indexer -> ${app^}: $indexer_id"; (( _ok_count++ ))   || true ;;
+                ok:*)   log_ok   "Indexer -> ${app^}: $indexer_id (attempt ${_result#ok:})"; (( _ok_count++ )) || true ;;
+                *)      log_info "Indexer unavailable, skipped: $indexer_id -> ${app^}"; (( _fail_count++ )) || true ;;
             esac
             _seen[$indexer_id]=1
             (( _emitted++ )) || true
@@ -566,8 +597,15 @@ print(json.dumps({
     local indexer_id
     for indexer_id in "${_indexer_order[@]}"; do
         [[ -n "${_seen[$indexer_id]:-}" ]] && continue
-        log_warn "Indexer unavailable, skipped: $indexer_id -> ${app^}"
+        log_info "Indexer unavailable, skipped: $indexer_id -> ${app^}"
+        (( _fail_count++ )) || true
     done
+
+    # Only warn if every attempted indexer failed AND none were already present — partial
+    # failures on public trackers are normal; if indexers already exist the app is configured.
+    if (( _fail_count > 0 && _ok_count == 0 && _already_count == 0 && _expected > 0 )); then
+        log_warn "No indexers were added to ${app^} — add them manually via the ${app^} UI (Settings → Indexers)"
+    fi
 
     # Reap straggler PIDs (most are already exited).
     for _pid in "${_pids[@]}"; do wait "$_pid" 2>/dev/null; done

@@ -189,7 +189,7 @@ run_scenario() {
     local log_plain
     log_plain="$(sed -r 's/\x1b\[[0-9;]*m//g' "$log_path" 2>/dev/null || true)"
     assert_contains "$log_plain" "./setup.sh --remote" "TEST-05: log proves public --remote route was used"
-    remote_ready_idempotent_assert_not_contains "$log_plain" "Stage 1: Core LAN" "TEST-05: ready recovery does not enter full Stage 1 wizard"
+    remote_ready_idempotent_assert_not_contains "$log_plain" "MediaStack - Core Media Server" "TEST-05: ready recovery does not enter full Stage 1 wizard"
     remote_ready_idempotent_assert_not_contains "$log_plain" "Set up remote access now?" "TEST-05: ready recovery does not enter Stage 2 prompt flow"
     assert_eq "ready" "$(env_get REMOTE_WEB_STATE)" "TEST-05: REMOTE_WEB_STATE remains ready after idempotent --remote"
     assert_remote_gating_ready "$log_path"

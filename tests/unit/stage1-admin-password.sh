@@ -2,12 +2,13 @@
 # tests/unit/stage1-admin-password.sh
 #
 # Issue #95: the shared admin password must NEVER be auto-generated. Stage 1 collects
-# it with NO default (a bare Enter is rejected by validate_admin_password), validated,
-# and confirmed by re-entry. This unit pins that contract on _stage1_collect_admin:
+# it with NO default (a bare Enter is rejected by validate_admin_password), shows it
+# as typed (user preference), and accepts it via a persistent review step (not a
+# re-typed confirm). This unit pins that contract on _stage1_collect_admin:
 #   1. The password prompt is offered with an EMPTY default (no openssl-rand default,
 #      no prior-password default) and the typed value is what persists.
-#   2. The confirm must match — a mismatch re-prompts; a match accepts.
-#   3. The UI_DEMO/DEMO walk-through guard returns a valid placeholder without prompting.
+#   2. The review must be accepted — "Re-enter" re-collects; "Use these details" accepts.
+#   3. The UI_DEMO/DEMO walk-through returns a valid placeholder without a real prompt.
 
 set -uo pipefail
 
@@ -29,12 +30,14 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 PASSWORD_DEFAULT_FILE="$TMP_DIR/password-default"
 OPENSSL_CALLED_FILE="$TMP_DIR/openssl-called"
-CONFIRM_CALLS_FILE="$TMP_DIR/confirm-calls"
-DEMO_PROMPT_FILE="$TMP_DIR/demo-prompted"
+REVIEW_CALLS_FILE="$TMP_DIR/review-calls"
 
 ui_section() { :; }
 ui_log() { :; }
 log_error() { :; }
+ui_kv() { :; }
+# The review step accepts on the first pass unless a test overrides ui_choose.
+ui_choose() { printf '%s\n' "Use these details"; }
 
 # Spy: #95 forbids auto-generation. If anything reaches for `openssl rand` to seed a
 # default, record it so the assertions below can fail loudly.
@@ -47,26 +50,28 @@ openssl() {
     command openssl "$@"
 }
 
-# Admin username + email still use ui_input_validated; just echo their defaults.
+# All three admin fields now use ui_input_validated (the password visibly, by
+# preference). Capture the password prompt's default; return valid values for
+# username/email; honor UI_DEMO (return the demo default, arg 4) so the walk-through
+# never blocks. PW_RETURN lets each test pick the "typed" password.
 ui_input_validated() {
-    printf '%s\n' "${2:-}"
+    local prompt="$1" default="$2" demo="${4:-}"
+    if [[ -n "${UI_DEMO:-}" ]]; then
+        printf '%s\n' "${demo:-$default}"
+        return 0
+    fi
+    case "$prompt" in
+        Admin\ password*) printf '%s\n' "$default" > "$PASSWORD_DEFAULT_FILE"; printf '%s\n' "${PW_RETURN:-UserTyped-Pw-123456}" ;;
+        Admin\ username*) printf '%s\n' "${default:-admin}" ;;
+        *)                printf '%s\n' "owner@lan.test" ;;
+    esac
 }
 
 # =========================================================================
 # Test 1: no default is offered, the typed value persists, openssl is never used
 # =========================================================================
-# Capture the default the password prompt is offered with; return a user-typed value.
-ui_password_validated() {
-    local prompt="$1" default="$2"
-    if [[ "$prompt" == Admin\ password* ]]; then
-        printf '%s\n' "$default" > "$PASSWORD_DEFAULT_FILE"
-    fi
-    printf '%s\n' "UserTyped-Pw-123456"
-}
-# Confirm matches the typed value on the first try.
-ui_password() { printf '%s\n' "UserTyped-Pw-123456"; }
-
 rm -f "$PASSWORD_DEFAULT_FILE" "$OPENSSL_CALLED_FILE"
+PW_RETURN="UserTyped-Pw-123456"
 # Even with a VALID 12-char prior password set, it must NOT be pre-filled as the default.
 _WIZ_ADMIN_USER=""
 _WIZ_ADMIN_EMAIL=""
@@ -83,20 +88,20 @@ fi
 assert_eq "UserTyped-Pw-123456" "$_WIZ_ADMIN_PW" "Stage 1 admin password: the user-typed value is what persists"
 
 # =========================================================================
-# Test 2: confirm must match — a mismatch re-prompts, a match accepts
+# Test 2: the review must be accepted — "Re-enter" re-collects, "Use these details" accepts
 # =========================================================================
-printf '0\n' > "$CONFIRM_CALLS_FILE"
-ui_password_validated() { printf '%s\n' "Match-Me-Pw-1234"; }
-# First confirm mismatches; second confirm matches.
-ui_password() {
+printf '0\n' > "$REVIEW_CALLS_FILE"
+PW_RETURN="Match-Me-Pw-1234"
+# First review picks "Re-enter" (re-collects); second picks "Use these details".
+ui_choose() {
     local n
-    n=$(cat "$CONFIRM_CALLS_FILE")
+    n=$(cat "$REVIEW_CALLS_FILE")
     n=$((n + 1))
-    printf '%s\n' "$n" > "$CONFIRM_CALLS_FILE"
+    printf '%s\n' "$n" > "$REVIEW_CALLS_FILE"
     if [[ "$n" -eq 1 ]]; then
-        printf '%s\n' "Wrong-Confirm-99"
+        printf '%s\n' "Re-enter"
     else
-        printf '%s\n' "Match-Me-Pw-1234"
+        printf '%s\n' "Use these details"
     fi
 }
 
@@ -105,27 +110,21 @@ _WIZ_ADMIN_EMAIL=""
 _WIZ_ADMIN_PW=""
 _stage1_collect_admin
 
-assert_eq "Match-Me-Pw-1234" "$_WIZ_ADMIN_PW" "Stage 1 admin password: only a matching confirm is accepted"
-assert_eq "2" "$(cat "$CONFIRM_CALLS_FILE" 2>/dev/null)" "Stage 1 admin password: a mismatched confirm re-prompts (2 confirm reads)"
+assert_eq "Match-Me-Pw-1234" "$_WIZ_ADMIN_PW" "Stage 1 admin password: only an accepted review persists"
+assert_eq "2" "$(cat "$REVIEW_CALLS_FILE" 2>/dev/null)" "Stage 1 admin password: Re-enter re-collects then accepts (2 review reads)"
+
+# Restore accept-on-first for the demo test.
+ui_choose() { printf '%s\n' "Use these details"; }
 
 # =========================================================================
 # Test 3: UI_DEMO/DEMO walk-through uses a valid placeholder without prompting
 # =========================================================================
-rm -f "$DEMO_PROMPT_FILE"
-ui_password_validated() { printf '%s\n' "demo-violation" > "$DEMO_PROMPT_FILE"; printf '%s\n' "x"; }
-ui_password() { printf '%s\n' "demo-violation" > "$DEMO_PROMPT_FILE"; printf '%s\n' "x"; }
-
 _WIZ_ADMIN_USER=""
 _WIZ_ADMIN_EMAIL=""
 _WIZ_ADMIN_PW=""
 UI_DEMO=1 _stage1_collect_admin
 
 assert_eq "DemoAdminPassword123" "$_WIZ_ADMIN_PW" "Stage 1 admin password: UI_DEMO uses a valid placeholder"
-if [[ -f "$DEMO_PROMPT_FILE" ]]; then
-    fail "Stage 1 admin password: UI_DEMO never prompts for a password" "a password prompt fired under UI_DEMO"
-else
-    pass "Stage 1 admin password: UI_DEMO never prompts for a password"
-fi
 
 scenario_end "$CURRENT_SCENARIO"
 summary

@@ -604,7 +604,7 @@ assert_contains "$preview_out" ".env (your secrets file" "_print_destroy_preview
 assert_contains "$preview_out" "data/ - your media library" "_print_destroy_preview: PRESERVES data/ explicitly"
 assert_contains "$preview_out" "config/ - all service settings" "_print_destroy_preview: #97 — PRESERVES config/ (survives down -v)"
 assert_contains "$preview_out" "clear ./config" "_print_destroy_preview: #97 — notes how to truly start clean"
-assert_contains "$preview_out" "Pre-seeded configs tracked in git" "_print_destroy_preview: PRESERVES git-tracked configs"
+assert_contains "$preview_out" "Pre-seeded configs (fail2ban filters, jackett ServerConfig, etc.)" "_print_destroy_preview: PRESERVES pre-seeded configs"
 assert_contains "$preview_out" "This will DELETE:" "_print_destroy_preview: DELETE header present"
 assert_contains "$preview_out" "This will PRESERVE:" "_print_destroy_preview: PRESERVE header present"
 # #97: the phantom "named volumes" DELETE wording is gone — docker-compose.yml
@@ -647,7 +647,7 @@ nuke_existing_install; rc=$?
 assert_eq "0" "$rc" "nuke_existing_install: typed DESTROY → return 0"
 # docker compose --profile "*" down -v 2>/dev/null || true
 assert_contains "$_DOCKER_ARGS" "compose --profile * down -v" "nuke_existing_install: docker compose all-profile down -v invoked"
-assert_eq "compose --profile * down -v" "$_DOCKER_ARGS" "nuke_existing_install: uses all-profile wildcard, not literal profile all"
+assert_eq "compose --profile * down -v --remove-orphans" "$_DOCKER_ARGS" "nuke_existing_install: uses all-profile wildcard and removes orphans"
 assert_contains "$_RM_ARGS" "$_tmpdir/.env" "nuke_existing_install: rm -f \$SCRIPT_DIR/.env invoked"
 assert_contains "$_RM_ARGS" "$_tmpdir/.nvidia-finalize-pending" "nuke_existing_install: rm -f NVIDIA finalize marker invoked"
 assert_eq "pause docker_down" "${_NUKE_ORDER[*]}" "nuke_existing_install: pauses watchdog before compose down"

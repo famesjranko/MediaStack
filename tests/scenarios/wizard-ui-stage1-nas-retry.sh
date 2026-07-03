@@ -19,12 +19,13 @@ wizard_ui_stage1_nas_retry_write_fixture() {
     dind_exec "cat >>/tmp/wizard-stage1-nas-retry.sh <<'BASH'
 rm -f /tmp/wizard-nas-mount-attempts
 mkdir -p /tmp/ms-wizard-nas-data
-storage_mount_nfs() {
+storage_probe_nas() {
     local attempts=0
     [[ -f /tmp/wizard-nas-mount-attempts ]] && attempts=\$(cat /tmp/wizard-nas-mount-attempts)
     attempts=\$((attempts + 1))
     printf '%s\n' \"\$attempts\" > /tmp/wizard-nas-mount-attempts
-    (( attempts >= 2 ))
+    (( attempts >= 2 )) || return 1
+    _STORAGE_PROBE_CLASS=empty
 }
 BASH"
     wizard_stage1_append_runner "/tmp/wizard-stage1-nas-retry.sh"
@@ -36,23 +37,33 @@ wizard_ui_stage1_nas_retry_write_steps() {
         stage1_admin_username ENTER \
         stage1_admin_email owner@nas.test \
         stage1_admin_password WizardAdminPw123 \
-        stage1_admin_password_confirm WizardAdminPw123 \
+        stage1_admin_confirm 1 \
         stage1_storage_location 2 \
         stage1_nas_local_mountpoint /tmp/ms-wizard-nas-data \
         stage1_nas_host 127.0.0.1 \
         stage1_nas_nfs_export /exports/mediastack \
-        stage1_nas_nfs_options vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec \
-        stage1_nas_sentinel ENTER \
         stage1_nas_mount_failed 2 \
         stage1_nas_share_empty NONE \
+        stage1_nas_nfs_options_confirm ENTER \
+        stage1_nas_watchdog ENTER \
+        stage1_nas_review 2 \
+        stage1_nas_nfs_options_confirm ENTER \
+        stage1_nas_watchdog ENTER \
+        stage1_nas_review 1 \
         stage1_bazarr ENTER \
+        stage1_subtitle_confirm 1 \
         stage1_smb ENTER \
+        stage1_smb_confirm 1 \
         stage1_quality_resolution 1 stage1_quality_size 1 \
+        stage1_quality_confirm 1 \
         stage1_indexers ENTER \
+        stage1_indexers_confirm 1 \
         stage1_image_channel 1 \
         stage1_qbt_download ENTER \
         stage1_qbt_upload ENTER \
         stage1_qbt_port ENTER \
+        stage1_qbit_confirm 1 \
+        stage1_security_ufw ENTER stage1_security_hardening ENTER \
         stage1_proceed 1
 }
 
@@ -82,6 +93,8 @@ run_scenario() {
     assert_contains "$transcript" "Use local storage instead" "wizard-ui stage1 NAS retry: local fallback shown"
     assert_contains "$transcript" "Advanced manual storage" "wizard-ui stage1 NAS retry: manual fallback shown"
     assert_contains "$transcript" "nas at /tmp/ms-wizard-nas-data" "wizard-ui stage1 NAS retry: plan summarizes NAS storage"
+    assert_contains "$transcript" "Storage choices to lock in" "wizard-ui stage1 NAS retry: review box shown"
+    assert_contains "$transcript" "Change NFS options / watchdog" "wizard-ui stage1 NAS retry: review offers per-layer navigation"
 
     assert_eq "2" "$(dind_exec "cat /tmp/wizard-nas-mount-attempts")" "wizard-ui stage1 NAS retry: mount retried once"
     assert_eq "nas" "$(env_get STORAGE_MODE)" "wizard-ui stage1 NAS retry: STORAGE_MODE=nas"

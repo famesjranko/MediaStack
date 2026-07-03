@@ -102,6 +102,24 @@ chmod 755 config/wireguard
 # ddns-updater image runs as uid 1000 (no PUID/PGID support)
 chown 1000:1000 config/ddns-updater
 mkdir -p config/npm/data config/npm/letsencrypt config/jellyfin/cache
+# Seed live pre-seed configs from the tracked templates (mirrors
+# seed_config_from_templates in scripts/setup/stack.sh — NOT sourced: this runs
+# under sh + set -e without common.sh, so a log_* call would abort it). This is
+# what makes fail2ban load its jails / jackett + qbittorrent get their baseline
+# in DinD now that the live copies are gitignored and only templates are copied
+# in. Newline-read (no -d) for dash compatibility; config paths have no spaces.
+tpl=config/examples/defaults
+if [ -d "$tpl" ]; then
+    find "$tpl" -type f | while read -r f; do
+        dest="config/${f#"$tpl"/}"
+        [ -f "$dest" ] || { mkdir -p "$(dirname "$dest")"; cp "$f" "$dest"; }
+    done
+fi
+# Seed the live config.yml from its template (mirrors seed_root_config in
+# scripts/setup/wizard.sh). config.yml is gitignored, so dind_copy_repo does not
+# carry it in on a clean checkout — scenarios that read it directly (demo-lan,
+# existing-install-nuke) or run the wizard depend on this seed.
+[ -f config.yml ] || cp config/examples/config.yml config.yml
 mkdir -p config/fail2ban/jail.d config/fail2ban/filter.d
 # Log-source dirs for fail2ban (must exist before fail2ban mounts them).
 mkdir -p config/npm/data/logs config/jellyfin/log config/seerr/logs

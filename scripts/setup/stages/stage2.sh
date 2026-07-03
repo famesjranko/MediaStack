@@ -22,7 +22,7 @@ stage2_port_gate_choices() {
 }
 
 stage2_confirm_choices() {
-    printf '%s\n' "Install" "Back" "Skip Stage 2"
+    printf '%s\n' "Install" "Back" "Skip remote access"
 }
 
 stage2_le_failure_choices() {
@@ -30,12 +30,12 @@ stage2_le_failure_choices() {
 }
 
 stage2_skip_summary_copy() {
-    printf 'HTTPS skipped. LAN + VPN work. Run ./setup.sh --remote to try again.'
+    printf 'HTTPS skipped. LAN + VPN work. Choose Features & settings -> Add remote access from the menu to try again.'
 }
 
 stage2_tell_me_more_copy() {
     cat <<'COPY'
-Remote access needs a domain, DNS records for Jellyfin and Seerr, router forwards for TCP 80 and 443, and one Let's Encrypt certificate attempt. Dynu can keep DNS updated when your home IP changes. WireGuard gives you a VPN for admin tools and fallback access. Skipping is safe: your LAN stack keeps working, and you can retry later with ./setup.sh --remote.
+Remote access needs a domain, DNS records for Jellyfin and Seerr, router forwards for TCP 80 and 443, and one Let's Encrypt certificate attempt. Dynu can keep DNS updated when your home IP changes. WireGuard gives you a VPN for admin tools and fallback access. Skipping is safe: your LAN stack keeps working, and you can add it later from Features & settings -> Add remote access in the menu.
 COPY
 }
 
@@ -75,10 +75,13 @@ _stage2_seed_wizard_defaults() {
     _WIZ_WG_SERVER_LAN_IP="${_WIZ_WG_SERVER_LAN_IP:-${WG_SERVER_LAN_IP:-${HOST_ADDRESS:-}}}"
     _WIZ_WG_INIT_ALLOWED_IPS="${_WIZ_WG_INIT_ALLOWED_IPS:-${WG_INIT_ALLOWED_IPS:-}}"
     _WIZ_WG_PER_CLIENT_FIREWALL="${_WIZ_WG_PER_CLIENT_FIREWALL:-${WG_PER_CLIENT_FIREWALL:-true}}"
-    # Don't fall through to _WIZ_ADMIN_PW here — _stage2_collect_wireguard sets
-    # it on the install path. Skip path should leave it empty so .env preserves
-    # WG_INIT_PASSWORD='' and the remote profile stays inactive.
+    # Don't fall through to _WIZ_ADMIN_PW here — _stage2_install commits it on the
+    # install path (and only when WireGuard is opted in). Skip paths never set it,
+    # so .env preserves WG_INIT_PASSWORD='' and the remote profile stays inactive.
     _WIZ_WG_INIT_PASSWORD="${_WIZ_WG_INIT_PASSWORD:-${WG_INIT_PASSWORD:-}}"
+    # Whether the user opts into the WireGuard VPN. Default on (recommended); the
+    # sub-toggle in _stage2_collect_wireguard re-asks and can turn it off.
+    _WIZ_WG_ENABLED="${_WIZ_WG_ENABLED:-true}"
     if [[ "${_WIZ_DDNS_INVALIDATED:-false}" == "true" ]]; then
         _WIZ_DDNS_USER=""
         _WIZ_DDNS_PW=""
@@ -310,26 +313,26 @@ stage2_le_failure_copy() {
     local classification="$1"
     case "$classification" in
         partial)
-            printf 'Partial HTTPS setup: ready=%s; still pending=%s. Wait or fix the issue, then rerun ./setup.sh --remote.' \
+            printf 'Partial HTTPS setup: ready=%s; still pending=%s. Wait or fix the issue, then choose Features & settings -> Add remote access from the menu.' \
                 "${STAGE2_LE_READY_HOSTS:-none}" "${STAGE2_LE_FAILED_HOSTS:-unknown}"
             ;;
         transient)
-            printf "Let's Encrypt partly reached this server but one validation path failed. Wait a few minutes, then rerun ./setup.sh --remote."
+            printf "Let's Encrypt partly reached this server but one validation path failed. Wait a few minutes, then choose Features & settings -> Add remote access from the menu."
             ;;
         config-dns)
-            printf "DNS does not point both Jellyfin and Seerr hostnames at this box. Fix DNS, then rerun ./setup.sh --remote."
+            printf "DNS does not point both Jellyfin and Seerr hostnames at this box. Fix DNS, then choose Features & settings -> Add remote access from the menu."
             ;;
         config-port)
-            printf "Let's Encrypt could not reach TCP port 80 on this box. Fix router/firewall forwarding, then rerun ./setup.sh --remote."
+            printf "Let's Encrypt could not reach TCP port 80 on this box. Fix router/firewall forwarding, then choose Features & settings -> Add remote access from the menu."
             ;;
         rate-limited)
-            printf "Let's Encrypt rate-limited this hostname or account. Wait for the limit to clear, then rerun ./setup.sh --remote."
+            printf "Let's Encrypt rate-limited this hostname or account. Wait for the limit to clear, then choose Features & settings -> Add remote access from the menu."
             ;;
         npm-unhealthy)
-            printf "Nginx Proxy Manager's cert/proxy state is unhealthy. The next ./setup.sh --remote run will heal NPM first, then attempt HTTPS again."
+            printf "Nginx Proxy Manager's cert/proxy state is unhealthy. Choose Features & settings -> Add remote access again from the menu; it will heal NPM first, then attempt HTTPS again."
             ;;
         unknown|*)
-            printf "HTTPS setup did not complete and the cause could not be classified. Check %s and NPM logs, then rerun ./setup.sh --remote." "$(stage2_le_status_path)"
+            printf "HTTPS setup did not complete and the cause could not be classified. Check %s and NPM logs, then choose Features & settings -> Add remote access from the menu." "$(stage2_le_status_path)"
             ;;
     esac
 }
@@ -380,13 +383,14 @@ stage2_le_gate() {
 }
 
 run_stage2() {
+    seed_root_config   # ensure live config.yml exists before the bitrate write (env_gen.sh)
     if [[ "${DEMO:-0}" == "1" ]]; then
         return 0
     fi
 
     _stage2_seed_wizard_defaults
 
-    ui_banner "MediaStack - Stage 2: Remote Access" "HTTPS + WireGuard in a few minutes (longer on first DNS setup)"
+    ui_banner "MediaStack - Remote Access" "HTTPS + WireGuard in a few minutes (longer on first DNS setup)"
 
     while true; do
         local offer_action
@@ -426,7 +430,7 @@ run_stage2() {
             Back)
                 continue
                 ;;
-            "Skip Stage 2")
+            "Skip remote access")
                 _stage2_skip_https
                 return 0
                 ;;
@@ -462,7 +466,7 @@ _stage2_tell_me_more() {
     ui_log info "Dynu is recommended because the free tier supports wildcard records."
     ui_log info "Let's Encrypt proves the domain reaches this box before HTTPS is enabled."
     ui_log info "WireGuard gives you a VPN for admin pages and fallback access."
-    ui_log skip "Skipping is safe. Your LAN stack still works, and ./setup.sh --remote retries later."
+    ui_log skip "Skipping is safe. Your LAN stack still works, and you can add remote access later from Features & settings -> Add remote access."
 }
 
 _stage2_dns_status_message() {
@@ -534,7 +538,7 @@ _stage2_collect_domain() {
 
 COPY
         if ! ui_confirm "Done? Ready to enter your hostname + Dynu credentials?" "yes"; then
-            ui_log info "No problem - re-run ./setup.sh --remote when you're ready."
+            ui_log info "No problem - choose Features & settings -> Add remote access from the menu when you're ready."
             _stage2_skip_https
             return 1
         fi
@@ -580,7 +584,7 @@ COPY
         if [[ "$ddns_pushed" == "true" && $retry_count -lt 12 ]]; then
             retry_count=$((retry_count + 1))
             if (( retry_count == 1 )); then
-                ui_log info "This is normal - public DNS can take 1-2 minutes to update after a new hostname. Setup is waiting, not stuck."
+                ui_log info "This is normal - public DNS can take 1-2 min to update. Setup is waiting, not stuck."
             fi
             ui_log info "Waiting 10s for Dynu propagation (attempt ${retry_count}/12)..."
             sleep 10
@@ -632,15 +636,25 @@ _stage2_offer_ddns() {
         # fires (mirrors _stage2_port_gate's demo-default idiom below).
         local di=1
         [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]] && di=2
-        ui_log info "Most home internet connections get a changing (dynamic) IP. If unsure, pick the first option - and make sure your Dynu account + domain are already set up."
+        ui_log info "Most home connections have a changing (dynamic) IP - if unsure, pick the first option."
+        ui_log info "Make sure your Dynu account + domain are already set up."
         local ip_kind
         ip_kind=$(UI_CHOOSE_DEFAULT_INDEX="$di" ui_choose \
             "Does your home internet have a static (unchanging) public IP?" \
             "No - my IP changes (set up Dynu DDNS to keep ${_WIZ_DOMAIN} updated)" \
             "Yes - static IP, or I keep my own DNS updated (skip DDNS)")
         if [[ "$ip_kind" == "Yes"* ]]; then
+            # Neutralize ALL DDNS recall state, not just the pass flag. Leaving
+            # _WIZ_DDNS_USER/_PW populated lets _stage2_seed_wizard_defaults
+            # resurrect _WIZ_DDNS_PREFLIGHT_OK from the matching .env creds before
+            # the next write_env, silently re-enabling Dynu on a re-run. Setting
+            # INVALIDATED routes the seed into its clear branch (mirrors the
+            # badauth path below) so the user's "skip DDNS" choice actually sticks.
             _WIZ_USES_DDNS="false"
+            _WIZ_DDNS_USER=""
+            _WIZ_DDNS_PW=""
             _WIZ_DDNS_PREFLIGHT_OK="false"
+            _WIZ_DDNS_INVALIDATED="true"
             ui_log info "Skipping DDNS. Point A records for jellyfin.${_WIZ_DOMAIN} and seerr.${_WIZ_DOMAIN} at your public IP."
             return 1
         fi
@@ -687,7 +701,7 @@ _stage2_offer_ddns() {
 
 _stage2_port_gate() {
     ui_section 2 5 "Router ports"
-    ui_log info "This check runs from your home network. If your router does not support hairpin NAT, closed results can be ambiguous."
+    ui_log info "Runs from your home network - if your router lacks hairpin NAT, closed results can be misleading."
 
     # Auto-retry the port probe a few times before bothering the user.
     # nc -z is a single SYN packet with a 5s timeout — perfectly fine to
@@ -720,7 +734,7 @@ _stage2_port_gate() {
             wrong-lan-target) ui_log warn "DNS may point at the wrong router or LAN target. Check the forwarding destination." ;;
             carrier-block) ui_log warn "Your ISP or router may be blocking TCP 80 or 443." ;;
             aaaa-mismatch) ui_log warn "IPv6/AAAA may point somewhere different from your IPv4 records." ;;
-            probe-unavailable) ui_log warn "External port probe services are unavailable or blocked from this network. You can continue after manually verifying TCP 80 and 443 are forwarded to this server." ;;
+            probe-unavailable) ui_log warn "External port-probe services are unavailable or blocked from this network; continue after manually verifying TCP 80 and 443 are forwarded here." ;;
             *) ui_log warn "TCP port check returned ${port_state}. Router forwarding may still be needed." ;;
         esac
 
@@ -752,6 +766,21 @@ _stage2_port_gate() {
 
 _stage2_collect_wireguard() {
     ui_section 3 5 "WireGuard"
+
+    # Opt-in sub-toggle: WireGuard is a distinct service (the wg-easy container),
+    # not mandatory for HTTPS remote access. Gate its config prompts behind an
+    # enable so the "choose feature -> configure feature" flow holds. When off we
+    # return early and leave WG_INIT_PASSWORD unset, so the remote WG profile
+    # (gated on WG_INIT_PASSWORD alone) stays inactive.
+    local wg_default="yes"
+    [[ "${_WIZ_WG_ENABLED:-true}" == "true" ]] || wg_default="no"
+    ui_log info "WireGuard gives you a private VPN to reach admin pages and your home LAN while away. Recommended."
+    if ! ui_confirm "Also set up a WireGuard VPN for admin access?" "$wg_default"; then
+        _WIZ_WG_ENABLED="false"
+        ui_kv "WireGuard" "disabled"
+        return 0
+    fi
+    _WIZ_WG_ENABLED="true"
 
     # WireGuard endpoint = the same hostname users already entered for
     # HTTPS in [1/5] Domain + DDNS. Asking again is friction for zero
@@ -796,7 +825,8 @@ _stage2_collect_wireguard() {
     # going; the user can fix HOST_ADDRESS in .env later.
     _WIZ_WG_SERVER_LAN_IP="${HOST_ADDRESS:-${_WIZ_WG_SERVER_LAN_IP:-localhost}}"
     if [[ "$_WIZ_WG_SERVER_LAN_IP" == "localhost" || "$_WIZ_WG_SERVER_LAN_IP" == "127.0.0.1" ]]; then
-        ui_log warn "HOST_ADDRESS is '$_WIZ_WG_SERVER_LAN_IP' - VPN peers will not be able to reach this box until you set a real LAN IP in .env."
+        ui_log warn "HOST_ADDRESS is '$_WIZ_WG_SERVER_LAN_IP' - not a real LAN IP."
+        ui_log warn "VPN peers can't reach this box until you set a real LAN IP in .env."
     fi
 
     # Full LAN tier needs the actual LAN CIDR; auto-detect and let the user
@@ -836,16 +866,21 @@ print(ipaddress.IPv4Network(sys.argv[1], strict=False))
     ui_log info "WireGuard admin login: ${_WIZ_ADMIN_USER} / your admin password (the same one you set earlier)."
     case "$tier" in
         full-lan)
-            ui_log info "Access level: Full LAN. Initial peer reaches ${_WIZ_WG_LAN_CIDR}. Add family peers in the wg-easy UI using the README templates."
+            ui_log info "Access level: Full LAN. Initial peer reaches ${_WIZ_WG_LAN_CIDR}."
+            ui_log info "Add more peers in the wg-easy UI (see README templates)."
             ;;
         server)
             ui_log info "Access level: Server. Initial peer reaches ${_WIZ_WG_SERVER_LAN_IP} (all ports, including SSH)."
             ;;
         containers)
-            ui_log info "Access level: Containers. Initial peer reaches MediaStack app ports on ${_WIZ_WG_SERVER_LAN_IP}. Host services (SSH, SMB) are blocked."
+            ui_log info "Access level: Containers. Initial peer reaches MediaStack app ports on ${_WIZ_WG_SERVER_LAN_IP}."
+            ui_log info "Host services (SSH, SMB) are blocked."
             ;;
     esac
-    _WIZ_WG_INIT_PASSWORD="${_WIZ_ADMIN_PW}"
+    ui_kv "WireGuard" "${_WIZ_WG_HOST}:${_WIZ_WG_PORT} (${tier})"
+    # WG_INIT_PASSWORD is committed in _stage2_install (install path only), not
+    # here — setting it during collection leaks it into confirm-time skips and
+    # silently activates WireGuard.
 }
 
 _stage2_collect_jellyfin_remote_bitrate() {
@@ -939,17 +974,17 @@ PY
 
 _stage2_confirm() {
     ui_section 5 5 "Confirm install"
-    ui_box "Stage 2: Install Plan" \
+    ui_box "Remote Access: Install Plan" \
         "$(ui_kv 'Domain' "$_WIZ_DOMAIN")" \
         "$(ui_kv 'HTTPS' "jellyfin.${_WIZ_DOMAIN}, seerr.${_WIZ_DOMAIN}")" \
-        "$(ui_kv 'WireGuard' "${_WIZ_WG_HOST}:${_WIZ_WG_PORT}")" \
+        "$(ui_kv 'WireGuard' "$( [[ "${_WIZ_WG_ENABLED:-true}" == "true" ]] && echo "${_WIZ_WG_HOST}:${_WIZ_WG_PORT}" || echo 'disabled' )")" \
         "$(ui_kv 'Remote streaming cap' "$( [[ "${_WIZ_JELLYFIN_BITRATE:-0}" == "0" ]] && echo 'unlimited' || echo "${_WIZ_JELLYFIN_BITRATE} Mbps/viewer" )")" \
         "$(ui_kv 'Access' 'LAN remains available if HTTPS fails')"
 
-    _STAGE2_CONFIRM_ACTION=$(ui_choose "Proceed with Stage 2 installation?" \
+    _STAGE2_CONFIRM_ACTION=$(ui_choose "Proceed with remote access installation?" \
         "Install" \
         "Back" \
-        "Skip Stage 2")
+        "Skip remote access")
 }
 
 _stage2_skip_https() {
@@ -961,9 +996,20 @@ _stage2_skip_https() {
 }
 
 _stage2_install() {
-    log_info "Stage 2: installing remote access..."
+    log_info "Installing remote access..."
 
     _stage2_seed_wizard_defaults
+    # Commit the WireGuard init password here (install path only) and only when
+    # the user opted in — this is what activates the remote WG profile. Doing it
+    # here rather than during collection means every skip path leaves it as-is
+    # (empty on a fresh setup), so a confirm-time "Skip remote access" can't
+    # silently enable WireGuard. Explicitly clear it when WG is declined so an
+    # existing install's WG is turned off when the user says no.
+    if [[ "${_WIZ_WG_ENABLED:-true}" == "true" ]]; then
+        _WIZ_WG_INIT_PASSWORD="${_WIZ_ADMIN_PW}"
+    else
+        _WIZ_WG_INIT_PASSWORD=""
+    fi
     _WIZ_REMOTE_WEB_STATE="unchecked"
     write_env || return 1
     _stage2_preserve_stage1_marker

@@ -29,10 +29,24 @@ _srm_cfg_field() {
 # list, so the expected id/name reflects whatever name the quality /
 # quality-rename modules left Sonarr/Radarr in - not a stale config.yml
 # snapshot from before those modules ran.
+# curl a JSON *arr endpoint inside DinD with a short retry. The *arr APIs answer
+# with transient non-2xx under load (#171); an unguarded `curl -sf` miss here
+# would silently yield an empty expected value and a FALSE assertion (e.g.
+# "expected empty, got 8/1080p Balanced" when the product stored a valid
+# profile). Retry a few times before giving up.
+_srm_curl_json() {
+    local url="$1" key="$2" out attempt
+    for attempt in 1 2 3; do
+        out=$(dind_exec "curl -sf -H 'X-Api-Key: $key' $url") && { printf '%s' "$out"; return 0; }
+        sleep "$attempt"
+    done
+    return 1
+}
+
 _srm_expected_profile_field() {
     local base="$1" key="$2" target_name="$3" field="$4"
     local profiles
-    profiles=$(dind_exec "curl -sf -H 'X-Api-Key: $key' $base/qualityprofile") || return 1
+    profiles=$(_srm_curl_json "$base/qualityprofile" "$key") || return 1
     SRM_PROFILES="$profiles" SRM_TARGET="$target_name" SRM_FIELD="$field" python3 - <<'PY'
 import json
 import os
@@ -49,7 +63,7 @@ PY
 _srm_expected_lang_id() {
     local base="$1" key="$2"
     local profiles
-    profiles=$(dind_exec "curl -sf -H 'X-Api-Key: $key' $base/languageprofile") || { echo "1"; return; }
+    profiles=$(_srm_curl_json "$base/languageprofile" "$key") || { echo "1"; return; }
     SRM_PROFILES="$profiles" python3 - <<'PY'
 import json
 import os

@@ -23,6 +23,7 @@ run_scenario() {
         stage2_static_ip 1 \
         stage2_dynu_username dynuuser \
         stage2_dynu_password dynupass123 \
+        stage2_wg_enable y \
         stage2_wg_port ENTER \
         stage2_vpn_level 1 \
         stage2_lan_cidr ENTER \
@@ -35,7 +36,7 @@ run_scenario() {
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "Verified against Dynu's API" "wizard-ui stage2 install ready: Dynu preflight ok message"
-    assert_contains "$transcript" "Stage 2: Install Plan" "wizard-ui stage2 install ready: install plan box shown"
+    assert_contains "$transcript" "Remote Access: Install Plan" "wizard-ui stage2 install ready: install plan box shown"
     assert_contains "$transcript" "Remote access is ready" "wizard-ui stage2 install ready: LE-ready success message"
 
     assert_eq "ready"   "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 install ready: REMOTE_WEB_STATE=ready"

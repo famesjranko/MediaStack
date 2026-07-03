@@ -43,9 +43,18 @@ checks_pass=0
 checks_fail=0
 checks_skip=0
 
-check_pass() { echo -e "  ${GREEN}[PASS]${NC} $1"; checks_pass=$((checks_pass + 1)); }
-check_fail() { echo -e "  ${RED}[FAIL]${NC} $1${2:+  - $2}"; checks_fail=$((checks_fail + 1)); }
-check_skip() { echo -e "  ${YELLOW}[SKIP]${NC} $1${2:+  ($2)}"; checks_skip=$((checks_skip + 1)); }
+# Use the shared status glyphs (✓/✗/→, with [OK]/[ERROR]/[SKIP] ASCII fallback)
+# so this diagnostic matches the rest of the UI, and pad the label into a fixed
+# column so the short gray detail lines up and never wraps. Keep labels/details
+# terse — long sentences wrapped ugly in the terminal.
+_PC_LW=21
+# Pad the status glyph to a fixed visible width so the label column aligns across
+# pass/fail/skip rows: ASCII tags vary 4-7 cols ([OK]..[ERROR]) -> pad to 7;
+# unicode icons are 1 col (multibyte, width 1 -> %-*s never byte-pads them).
+_PC_GW=1; [[ "$_G_UNICODE" == 1 ]] || _PC_GW=7
+check_pass() { printf "  ${GREEN}%-*s${NC} %-*s ${GRAY}%s${NC}\n" "$_PC_GW" "$(_ui_status_token ok)"    "$_PC_LW" "$1" "${2:-}"; checks_pass=$((checks_pass + 1)); }
+check_fail() { printf "  ${RED}%-*s${NC} %-*s ${GRAY}%s${NC}\n"   "$_PC_GW" "$(_ui_status_token error)" "$_PC_LW" "$1" "${2:-}"; checks_fail=$((checks_fail + 1)); }
+check_skip() { printf "  ${YELLOW}%-*s${NC} %-*s ${GRAY}%s${NC}\n" "$_PC_GW" "$(_ui_status_token skip)"  "$_PC_LW" "$1" "${2:-}"; checks_skip=$((checks_skip + 1)); }
 
 resolve_host_ip() {
     local host="$1"
@@ -79,15 +88,15 @@ if $has_domain; then
             log_info "DNS: $host -> $resolved_ip"
             if [[ -n "$public_ip" ]]; then
                 if [[ "$resolved_ip" == "$public_ip" ]]; then
-                    check_pass "DNS $host matches public IP ($public_ip)"
+                    check_pass "DNS $host" "matches public IP"
                 else
-                    check_fail "DNS $host matches public IP" "$host resolves to $resolved_ip, but public IP is $public_ip"
+                    check_fail "DNS $host" "-> $resolved_ip (want $public_ip)"
                 fi
             else
-                check_skip "DNS $host vs public IP comparison" "could not detect public IP"
+                check_skip "DNS $host" "no public IP"
             fi
         else
-            check_fail "DNS resolution for $host" "$host does not resolve - add a wildcard *.${DOMAIN} record or separate service A records"
+            check_fail "DNS $host" "does not resolve"
         fi
     done
 
@@ -110,16 +119,16 @@ if $has_domain; then
     for host in "${service_hosts[@]}"; do
         # TCP 80 — any HTTP response means the port is forwarded
         if net_check_http "http://$host"; then
-            check_pass "TCP 80 (HTTP: $host)"
+            check_pass "HTTP $host" "reachable"
         else
-            check_fail "TCP 80 (HTTP: $host)" "no response from http://$host"
+            check_fail "HTTP $host" "no response"
         fi
 
         # TCP 443 — cert errors are fine, any response means forwarded
         if net_check_http "https://$host"; then
-            check_pass "TCP 443 (HTTPS: $host)"
+            check_pass "HTTPS $host" "reachable"
         else
-            check_fail "TCP 443 (HTTPS: $host)" "no response from https://$host"
+            check_fail "HTTPS $host" "no response"
         fi
     done
 elif [[ -n "$public_ip" ]]; then
@@ -128,24 +137,24 @@ elif [[ -n "$public_ip" ]]; then
     # is bound, then triggers the external probe — so this works on a fresh
     # box before NPM is installed. Privileged ports (80/443) need sudo to
     # bind; the helper sudo-wraps internally and may prompt.
-    log_info "Probing TCP 80 + 443 via temporary listener (sudo may prompt for privileged bind)..."
+    log_info "Probing TCP 80 + 443 (sudo may prompt to bind privileged ports)..."
     case $(net_check_tcp_port_external 80; echo "rc:$?") in
-        rc:0) check_pass "TCP 80 (router forwarding)" ;;
-        rc:1) check_fail "TCP 80 (router forwarding)" "no response on $public_ip:80" ;;
-        rc:3) check_fail "TCP 80 (router forwarding)" "$public_ip:80 reachable from internet, but traffic does NOT land on this host - router is forwarding 80 to a different LAN device" ;;
-        rc:4) check_skip "TCP 80 (router forwarding)" "probed open, but verification skipped - port already bound by another service. Stop that service briefly to re-test" ;;
-        *)    check_skip "TCP 80 (router forwarding)" "could not bind listener or external probe service unreachable" ;;
+        rc:0) check_pass "TCP 80 (HTTP)" "reachable" ;;
+        rc:1) check_fail "TCP 80 (HTTP)" "no response" ;;
+        rc:3) check_fail "TCP 80 (HTTP)" "forwarded to another device" ;;
+        rc:4) check_skip "TCP 80 (HTTP)" "port in use - re-test later" ;;
+        *)    check_skip "TCP 80 (HTTP)" "probe unavailable" ;;
     esac
     case $(net_check_tcp_port_external 443; echo "rc:$?") in
-        rc:0) check_pass "TCP 443 (router forwarding)" ;;
-        rc:1) check_fail "TCP 443 (router forwarding)" "no response on $public_ip:443" ;;
-        rc:3) check_fail "TCP 443 (router forwarding)" "$public_ip:443 reachable from internet, but traffic does NOT land on this host - router is forwarding 443 to a different LAN device" ;;
-        rc:4) check_skip "TCP 443 (router forwarding)" "probed open, but verification skipped - port already bound by another service. Stop that service briefly to re-test" ;;
-        *)    check_skip "TCP 443 (router forwarding)" "could not bind listener or external probe service unreachable" ;;
+        rc:0) check_pass "TCP 443 (HTTPS)" "reachable" ;;
+        rc:1) check_fail "TCP 443 (HTTPS)" "no response" ;;
+        rc:3) check_fail "TCP 443 (HTTPS)" "forwarded to another device" ;;
+        rc:4) check_skip "TCP 443 (HTTPS)" "port in use - re-test later" ;;
+        *)    check_skip "TCP 443 (HTTPS)" "probe unavailable" ;;
     esac
 else
-    check_skip "TCP 80" "could not detect public IP"
-    check_skip "TCP 443" "could not detect public IP"
+    check_skip "TCP 80 (HTTP)" "no public IP"
+    check_skip "TCP 443 (HTTPS)" "no public IP"
 fi
 
 # TCP — qBittorrent listening port. Use the external probe so we get the
@@ -153,24 +162,24 @@ fi
 # from their server, no hairpin-NAT dependency).
 if [[ -n "$public_ip" ]]; then
     case $(net_check_tcp_port_external "$TORRENT_PORT"; echo "rc:$?") in
-        rc:0) check_pass "TCP $TORRENT_PORT (qBittorrent)" ;;
-        rc:1) check_fail "TCP $TORRENT_PORT (qBittorrent)" "no response on $public_ip:$TORRENT_PORT (external probe)" ;;
-        rc:3) check_fail "TCP $TORRENT_PORT (qBittorrent)" "$public_ip:$TORRENT_PORT reachable from internet, but traffic does NOT land on this host - router is forwarding $TORRENT_PORT to a different LAN device" ;;
-        rc:4) check_skip "TCP $TORRENT_PORT (qBittorrent)" "probed open, but verification skipped - port already bound by another service (qBittorrent itself, presumably). Stop it briefly to re-test" ;;
-        *)    check_skip "TCP $TORRENT_PORT (qBittorrent)" "external port-check service unreachable" ;;
+        rc:0) check_pass "TCP $TORRENT_PORT (torrent)" "reachable" ;;
+        rc:1) check_fail "TCP $TORRENT_PORT (torrent)" "no response" ;;
+        rc:3) check_fail "TCP $TORRENT_PORT (torrent)" "forwarded to another device" ;;
+        rc:4) check_skip "TCP $TORRENT_PORT (torrent)" "port in use - re-test later" ;;
+        *)    check_skip "TCP $TORRENT_PORT (torrent)" "probe unavailable" ;;
     esac
 else
-    check_skip "TCP $TORRENT_PORT (qBittorrent)" "could not detect public IP"
+    check_skip "TCP $TORRENT_PORT (torrent)" "no public IP"
 fi
 
 # UDP — WireGuard; can't reliably probe externally, check container status
 wg_status=$(docker inspect --format '{{.State.Status}}' wireguard 2>/dev/null || echo "")
 if [[ "$wg_status" == "running" ]]; then
-    check_pass "UDP $WG_PORT (WireGuard) - container running (external probe not possible)"
+    check_pass "UDP $WG_PORT (WireGuard)" "running (no external probe)"
 elif [[ -z "$wg_status" ]]; then
-    check_skip "UDP $WG_PORT (WireGuard)" "WireGuard not installed yet - re-run after setup.sh --remote"
+    check_skip "UDP $WG_PORT (WireGuard)" "not installed yet"
 else
-    check_fail "UDP $WG_PORT (WireGuard)" "container status: $wg_status"
+    check_fail "UDP $WG_PORT (WireGuard)" "container: $wg_status"
 fi
 
 # -----------------------------------------------------------------------------
@@ -179,6 +188,8 @@ fi
 echo ""
 local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
 local_ip="${local_ip:-<your-server-ip>}"
+# LAN gateway = the router's admin page, where the user sets up forwarding.
+gateway=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')
 
 total=$((checks_pass + checks_fail + checks_skip))
 if [[ $checks_fail -eq 0 ]]; then
@@ -207,11 +218,14 @@ if [[ $checks_fail -gt 0 || $checks_skip -gt 0 ]]; then
     fwd_lines=(
         "Forward these ports to $local_ip in your router:"
         ""
-        "  TCP+UDP ${TORRENT_PORT} -> $local_ip   (qBittorrent peer connections - always required)"
-        "  TCP 80      -> $local_ip   (Let's Encrypt + HTTP redirect - only if using a domain)"
-        "  TCP 443     -> $local_ip   (HTTPS - Jellyfin, Seerr - only if using a domain)"
-        "  UDP ${WG_PORT}   -> $local_ip   (WireGuard VPN - only if using remote access)"
+        "  TCP+UDP ${TORRENT_PORT}  ->  $local_ip   (torrent - always)"
+        "  TCP 80       ->  $local_ip   (HTTP/ACME - domain only)"
+        "  TCP 443      ->  $local_ip   (HTTPS - domain only)"
+        "  UDP ${WG_PORT}    ->  $local_ip   (WireGuard - remote only)"
     )
+    if [[ -n "$gateway" ]]; then
+        fwd_lines+=("" "Your router's admin page is usually http://${gateway}")
+    fi
     ui_box "Required Port Forwards" "${fwd_lines[@]}"
 fi
 

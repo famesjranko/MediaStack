@@ -6,6 +6,8 @@ Reference for everything a user (or maintainer) can change about a running Media
 
 Top-level source of truth for service configuration. `scripts/configure.sh` reads it via Python YAML helpers ([configure-flow.md](configure-flow.md)).
 
+`config.yml` is a **gitignored live copy** seeded from the tracked template `config/examples/config.yml` on first run (`seed_root_config`, first line of `run_wizard` in `scripts/setup/wizard.sh`), then mutated in place by the wizard (quality preset, `min_free_space_gb`, Jellyfin bitrate, `wizard_completed`). Re-runs keep your edits (seed is "only if absent"); uninstall removes it so a reinstall re-seeds the pristine template. To edit defaults for everyone, edit the template.
+
 ### `indexers`
 
 List of Jackett indexers. Public releases default this to `[]`; add entries only for indexers you are legally allowed to use, or apply the optional preset from `config/examples/public-indexers.yml`. Each entry has `id` (Jackett's internal indexer ID) and `type` — one of `general`, `tv`, `movies`. Consumed by:
@@ -75,7 +77,7 @@ Consumed by `configure_quality_definitions` (`scripts/lib/arr/main.sh`, with dif
 
 ### `custom_formats`
 
-Custom release attribute scoring within a quality tier — based on TRaSH Guides. A simple `name: score` mapping where higher scores are preferred and negative scores penalise. `-10000` effectively blocks a format. Set a format's score to `0` to make it neutral (format still exists in Sonarr/Radarr but doesn't influence selection). Delete the entire section to skip custom format configuration.
+Release-attribute scoring that **steers** selection within a quality tier. A simple `name: score` mapping where higher scores are preferred and negative scores penalise. Scores do **not** gate file size (the `quality_definitions` bounds do) and, by default, nothing is hard-blocked — the neutral baseline penalises low-quality re-encode groups and nudges toward named releases, without ever refusing a grab. Set a format's score to `0` to make it neutral, or to `-10000` to **hard-block** it (no default format does). Delete the entire section to skip custom format configuration. See [`quality-bounds.md`](../reference/quality-bounds.md#custom-format-scores) and ADR-43.
 
 Format *definitions* (regex conditions, implementation type) are developer-managed in `scripts/lib/arr/custom_formats.yml` — users only tune scores here.
 
@@ -83,12 +85,12 @@ Example:
 ```yaml
 custom_formats:
   "Repack/Proper":  5
-  "x264":           10
-  "x265 (HD)":      -25
-  "BR-DISK":        -10000
-  "LQ":             -10000
-  "No-RlsGroup":    -25
-  "Obfuscated":     -25
+  "x264":           0
+  "x265 (HD)":      0
+  "BR-DISK":        0
+  "LQ":             -100
+  "No-RlsGroup":    -10
+  "Obfuscated":     -10
 ```
 
 Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/main.sh`) during steps 3 and 4. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
@@ -197,11 +199,12 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `MEDIASTACK_NPM_IP` | derived from prefix | `172.28.0.10`; Jellyfin `KnownProxies` trusts this IP when remote HTTPS is ready |
 | `STORAGE_MODE` | prompt, default `local` | `local` or `nas`; controls mount/sentinel protection |
 | `STORAGE_APP_WIRING` | prompt, default `managed` | `managed` or `manual`; controls whether MediaStack configures app storage paths |
+| `STORAGE_WATCHDOG` | prompt when NAS selected + day-2 toggle, default `true` | `true` or `false`; gates the guard + `mediastack-storage-watchdog.service`. Absent = enabled (existing NAS installs stay protected) |
 | `UNPACKERR_TORRENT_PATHS` | setup, default `/data/torrents` | watched torrent path for Unpackerr; blank when `STORAGE_APP_WIRING=manual` |
 | `STORAGE_PROTOCOL` | prompt when NAS selected | `nfs` |
 | `STORAGE_MOUNTPOINT` | prompt when NAS selected | `/data` |
 | `STORAGE_NFS_HOST` / `STORAGE_NFS_EXPORT` | prompt when NAS selected | `192.168.1.10` / `/mnt/tank/media` |
-| `STORAGE_SENTINEL` | generated from `DATA_DIR` | `/data/.mediastack-storage-ready` |
+| `STORAGE_SENTINEL` | generated from `DATA_DIR` (not user-set) | `/data/.mediastack-storage-ready` |
 | `JELLYFIN_ADMIN_USER` | prompt, default `admin` | `admin` |
 | `JELLYFIN_ADMIN_PASSWORD` | `openssl rand -base64 12` — shared across all services | (random) |
 | `NPM_ADMIN_EMAIL` | `admin@example.com` (not prompted) | — |
@@ -225,12 +228,16 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `PUBLIC_INDEXERS_ENABLED` | wizard prompt, default `false` | `true` |
 | `SMB_ENABLED` | prompt, default `false` | `true` |
 | `SMB_SHARE_SCOPE` | prompt after enabling SMB, default `data` | `data` or `system` |
+| `UFW_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
+| `HARDENING_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 
 **Single-quoting rule:** `WG_INIT_PASSWORD` MUST be single-quoted because the plaintext value can contain shell-special characters (`$`, `"`, `\`, `#`) that Docker Compose interpolates in unquoted values. `setup.sh` writes the quotes automatically; the smoke test (`tests/scenarios/smoke.sh`) asserts the container receives the password byte-for-byte via `INIT_PASSWORD`. v15 reads `INIT_*` env vars at first boot only — after `/etc/wireguard/wg-easy.db` exists, changes to `WG_INIT_PASSWORD` are inert; rotate the admin password in the wg-easy UI instead. See ADR-28.
 
 **SMB scope:** `SMB_SHARE_SCOPE=data` shares `${DATA_DIR}` as `Media` and is the recommended default. `SMB_SHARE_SCOPE=system` keeps the intentional full `/` admin share available as `MediaStackSystem`.
 
-**Storage modes:** `local` is the standard managed `/data` layout. `nas` means MediaStack mounts/verifies NFS storage and runs the storage watchdog. NAS sentinel and managed directory writes are made as the installing user when possible so root-squashed NFS exports work. `manual` is represented by `STORAGE_APP_WIRING=manual`: the stack is installed but storage-facing app configuration is skipped so the user can wire Jellyfin, Sonarr/Radarr, qBittorrent, Seerr, and Unpackerr manually. Manual app wiring can still use `STORAGE_MODE=nas` when the user wants NAS guard/watchdog protection. See [storage.md](storage.md) for the operational flow and guard/watchdog behavior.
+**Host security toggles (ADR-40):** `UFW_ENABLED` gates the UFW firewall (default-deny inbound + the Docker-port restriction chain); `HARDENING_ENABLED` gates unattended security upgrades + kernel sysctl hardening. Both are chosen in the Stage 1 wizard (default *yes*) and are reversible from the day-2 **Features & settings** menu. Reading code treats an **absent** key as `true`, so installs predating these keys stay hardened after an upgrade. Turning a toggle *off* in the day-2 menu reverts via the ownership ledger (`_uninstall_ufw` / `_uninstall_sysctl` / `_uninstall_apt`): it removes only MediaStack-owned rules/files and never touches firewall rules or sysctls the user changed themselves.
+
+**Storage modes:** `local` is the standard managed `/data` layout. `nas` means MediaStack mounts/verifies NFS storage and, when `STORAGE_WATCHDOG` is on (default), runs the guard + storage watchdog. The watchdog is opt-out in the Stage 1 wizard and reversible from the day-2 **Features & settings** menu (NAS installs only); with it off, NAS storage is still mounted and verified once at install but data services are not auto-stopped/restarted if the mount drops. NAS sentinel and managed directory writes are made as the installing user when possible so root-squashed NFS exports work. `manual` is represented by `STORAGE_APP_WIRING=manual`: the stack is installed but storage-facing app configuration is skipped so the user can wire Jellyfin, Sonarr/Radarr, qBittorrent, Seerr, and Unpackerr manually. Manual app wiring can still use `STORAGE_MODE=nas` when the user wants NAS guard/watchdog protection. See [storage.md](storage.md) for the operational flow and guard/watchdog behavior.
 
 **VPN access tiers (ADR-29):** The wizard asks for an access tier instead of a tunnel mode. `WG_INIT_ALLOWED_IPS` (client-side routing) and the wg-easy server-side `firewallIps` for the initial peer are both derived from the tier. Per-client firewall is on for every new install.
 

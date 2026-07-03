@@ -53,7 +53,7 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   submenu_features >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$render_out" "Change quality profile (resolution & size)" \
+assert_contains "$render_out" "Change quality profile:" \
   "features: change-quality option is listed"
 
 dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -62,7 +62,7 @@ dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
   ui_choose(){ echo "Change quality profile (resolution & size)"; }
-  action_change_quality(){ echo DISPATCH_QUALITY; }
+  action_change_quality(){ echo DISPATCH_QUALITY; exit 0; }
   BAZARR_ENABLED=false; SMB_ENABLED=false; PUBLIC_INDEXERS_ENABLED=false
   submenu_features 2>&1
 ' 2>&1)
@@ -83,7 +83,7 @@ run_quality() {
     mkdir -p "$tmp/scripts/setup"
     ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
     ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
-    cp "$REPO_ROOT/config.yml" "$tmp/config.yml"
+    cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
     # Seed the current cell so cfg_field reports a known "old" profile name.
     python3 "$tmp/scripts/setup/wizard_apply.py" --quality-only \
       --resolution "$SEED_RES" --size "$SEED_SIZE" --config "$tmp/config.yml" >/dev/null 2>&1
@@ -170,7 +170,7 @@ demo_out=$(UI_DEMO=1 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c 
   mkdir -p "$tmp/scripts/setup"
   ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
   ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
-  cp "$REPO_ROOT/config.yml" "$tmp/config.yml"
+  cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
   # Seed a known cell; the launcher pre-selects it, so the picker returns the
   # same cell and the no-change bail fires.
   python3 "$tmp/scripts/setup/wizard_apply.py" --quality-only \
@@ -210,7 +210,7 @@ demo_confirm=$(UI_DEMO=1 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash
   mkdir -p "$tmp/scripts/setup"
   ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
   ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
-  cp "$REPO_ROOT/config.yml" "$tmp/config.yml"
+  cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
   cfg_field(){ echo "Legacy Custom"; }   # maps to no (res,size) cell
   cat > "$tmp/scripts/configure.sh" <<"STUB"
 #!/usr/bin/env bash
@@ -244,7 +244,7 @@ fail_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   mkdir -p "$tmp/scripts/setup"
   ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
   ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
-  cp "$REPO_ROOT/config.yml" "$tmp/config.yml"
+  cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
   python3 "$tmp/scripts/setup/wizard_apply.py" --quality-only \
     --resolution 1080p --size balanced --config "$tmp/config.yml" >/dev/null 2>&1
   # The stub exits 0 (never-abort) but records radarr as un-renamed, exactly as
@@ -305,7 +305,7 @@ mktemp_fail=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   mkdir -p "$tmp/scripts/setup"
   ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
   ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
-  cp "$REPO_ROOT/config.yml" "$tmp/config.yml"
+  cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
   python3 "$tmp/scripts/setup/wizard_apply.py" --quality-only \
     --resolution 1080p --size balanced --config "$tmp/config.yml" >/dev/null 2>&1
   cat > "$tmp/scripts/configure.sh" <<"STUB"

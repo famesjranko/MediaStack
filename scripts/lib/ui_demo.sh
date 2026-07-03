@@ -186,7 +186,7 @@ run_demo() {
     ui_log info "Probing your network to inform setup recommendations..."
     ui_spin "Detecting public IP..." sleep "${UI_DEMO_DELAY}"
     ui_log ok "Public IP: 203.0.113.42"
-    ui_spin "Running speed test (15-30 seconds)..." sleep "${UI_DEMO_DELAY}"
+    ui_spin "Measuring your connection speed (~15s)..." sleep "${UI_DEMO_DELAY}"
     ui_log ok "Download: 120 Mbps | Upload: 40 Mbps"
     ui_log info "Checking default port reachability..."
     ui_log ok "Port 6881: open"

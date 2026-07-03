@@ -41,6 +41,7 @@ through the generated compose override.
 ./tests/run.sh --no-preload nas-storage  # managed NAS/NFS storage fixture (~4s)
 ./tests/run.sh --no-preload autoheal  # Autoheal functional image-drift oracle (~40s)
 ./tests/run.sh --no-preload wizard-ui-stage1-local wizard-ui-stage1-nas-retry  # core PTY wizard UX checks
+./tests/run.sh --no-preload uninstall wizard-ui-uninstall  # transactional backend + real launcher action
 ./tests/run.sh smoke remote-gating npm-heal  # focused remote-state verification gate
 ./tests/run.sh smoke remote-gating npm-heal ddns-seed wireguard wireguard-server wireguard-containers wireguard-streaming stage2-skip stage2-ready  # focused remote-access gate
 ./tests/run.sh --keep fresh-install   # leave DinD running on failure
@@ -49,6 +50,23 @@ through the generated compose override.
 ```
 
 `tests/run.sh` orchestrates: validate scenario names, source libs, start cache mirror + DinD (`cache_mirror_up`, `dind_up`, `dind_copy_repo`, `dind_strip_services`, `cache_preload_into_dind`), run each scenario via `source` + `run_scenario`, then tear down runner-owned containers and print the summary on the exit trap (`on_exit`). Exit code non-zero if any hard assertion failed.
+
+## Linting & host unit tier
+
+The DinD surface above is separate from the **host static tier** — shellcheck plus the
+`tests/unit/*.sh` units — which is the exact gate CI runs on every PR and needs no DinD.
+
+```bash
+./tests/lint.sh                            # shellcheck every tracked *.sh + mediastack (--severity=warning, matches CI)
+./tests/lint.sh mediastack tests/unit/foo.sh  # lint only the named file(s)
+./tests/unit.sh                            # full host tier: static checks + every tests/unit/*.sh
+```
+
+`tests/lint.sh` prefers a native `shellcheck` **only** when it is exactly the pinned
+version, and otherwise runs the pinned `koalaman/shellcheck:v0.11.0` docker image — so a
+host without shellcheck installed still lints (needs Docker), byte-for-byte identical to
+CI. Config and curated false-positive suppressions live in `.shellcheckrc` at the repo
+root. Full details in [`tests/README.md`](../../tests/README.md#linting).
 
 ## Full battery (`tests/battery.sh`)
 
@@ -171,8 +189,8 @@ Per-step evidence (phase 4):
 
 - **Step 1 qBittorrent:** `tests/assertions/qbittorrent-live.sh` logs into the live API with shared admin credentials, then verifies pause-on-ratio (`max_ratio_act=0`), speed limits, seed-time policy, Docker-subnet auth bypass, managed save/temp paths, and live API categories.
 - **Step 2 Jackett:** API key present (>=20 chars); configured indexers, when any are enabled, are verified via Torznab caps request through Jackett (not direct upstream probe). Reports which indexers failed if any.
-- **Step 3 Sonarr:** API key, root folder `/data/media/tv`, qBittorrent download client, `1080p Balanced` quality profile (fetched by ID, not grepping the full list). Custom format scores verified against exact config.yml values (all 7 formats: Repack/Proper=5, x264=10, x265 HD=-25, BR-DISK=-10000, LQ=-10000, No-RlsGroup=-25, Obfuscated=-25). Indexer count verified with tolerance for upstream-blocked failures. HDTV-720p `preferredSize` tightened to 30.0 (quality definitions). Forms authentication enabled.
-- **Step 4 Radarr:** mirror of Sonarr with `/data/media/movies`. Custom format scores verified against exact config.yml values (same 7 formats). Indexer count, WEBDL-1080p `preferredSize` tightened to 50.0, Forms authentication enabled.
+- **Step 3 Sonarr:** API key, root folder `/data/media/tv`, qBittorrent download client, `1080p Balanced` quality profile (fetched by ID, not grepping the full list). Custom format scores verified against exact config.yml values — the non-zero set (Repack/Proper=5, LQ=-100, No-RlsGroup=-10, Obfuscated=-10; x264/x265/BR-DISK are neutral 0), and no unexpected scored format. Indexer count verified with tolerance for upstream-blocked failures. HDTV-720p `preferredSize` tightened to 30.0 (quality definitions). Forms authentication enabled.
+- **Step 4 Radarr:** mirror of Sonarr with `/data/media/movies`. Custom format scores verified against exact config.yml values (same non-zero set). Indexer count, WEBDL-1080p `preferredSize` tightened to 50.0, Forms authentication enabled.
 - **Step 5 Jellyfin:** `StartupWizardCompleted:true` in `/System/Info/Public`, admin auth returns `AccessToken` (with adversarial password containing `$`, `"`, `\`), Movies + TV Shows libraries present.
   Focused host-side coverage: `bash tests/unit/jellyfin.sh` checks Jellyfin library creation logs success or warning based on the library POST result; `bash tests/unit/api-matrix-jellyfin.sh` deterministically proves the VirtualFolders read retries transient failures, preserves the successful JSON response, and stops after five failed requests.
 - **Step 6 Seerr:** `/api/v1/settings/public` reports `initialized:true`. Sonarr and Radarr connections verified. Jellyfin library sync verified — Movies and TV Shows both present and enabled (catches silent poll-timeout failures).
@@ -419,10 +437,16 @@ This DinD gate does not prove real public WAN reachability, real DDNS propagatio
 Hardware transcoding behavior is covered by host-side Bash units because DinD does not provide real GPU hardware. The focused unit command is:
 
 ```bash
-bash tests/unit/gpu-branching.sh && bash tests/unit/nvidia-patch.sh && bash tests/unit/wizard-flow.sh && bash tests/unit/stage3-flow.sh && bash tests/unit/stage3-marker.sh && bash tests/unit/reboot.sh && bash tests/unit/stage3-summary.sh && bash tests/unit/setup-resume-routing.sh && bash tests/unit/stage3-transcode.sh && bash tests/unit/stage3-gpu-content.sh
+bash tests/unit/gpu-branching.sh && bash tests/unit/nvidia-patch.sh && bash tests/unit/nvidia-maintenance.sh && bash tests/unit/wizard-flow.sh && bash tests/unit/stage3-flow.sh && bash tests/unit/stage3-marker.sh && bash tests/unit/reboot.sh && bash tests/unit/stage3-summary.sh && bash tests/unit/setup-resume-routing.sh && bash tests/unit/stage3-transcode.sh && bash tests/unit/stage3-gpu-content.sh
 ```
 
 These tests cover GPU branch contracts, nvidia-patch pinning and dirty-tree rejection, wizard sequencing, hardware transcoding state publication, Intel QSV-to-VAAPI fallback routing, NVIDIA marker/reboot/finalize routing, post-reboot banner path rendering, final summary labels, accelerator evidence parsing, codec capability probing, and generated override GPU content. Automated proof uses Bash units, command stubs, API fixtures, automatic FFmpeg smoke-test stubs, `vainfo` parser fixtures, captured Jellyfin FFmpeg/transcode log fallback fixtures, and parser fixtures for `qsv`, `vaapi`, and `nvenc`.
+
+Stage 3 PTY scenarios cover the vendor-specific menus and the detected-only multi-GPU selector:
+
+```bash
+./tests/run.sh --no-preload wizard-ui-stage3-intel wizard-ui-stage3-amd wizard-ui-stage3-nvidia-standard wizard-ui-stage3-nvidia-existing wizard-ui-stage3-multi-gpu
+```
 
 Real Intel/AMD/NVIDIA GPU transcode proof requires a real host and must not be claimed by DinD. DinD can prove that MediaStack chooses the right states, APIs, and fallbacks; it cannot prove that a physical GPU performs a live transcode on a user host.
 

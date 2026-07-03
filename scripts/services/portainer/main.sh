@@ -46,18 +46,24 @@ print(json.dumps({"Username": os.environ["ADMIN_USER"], "Password": os.environ["
             wait_for_service "Portainer" "$portainer_url"
         fi
 
+        # Newer Portainer versions require X-Setup-Token (printed to container
+        # logs at startup) on the admin/init endpoint. Extract it from logs;
+        # older versions without this requirement ignore the extra header.
+        local setup_token
+        setup_token=$(docker logs portainer 2>&1 | sed $'s/\x1b\\[[0-9;]*m//g' | grep -o 'setup_token=[a-zA-Z0-9]*' | tail -1 | cut -d= -f2 || true)
+
         # Capture the response body so we can give a specific error when
         # Portainer rejects the password (its 12-char minimum is enforced
         # at this endpoint and the bare HTTP code doesn't say which rule
-        # failed). validate_admin_password ALSO requires 12 chars, so this
-        # path is normally unreachable — but a user who ran an older
-        # wizard with an 8-char password and re-ran configure.sh would
-        # hit it without an obvious diagnosis otherwise.
+        # failed). validate_admin_password enforces the same floor, so this
+        # path is normally unreachable — but kept for defence against a
+        # user who bypassed the wizard (e.g. edited .env directly).
+        local -a init_curl_args=(-s -w "\n%{http_code}" -X POST
+            "$portainer_url/api/users/admin/init"
+            -H "Content-Type: application/json")
+        [[ -n "$setup_token" ]] && init_curl_args+=(-H "X-Setup-Token: $setup_token")
         local init_resp init_http init_body_resp
-        init_resp=$(curl -s -w "\n%{http_code}" -X POST \
-            "$portainer_url/api/users/admin/init" \
-            -H "Content-Type: application/json" \
-            -d "$init_body")
+        init_resp=$(curl "${init_curl_args[@]}" -d "$init_body")
         init_http=$(echo "$init_resp" | tail -1)
         init_body_resp=$(echo "$init_resp" | sed '$d')
 
@@ -66,7 +72,7 @@ print(json.dumps({"Username": os.environ["ADMIN_USER"], "Password": os.environ["
             409) log_skip "Portainer admin already exists" ;;
             400)
                 if [[ "$init_body_resp" == *"Password does not meet the requirements"* ]]; then
-                    log_warn "Portainer rejected the admin password: it requires 12+ characters. Re-run setup.sh with a longer password to enable Portainer."
+                    log_warn "Portainer rejected the admin password: it requires 12+ characters. Choose Install MediaStack from the menu and enter a longer password to enable Portainer."
                 else
                     log_warn "Portainer admin creation returned HTTP 400: $init_body_resp"
                 fi

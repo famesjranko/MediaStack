@@ -151,7 +151,17 @@ for s in "${SCENARIOS[@]}"; do
     # --reset-between: restore a pristine DinD before every scenario after the
     # first, so a scenario that doesn't reset itself can't inherit prior state.
     if (( _ran_one )) && [[ "$MS_TEST_RESET_BETWEEN" == "1" ]]; then
-        dind_reset
+        # A failed restore leaves /root/MediaStack missing, so every later
+        # `docker exec -w /root/MediaStack` chdir-fails and the whole battery
+        # cascades into noise. Retry once, then abort with one clear error
+        # instead of dozens of misleading per-scenario failures.
+        if ! dind_reset; then
+            echo "[run] reset-between restore failed — retrying once" >&2
+            if ! dind_reset; then
+                echo "[run] FATAL: reset-between restore failed twice; aborting battery to avoid a chdir cascade (remaining scenarios not run)" >&2
+                exit 1
+            fi
+        fi
     fi
     _ran_one=1
     scenario_begin "$s"
