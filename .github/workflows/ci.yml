@@ -42,16 +42,18 @@ jobs:
           fi
 
       - name: Config and workflow YAML validation
-        # Structural YAML lint for config.yml and the workflow files. Kept as a
-        # distinct step because tests/unit.sh does not parse workflow YAML (its
-        # compose render covers docker-compose.yml only).
+        # Structural YAML lint for the config template and the workflow files.
+        # The root config.yml is now a gitignored live copy seeded on install from
+        # the tracked template config/examples/config.yml, so lint the template.
+        # Kept as a distinct step because tests/unit.sh does not parse workflow YAML
+        # (its compose render covers docker-compose.yml only).
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import pathlib
           import yaml
 
-          for path in ["config.yml", *pathlib.Path(".github/workflows").glob("*.yml")]:
+          for path in ["config/examples/config.yml", *pathlib.Path(".github/workflows").glob("*.yml")]:
               yaml.safe_load(pathlib.Path(path).read_text())
           PY
 
