@@ -59,6 +59,16 @@ plus `fresh-install` where relevant — note `fresh-install` does **not** start 
 (wireguard) or `subtitles` (bazarr) profiles, so those use dedicated scenarios. Services marked
 `compose-only` / `manual` have no automated oracle — verify by hand.
 
+**fail2ban filters are re-verified when you preflight jellyfin or seerr.** Both are
+`scenario:fresh-install`, and `fresh-install.sh` runs `assert_fail2ban_configured`, which
+active-probes a real auth failure and confirms that service's fail2ban filter still matches the
+**candidate** image's log format. So a jellyfin/seerr log-format change that would silently stop
+brute-force bans is caught at preflight, before the digest reaches the stable baseline — this is the
+**only** automated signal for that break. fail2ban's own `scenario:fail2ban-drift` row uses static
+fixture logs, so it guards the fail2ban engine/filters against a *fail2ban* image bump but does
+**not** see a jellyfin/seerr format change. (Vetting-time counterpart of the day-2
+"Health & security → fail2ban" check; see ADR-44.)
+
 ## CI image drift alert
 
 The `Image Drift Alert` GitHub workflow runs weekly and on demand. It resolves each compose image tag
@@ -185,8 +195,8 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 | flaresolverr | latest | n/a | scenario:fresh-install | healthcheck only (image pulls, container starts, /health passes); no deterministic Cloudflare-solve oracle, see "FlareSolverr — confidence boundary" above | ADR-24 |
 | homepage | latest | stable | scenario:fresh-install | scripts/services/homepage/main.sh + tests/assertions/homepage.sh | ADR-13, ADR-24 |
 | jackett | latest | stable | scenario:fresh-install | scripts/services/jackett/main.sh + tests/assertions/jackett.sh | ADR-24 |
-| jellyfin | latest | stable | scenario:fresh-install | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh | ADR-11, ADR-12, ADR-24 |
-| seerr | latest | stable | scenario:fresh-install | scripts/services/seerr/main.sh + tests/assertions/seerr.sh | ADR-24 |
+| jellyfin | latest | stable | scenario:fresh-install | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh + fail2ban filter (assert_fail2ban_configured) | ADR-11, ADR-12, ADR-24, ADR-44 |
+| seerr | latest | stable | scenario:fresh-install | scripts/services/seerr/main.sh + tests/assertions/seerr.sh + fail2ban filter (assert_fail2ban_configured) | ADR-24, ADR-44 |
 | npm | major:2 | major-gated | scenario:npm-heal | scripts/services/npm/main.sh + tests/assertions/npm.sh | ADR-21, ADR-24 |
 | portainer | latest | stable | scenario:fresh-install | scripts/services/portainer/main.sh + tests/assertions/portainer.sh | ADR-24 |
 | qbittorrent | latest | stable | scenario:fresh-install | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh | ADR-6, ADR-24 |

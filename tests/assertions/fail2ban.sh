@@ -1,3 +1,9 @@
+# The fail2ban-regex "N matched" parser is shared with the runtime day-2 health
+# check (scripts/lib/health.sh:_fail2ban_matched_count) so the two can't drift.
+# health.sh is source-safe (no side effects, own include guard).
+# shellcheck source=../../scripts/lib/health.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/health.sh"
+
 assert_fail2ban_filter_matches() {
     local name="$1"
     local log_source="$2"
@@ -13,8 +19,7 @@ assert_fail2ban_filter_matches() {
 
     local f2b_regex_out matched_count
     f2b_regex_out=$(dind_exec "docker exec fail2ban fail2ban-regex '$log_source' '$filter_path' 2>&1" | tr -d '\r')
-    matched_count=$(echo "$f2b_regex_out" | sed -n 's/.*[[:space:]]\([0-9]*\) matched.*/\1/p' | head -1)
-    [[ -z "$matched_count" ]] && matched_count=0
+    matched_count=$(_fail2ban_matched_count "$f2b_regex_out")
 
     if [[ -n "$expected_count" ]]; then
         if [[ "$matched_count" -eq "$expected_count" ]]; then
@@ -128,8 +133,7 @@ except Exception:
     local f2b_regex_out matched_count
 
     f2b_regex_out=$(dind_exec "docker exec fail2ban sh -c 'cat /var/log/jellyfin/log_*.log > /tmp/f2b-test.log 2>/dev/null && fail2ban-regex /tmp/f2b-test.log /data/filter.d/jellyfin.conf 2>&1; rm -f /tmp/f2b-test.log'" | tr -d '\r')
-    matched_count=$(echo "$f2b_regex_out" | sed -n 's/.*[[:space:]]\([0-9]*\) matched.*/\1/p' | head -1)
-    [[ -z "$matched_count" ]] && matched_count=0
+    matched_count=$(_fail2ban_matched_count "$f2b_regex_out")
     if [[ "$matched_count" -ge 1 ]]; then
         pass "fail2ban: jellyfin filter matches current log format ($matched_count hits)"
     else
@@ -138,8 +142,7 @@ except Exception:
 
     if ! svc_stripped seerr; then
         f2b_regex_out=$(dind_exec "docker exec fail2ban sh -c 'cat /var/log/seerr/*.log > /tmp/f2b-test.log 2>/dev/null && fail2ban-regex /tmp/f2b-test.log /data/filter.d/seerr.conf 2>&1; rm -f /tmp/f2b-test.log'" | tr -d '\r')
-        matched_count=$(echo "$f2b_regex_out" | sed -n 's/.*[[:space:]]\([0-9]*\) matched.*/\1/p' | head -1)
-        [[ -z "$matched_count" ]] && matched_count=0
+        matched_count=$(_fail2ban_matched_count "$f2b_regex_out")
         if [[ "$matched_count" -ge 1 ]]; then
             pass "fail2ban: seerr filter matches current log format ($matched_count hits)"
         else
@@ -149,8 +152,7 @@ except Exception:
 
     if ! svc_stripped npm; then
         f2b_regex_out=$(dind_exec "docker exec fail2ban sh -c 'cat /var/log/npm/proxy-host-*_*.log /var/log/npm/default-host_*.log > /tmp/f2b-test.log 2>/dev/null && fail2ban-regex /tmp/f2b-test.log /data/filter.d/npm.conf 2>&1; rm -f /tmp/f2b-test.log'" | tr -d '\r')
-        matched_count=$(echo "$f2b_regex_out" | sed -n 's/.*[[:space:]]\([0-9]*\) matched.*/\1/p' | head -1)
-        [[ -z "$matched_count" ]] && matched_count=0
+        matched_count=$(_fail2ban_matched_count "$f2b_regex_out")
         if [[ "$matched_count" -ge 1 ]]; then
             pass "fail2ban: npm filter matches current log format ($matched_count hits)"
         else

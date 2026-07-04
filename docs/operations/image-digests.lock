@@ -2,16 +2,16 @@
 # Update only after the matching local DinD preflight has passed.
 service	image	digest	tested_at_utc	preflight
 jellyfin	jellyfin/jellyfin:latest	sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db	2026-06-08T07:15:51Z	scenario:fresh-install
-sonarr	linuxserver/sonarr:latest	sha256:02bc962946fef994e67a38152446df25c10a52f8583aefeeb6467f9dd44cab99	2026-06-22T12:58:26Z	scenario:fresh-install
-radarr	linuxserver/radarr:latest	sha256:1e95b5c13fe015361a9ae1c4d99fc2336816790aaea60fa74b2ffebe076a69e0	2026-06-22T12:58:26Z	scenario:fresh-install
-jackett	linuxserver/jackett:latest	sha256:4cf25f1ff56f03f526c97532eda882c0557e316239c8f3c9faf50d9f7d2c6e1d	2026-06-22T12:58:26Z	scenario:fresh-install
-qbittorrent	linuxserver/qbittorrent:latest	sha256:abbf2aeeb58b641977a012d0ab69939eb277cb827078450b142f782b1cd6893c	2026-06-22T12:58:26Z	scenario:fresh-install
+sonarr	linuxserver/sonarr:latest	sha256:633e0e66d85ce4e9172608a37d3d24e124b3e485fc0d946f533c3bb5875227e9	2026-07-04T20:04:46Z	scenario:fresh-install
+radarr	linuxserver/radarr:latest	sha256:39da107b5a9371fdaa651bd188049b863716a815385eb3a30d41071b7e1aeb33	2026-07-04T20:04:46Z	scenario:fresh-install
+jackett	linuxserver/jackett:latest	sha256:a68237e2dac179adf5fc1b2b9a0376ac71c5e421dccdb1f4a8803465779140f2	2026-07-04T20:04:46Z	scenario:fresh-install
+qbittorrent	linuxserver/qbittorrent:latest	sha256:163f3384db6cba9f68eaa83ca5f4209298b6029ba2d07b5e67562d0715baf5b9	2026-07-04T20:04:46Z	scenario:fresh-install
 flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47	2026-06-01T06:49:06Z	scenario:fresh-install
 seerr	ghcr.io/seerr-team/seerr:latest	sha256:c92d2dc117f62185e7bcb88cd56efd374ea79210eaf433275449e8d5988eb5a8	2026-06-11T16:38:18Z	scenario:fresh-install
-unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:2bd7666f9853c7d8238e40676a5e3d706d606091f785847532dc7c7a6d9c4a5f	2026-06-22T12:58:26Z	scenario:unpackerr
-bazarr	linuxserver/bazarr:latest	sha256:8e48a2950e3806a2a914fe031fa21b1c0a0f2824eede4ea747e26213e941fbf2	2026-06-22T12:58:26Z	scenario:bazarr
+unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:125538e166d05012be26584f92f248d51bfbcf2bb4c5e2964376003b2ae97bff	2026-07-04T20:04:46Z	scenario:unpackerr
+bazarr	linuxserver/bazarr:latest	sha256:5d916d07404296ec35ee726e13e0e558f05952724cf494a7f009d913fb2b12f3	2026-07-04T20:04:46Z	scenario:bazarr
 homepage	ghcr.io/gethomepage/homepage:latest	sha256:a0b71c8e757298d02560186bab9fbe3fc2d375c523a62cc1019177b37e48aa28	2026-06-22T12:58:26Z	scenario:fresh-install
-portainer	portainer/portainer-ce:latest	sha256:d27f76194b719bfe2a34779d51798a7adf02510cfba69ebcb538267f75aa4f47	2026-06-08T07:15:51Z	scenario:fresh-install
+portainer	portainer/portainer-ce:latest	sha256:5f9b4bda5582fc72c07d730f86168205f4042d82c9cde011c9146b12496e4625	2026-07-04T20:04:46Z	scenario:fresh-install
 npm	jc21/nginx-proxy-manager:2	sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb	2026-06-08T07:15:51Z	scenario:npm-heal
 fail2ban	crazymax/fail2ban:latest	sha256:7cd8a427a44675397398a8dace2a3d755e62c72527f8730e4fd37697731a9321	2026-06-01T06:49:06Z	scenario:fail2ban-drift
 ddns-updater	qmcgaw/ddns-updater:latest	sha256:9313e1c31f366c89dc0819e5eff85576cb23821424c0c267fa66cfa39aabde83	2026-06-01T06:49:06Z	scenario:ddns-seed
@@ -19,4 +19,4 @@ uptime-kuma	louislam/uptime-kuma:2	sha256:91e963bfda569ba115206e843febb446f473ab
 beszel	henrygd/beszel:latest	sha256:a849ad80814b6a1a3be665304dcace5d4854b3bed7bde4dd1227e8ce1b82d477	2026-06-01T06:49:06Z	scenario:fresh-install
 beszel-agent	henrygd/beszel-agent:alpine	sha256:c6e925e00784b90eab68e2b813e4c722cf185f378d77e1129a97c064ca5fa7e4	2026-06-01T06:49:06Z	scenario:fresh-install
 wireguard	ghcr.io/wg-easy/wg-easy:15	sha256:93bbd593e07bab98d02807a28770ac87ab6c48818e319e68c1f66561feb99876	2026-06-01T06:49:06Z	scenario:wireguard
-autoheal	willfarrell/autoheal:latest	sha256:3fd4d591075224304e95d92af8619adda1fe6e1469587e8b5230d946b0926f00	2026-06-23T06:26:32Z	scenario:autoheal
+autoheal	willfarrell/autoheal:latest	sha256:c5819d4773640607339b2df25ae78dd634065b224580a1b80e5eceb8e43fb649	2026-07-04T20:04:46Z	scenario:autoheal

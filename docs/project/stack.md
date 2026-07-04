@@ -135,6 +135,7 @@ Generator: /project-stack (audit of existing codebase)
 # Optional: also prune dangling images host-wide after the update
 ./scripts/update.sh --prune
 
+# Day-2 health & security: ./mediastack → "Health & security" → "Run all checks" (fail2ban regex-drift/jails, TLS expiry, DNS drift, disk %, UFW, DOCKER-USER chain; ADR-44)
 # Day-2 per-service updates: ./mediastack → "Manage updates" (status, per-service updates; ADR-30)
 # Day-2 change quality profile: ./mediastack → "Features & settings" → "Change quality profile" (resolution × size, renamed in place, no orphan)
 # Day-2 uninstall: ./mediastack → "Uninstall MediaStack" (transactional teardown; removes only recorded MediaStack host changes; data/ and config/ preserved)

@@ -502,6 +502,21 @@ def markdown_summary(
             "",
             "Remote image tags now resolve differently than the previous baseline.",
             "Run the affected service preflight from `docs/operations/upgrades.md` locally with DinD before accepting the new baseline.",
+        ]
+    )
+    # Jellyfin/seerr preflight is scenario:fresh-install, which also runs
+    # assert_fail2ban_configured — the only automated check that their fail2ban
+    # filter still matches the new log format. Surface that here so a maintainer
+    # accepting the bump knows brute-force protection was re-verified (ADR-44).
+    drift_services = {c.service for _, c in changed} | {a.service for a in added}
+    if drift_services & {"jellyfin", "seerr"}:
+        lines.append(
+            "For **jellyfin**/**seerr**, that `fresh-install` preflight also re-verifies the service's "
+            "fail2ban filter still matches the new log format (`assert_fail2ban_configured`) — the only "
+            "automated signal for a log-format change that would silently stop brute-force bans."
+        )
+    lines.extend(
+        [
             "",
             "| Service | Previous | Current | Local preflight |",
             "|---|---|---|---|",

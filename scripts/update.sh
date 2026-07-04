@@ -123,6 +123,21 @@ echo "Recreating containers with new images..."
 storage_guard_before_start
 docker compose $PROFILE_ARGS up -d --remove-orphans
 
+# After the image bumps, verify each log-parsed service's fail2ban filter still
+# matches its (possibly changed) log format — the silent break the day-2 health
+# checks target. Wait briefly for jellyfin/seerr to become ready so the active
+# probe lands. Silent when fail2ban isn't running. health.sh is set -e safe and
+# sources its own deps.
+if source "$SCRIPT_DIR/scripts/lib/health.sh" 2>/dev/null && _health_f2b_running; then
+    echo ""
+    echo "Verifying fail2ban protection still matches current log formats..."
+    for _hc_svc in jellyfin seerr; do
+        docker inspect "$_hc_svc" >/dev/null 2>&1 || continue   # not in this deploy → don't wait on it
+        for _hc_i in $(seq 1 30); do _health_svc_healthy "$_hc_svc" && break; sleep 2; done
+    done
+    health_present_fail2ban_updates jellyfin seerr
+fi
+
 echo ""
 if $PRUNE_IMAGES; then
     echo "Cleaning up dangling Docker images across this host..."

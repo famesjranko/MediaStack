@@ -1394,6 +1394,94 @@ submenu_diagnostics() {
     done
 }
 
+# Soft sudo pre-cache for the health checks that read root-owned state (firewall,
+# certs). Unlike prompt_sudo_cache (setup), this NEVER exits — if the user has no
+# sudo, the checks self-skip rather than killing the launcher.
+_health_prime_sudo() {
+    sudo -n true 2>/dev/null && return 0
+    ui_log info "Firewall and certificate checks need sudo access."
+    sudo -v 2>/dev/null || ui_log warn "No sudo — those checks will be skipped."
+}
+
+# Run one health check under a spinner (the fail2ban regex probes block ~15s) and
+# present the verdict. Mirrors _mu_scan: the wrapped fn writes to a temp file so the
+# spinner doesn't swallow its output; we present after it returns.
+_health_present_spin() {
+    local label="$1"; shift
+    local _hc_vf; _hc_vf=$(mktemp)
+    _hc_spin_run() { "$@" >"$_hc_vf" 2>/dev/null; }
+    ui_spin "$label" _hc_spin_run "$@"
+    unset -f _hc_spin_run
+    health_present "$(cat "$_hc_vf")"
+    rm -f "$_hc_vf"
+}
+
+# Run-all with a per-check spinner, reusing the library's ordered check set
+# (_health_each) so the menu's set can't drift from the library's.
+_health_run_all_spin() {
+    _LOG_COUNTS_OK=0 _LOG_COUNTS_WARN=0 _LOG_COUNTS_ERROR=0 _LOG_COUNTS_SKIP=0
+    local label fn arg
+    while IFS=$'\t' read -r label fn arg; do
+        _health_present_spin "Checking ${label}..." "$fn" ${arg:+"$arg"}
+    done < <(_health_each)
+    echo ""
+    ui_log info "Summary: $(log_capture_summary)"
+}
+
+# Day-2 health & security checks. The check library (scripts/lib/health.sh) is
+# shared with the update-flow hook and tests; this submenu is just one caller.
+# _render_service_list (container rollup) is printed here in the menu only, so
+# the library's checks stay pure for the update.sh/test consumers.
+submenu_health() {
+    if ! declare -F _health_each >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "$SCRIPT_DIR/scripts/lib/health.sh"
+    fi
+    while true; do
+        clear
+        ui_box "MediaStack - Health & security" \
+            "$(ui_kv 'Detects' 'silent failures Docker health checks miss')"
+        echo ""
+        local choice
+        choice=$(ui_choose "Health & security:" \
+            "Run all checks" \
+            "fail2ban protection (regex + jails)" \
+            "TLS certificate expiry" \
+            "DNS / public-IP drift" \
+            "Disk space" \
+            "Firewall (UFW + Docker port lock)" \
+            "Back")
+
+        case "$choice" in
+            "Run all checks"*)
+                _health_prime_sudo
+                echo ""
+                _render_service_list
+                echo ""
+                _health_run_all_spin
+                pause_for_menu ;;
+            "fail2ban"*)
+                _health_present_spin "Checking fail2ban jails..." health_fail2ban_jails
+                _health_present_spin "Checking fail2ban jellyfin filter (~15s)..." health_fail2ban_regex jellyfin
+                _health_present_spin "Checking fail2ban seerr filter (~15s)..." health_fail2ban_regex seerr
+                pause_for_menu ;;
+            "TLS certificate"*)
+                _health_prime_sudo
+                _health_present_spin "Checking TLS certificate..." health_cert_expiry; pause_for_menu ;;
+            "DNS"*)
+                _health_present_spin "Checking DNS / public IP (~5s)..." health_dns_drift; pause_for_menu ;;
+            "Disk"*)
+                _health_present_spin "Checking disk space..." health_disk_pct; pause_for_menu ;;
+            "Firewall"*)
+                _health_prime_sudo
+                _health_present_spin "Checking UFW firewall..." health_ufw_active
+                _health_present_spin "Checking Docker port lock..." health_docker_user_restrict
+                pause_for_menu ;;
+            *) return 0 ;;
+        esac
+    done
+}
+
 # Show the current GPU / transcoding state above the hardware submenu actions so
 # the user can see what's configured (vendor, driver + mode, encoder, whether the
 # NVENC session-limit patch is applied, and the overall state) before choosing.
@@ -1784,6 +1872,19 @@ _apply_service_update() {
     if [[ "${_MU_PULL_OK:-0}" == 1 ]] && _service_is_running "$svc"; then
         _MU_APPLIED+=("$svc")
     fi
+    # A jellyfin/seerr update can change the log format its fail2ban filter parses,
+    # silently breaking brute-force bans. Offer to verify (single-service path only;
+    # the "Update all" batch, skip_confirm=1, runs one aggregate check at the end).
+    if [[ "$skip_confirm" != "1" ]] && _service_is_running "$svc"; then
+        case "$svc" in
+            jellyfin|seerr)
+                declare -F health_fail2ban_regex >/dev/null 2>&1 || source "$SCRIPT_DIR/scripts/lib/health.sh"
+                if _health_f2b_running && ui_confirm "Verify fail2ban still protects ${svc} after this update?" no; then
+                    _health_present_spin "Checking fail2ban ${svc} filter (~15s)..." health_fail2ban_regex "$svc"
+                fi
+                ;;
+        esac
+    fi
     return 0
 }
 
@@ -1940,6 +2041,10 @@ _menu_update_all() {
         # so don't re-prompt per service inside _apply_service_update.
         _apply_service_update "$s" 1
     done
+    # One aggregate fail2ban regex check for any jellyfin/seerr that was updated
+    # (the per-service offer is suppressed under skip_confirm=1). No extra prompt.
+    declare -F health_present_fail2ban_updates >/dev/null 2>&1 || source "$SCRIPT_DIR/scripts/lib/health.sh"
+    health_present_fail2ban_updates "${svcs[@]}"
     pause_for_menu
 }
 
@@ -2097,10 +2202,18 @@ menu_post() {
         "Manage stack (status, stop, start, logs)"
         "Manage updates (status, per-service updates)"
         "Features & settings (quality, bandwidth, subtitles, sharing, indexers)"
+        "Health & security (checks & protection)"
         "Manage hardware transcoding (GPU)"
         # Band 3 — occasional / setup / destructive
         # "Re-run configuration to add new services"  # hidden: noisy on re-run, use Features & settings instead
         "Diagnostics (ports, public IP, DNS, readiness)"
+    )
+    # Offer the GUM installer only when it's missing (mirrors menu_pre:2161).
+    # MUST stay before "Uninstall"/"Quit": inserting it after Uninstall would
+    # shift the numeric selection PTY tests target the wrong item (see
+    # tests/scenarios/wizard-ui-uninstall.sh, tests/unit/dry-run.sh).
+    command -v gum &>/dev/null || options+=("Get enhanced menus (install GUM)")
+    options+=(
         "Uninstall MediaStack"
         "Quit"
     )
@@ -2114,11 +2227,13 @@ menu_post() {
         "View access info"*)      action_access_info; pause_for_menu ;;
         "View storage"*)          submenu_storage ;;
         "Manage updates"*)        submenu_manage_updates ;;
+        "Health & security"*)     submenu_health ;;
         "Manage hardware transcoding"*) submenu_manage_hardware ;;
         # "Re-run configuration"*)  action_configure ;;
         "Diagnostics"*)           submenu_diagnostics ;;
         "Features"*)              submenu_features ;;
         "Manage stack"*)          submenu_manage_stack ;;
+        "Get enhanced menus"*)    action_install_gum ;;
         "Uninstall"*)             action_uninstall ;;
         "Quit"*)                  echo; echo "  Goodbye."; exit 0 ;;
         *)                        ;;  # unrecognized choice - re-render menu

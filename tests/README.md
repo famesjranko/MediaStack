@@ -74,7 +74,7 @@ Scripted transcript (the same flow the unit test drives, under a PTY so the
 non-TTY validated-input prompts don't hang):
 
 ```bash
-printf '%s\n' '[{"expect":"What would you like to do"},{"send":"11\n"}]' > /tmp/steps.json
+printf '%s\n' '[{"expect":"What would you like to do"},{"send":"10\n"}]' > /tmp/steps.json
 python3 tests/lib/wizard_pty.py --command './mediastack --dry-run' --steps /tmp/steps.json \
     --cwd "$PWD" --raw-log /tmp/raw.log --plain-log /tmp/plain.log --expect-exit 0
 ```

@@ -17,7 +17,7 @@ Turnkey media server for home networks. One command takes bare Debian to a fully
 
 MediaStack turns a fresh Debian server into a complete home media stack: Jellyfin, Seerr, Sonarr, Radarr, qBittorrent, monitoring, remote access, and the supporting services they need. It is designed for non-technical users who should not have to edit service config files by hand.
 
-To use, run `./mediastack`. This presents a menu where you can install MediaStack or run readiness checks. The installer detects the GPU, creates the storage layout, hardens the host, starts the containers, and configures the services. Storage can be local, NAS (NFS), or manual. After install, the day-2 menu is available to check status, update services, toggle features, run diagnostics, add remote access, and uninstall.
+To use, run `./mediastack`. This presents a menu where you can install MediaStack or run readiness checks. The installer detects the GPU, creates the storage layout, hardens the host, starts the containers, and configures the services. Storage can be local, NAS (NFS), or manual. After install, the day-2 menu is available to check status, update services, toggle features, run health & security checks, run diagnostics, add remote access, and uninstall.
 
 ---
 
@@ -29,7 +29,7 @@ cd MediaStack
 ./mediastack
 ```
 
-`./mediastack` adapts to the machine state: before install it shows setup and readiness checks; after install it shows status, port checks, updates, hardware transcoding, and troubleshooting.
+`./mediastack` adapts to the machine state: before install it shows setup and readiness checks; after install it shows status, port checks, updates, health & security checks, hardware transcoding, and troubleshooting.
 
 > [!NOTE]
 > **Requirements:** Debian Server (headless), 50 GB+ free disk space, internet connection.

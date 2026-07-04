@@ -39,7 +39,7 @@ chmod +x $fixture_dir/setup.sh"
     dind_exec 'cat >/tmp/wizard-uninstall.steps.json <<"JSON"
 [
   {"expect": "What would you like to do\\?"},
-  {"send": "7\n"},
+  {"send": "9\n"},
   {"expect": "This will DELETE"},
   {"expect": "Type DESTROY to confirm"},
   {"send": "DESTROY\n"},

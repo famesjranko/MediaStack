@@ -15,6 +15,7 @@ MEDIASTACK_APT_AUTO_CONF=/etc/apt/apt.conf.d/21mediastack-auto-upgrades
 MEDIASTACK_APT_POLICY_CONF=/etc/apt/apt.conf.d/51mediastack-unattended-upgrades
 MEDIASTACK_SYSCTL_CONF=/etc/sysctl.d/90-mediastack-hardening.conf
 MEDIASTACK_UFW_AFTER_RULES=/etc/ufw/after.rules
+MEDIASTACK_UFW_AFTER_INIT=/etc/ufw/after.init
 
 _ms_state_get() {
     local key="$1"
@@ -221,6 +222,11 @@ setup_ufw() {
         return 0
     fi
 
+    # Install/refresh the DOCKER-USER jump dedup hook (idempotent, marker-guarded).
+    # After the drift guard above so a "leaving UFW unchanged" box is untouched;
+    # before the skip guard below so existing installs pick it up on a re-run.
+    setup_ufw_docker_dedup_hook
+
     if sudo ufw status 2>/dev/null | grep -q 'MediaStack:Beszel-agent' \
         && ufw_docker_rules_installed; then
         if [[ "$(_ufw_defaults)" == "deny allow" ]]; then
@@ -333,6 +339,107 @@ RULES
         log_warn "Docker LAN-only restriction jump is still missing from DOCKER-USER after UFW reload."
         return 1
     fi
+}
+
+# The after.rules block appends `-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT`
+# on every full UFW load (iptables-restore --noflush never flushes DOCKER-USER),
+# so the jump accumulates one copy per `ufw reload`. We cannot flush DOCKER-USER
+# (fail2ban parks its own f2b-* jumps there) and cannot delete-before-add inside
+# after.rules (iptables-restore aborts the whole batch on an absent rule). So the
+# jump stays in after.rules (fail-closed: it always exists after a load) and this
+# after.init hook — run by ufw-init at the end of every start/reload — trims any
+# duplicates back to one. Emitted as literal text for /etc/ufw/after.init.
+_ufw_docker_dedup_block() {
+    cat <<'DEDUP'
+# >>> MEDIASTACK-DOCKER-DEDUP (issue #214) — keep exactly one DOCKER-USER→RESTRICT jump
+    while [ "$(iptables -S DOCKER-USER 2>/dev/null | grep -c -- '-j MEDIASTACK-DOCKER-RESTRICT')" -gt 1 ]; do
+        iptables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT || break
+    done
+# <<< MEDIASTACK-DOCKER-DEDUP
+DEDUP
+}
+
+setup_ufw_docker_dedup_hook() {
+    local after_init="$MEDIASTACK_UFW_AFTER_INIT"
+
+    # Idempotent: our marker already present -> nothing to do.
+    if sudo test -f "$after_init" && sudo grep -q 'MEDIASTACK-DOCKER-DEDUP' "$after_init"; then
+        log_skip "Docker jump dedup hook already installed"
+        return
+    fi
+
+    local created=false was_executable=false
+    if sudo test -f "$after_init"; then
+        sudo test -x "$after_init" && was_executable=true
+    else
+        created=true
+    fi
+
+    if [[ "$created" == "true" ]]; then
+        # No stock sample present — write a minimal MediaStack-owned hook.
+        {
+            printf '%s\n' '#!/bin/sh' \
+                '# after.init — MediaStack-managed; trims duplicate DOCKER-USER jumps (issue #214).' \
+                'set -e' \
+                'case "$1" in' \
+                'start)'
+            _ufw_docker_dedup_block
+            printf '%s\n' '    ;;' 'esac'
+        } | sudo tee "$after_init" >/dev/null
+        _ms_state_set UFW_AFTER_INIT_CREATED true
+    else
+        # Existing after.init (stock Canonical sample on a normal install):
+        # inject inside the existing start) arm. Injecting there — rather than
+        # appending a second case block — keeps us safe from a trailing exit and
+        # from a second exiting *) default. Refuse to edit a file without a clean
+        # stock start) arm (re-run invariant: warn + skip, never auto-reconcile).
+        if ! sudo grep -qE '^[[:space:]]*start\)[[:space:]]*$' "$after_init"; then
+            log_warn "Custom /etc/ufw/after.init present; skipping the DOCKER-USER dedup hook."
+            log_warn "Add the MEDIASTACK-DOCKER-DEDUP snippet to its start) arm by hand if you want it."
+            return
+        fi
+        local block_file tmp
+        block_file=$(mktemp)
+        tmp=$(mktemp)
+        _ufw_docker_dedup_block >"$block_file"
+        # Insert the block after the first start) line only. sudo reads the
+        # root-owned file; awk and the redirect stay unprivileged (bf and tmp
+        # are our own temp files).
+        sudo cat "$after_init" | awk -v bf="$block_file" '
+            { print }
+            /^[[:space:]]*start\)[[:space:]]*$/ && !done {
+                while ((getline line < bf) > 0) print line
+                close(bf)
+                done = 1
+            }
+        ' >"$tmp"
+        # Never overwrite the live hook unless the block actually landed.
+        if ! grep -q 'MEDIASTACK-DOCKER-DEDUP' "$tmp"; then
+            rm -f "$block_file" "$tmp"
+            log_warn "Could not inject the DOCKER-USER dedup block into /etc/ufw/after.init; skipping."
+            return
+        fi
+        sudo tee "$after_init" >/dev/null <"$tmp"
+        rm -f "$block_file" "$tmp"
+        # We injected into a pre-existing file — we did NOT create the whole
+        # thing. Record that so a later uninstall strips only our block instead
+        # of rm-ing the file (clears any stale =true left by an earlier
+        # created-install whose file was since replaced out-of-band).
+        _ms_state_set UFW_AFTER_INIT_CREATED false
+    fi
+
+    # Make it runnable only if it wasn't already — never re-mode an admin's
+    # executable hook. The state flag mirrors "we flipped the exec bit".
+    if [[ "$was_executable" == "false" ]]; then
+        sudo chmod 750 "$after_init"
+        [[ "$created" == "false" ]] && _ms_state_set UFW_AFTER_INIT_ACTIVATED true
+    fi
+
+    # Normalize any duplicates that already accumulated, without waiting for the
+    # next reload. Safe any time: it only ever deletes surplus copies of our jump.
+    sudo "$after_init" start >/dev/null 2>&1 || true
+
+    log_ok "Docker jump dedup hook installed"
 }
 
 # ---------------------------------------------------------------------------
@@ -899,6 +1006,21 @@ _uninstall_ufw() {
 
     if sudo test -f "$MEDIASTACK_UFW_AFTER_RULES"; then
         sudo sed -i '/^# MEDIASTACK-DOCKER-RULES/,/^# END MEDIASTACK-DOCKER-RULES$/d' "$MEDIASTACK_UFW_AFTER_RULES" || return 1
+    fi
+    # Reverse the DOCKER-USER dedup hook — but only while our marker is still
+    # present, so we never delete or edit a file an admin has since replaced.
+    if sudo test -f "$MEDIASTACK_UFW_AFTER_INIT" \
+        && sudo grep -q 'MEDIASTACK-DOCKER-DEDUP' "$MEDIASTACK_UFW_AFTER_INIT"; then
+        if [[ "$(_ms_state_get UFW_AFTER_INIT_CREATED 2>/dev/null || true)" == "true" ]]; then
+            # We wrote the whole file; drop it.
+            sudo rm -f "$MEDIASTACK_UFW_AFTER_INIT" || return 1
+        else
+            # Injected into a pre-existing file; strip our block, restore mode.
+            sudo sed -i '/^# >>> MEDIASTACK-DOCKER-DEDUP/,/^# <<< MEDIASTACK-DOCKER-DEDUP$/d' "$MEDIASTACK_UFW_AFTER_INIT" || return 1
+            if [[ "$(_ms_state_get UFW_AFTER_INIT_ACTIVATED 2>/dev/null || true)" == "true" ]]; then
+                sudo chmod 640 "$MEDIASTACK_UFW_AFTER_INIT" || return 1
+            fi
+        fi
     fi
     sudo ufw reload >/dev/null 2>&1 || return 1
     while sudo iptables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1; do

@@ -210,6 +210,7 @@ _dry_run_install_stubs() {
 
     # --- external command stubs (network is --network none; return success) ---
     curl()  { return 0; }
+    sleep() { :; }   # a UI-preview walk must not actually block (e.g. the health-check poll)
     docker() { _dry_run_docker "$@"; }
     openssl() {
         if [[ "${1:-}" == "rand" ]]; then echo "DryRunGeneratedSecret123"; else return 0; fi
