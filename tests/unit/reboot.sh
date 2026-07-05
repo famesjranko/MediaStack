@@ -118,5 +118,17 @@ else
     pass "reboot result error: command does not hardcode home checkout"
 fi
 
+# clear_setup_result_banner removes the stale result note only — never the
+# profile.d display script (which it must not touch, or a later
+# write_setup_result "ok" in the same boot would have nothing to render it).
+: > "$expected_result"
+clear_sudo_calls="$TMP_ROOT/clear-sudo-calls"; : > "$clear_sudo_calls"
+sudo() { printf '%s\n' "$*" >> "$clear_sudo_calls"; return 0; }
+clear_setup_result_banner
+assert_eq "absent" "$([[ -e "$expected_result" ]] && echo present || echo absent)" \
+    "clear_setup_result_banner: removes the stale result note"
+assert_eq "" "$(cat "$clear_sudo_calls")" \
+    "clear_setup_result_banner: touches no root-owned files (no profile.d removal)"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

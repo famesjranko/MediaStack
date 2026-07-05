@@ -98,7 +98,8 @@ for c in clients:
 
     # Per-client firewall on by default. Initial peer's firewallIps come from
     # the access tier chosen during the Stage-2 wizard (full-lan / server /
-    # containers). Streaming-only is a UI template, not an initial-peer tier.
+    # containers). The streaming / streaming-requests tiers are README copy-paste
+    # templates for family peers added in the wg-easy UI, not initial-peer tiers.
     if [[ "$per_client_fw" == "true" && -n "$peer_id" ]]; then
         local tier_ips
         if tier_ips=$(wg_firewall_ips_for_tier "$access_tier" "$lan_cidr" "$server_lan_ip"); then

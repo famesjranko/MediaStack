@@ -88,6 +88,7 @@ seed_unlock_env
 # "session limit removed" banner state).
 _apply_nvidia_patch_impl() { return 1; }
 rm -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched"
+: > "$SCRIPT_DIR/.setup-result"
 ( set -e; run_nvidia_unlock_maintenance repatch ) >/dev/null 2>&1
 assert_eq "1" "$?" "NVIDIA repatch: patch failure propagates to the guarded setup action"
 if [[ -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched" ]]; then
@@ -95,6 +96,19 @@ if [[ -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched" ]]; then
 else
     fail "NVIDIA repatch: patch failure drops the unpatched marker (no errexit abort)"
 fi
+assert_eq "present" "$([[ -e "$SCRIPT_DIR/.setup-result" ]] && echo present || echo absent)" \
+    "NVIDIA repatch: failed patch keeps the stale login banner (still accurate)"
+unset -f _apply_nvidia_patch_impl
+
+# A successful re-patch makes any stale "session limit NOT removed" banner wrong,
+# so it must be cleared.
+seed_unlock_env
+_apply_nvidia_patch_impl() { return 0; }
+: > "$SCRIPT_DIR/.setup-result"
+run_nvidia_unlock_maintenance repatch >/dev/null 2>&1
+assert_eq "0" "$?" "NVIDIA repatch: successful patch returns 0"
+assert_eq "absent" "$([[ -e "$SCRIPT_DIR/.setup-result" ]] && echo present || echo absent)" \
+    "NVIDIA repatch: successful patch clears the stale login banner"
 unset -f _apply_nvidia_patch_impl
 
 seed_unlock_env

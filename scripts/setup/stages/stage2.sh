@@ -798,9 +798,10 @@ _stage2_collect_wireguard() {
     # Access tier replaces the old "tunnel mode" prompt. Three options surface
     # for the initial peer: Full LAN (owner), Server (co-admin, includes SSH /
     # host services), Containers (trusted household, MediaStack apps only).
-    # Streaming-only is a README template for friends/kids — not a sensible
-    # initial-peer choice because the owner would lock themselves out. Full
-    # tunnel is an env-only override (see docs/design/architecture.md).
+    # The Streaming / Streaming + requests tiers are README templates for
+    # friends/kids — not sensible initial-peer choices because the owner would
+    # lock themselves out. Full tunnel is an env-only override
+    # (see docs/design/architecture.md).
     local tier_choice tier
     local tier_default_index=1
     case "$_WIZ_WG_ACCESS_TIER" in

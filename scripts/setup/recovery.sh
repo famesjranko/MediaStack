@@ -275,7 +275,9 @@ run_nvidia_unlock_maintenance() {
 
     if [[ "$action" == "repatch" ]]; then
         apply_nvidia_patch
-        return $?
+        local _rc=$?
+        (( _rc == 0 )) && type clear_setup_result_banner >/dev/null 2>&1 && clear_setup_result_banner
+        return "$_rc"
     fi
 
     check_internet_reachability

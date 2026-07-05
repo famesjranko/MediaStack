@@ -39,6 +39,11 @@ fi
 
 GPU_CANDIDATES=(nvidia amd intel)
 GPU_TYPE=amd
+# ui_section (section-header rendering) lives in scripts/lib/ui.sh, which this
+# unit test does not source. Stub it globally as a silent no-op so the real
+# stage3 menu functions under test don't spew "ui_section: command not found".
+ui_section() { :; }
+
 GPU_MENU_CAPTURE=$(mktemp)
 ui_choose() {
     shift
@@ -83,7 +88,8 @@ if type _stage3_offer >/dev/null 2>&1; then
     assert_eq "Configure hardware transcoding" "$offer_answer" "S3-01: offer stdout contains only selected answer"
     assert_contains "$(cat "$offer_stderr")" "Detected GPU: NVIDIA" "S3-01: offer explains detected GPU outside captured answer"
     rm -f "$offer_stderr"
-    unset -f ui_section ui_box ui_choose
+    unset -f ui_box ui_choose
+    ui_section() { :; }  # restore the global no-op (this block overrode it above)
     unset GPU_TYPE offer_answer offer_stderr
 fi
 

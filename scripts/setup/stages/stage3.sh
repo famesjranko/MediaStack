@@ -1070,6 +1070,7 @@ _stage3_configure_and_verify() {
             && _stage3_wait_for_jellyfin_encoding "$encoder" \
             && STAGE3_TRANSCODE_SINCE="$proof_since" stage3_verify_transcode_evidence "$vendor" "$encoder"; then
             stage3_set_gpu_env "$vendor" "complete" "$vendor" "$encoder" "$driver_mode"
+            type clear_setup_result_banner >/dev/null 2>&1 && clear_setup_result_banner
             ui_log ok "$success_copy"
             _stage3_print_final_summary
             return 0

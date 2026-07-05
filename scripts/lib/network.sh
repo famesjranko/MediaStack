@@ -678,7 +678,8 @@ except Exception:
 #   full-lan    → whole LAN CIDR, all ports
 #   server      → server IP /32, all ports (host services included: SSH, SMB, etc.)
 #   containers  → server IP, explicit MediaStack container ports (51821 excluded)
-#   streaming   → server IP, Jellyfin/Seerr/Homepage only
+#   streaming          → server IP, Jellyfin only (watch-only: kids)
+#   streaming-requests → server IP, Jellyfin + Seerr (watch + request: friends)
 #
 # Container port list: keep in sync with docker-compose.yml. Excludes 51821
 # (wg-easy admin) so containers-tier peers can't add or modify other peers.
@@ -709,7 +710,11 @@ wg_firewall_ips_for_tier() {
             ;;
         streaming)
             [[ -z "$server_ip" ]] && return 1
-            printf '%s:8096/tcp,%s:5055/tcp,%s:3000/tcp' "$server_ip" "$server_ip" "$server_ip"
+            printf '%s:8096/tcp' "$server_ip"
+            ;;
+        streaming-requests)
+            [[ -z "$server_ip" ]] && return 1
+            printf '%s:8096/tcp,%s:5055/tcp' "$server_ip" "$server_ip"
             ;;
         *)
             return 1
@@ -730,7 +735,7 @@ stage2_wireguard_access_tier_env() {
             [[ -z "$lan_cidr" ]] && return 1
             allowed_ips="$lan_cidr"
             ;;
-        server|containers|streaming)
+        server|containers|streaming|streaming-requests)
             [[ -z "$server_ip" ]] && return 1
             allowed_ips="${server_ip}/32"
             ;;

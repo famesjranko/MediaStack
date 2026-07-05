@@ -201,3 +201,14 @@ write_setup_result() {
         } > "$result_file"
     fi
 }
+
+# Invalidate a stale post-reboot login banner. write_setup_result snapshots the
+# GPU outcome once, at the end of the post-reboot run; a later interactive menu/
+# wizard hardware-transcoding run that reaches a verified state makes that snapshot
+# wrong. Remove ONLY the result file — the one-shot profile.d display script
+# (written pre-reboot by install_post_reboot_banner, and never rewritten by
+# write_setup_result) must be left intact, or a subsequent write_setup_result "ok"
+# in the same boot would have nothing to display it.
+clear_setup_result_banner() {
+    rm -f "$SCRIPT_DIR/.setup-result" 2>/dev/null || true
+}

@@ -195,7 +195,7 @@ Stage 2 adds WireGuard/remote-access DinD scenarios:
 - `stage2-skip` proves the user can skip HTTPS setup, `REMOTE_WEB_STATE=skipped` is persisted, LAN URLs remain in Jellyfin/Homepage, and public NPM proxy hosts are not published.
 - `stage2-ready` proves the ready path with safe in-VM/Pebble ACME fixtures: NPM renders cert-backed hosts, Jellyfin HTTPS responds, and `REMOTE_WEB_STATE=ready` is written only after proxy/cert postconditions.
 - `wireguard` starts wg-easy v15 at the Full LAN tier with the `remote` profile, asserts the major-`15` image pin (digest-locked under stable) and bridge-network `.11` placement (ADR-23, ADR-28) plus the ADR-17 capability set, and verifies interface creation, Basic Auth on `/api/client`, peer creation via the v15 API, `wg-easy.db` persistence, NAT/MASQUERADE, and custom `WG_PORT` propagation end-to-end (compose binding, container listen-port, `wg0.conf`).
-- `wireguard-server`, `wireguard-containers`, `wireguard-streaming` cover the Server / Containers / Streaming access tiers (ADR-29). Each enables wg-easy's per-client firewall and verifies the tier's `firewallIps` shape persists through wg-easy's possibly-500-but-persisted mutation path (ADR-28). Server tier asserts the bare `/32` shape, Containers asserts the MediaStack port enumeration (51821 excluded), Streaming asserts the Jellyfin+Seerr+Homepage triple.
+- `wireguard-server`, `wireguard-containers`, `wireguard-streaming` cover the Server / Containers / Streaming access tiers (ADR-29, ADR-45). Each enables wg-easy's per-client firewall and verifies the tier's `firewallIps` shape persists through wg-easy's possibly-500-but-persisted mutation path (ADR-28). Server tier asserts the bare `/32` shape, Containers asserts the MediaStack port enumeration (51821 excluded), Streaming asserts the Jellyfin-only shape. The `streaming-requests` (Jellyfin + Seerr) shape is unit-covered in `tests/unit/stage2-wireguard.sh`; multi-entry persistence is already proven here by `wireguard-containers`.
 - Stage 2 distinguishes failed HTTPS attempts from intentional skips with `REMOTE_WEB_STATE=failed`; a failed LE gate keeps LAN/VPN usable and is retried by rerunning `./setup.sh --remote`, never by an automatic in-process retry.
 
 Run the focused remote-access DinD gate with:
@@ -403,7 +403,7 @@ Current units:
 - **stage2-domain** — exercises domain/DNS classification, Cloudflare proxy detection, and safe routing before publication.
 - **stage2-dynu** — exercises Dynu IP Update Protocol response-token handling for success, unchanged, auth, host, abuse, DNS, and retry states.
 - **stage2-ports** — exercises local port checks and failure classification without claiming public WAN reachability.
-- **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming) plus `detect_lan_cidr` normalization. See ADR-29.
+- **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming / Streaming + requests) plus `detect_lan_cidr` normalization. See ADR-29, ADR-45.
 - **wireguard-service** — checks wg-easy peer provisioning uses the wizard admin username rather than a hardcoded peer name.
 - **stage2-flow** — exercises Stage 2 offer/tell-me-more/skip/confirm flow and persisted remote setup state.
 - **stage2-npm-stale** — exercises stale NPM host warning behavior without automatic reconciliation.

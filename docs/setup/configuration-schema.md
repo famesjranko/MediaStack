@@ -219,9 +219,9 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `WG_HOST` | `${DOMAIN}` | `example.com` |
 | `WG_INIT_PASSWORD` | plaintext `JELLYFIN_ADMIN_PASSWORD` (first-boot only) | `'GeneratedPassword123'` |
 | `WG_DEFAULT_DNS` | default `1.1.1.1` | `1.1.1.1` |
-| `WG_ACCESS_TIER` | wizard prompt: `full-lan` / `server` / `containers` (`streaming` is a README template) | `full-lan` |
+| `WG_ACCESS_TIER` | wizard prompt: `full-lan` / `server` / `containers` (`streaming` / `streaming-requests` are README templates) | `full-lan` |
 | `WG_LAN_CIDR` | wizard prompt (Full LAN tier): detected default, RFC1918 only | `192.168.1.0/24` |
-| `WG_SERVER_LAN_IP` | mirrors `HOST_ADDRESS`; `/32` target for server/containers/streaming tiers | `192.168.1.50` |
+| `WG_SERVER_LAN_IP` | mirrors `HOST_ADDRESS`; `/32` target for server/containers/streaming/streaming-requests tiers | `192.168.1.50` |
 | `WG_INIT_ALLOWED_IPS` | derived from tier → initial peer routing | `192.168.1.0/24` |
 | `WG_PER_CLIENT_FIREWALL` | default `true`; setting to `false` is the documented full-tunnel escape hatch | `true` |
 | `BAZARR_ENABLED` | prompt, default `false` | `true` |
@@ -246,7 +246,8 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `full-lan` | `<WG_LAN_CIDR>` (detected, RFC1918) | `<WG_LAN_CIDR>` — whole LAN, all ports | Owner/admin |
 | `server` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>/32` — all ports incl. host SSH/SMB | Co-admin |
 | `containers` | `<WG_SERVER_LAN_IP>/32` | Enumerated MediaStack container ports at the server IP; **51821 (wg-easy admin) excluded** | Trusted household |
-| `streaming` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>:8096/tcp`, `:5055/tcp`, `:3000/tcp` — Jellyfin + Seerr + Homepage | Friends/kids (README template, not an initial-peer choice) |
+| `streaming` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>:8096/tcp` — Jellyfin only | Friends/kids, watch-only (README template, not an initial-peer choice) |
+| `streaming-requests` | `<WG_SERVER_LAN_IP>/32` | `<WG_SERVER_LAN_IP>:8096/tcp`, `:5055/tcp` — Jellyfin + Seerr | Friends/kids, watch + request (README template, not an initial-peer choice) |
 
 **Advanced — full-tunnel routing.** Set **both** `WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0'` AND `WG_PER_CLIENT_FIREWALL=false` in `.env` before first boot. Both are required because per-client firewall would otherwise drop the now-routed traffic. The configurator emits a warning if `WG_PER_CLIENT_FIREWALL=false` is combined with a non-`full-lan` tier (almost certainly user error).
 

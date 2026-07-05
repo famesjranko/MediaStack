@@ -54,6 +54,11 @@ assert_contains "$streaming_env" "WG_ACCESS_TIER='streaming'" "ADR-29: streaming
 assert_contains "$streaming_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "ADR-29: streaming routes only server /32"
 assert_contains "$streaming_env" "WG_PER_CLIENT_FIREWALL='true'" "ADR-29: streaming keeps firewall on"
 
+streaming_req_env="$(stage2_wireguard_access_tier_env streaming-requests "" "192.168.1.50")"
+assert_contains "$streaming_req_env" "WG_ACCESS_TIER='streaming-requests'" "ADR-45: streaming-requests persists tier"
+assert_contains "$streaming_req_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "ADR-45: streaming-requests routes only server /32"
+assert_contains "$streaming_req_env" "WG_PER_CLIENT_FIREWALL='true'" "ADR-45: streaming-requests keeps firewall on"
+
 # Unknown tier rejected.
 if stage2_wireguard_access_tier_env bogus "" "" 2>/dev/null; then
     fail "ADR-29: stage2_wireguard_access_tier_env rejects unknown tier"
@@ -86,8 +91,12 @@ fw_server="$(wg_firewall_ips_for_tier server "" "192.168.1.50")"
 assert_eq "192.168.1.50/32" "$fw_server" "ADR-29: server firewallIps = server /32 (all ports incl. host services)"
 
 fw_streaming="$(wg_firewall_ips_for_tier streaming "" "192.168.1.50")"
-assert_eq "192.168.1.50:8096/tcp,192.168.1.50:5055/tcp,192.168.1.50:3000/tcp" "$fw_streaming" \
-    "ADR-29: streaming firewallIps = Jellyfin+Seerr+Homepage only"
+assert_eq "192.168.1.50:8096/tcp" "$fw_streaming" \
+    "ADR-45: streaming firewallIps = Jellyfin only (no Homepage)"
+
+fw_streaming_req="$(wg_firewall_ips_for_tier streaming-requests "" "192.168.1.50")"
+assert_eq "192.168.1.50:8096/tcp,192.168.1.50:5055/tcp" "$fw_streaming_req" \
+    "ADR-45: streaming-requests firewallIps = Jellyfin + Seerr (no Homepage)"
 
 fw_containers="$(wg_firewall_ips_for_tier containers "" "192.168.1.50")"
 # containers tier exposes 17 MediaStack ports — assert key ones are present and 51821 (wg-easy admin) is excluded.
