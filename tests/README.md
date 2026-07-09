@@ -400,8 +400,8 @@ Current units:
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
 - **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.
 - **remote-web-state** (`tests/unit/remote-web-state.sh`) — exercises `write_env()` remote marker rules and `print_access_info` output for unchecked, ready, skipped, and LAN-only states.
+- **ddns-config** — exercises the shared DDNS provider registry + `config.json` renderer (`scripts/lib/ddns_providers.sh`): all 6 providers render valid typed JSON (Cloudflare `ttl`/`proxied` typed, dynv6 carries no inert `ipv4` key), missing/unknown inputs fail, the Dynu render stays byte-identical to the inline writer it replaced, and the registry accessors (`pick`/`fields`/`verify_tier`/`category`) map correctly. No credentials.
 - **stage2-domain** — exercises domain/DNS classification, Cloudflare proxy detection, and safe routing before publication.
-- **stage2-dynu** — exercises Dynu IP Update Protocol response-token handling for success, unchanged, auth, host, abuse, DNS, and retry states.
 - **stage2-ports** — exercises local port checks and failure classification without claiming public WAN reachability.
 - **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming / Streaming + requests) plus `detect_lan_cidr` normalization. See ADR-29, ADR-45.
 - **wireguard-service** — checks wg-easy peer provisioning uses the wizard admin username rather than a hardcoded peer name.
@@ -427,7 +427,7 @@ Current units:
 Focused remote-access units:
 
 ```bash
-bash tests/unit/stage2-domain.sh && bash tests/unit/stage2-dynu.sh && bash tests/unit/stage2-ports.sh && bash tests/unit/stage2-wireguard.sh && bash tests/unit/stage2-flow.sh && bash tests/unit/stage2-npm-stale.sh && bash tests/unit/remote-web-state.sh
+bash tests/unit/stage2-domain.sh && bash tests/unit/stage2-ports.sh && bash tests/unit/stage2-wireguard.sh && bash tests/unit/stage2-flow.sh && bash tests/unit/stage2-npm-stale.sh && bash tests/unit/remote-web-state.sh
 ```
 
 GPU-flow integration isn't covered by `fresh-install` (DinD has no GPU passthrough); the unit test is the practical substitute for the detection/verification branches. End-to-end driver install + patch still needs a VM or bare-metal box with real NVIDIA hardware.

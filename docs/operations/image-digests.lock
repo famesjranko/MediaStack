@@ -14,7 +14,7 @@ homepage	ghcr.io/gethomepage/homepage:latest	sha256:a0b71c8e757298d02560186bab9f
 portainer	portainer/portainer-ce:latest	sha256:5f9b4bda5582fc72c07d730f86168205f4042d82c9cde011c9146b12496e4625	2026-07-04T20:04:46Z	scenario:fresh-install
 npm	jc21/nginx-proxy-manager:2	sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb	2026-06-08T07:15:51Z	scenario:npm-heal
 fail2ban	crazymax/fail2ban:latest	sha256:7cd8a427a44675397398a8dace2a3d755e62c72527f8730e4fd37697731a9321	2026-06-01T06:49:06Z	scenario:fail2ban-drift
-ddns-updater	qmcgaw/ddns-updater:latest	sha256:9313e1c31f366c89dc0819e5eff85576cb23821424c0c267fa66cfa39aabde83	2026-06-01T06:49:06Z	scenario:ddns-seed
+ddns-updater	qmcgaw/ddns-updater:latest	sha256:9313e1c31f366c89dc0819e5eff85576cb23821424c0c267fa66cfa39aabde83	2026-06-01T06:49:06Z	scenario:ddns-verify
 uptime-kuma	louislam/uptime-kuma:2	sha256:91e963bfda569ba115206e843febb446f473ab525add4e08b2b9e3beffa16985	2026-06-01T06:49:06Z	scenario:fresh-install
 beszel	henrygd/beszel:latest	sha256:a849ad80814b6a1a3be665304dcace5d4854b3bed7bde4dd1227e8ce1b82d477	2026-06-01T06:49:06Z	scenario:fresh-install
 beszel-agent	henrygd/beszel-agent:alpine	sha256:c6e925e00784b90eab68e2b813e4c722cf185f378d77e1129a97c064ca5fa7e4	2026-06-01T06:49:06Z	scenario:fresh-install

@@ -19,7 +19,7 @@ run_scenario() {
     # already-buffered first prompt instantly, so we key off the unique line).
     wizard_stage2_steps "$steps" \
         remote_offer 3 \
-        stage2_dynu_recommended 2
+        stage2_ddns_freehost 2
 
     wizard_stage2_run_pty "wizard-ui stage2 tell me more" "$fixture" "$steps" "$plain_log" || return 1
 

@@ -107,10 +107,11 @@ before_containers="$(docker ps -aq --filter name=ms-dry-run | wc -l)"
 host_env_before="absent"; [[ -f .env ]] && host_env_before="present"
 
 steps="$(mktemp)"; raw="$(mktemp)"; plain="$(mktemp)"
-# "10" = Quit in the non-NAS post-install menu when gum is absent (the case in
-# this dry-run container): "Get enhanced menus (install GUM)" is appended before
-# Uninstall, shifting Quit from 9 to 10. Keep in sync with menu_post ordering.
-printf '%s\n' '[{"expect":"What would you like to do"},{"send":"10\n"}]' > "$steps"
+# "11" = Quit in the non-NAS post-install menu when gum is absent (the case in
+# this dry-run container): "Get enhanced menus (install GUM)" AND "Refresh status"
+# are appended before Uninstall, so the order is ... Diagnostics(7), Refresh(8),
+# GUM(9), Uninstall(10), Quit(11). Keep in sync with menu_post ordering.
+printf '%s\n' '[{"expect":"What would you like to do"},{"send":"11\n"}]' > "$steps"
 
 walk_rc=0
 timeout 200 python3 tests/lib/wizard_pty.py \

@@ -190,7 +190,7 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 | bazarr | latest | stable | scenario:bazarr | scripts/services/bazarr/main.sh + tests/assertions/bazarr.sh (subtitles profile) | ADR-24 |
 | beszel | latest | stable | scenario:fresh-install | scripts/services/beszel/main.sh + tests/assertions/beszel.sh | ADR-24 |
 | beszel-agent | variant:alpine | stable | scenario:fresh-install | configured indirectly via beszel; tests/assertions/beszel.sh checks running-state only (no API assertion) | ADR-24 |
-| ddns-updater | latest | stable | scenario:ddns-seed | scripts/services/ddns-updater/main.sh + tests/scenarios/ddns-seed.sh | ADR-24 |
+| ddns-updater | latest | stable | scenario:ddns-verify | run tests/scenarios/ddns-verify.sh on every bump — it pins the blackhole force-verify contract (RESOLVER_ADDRESS=127.0.0.1:1 -> // update anyway -> real push -> 500 maps to reject) the whole verify rests on; tests/scenarios/ddns-seed.sh still covers seed + startup; qdm12/ddns-updater#780 (?force=true) is the exit ramp if a digest breaks the fall-through (ADR-46); scripts/services/ddns-updater/main.sh | ADR-24 |
 | fail2ban | latest | stable | scenario:fail2ban-drift | config/fail2ban/ + tests/assertions/fail2ban.sh | ADR-24 |
 | flaresolverr | latest | n/a | scenario:fresh-install | healthcheck only (image pulls, container starts, /health passes); no deterministic Cloudflare-solve oracle, see "FlareSolverr — confidence boundary" above | ADR-24 |
 | homepage | latest | stable | scenario:fresh-install | scripts/services/homepage/main.sh + tests/assertions/homepage.sh | ADR-13, ADR-24 |

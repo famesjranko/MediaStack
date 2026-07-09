@@ -30,6 +30,10 @@ source ./.ms-launcher-test.sh
 
 # Stub the live edges so the guided prompt path runs without a running stack.
 recovery_menu_remote_available(){ return 1; }   # fix submenu indices (no remote-add row)
+# remote_available=false makes the DDNS row's remote-gate TRUE, so its visibility
+# falls to _ddns_configured — suppress it EXPLICITLY (never inferred from fixture
+# state) so the numeric sends 7/8 below stay stable.
+_ddns_configured(){ return 1; }
 _docker_reachable(){ return 0; }
 _service_is_running(){ return 0; }
 qbt_set_speed_limits(){ echo \"APPLIED dl=\$1 ul=\$2\"; return 0; }

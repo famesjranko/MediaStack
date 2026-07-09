@@ -434,6 +434,17 @@ def resolve_public_indexers(file_arg):
     return indexers
 
 
+def _mbps_decimal(value):
+    """argparse type for --bitrate-limit: same grammar as the wizard's
+    validate_mbps_decimal (whole or fractional Mbps; 0 = unlimited). Kept as a
+    string so '7' stays '7' and '3.5' stays '3.5' — float() would rewrite '7'
+    as '7.0'."""
+    if not re.fullmatch(r'[0-9]+(?:\.[0-9]+)?', value):
+        raise argparse.ArgumentTypeError(
+            f"invalid Mbps value '{value}' (decimals OK, e.g. 3.5; 0 = unlimited)")
+    return value
+
+
 def apply_bitrate_limit(config_text, limit):
     if limit is None:
         return config_text
@@ -446,7 +457,7 @@ def apply_bitrate_limit(config_text, limit):
     jf_section = config_text[jf_start:jf_end]
 
     key_match = re.search(
-        r'^(\s*remote_bitrate_limit:\s*)(\d+)[^\n#]*(#[^\n]*)?$',
+        r'^(\s*remote_bitrate_limit:\s*)(\d+(?:\.\d+)?)[^\n#]*(#[^\n]*)?$',
         jf_section, re.MULTILINE,
     )
     if key_match:
@@ -504,7 +515,7 @@ def main():
         help="Path to config.yml",
     )
     parser.add_argument(
-        "--bitrate-limit", type=int, default=None,
+        "--bitrate-limit", type=_mbps_decimal, default=None,
         help="Remote streaming bitrate limit in Mbps (0 = unlimited)",
     )
     parser.add_argument(

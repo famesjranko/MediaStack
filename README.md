@@ -208,8 +208,8 @@ Remote access needs a domain name and port forwarding. Enable it from `./mediast
 
 **1. Get a domain.** `jellyfin.<domain>` and `seerr.<domain>` need to resolve to your home IP.
 
-- **No domain, or a changing (dynamic) IP:** MediaStack sets up [Dynu](https://www.dynu.com/) for you: a free hostname that it keeps pointed at your current IP. The installer walks you through Dynu sign-up and asks for your Dynu credentials. **Dynu is the only DDNS provider MediaStack configures**; other providers would mean editing config by hand and are not tested.
-- **Your own domain, or a static IP:** create A records for `jellyfin.` and `seerr.` pointing at your public IP, and choose **skip DDNS** when the installer asks.
+- **No domain, or a changing (dynamic) IP:** pick a free-hostname DDNS provider when the installer asks — **[Dynu](https://www.dynu.com/), DuckDNS, deSEC, or dynv6** — and enter its credentials; MediaStack keeps the hostname pointed at your current IP. Finish HTTPS from **Add remote access** once DNS resolves.
+- **Your own domain (Cloudflare or Porkbun):** enter your API credentials so MediaStack manages the records, or point A records for `jellyfin.` and `seerr.` at your public IP yourself and choose **skip DDNS** when the installer asks.
 
 **2. Forward ports** to your server's LAN IP (`hostname -I`; use a static IP or DHCP reservation):
 

@@ -127,6 +127,57 @@ Flow:
 If you renamed the quality profile yourself in the Sonarr/Radarr UI (so the live name no longer matches
 `config.yml`), the re-push refuses to create a duplicate and warns instead — rename it back, or rebuild.
 
+## `./mediastack` → Features & settings → Update DDNS provider / credentials
+
+The **"Update DDNS provider / credentials"** action (under **Features & settings**) swaps the
+dynamic-DNS provider — or just re-enters its credentials — after install, reusing the exact provider
+picker, JSON renderer and ephemeral verify the setup wizard uses (`scripts/lib/ddns_providers.sh` +
+`scripts/lib/network.sh`). The row is shown only once remote access is set up **and** uses DDNS (a
+static-IP remote has no provider to change); when remote access is not configured yet, use **Add remote
+access** instead.
+
+This action keeps your **existing domain** — so it only covers switches where the domain doesn't move:
+re-entering the current provider's credentials, or switching between the two bring-your-own-domain
+providers (Cloudflare ↔ Porkbun) on a domain you own. Switching **to or from a free-hostname provider**
+(DuckDNS/Dynu/deSEC/dynv6) needs a **new hostname** in that provider's namespace, which also changes
+your HTTPS certificate names, WireGuard `WG_HOST` and service URLs — so the action detects that case and
+offers to hand off to **Add remote access** (the full domain re-config) rather than dead-ending.
+
+Flow:
+
+1. **Guards** — Docker reachable, remote access configured via DDNS, and `ddns-updater` running.
+2. **Pick** — the same curated provider picker the wizard uses; the current provider is pre-selected.
+   Choosing "Skip for now" leaves everything unchanged.
+3. **Domain-change check** — if the chosen provider can't manage your current domain (any switch
+   involving a free-hostname provider), you're told a new hostname is needed and offered a jump to
+   **Add remote access**; nothing is changed here.
+4. **Collect + verify** — you enter the new provider's credentials, which are checked in a throwaway
+   `ddns-updater` container with **zero blast radius** (the live service is not touched). Rejected
+   credentials re-prompt; if verification can't run (Docker/network issue), nothing changes.
+5. **Confirm** — you are warned that switching restarts `ddns-updater`, and told the current config is
+   backed up and restored if the restart fails (default: no).
+6. **Apply (verify-first)** — only after the credentials verify: the current `config.json` is
+   snapshotted, the new one is written (chmod 600), `ddns-updater` is restarted, and its startup is
+   confirmed. If it fails to come up, the previous config is **restored** and the `DDNS_PROVIDER` key in
+   `.env` is left unchanged.
+
+Credentials live only in the chmod-600 `config/ddns-updater/config.json`; `.env` keeps just the
+non-secret `DDNS_PROVIDER` key. The `:8000` web UI is view-only status, not a place to configure.
+
+**Seeing DDNS status.** When a provider is configured and `ddns-updater` is running, the main-menu
+header shows a `DDNS:` line with the **confirmed IP** (what your domain currently resolves to). It is
+green when that IP matches your detected WAN IP (the record is up to date), **yellow** when it resolves
+to a different IP (`propagating?` — the record is stale or still catching up), or plain `not resolving
+yet` when there's no A-record. The
+same status appears in **Manage stack** (next to *Remote access*) as `DDNS: <provider> · <ip> ·
+<state>`. For an active, on-demand check, **Diagnostics → DNS check** resolves your subdomains and
+compares them to your live WAN IP (and shows the provider + container health when DDNS is set up).
+
+The banner's Public IP and DDNS IP are cached for the session (so the menu doesn't re-probe on every
+redraw), so a record propagating from `propagating?` to up-to-date won't update mid-session on its own.
+The main-menu **Refresh status** option re-checks both and redraws — use it to watch a DDNS change take
+effect after switching providers.
+
 ## `./mediastack` → Features & settings → Firewall (UFW) / System hardening
 
 Two ON/OFF toggles mirror the Stage 1 wizard's Security prompts (ADR-40), backed by `UFW_ENABLED`

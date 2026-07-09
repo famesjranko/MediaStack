@@ -164,8 +164,8 @@ seed_stage2_env_vars() {
     _WIZ_WG_INIT_ALLOWED_IPS="10.8.0.0/24"
     _WIZ_WG_PER_CLIENT_FIREWALL="true"
     _WIZ_WG_INIT_PASSWORD="GeneratedPassword123"
-    _WIZ_DDNS_USER="dynu-user"
-    _WIZ_DDNS_PW='dynu"pw\with$chars'
+    _WIZ_DDNS_PROVIDER="dynu"
+    _WIZ_DDNS_FIELDS=([password]='dynu"pw\with$chars')
     _WIZ_DDNS_PREFLIGHT_OK="false"
     _WIZ_DDNS_INVALIDATED="false"
     _WIZ_TORRENT_PORT="6881"
@@ -202,8 +202,11 @@ esac
 unset DDNS_USERNAME DDNS_PASSWORD
 
 seed_stage2_env_vars
-_WIZ_DDNS_PREFLIGHT_OK="true"
+# Persist-decouple (#236): config.json is written on SHAPE-VALID render even
+# though the provider was never live-verified (PREFLIGHT_OK stays false from the
+# seed). Gating persistence on PREFLIGHT_OK would brick the 5 non-Dynu providers.
 write_env >/dev/null
+assert_eq "dynu" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PROVIDER)" "04-05: DDNS provider persists to .env (non-secret)"
 assert_eq "gate.test" "$(env_val_from "$SCRIPT_DIR/.env" DOMAIN)" "04-05: Stage 2 domain persists to .env"
 assert_eq "unchecked" "$(env_val_from "$SCRIPT_DIR/.env" REMOTE_WEB_STATE)" "04-05: Stage 2 starts unchecked before install verification"
 assert_eq '10.8.0.0/24' "$(env_val_from "$SCRIPT_DIR/.env" WG_INIT_ALLOWED_IPS)" "04-05: WireGuard init allowed IPs persist"
@@ -256,18 +259,25 @@ unset -f stat chown chmod sudo
 DDNS_UPDATER_UID="$(id -u)"
 DDNS_UPDATER_GID="$(id -g)"
 
+# C4/#236: a re-run that SKIPS the DDNS step must leave an existing chmod-600
+# config.json byte-untouched (credentials live there now, not in .env). Seed one,
+# blank the wizard's collected fields, skip, and assert the file is preserved.
 seed_stage2_env_vars
-DDNS_USERNAME="saved-dynu-user"
-DDNS_PASSWORD='saved"dynu\password$chars'
-_WIZ_DDNS_USER=""
-_WIZ_DDNS_PW=""
+_WIZ_DDNS_PROVIDER=""
+_WIZ_DDNS_FIELDS=()
 _WIZ_DDNS_PREFLIGHT_OK="false"
 _WIZ_DDNS_INVALIDATED="false"
+mkdir -p "$SCRIPT_DIR/config/ddns-updater"
+printf '%s\n' '{"settings":[{"provider":"duckdns","domain":"gate.test","token":"keep-me","ip_version":"ipv4"}]}' \
+    > "$SCRIPT_DIR/config/ddns-updater/config.json"
+cp "$SCRIPT_DIR/config/ddns-updater/config.json" "$TMP_ROOT/ddns-skip-preserve.json"
 STAGE_1_COMPLETE=1
 _stage2_skip_https >/dev/null
-assert_eq "saved-dynu-user" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_USERNAME)" "AUDIT: Stage 2 skip preserves existing verified DDNS username"
-assert_eq 'saved"dynu\password$chars' "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PASSWORD)" "AUDIT: Stage 2 skip preserves existing verified DDNS password"
-unset DDNS_USERNAME DDNS_PASSWORD
+if cmp -s "$TMP_ROOT/ddns-skip-preserve.json" "$SCRIPT_DIR/config/ddns-updater/config.json"; then
+    pass "C4: Stage 2 skip leaves an existing DDNS config.json byte-untouched"
+else
+    fail "C4: Stage 2 skip leaves an existing DDNS config.json byte-untouched"
+fi
 
 reset_stage2_ddns_prompt_stubs() {
     WARN_COUNT=0
@@ -277,48 +287,40 @@ reset_stage2_ddns_prompt_stubs() {
     DDNS_PASSWORD_COUNT_FILE="$TMP_ROOT/ddns-password-count"
     printf '0\n' > "$DDNS_PASSWORD_COUNT_FILE"
     _WIZ_DOMAIN="gate.test"
-    _WIZ_DDNS_USER=""
-    _WIZ_DDNS_PW=""
+    _WIZ_DDNS_PROVIDER="dynu"
+    _WIZ_DDNS_FIELDS=()
     _WIZ_DDNS_PREFLIGHT_OK="false"
     _WIZ_DDNS_INVALIDATED="false"
 }
 
+ddns_verify_via_container() {
+    return 0
+}
+
+# Drive the REAL ui_input_validated loop (ui.sh sourced) through a stubbed
+# ui_input primitive so the new VISIBLE field collection is exercised end-to-end:
+# Dynu collects password ONLY (#248), so the loop drives a single-quote reject
+# then a good value, proving the field loop re-prompts on validator failure.
+reset_stage2_ddns_prompt_stubs
+DDNS_PW_INPUT_COUNT_FILE="$TMP_ROOT/ddns-pw-input-count"
+printf '0\n' > "$DDNS_PW_INPUT_COUNT_FILE"
 ui_input() {
-    printf 'dynu-user\n'
-}
-
-ui_input_validated() {
-    local default="$2"
-    local validator_fn="$3"
-    local value="${default:-dynu-user}"
-    if "$validator_fn" "$value"; then
-        printf '%s\n' "$value"
-        return 0
-    fi
-    return 1
-}
-
-ui_password() {
-    local calls
-    calls=$(cat "$DDNS_PASSWORD_COUNT_FILE" 2>/dev/null || printf '0')
-    calls=$((calls + 1))
-    printf '%s\n' "$calls" > "$DDNS_PASSWORD_COUNT_FILE"
-    case "$calls" in
+    local n
+    n=$(cat "$DDNS_PW_INPUT_COUNT_FILE" 2>/dev/null || printf '0')
+    n=$((n + 1))
+    printf '%s\n' "$n" > "$DDNS_PW_INPUT_COUNT_FILE"
+    case "$n" in
         1) printf "bad'quote\n" ;;
         *) printf 'good-secret\n' ;;
     esac
 }
-
-stage2_dynu_preflight() {
-    printf 'ok\n'
-}
-
-reset_stage2_ddns_prompt_stubs
 _stage2_offer_ddns "true" >/dev/null
-assert_eq "good-secret" "$_WIZ_DDNS_PW" "04-05: DDNS password rejects single quote before .env persistence"
-assert_eq "true" "$_WIZ_DDNS_PREFLIGHT_OK" "AUDIT: DDNS credentials are marked persistable only after Dynu preflight"
-assert_eq "2" "$(cat "$DDNS_PASSWORD_COUNT_FILE")" "04-05: DDNS password re-prompts after invalid single quote"
-assert_contains "$(cat "$LAST_WARN_FILE")" "single quote" "04-05: DDNS password validation explains single quote rejection"
+assert_eq "good-secret" "${_WIZ_DDNS_FIELDS[password]}" "04-05: field loop rejects single quote, keeps good password"
+assert_eq "mediastack" "$(bash -c 'source scripts/lib/ddns_providers.sh; declare -A f=([domain]=d.test [password]=x); ddns_render_config_json dynu f' | python3 -c 'import sys,json; print(json.load(sys.stdin)["settings"][0]["username"])')" "04-05: Dynu renders the constant username placeholder (no prompt)"
+assert_eq "true" "$_WIZ_DDNS_PREFLIGHT_OK" "AUDIT: verify-accepted marks creds verified (messaging tier only)"
+assert_eq "2" "$(cat "$DDNS_PW_INPUT_COUNT_FILE")" "04-05: password field re-prompts after invalid single quote"
+assert_contains "$(cat "$LAST_WARN_FILE")" "single quote" "04-05: password validation explains single quote rejection"
+unset -f ui_input
 
 BAD_DDNS_SLEEP_COUNT=0
 BAD_DDNS_PREFLIGHT_COUNT_FILE="$TMP_ROOT/bad-ddns-preflight-count"
@@ -339,24 +341,30 @@ ui_password() {
 ui_choose() {
     case "$1" in
         Do\ you*) printf 'Yes\n' ;;
-        Does\ your*) printf 'No - my IP changes (dynamic)\n' ;;  # #94 static/dynamic gate: dynamic -> reach Dynu preflight
+        Does\ your*) printf 'No - my IP changes (dynamic)\n' ;;  # #94 static/dynamic gate: dynamic -> reach the picker
+        Choose*) printf 'Free hostname · Dynu\n' ;;  # #236 provider picker -> Dynu keeps its curl preflight
         Remote*) printf 'Skip HTTPS for now\n' ;;
         *) printf 'Skip HTTPS for now\n' ;;
     esac
 }
 sleep() {
-    BAD_DDNS_SLEEP_COUNT=$((BAD_DDNS_SLEEP_COUNT + 1))
+    # Count only the DNS-propagation waits (sleep 10), not the sub-second frames
+    # of the ephemeral-verify spinner (#237's ui_spin) — the assertion below is
+    # about the auto-retry loop, not the spinner animation.
+    [[ "${1:-}" =~ ^[0-9]+$ ]] && (( ${1:-0} >= 2 )) \
+        && BAD_DDNS_SLEEP_COUNT=$((BAD_DDNS_SLEEP_COUNT + 1))
+    return 0
 }
 net_detect_public_ip() {
     _NET_PUBLIC_IP="203.0.113.10"
     return 0
 }
-stage2_dynu_preflight() {
+ddns_verify_via_container() {
     local calls
     calls=$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE" 2>/dev/null || printf '0')
     calls=$((calls + 1))
     printf '%s\n' "$calls" > "$BAD_DDNS_PREFLIGHT_COUNT_FILE"
-    printf 'badauth\n'
+    # Reject: the caller clears the fields and re-prompts (like Dynu badauth before).
     return 1
 }
 stage2_dns_classify() {
@@ -365,23 +373,19 @@ stage2_dns_classify() {
 }
 
 seed_stage2_env_vars
-DDNS_USERNAME="stale-dynu-user"
-DDNS_PASSWORD='stale-dynu-password'
-_WIZ_DDNS_USER="stale-dynu-user"
-_WIZ_DDNS_PW='stale-dynu-password'
+_WIZ_DDNS_PROVIDER="dynu"
+_WIZ_DDNS_FIELDS=([password]="stale-dynu-password")
 _WIZ_DDNS_PREFLIGHT_OK="true"
 _WIZ_DDNS_INVALIDATED="false"
 _stage2_collect_domain >/dev/null 2>&1
-assert_eq "1" "$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE")" "AUDIT: bad Dynu auth test exercises preflight"
-assert_eq "0" "$BAD_DDNS_SLEEP_COUNT" "AUDIT: bad Dynu auth does not wait for propagation"
-assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_USERNAME)" "AUDIT: bad Dynu auth does not persist DDNS username"
-assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PASSWORD)" "AUDIT: bad Dynu auth does not persist DDNS password"
+assert_eq "1" "$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE")" "AUDIT: bad auth test exercises the ephemeral verify"
+assert_eq "0" "$BAD_DDNS_SLEEP_COUNT" "AUDIT: bad auth does not wait for propagation"
+# Rejected creds clear _WIZ_DDNS_FIELDS -> the shape-valid gate refuses the write.
 if [[ -f "$SCRIPT_DIR/config/ddns-updater/config.json" ]]; then
     fail "AUDIT: bad Dynu auth does not write DDNS config.json"
 else
     pass "AUDIT: bad Dynu auth does not write DDNS config.json"
 fi
-unset DDNS_USERNAME DDNS_PASSWORD
 
 stage2_dns_classify() {
     printf 'ok'
@@ -398,50 +402,48 @@ seed_stage2_env_vars
 mkdir -p "$SCRIPT_DIR/scripts"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$SCRIPT_DIR/scripts/configure.sh"
 chmod +x "$SCRIPT_DIR/scripts/configure.sh"
-DDNS_USERNAME="stale-dynu-user"
-DDNS_PASSWORD='stale-dynu-password'
-_WIZ_DDNS_USER="stale-dynu-user"
-_WIZ_DDNS_PW='stale-dynu-password'
+_WIZ_DDNS_PROVIDER="dynu"
+_WIZ_DDNS_FIELDS=([password]="stale-dynu-password")
 _WIZ_DDNS_PREFLIGHT_OK="true"
 _WIZ_DDNS_INVALIDATED="false"
 _WIZ_JELLYFIN_BITRATE=""
+# M2: a coincidental DNS-ok must NOT silently sail past a rejected DDNS login —
+# that would leave ddns-updater unconfigured and remote access would break on the
+# next IP change. collect_domain routes to the retry menu instead; the ui_choose
+# stub picks "Skip HTTPS for now", so it returns non-zero (does not reach install).
 if _stage2_collect_domain >/dev/null 2>&1; then
-    pass "AUDIT: bad Dynu auth with ready DNS reaches install path"
+    fail "AUDIT: bad auth + coincidental DNS-ok does NOT silently reach install (M2)"
 else
-    fail "AUDIT: bad Dynu auth with ready DNS reaches install path"
+    pass "AUDIT: bad auth + coincidental DNS-ok does NOT silently reach install (M2)"
 fi
-_stage2_install >/dev/null 2>&1
-assert_eq "1" "$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE")" "AUDIT: install-path bad Dynu auth test exercises preflight"
-assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_USERNAME)" "AUDIT: install after bad Dynu auth does not persist DDNS username"
-assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PASSWORD)" "AUDIT: install after bad Dynu auth does not persist DDNS password"
+assert_eq "1" "$(cat "$BAD_DDNS_PREFLIGHT_COUNT_FILE")" "AUDIT: bad auth path exercises the ephemeral verify"
 if [[ -f "$SCRIPT_DIR/config/ddns-updater/config.json" ]]; then
-    fail "AUDIT: install after bad Dynu auth does not write DDNS config.json"
+    fail "AUDIT: bad auth does not write DDNS config.json"
 else
-    pass "AUDIT: install after bad Dynu auth does not write DDNS config.json"
+    pass "AUDIT: bad auth does not write DDNS config.json"
 fi
-unset DDNS_USERNAME DDNS_PASSWORD
 
 # #94: a static-IP / self-managed-DNS user picks "Yes" (option 2) at the new
-# static-vs-dynamic gate and skips DDNS entirely — no Dynu preflight, nothing
+# static-vs-dynamic gate and skips DDNS entirely — no ephemeral verify, nothing
 # persistable, and _WIZ_USES_DDNS records the skip so the DNS-failure menu later
-# hides "Re-enter Dynu credentials". (Redefines ui_choose for this block only; the
+# hides "Re-enter credentials". (Redefines ui_choose for this block only; the
 # remaining tests stub _stage2_collect_domain, so the override does not leak.)
 reset_stage2_ddns_prompt_stubs
-STATIC_IP_PREFLIGHT_CALLED=0
+STATIC_IP_VERIFY_CALLED=0
 ui_choose() {
     case "$1" in
         Does\ your*) printf 'Yes - static IP, or I keep my own DNS updated (skip DDNS)\n' ;;
         *) printf 'Skip HTTPS for now\n' ;;
     esac
 }
-stage2_dynu_preflight() { STATIC_IP_PREFLIGHT_CALLED=1; printf 'ok\n'; }
+ddns_verify_via_container() { STATIC_IP_VERIFY_CALLED=1; return 0; }
 _WIZ_USES_DDNS="true"
 if _stage2_offer_ddns "false" >/dev/null 2>&1; then
     fail "S2-94: static-IP choice skips DDNS (offer returns non-zero)"
 else
     pass "S2-94: static-IP choice skips DDNS (offer returns non-zero)"
 fi
-assert_eq "0" "$STATIC_IP_PREFLIGHT_CALLED" "S2-94: static-IP choice does not call the Dynu preflight"
+assert_eq "0" "$STATIC_IP_VERIFY_CALLED" "S2-94: static-IP choice does not run the ephemeral verify"
 assert_eq "false" "$_WIZ_USES_DDNS" "S2-94: static-IP choice records _WIZ_USES_DDNS=false (menu hides Re-enter Dynu)"
 assert_eq "false" "$_WIZ_DDNS_PREFLIGHT_OK" "S2-94: static-IP choice leaves DDNS creds unpersistable"
 
@@ -459,9 +461,9 @@ EOF
 cp "$SCRIPT_DIR/.env" "$TMP_ROOT/stage2-symlink-existing.env"
 rm -rf "$SCRIPT_DIR/config/ddns-updater"
 ln -s "$TMP_ROOT/ddns-symlink-target" "$SCRIPT_DIR/config/ddns-updater"
+_WIZ_DDNS_PROVIDER="dynu"
+_WIZ_DDNS_FIELDS=([password]="good-secret")
 _WIZ_DDNS_PREFLIGHT_OK="true"
-_WIZ_DDNS_USER="dynu-user"
-_WIZ_DDNS_PW="good-secret"
 _WIZ_JELLYFIN_BITRATE=""
 STAGE2_SYMLINK_PULLS=0
 STAGE2_SYMLINK_STARTS=0
@@ -497,9 +499,9 @@ EOF
 cp "$SCRIPT_DIR/.env" "$TMP_ROOT/run-stage2-symlink-existing.env"
 rm -rf "$SCRIPT_DIR/config/ddns-updater"
 ln -s "$TMP_ROOT/ddns-run-stage2-target" "$SCRIPT_DIR/config/ddns-updater"
+_WIZ_DDNS_PROVIDER="dynu"
+_WIZ_DDNS_FIELDS=([password]="good-secret")
 _WIZ_DDNS_PREFLIGHT_OK="true"
-_WIZ_DDNS_USER="dynu-user"
-_WIZ_DDNS_PW="good-secret"
 _WIZ_JELLYFIN_BITRATE=""
 STAGE2_RUN_STAGE2_PULLS=0
 STAGE2_RUN_STAGE2_STARTS=0
@@ -529,6 +531,164 @@ else
 fi
 unset DDNS_USERNAME DDNS_PASSWORD
 
+# ---------------------------------------------------------------------------
+# #236: provider picker + field loop orchestration (stage2-flow style; the
+# picker/field-loop are stubbed, the real _stage2_offer_ddns flow is driven).
+# ---------------------------------------------------------------------------
+DDNS_CHOOSE_RET=""
+DDNS_INPUT_RET=""
+DDNS_VERIFY_RC=0
+_WIZ_DOMAIN="gate.test"
+ui_choose() { printf '%s\n' "$DDNS_CHOOSE_RET"; }
+ui_input_validated() { printf '%s\n' "$DDNS_INPUT_RET"; }
+ui_password_validated() { printf '%s\n' "$DDNS_INPUT_RET"; }
+# #237: the verify is provider-agnostic and exit-code-valued (0 accept / 1 reject
+# / 2 degrade). Drive it via DDNS_VERIFY_RC.
+ddns_verify_via_container() { return "${DDNS_VERIFY_RC:-0}"; }
+
+# A token provider whose verify ACCEPTS (exit 0): #237 verifies every provider, so
+# PREFLIGHT_OK=true and it is NOT the unchecked terminal — it reaches the LE gate.
+reset_stage2_ddns_prompt_stubs
+_WIZ_DDNS_PROVIDER=""
+_WIZ_DDNS_FIELDS=()
+_WIZ_DOMAIN="gate.test"
+DDNS_CHOOSE_RET="Free hostname · DuckDNS"
+DDNS_INPUT_RET="duck-token-abc"
+DDNS_VERIFY_RC=0
+_stage2_offer_ddns "true" "pick" >/dev/null
+assert_eq "0" "$?" "S2-237: token provider verify-accepted (offer returns 0)"
+assert_eq "duckdns" "$_WIZ_DDNS_PROVIDER" "S2-237: picker selects DuckDNS"
+assert_eq "duck-token-abc" "${_WIZ_DDNS_FIELDS[token]}" "S2-237: token field collected into the assoc"
+assert_eq "true" "$_WIZ_DDNS_PREFLIGHT_OK" "S2-237: non-Dynu verify-accept sets the verified tier"
+if _stage2_ddns_unverified; then
+    fail "S2-237: verify-accepted is NOT the unchecked terminal (reaches LE)"
+else
+    pass "S2-237: verify-accepted is NOT the unchecked terminal (reaches LE)"
+fi
+
+# Degrade (exit 2 — docker/image unavailable): the shape-valid creds are KEPT and
+# the provider lands the honest unchecked terminal (never re-prompt good creds).
+reset_stage2_ddns_prompt_stubs
+_WIZ_DDNS_PROVIDER=""
+_WIZ_DDNS_FIELDS=()
+_WIZ_DOMAIN="gate.test"
+DDNS_CHOOSE_RET="Free hostname · DuckDNS"
+DDNS_INPUT_RET="duck-token-xyz"
+DDNS_VERIFY_RC=2
+_stage2_offer_ddns "true" "pick" >/dev/null
+assert_eq "0" "$?" "S2-237: degrade keeps shape-valid creds (offer returns 0)"
+assert_eq "duck-token-xyz" "${_WIZ_DDNS_FIELDS[token]:-}" "S2-237: degrade KEEPS the collected creds (not cleared)"
+assert_eq "false" "$_WIZ_DDNS_PREFLIGHT_OK" "S2-237: degrade leaves PREFLIGHT_OK=false (unchecked tier)"
+if _stage2_ddns_unverified; then
+    pass "S2-237: degrade lands on the honest unchecked terminal"
+else
+    fail "S2-237: degrade lands on the honest unchecked terminal"
+fi
+
+# Clear-then-refill: switching DuckDNS -> Dynu must not leak the token key into
+# the Dynu render (the shared field name `token` is the trap the discipline guards).
+DDNS_CHOOSE_RET="Free hostname · Dynu"
+DDNS_INPUT_RET="alice"
+DDNS_VERIFY_RC=0
+_stage2_offer_ddns "true" "pick" >/dev/null
+assert_eq "dynu" "$_WIZ_DDNS_PROVIDER" "S2-237: picker switches to Dynu"
+assert_eq "" "${_WIZ_DDNS_FIELDS[token]:-}" "S2-237: provider switch clears the stale DuckDNS token (no cross-provider leak)"
+assert_eq "alice" "${_WIZ_DDNS_FIELDS[password]}" "S2-237: Dynu fields (password) refilled after the switch"
+assert_eq "true" "$_WIZ_DDNS_PREFLIGHT_OK" "S2-237: Dynu verify-accept sets the verified tier"
+if _stage2_ddns_unverified; then
+    fail "S2-237: Dynu verify-accept is verified, not the unchecked terminal"
+else
+    pass "S2-237: Dynu verify-accept is verified, not the unchecked terminal"
+fi
+
+# Escape hatch: the picker's "Skip for now" option backs out of DDNS entirely
+# (before the field loop), so a user without creds ready is never trapped.
+reset_stage2_ddns_prompt_stubs
+_WIZ_DDNS_PROVIDER=""
+_WIZ_DDNS_FIELDS=()
+_WIZ_DOMAIN="gate.test"
+_WIZ_USES_DDNS="true"
+DDNS_CHOOSE_RET="$_DDNS_SKIP_LABEL"
+if _stage2_offer_ddns "true" "pick" >/dev/null 2>&1; then
+    fail "S2-237: picker 'Skip for now' escape hatch backs out (offer returns non-zero)"
+else
+    pass "S2-237: picker 'Skip for now' escape hatch backs out (offer returns non-zero)"
+fi
+assert_eq "false" "$_WIZ_USES_DDNS" "S2-237: picker skip sets _WIZ_USES_DDNS=false (no field loop)"
+assert_eq "" "$_WIZ_DDNS_PROVIDER" "S2-237: picker skip clears the provider"
+
+# M1 escape hatch: on an interactive TTY, _stage2_escapable_input must offer a
+# graceful back-out (empty submission OR repeated validation failure) instead of
+# the wizard-killing valve. Force the interactive path and stub the primitives.
+_stage2_is_interactive() { return 0; }
+M1_INPUT=""
+ui_input() { printf '%s' "$M1_INPUT"; }
+# (a) empty submission + skip -> back out (rc 2)
+M1_INPUT=""
+ui_choose() { printf 'Skip DDNS for now\n'; }
+_stage2_escapable_input "DuckDNS API token" "" validate_ddns_token "Skip DDNS for now" >/dev/null 2>&1
+assert_eq "2" "$?" "M1: empty field + skip backs out of the input loop (rc 2)"
+# (b) a valid value returns it, trimmed (no escape menu)
+M1_INPUT="  duck-token-abc  "
+m1_out=$(_stage2_escapable_input "DuckDNS API token" "" validate_ddns_token "Skip DDNS for now" 2>/dev/null); m1_rc=$?
+assert_eq "0" "$m1_rc" "M1: a valid value collects (rc 0)"
+assert_eq "duck-token-abc" "$m1_out" "M1: collected value is whitespace-trimmed"
+# (c) finding 5 — a recalled DEFAULT that can't validate must not become a
+# Ctrl-C-only trap: after 3 rejections the escape is offered even with a default.
+M1_INPUT=""   # Enter keeps the (invalid) default each time
+ui_choose() { printf 'Skip DDNS for now\n'; }   # pick skip when the valve fires
+_stage2_escapable_input "Cloudflare Zone ID" "not-32-hex" validate_zone_id "Skip DDNS for now" >/dev/null 2>&1
+assert_eq "2" "$?" "M1/finding5: an invalid pre-filled default escapes after repeated rejects (rc 2)"
+# (d) via _stage2_offer_ddns: empty field + skip -> offer backs out, USES_DDNS=false
+reset_stage2_ddns_prompt_stubs
+_WIZ_DDNS_PROVIDER=""; _WIZ_DDNS_FIELDS=(); _WIZ_DOMAIN="gate.test"; _WIZ_USES_DDNS="true"
+DDNS_CHOOSE_RET="Free hostname · DuckDNS"
+ui_choose() { case "$1" in Nothing*|That\ value*) printf 'Skip DDNS for now\n' ;; *) printf '%s\n' "$DDNS_CHOOSE_RET" ;; esac; }
+M1_INPUT=""
+if _stage2_offer_ddns "true" "pick" >/dev/null 2>&1; then
+    fail "M1: empty field escape backs out of _stage2_offer_ddns (returns non-zero)"
+else
+    pass "M1: empty field escape backs out of _stage2_offer_ddns (returns non-zero)"
+fi
+assert_eq "false" "$_WIZ_USES_DDNS" "M1: field-loop escape sets _WIZ_USES_DDNS=false"
+unset -f _stage2_is_interactive ui_input ui_choose
+
+# Shape-valid persist: a non-Dynu provider writes config.json even though it was
+# never live-verified (PREFLIGHT_OK=false) — never a config-less dead remote.
+seed_stage2_env_vars
+_WIZ_DDNS_PROVIDER="duckdns"
+_WIZ_DDNS_FIELDS=([token]="persist-token")
+_WIZ_DDNS_PREFLIGHT_OK="false"
+write_env >/dev/null
+ddns_cfg="$SCRIPT_DIR/config/ddns-updater/config.json"
+assert_eq "persist-token" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["settings"][0]["token"])' "$ddns_cfg")" "S2-236: non-Dynu shape-valid creds persist to config.json (PREFLIGHT_OK=false)"
+assert_eq "duckdns" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["settings"][0]["provider"])' "$ddns_cfg")" "S2-236: config.json records the selected provider"
+assert_eq "duckdns" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PROVIDER)" "S2-236: non-secret DDNS_PROVIDER persists to .env"
+
+# State-leak: switching duckdns -> dynu and re-persisting leaves NO token key.
+_WIZ_DDNS_PROVIDER="dynu"
+_WIZ_DDNS_FIELDS=([password]="s3cret")
+write_env >/dev/null
+if python3 -c 'import json,sys; s=json.load(open(sys.argv[1]))["settings"][0]; sys.exit(0 if "token" not in s else 1)' "$ddns_cfg"; then
+    pass "S2-236: re-persist after provider switch leaves no stale token key in config.json"
+else
+    fail "S2-236: re-persist after provider switch leaves no stale token key in config.json"
+fi
+
+# Consistency (diff-review finding): after a badauth/skip clears the fields,
+# write_env must keep .env DDNS_PROVIDER in sync with the preserved config.json
+# (the prior provider), not adopt the now-stale in-memory _WIZ_DDNS_PROVIDER.
+seed_stage2_env_vars
+ddns_cfg="$SCRIPT_DIR/config/ddns-updater/config.json"
+_WIZ_DDNS_PROVIDER="duckdns"; _WIZ_DDNS_FIELDS=([token]="keep-tok")
+write_env >/dev/null                              # persists duckdns + config.json
+_WIZ_DDNS_PROVIDER="dynu"; _WIZ_DDNS_FIELDS=()     # badauth/skip: provider stale, fields cleared
+write_env >/dev/null
+assert_eq "duckdns" "$(env_val_from "$SCRIPT_DIR/.env" DDNS_PROVIDER)" "S2-236: cleared-fields write_env keeps .env DDNS_PROVIDER matching the preserved config.json"
+assert_eq "duckdns" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["settings"][0]["provider"])' "$ddns_cfg")" "S2-236: cleared-fields write_env preserves the prior config.json provider"
+
+unset -f ui_choose ui_input_validated ui_password_validated ddns_verify_via_container
+
 # Plan 04-04 controller shell contract.
 stage2_path="$REPO_ROOT/scripts/setup/stages/stage2.sh"
 if [[ -f "$stage2_path" ]]; then
@@ -541,7 +701,7 @@ assert_contains "$stage2_source" "run_stage2()" "04-04: run_stage2 controller ex
 assert_contains "$stage2_source" "MediaStack - Remote Access" "04-04: Remote access banner title"
 assert_contains "$stage2_source" "HTTPS + WireGuard in a few minutes (longer on first DNS setup)" "04-04: Stage 2 banner subtitle"
 assert_contains "$stage2_source" "_stage2_install()" "04-04: install function exists"
-assert_contains "$stage2_source" "MEDIASTACK_NPM_ATTEMPT_REMOTE=1 ./scripts/configure.sh --only npm,ddns-updater,wireguard" "04-05: NPM remote attempt is process-scoped"
+assert_contains "$stage2_source" 'MEDIASTACK_NPM_ATTEMPT_REMOTE=$attempt_remote ./scripts/configure.sh --only npm,ddns-updater,wireguard' "04-05: NPM remote attempt is process-scoped (Dynu=1; unverified non-Dynu=0)"
 assert_contains "$stage2_source" "type ui_spin" "S2-16: Stage 2 remote attempt falls back when UI spinner is not loaded"
 assert_contains "$stage2_source" '_stage2_le_ready_hosts' "04-05: ready promotion checks NPM disk/proxy postconditions"
 assert_contains "$stage2_source" '_stage2_probe_https_ready "https://$fqdn"' "04-05: ready promotion checks live HTTPS"

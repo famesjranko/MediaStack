@@ -84,7 +84,10 @@ fi
 source "$SCRIPT_DIR/scripts/setup/recovery.sh"
 
 # Cache the public IP for the session — multiple banner renders should not
-# re-hit the IP-detection API on every menu refresh.
+# re-hit the IP-detection API on every menu refresh. Primed in parent scope by
+# render_banner; "Refresh status" invalidates it. (The DDNS record is NOT cached:
+# it is re-resolved fresh every render so propagation self-heals — see
+# _resolve_ddns_ip.)
 _MS_PUBLIC_IP=""
 _MS_PUBLIC_IP_CHECKED=0
 
@@ -107,9 +110,56 @@ _cached_public_ip() {
         else
             _MS_PUBLIC_IP=""
         fi
+        # Cache the result either way — a FAILED detection is sticky ("not detected")
+        # until "Refresh status" clears the flag. Deliberate: net_detect_public_ip is a
+        # ~10s curl, so retrying it every render would freeze the menu on an offline box.
         _MS_PUBLIC_IP_CHECKED=1
     fi
     printf '%s' "$_MS_PUBLIC_IP"
+}
+
+# The DDNS record's currently-resolved IP (what the world sees for your domain —
+# the pfSense-style "confirmed IP"). Resolved fresh on EVERY banner render (NOT
+# session-cached, unlike the public IP) so DDNS propagation self-heals in the
+# banner: yellow "propagating?" flips to green on its own as the record goes live,
+# with no manual "Refresh status".
+# ponytail: bounded dig (+time=2 +tries=1 × 2 resolvers, ~4s worst case on broken
+# DNS) runs each render. Acceptable because _ddns_status short-circuits off/stopped
+# BEFORE calling this, and render_banner gates the whole DDNS block on Docker-up —
+# so it only fires when configured + updater running. If it ever bites, memoize
+# behind a short TTL, not a session flag.
+_resolve_ddns_ip() {
+    local _dom="${DOMAIN:-}" _ip=""
+    # BOUNDED: the shared _stage2_dns_lookup_a is unbounded (~30s worst case, fine
+    # for install/on-demand checks, not for a hot render path). Short-timeout digs
+    # (system resolver, then 8.8.8.8) via the shared IPv4 extractor. Broken DNS
+    # falls to "" -> "not resolving yet", never a frozen menu.
+    if [[ -n "$_dom" && "$_dom" != "example.com" ]] && command -v dig &>/dev/null; then
+        _ip=$(dig +short +time=2 +tries=1 A "$_dom" 2>/dev/null | _stage2_first_ipv4)
+        [[ -z "$_ip" ]] && _ip=$(dig +short +time=2 +tries=1 A "$_dom" @8.8.8.8 2>/dev/null | _stage2_first_ipv4)
+    fi
+    printf '%s' "$_ip"
+}
+
+# DDNS status classification — the single source of truth shared by the banner and
+# the system-state box, computed from the cached DDNS-record IP vs the passed WAN
+# IP (no network call of its own). Echoes exactly one of:
+#   off          — no DDNS provider configured
+#   stopped      — configured, but the ddns-updater container isn't running
+#   unresolved   — running, but the domain has no A-record yet (propagating/broken)
+#   stale:<ip>   — resolves, but NOT to the current WAN IP (propagating / stale creds)
+#   ok:<ip>      — resolves to the current WAN IP (healthy — the record is confirmed)
+_ddns_status() {
+    local wan="${1:-}" ip
+    _ddns_configured || { printf 'off'; return 0; }
+    _service_is_running ddns-updater || { printf 'stopped'; return 0; }
+    ip=$(_resolve_ddns_ip)
+    [[ -z "$ip" ]] && { printf 'unresolved'; return 0; }
+    if [[ -n "$wan" && "$ip" == "$wan" ]]; then
+        printf 'ok:%s' "$ip"
+    else
+        printf 'stale:%s' "$ip"
+    fi
 }
 
 _docker_reachable() {
@@ -140,8 +190,12 @@ _detect_gateway() { ip route show default 2>/dev/null | awk '/default/ {print $3
 render_banner() {
     local hostname_short
     hostname_short=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "unknown")
+    # Prime the session public-IP cache in THIS shell, then read the global. Reading
+    # it via public_ip=$(_cached_public_ip) would run the getter in a $() subshell and
+    # discard the warm _MS_PUBLIC_IP_CHECKED flag, re-running the (slow) curl every render.
     local public_ip
-    public_ip=$(_cached_public_ip)
+    _cached_public_ip >/dev/null
+    public_ip="$_MS_PUBLIC_IP"
 
     # Network block shown in both states: LAN IP is how you actually reach your
     # services; Router is the gateway you open to set up port forwarding; Public
@@ -153,9 +207,34 @@ render_banner() {
     [[ -n "$gateway" ]] && net_lines+=("Router:      ${gateway}")
     net_lines+=("Public IP:   ${public_ip:-not detected}")
 
+    # Probe Docker reachability ONCE — render_banner is the every-menu-loop hot path
+    # and _docker_reachable is an un-memoized `docker info`; both the DDNS line and
+    # the status line below need it.
+    local _dockup=0
+    is_installed && _docker_reachable && _dockup=1
+
+    # DDNS status — shown ONLY when a provider is configured AND its container is
+    # running (the status helper returns off/stopped otherwise, which we skip). The
+    # IP is coloured green only when it matches the WAN IP (record is confirmed). The
+    # box measures visible width by stripping REAL escape bytes, so derive real-ESC
+    # colours via printf %b (the $GREEN/$NC literals would inflate the width math and
+    # mis-pad the box); both go empty when colour is disabled.
+    if (( _dockup )); then
+        local _rgn="" _ryl="" _rnc=""
+        [[ -n "${GREEN:-}" ]] && { printf -v _rgn '%b' "$GREEN"; printf -v _ryl '%b' "${YELLOW:-}"; printf -v _rnc '%b' "${NC:-}"; }
+        local _dst
+        _dst=$(_ddns_status "$public_ip")
+        case "$_dst" in
+            ok:*)       net_lines+=("DDNS:        ${_rgn}${_dst#ok:}${_rnc}") ;;
+            stale:*)    net_lines+=("DDNS:        ${_ryl}${_dst#stale:}${_rnc} (propagating?)") ;;
+            unresolved) net_lines+=("DDNS:        ${DOMAIN:-domain} not resolving yet") ;;
+            *)          ;;  # off / stopped -> no DDNS line
+        esac
+    fi
+
     local lines=()
     if is_installed; then
-        if _docker_reachable; then
+        if (( _dockup )); then
             local summary
             if summary=$(_compose_running_summary); then
                 lines+=("Status:      Running   ${summary} containers")
@@ -254,6 +333,15 @@ diag_dns_check() {
         ui_log info "Install it with:  sudo apt-get install -y bind9-dnsutils"
         ui_log info "Or run option 1 (Install MediaStack) - setup.sh installs it automatically."
         return 0
+    fi
+
+    # When DDNS is configured, this IS the DDNS status check: show the provider and
+    # the container's live health up front, then the A-record-vs-WAN comparison below
+    # tells you whether the record is confirmed at your current IP.
+    if _ddns_configured; then
+        local _dh
+        _dh=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ddns-updater 2>/dev/null || echo "unknown")
+        ui_log info "DDNS provider: ${DDNS_PROVIDER:-unknown} — updater container: ${_dh}"
     fi
 
     local default_domain="${DOMAIN:-}"
@@ -409,6 +497,20 @@ _stack_system_lines() {
         *)       _remote="LAN only" ;;
     esac
     ui_kv "Remote access" "$_remote"
+    if _ddns_configured; then
+        local _dprov="${DDNS_PROVIDER:-unknown}" _dval _dstat
+        # _ddns_status already carries the resolved IP (ok:<ip> / stale:<ip>) — parse it
+        # out rather than re-resolving, so this box digs the record once, not twice.
+        _dstat=$(_ddns_status "$(_cached_public_ip)")
+        case "$_dstat" in
+            ok:*)       _dval="${_dprov} · ${_dstat#ok:} (up to date)" ;;
+            stale:*)    _dval="${_dprov} · ${_dstat#stale:} (propagating?)" ;;
+            unresolved) _dval="${_dprov} · not resolving yet" ;;
+            stopped)    _dval="${_dprov} · updater stopped" ;;
+            *)          _dval="${_dprov}" ;;
+        esac
+        ui_kv "DDNS" "$_dval"
+    fi
     ui_kv "Updates" "${IMAGE_CHANNEL:-stable} channel"
     local _data="${DATA_DIR:-/data}" _free
     _free=$(df -h --output=avail "$_data" 2>/dev/null | tail -1 | tr -d ' ')
@@ -824,6 +926,13 @@ action_stack_logs() {
 # Echo "ON"/"OFF" for a boolean .env flag (default false) — for toggle labels.
 _feature_state() { [[ "${1:-false}" == "true" ]] && echo "ON" || echo "OFF"; }
 
+# True when a DDNS provider is set up: the non-secret provider key is persisted in
+# .env AND its chmod-600 credentials file exists. Gates the "Update DDNS provider /
+# credentials" row — the credentials themselves live only in config.json, never in .env.
+_ddns_configured() {
+    [[ -n "${DDNS_PROVIDER:-}" && -f "$SCRIPT_DIR/config/ddns-updater/config.json" ]]
+}
+
 # "Features" submenu — add or toggle the optional, reversible features day-2.
 # The three state toggles (subtitles / file sharing / indexers) are always
 # available; the remote-access "Add" entry self-hides once configured (recovery
@@ -862,6 +971,12 @@ submenu_features() {
         fi
         options+=("Change quality profile: ${_qp_name:-unknown}")
         options+=("Adjust bandwidth: DL ${_dl} / UL ${_ul}")
+        # Only when remote access is fully set up (ready) AND via DDNS: a static-IP
+        # remote has no provider to change, and when remote is unset the "Add remote
+        # access" row above is the entry point instead.
+        if ! recovery_menu_remote_available && _ddns_configured; then
+            options+=("Update DDNS provider / credentials: ${DDNS_PROVIDER:-}")
+        fi
         options+=("Back")
 
         echo ""
@@ -878,6 +993,7 @@ submenu_features() {
             "NAS storage watchdog:"*)    action_toggle_watchdog ;;
             "Change quality profile"*)   action_change_quality ;;
             "Adjust bandwidth"*)         action_adjust_bandwidth ;;
+            "Update DDNS provider"*)     action_change_ddns ;;
             *)                           return 0 ;;
         esac
     done
@@ -1160,6 +1276,246 @@ action_adjust_bandwidth() {
     fi
     _show_action_result "$rc" "Adjust bandwidth limits"
     pause_for_menu
+}
+
+# Atomically write + secure a DDNS config.json payload to the live path, reusing
+# the product's dir-prepare and perms-repair helpers (chown 1000:1000, chmod 600,
+# symlink-guarded, sudo fallback). The temp file lives OUTSIDE config/ddns-updater/
+# (that dir is writable by the uid-1000 container). Used for both the new write and
+# the rollback, so verify-first apply and restore share one code path. Returns
+# non-zero on any failure. Requires env_gen.sh to have been sourced by the caller.
+# Set by _ddns_write_live_config to 1 the instant the live config.json is replaced
+# (the mv lands), before the perms repair. Lets action_change_ddns tell a write
+# that never touched the file (mv failed -> old config still intact) from one that
+# did (needs a real rollback), so it doesn't cry "config may be inconsistent" when
+# nothing changed.
+_DDNS_LIVE_MUTATED=0
+_ddns_write_live_config() {
+    local payload="$1" live="$SCRIPT_DIR/config/ddns-updater/config.json"
+    _DDNS_LIVE_MUTATED=0
+    local dir; dir="$(dirname "$live")"
+    _ddns_prepare_config_dir "$dir" || return 1
+    local tmp; tmp=$(mktemp "$SCRIPT_DIR/.ddns-updater-config.XXXXXX") || return 1
+    if printf '%s\n' "$payload" > "$tmp" \
+        && { mv -f "$tmp" "$live" 2>/dev/null || sudo mv -f "$tmp" "$live"; }; then
+        _DDNS_LIVE_MUTATED=1
+        repair_ddns_updater_config_permissions
+        return $?
+    fi
+    rm -f "$tmp" 2>/dev/null || true
+    return 1
+}
+
+# Restart ddns-updater and confirm it stays up after re-reading the bind-mounted
+# config.json. Returns 0 only if the container is running steadily, 1 if it failed
+# to come up. We sample .State.Status rather than use _wait_service_running (which
+# returns 0 on its 60s timeout) or health (start_period-gated, won't read "healthy"
+# for ~60s). ponytail: 3 samples over ~6s catch a `restart: unless-stopped`
+# crash-loop flap; widen the window if a slow host ever needs it.
+_ddns_restart_and_check() {
+    docker restart ddns-updater >/dev/null 2>&1 || return 1
+    local i status
+    for i in 1 2 3; do
+        sleep 2
+        status=$(docker inspect --format '{{.State.Status}}' ddns-updater 2>/dev/null || echo "")
+        [[ "$status" == "running" ]] || return 1
+    done
+    return 0
+}
+
+# Day-2 "Update DDNS provider / credentials" (issue #238, #254). Swap the dynamic-DNS
+# provider and/or re-enter its credentials AFTER install, reusing the EXACT three
+# shared functions the setup wizard uses — ddns_provider_pick / ddns_render_config_json
+# / ddns_verify_via_container — so the two surfaces can never drift (adding a 7th
+# provider is registry cells + a validator + docs, never a flow-code edit here).
+#
+# Apply is verify-first: the ephemeral blackhole-verify container tests the new
+# credentials with ZERO blast radius, so the live ddns-updater never restarts on
+# unverified creds; backup -> write -> restart -> up-check -> restore covers only
+# the rare valid-creds-but-startup-failure case. The domain (shared media host) is
+# kept as-is: this action only re-does the provider/credentials on the CURRENT
+# domain. A switch that would need a new hostname (any free-hostname provider — see
+# the category route below) can't manage the kept domain, so it hands off to "Add
+# remote access", which owns the full domain -> NPM/certs/WireGuard cascade (#254).
+action_change_ddns() {
+    echo ""
+    if ! _docker_reachable; then
+        ui_log warn "Docker isn't reachable - start the stack first."
+        pause_for_menu; return 0
+    fi
+    # The row is already gated on "remote ready AND ddns configured"; this guard is
+    # the safety net for a stale/direct call and routes to "Add remote access".
+    if recovery_menu_remote_available || ! _ddns_configured; then
+        ui_log info "No DDNS provider is set up yet - use 'Add remote access' to configure remote access first."
+        pause_for_menu; return 0
+    fi
+    if ! _service_is_running ddns-updater; then
+        ui_log warn "ddns-updater isn't running - start the stack first."
+        pause_for_menu; return 0
+    fi
+
+    # The shared DDNS registry/renderer + config-write helpers live in env_gen.sh
+    # (which also sources the provider registry). Load it lazily; the guard keeps a
+    # repeat visit cheap. ddns_verify_via_container is already sourced via network.sh.
+    type ddns_render_config_json &>/dev/null || source "$SCRIPT_DIR/scripts/setup/env_gen.sh"
+
+    local domain="${DOMAIN:-}"
+    if [[ -z "$domain" ]]; then
+        ui_log warn "No domain on record - use 'Add remote access' to set the domain first."
+        pause_for_menu; return 0
+    fi
+
+    ui_log info "Current DDNS provider: ${DDNS_PROVIDER:-unknown}  (domain: ${domain})"
+    ui_log info "Re-enter credentials, or switch to a provider that keeps your current domain. A different hostname is set up in 'Add remote access'."
+
+    # PICK — the shared, wizard-identical chooser. Skip / empty leaves it unchanged.
+    local new_provider
+    new_provider=$(ddns_provider_pick "${DDNS_PROVIDER:-}")
+    if [[ -z "$new_provider" || "$new_provider" == "${_DDNS_SKIP:-__skip__}" ]]; then
+        ui_log info "No change."; pause_for_menu; return 0
+    fi
+
+    # A provider switch KEEPS the shared media domain, which only works when the new
+    # provider can manage it: same provider (re-enter creds) or both bring-your-own
+    # (a domain you own is portable between Cloudflare/Porkbun). Any switch involving a
+    # free-hostname provider (duckdns/dynu/desec/dynv6) needs a NEW hostname in that
+    # provider's namespace, and the domain cascades to HTTPS certs, WireGuard and
+    # service URLs — exactly what "Add remote access" reconfigures. Route there instead
+    # of dead-ending at the verify (which would just reject the mismatched hostname).
+    local new_cat old_cat
+    new_cat=$(ddns_provider_category "$new_provider" 2>/dev/null || printf '')
+    old_cat=$(ddns_provider_category "${DDNS_PROVIDER:-}" 2>/dev/null || printf '')
+    if [[ "$new_provider" != "${DDNS_PROVIDER:-}" ]] \
+        && { [[ "$new_cat" == free ]] || [[ "$old_cat" == free ]]; }; then
+        ui_log warn "'${new_provider}' can't manage your current domain (${domain}) - it needs a new hostname of its own."
+        ui_log info "Changing the domain also updates HTTPS, WireGuard and your service URLs, so it's done in 'Add remote access'."
+        # ui_confirm defaults 'no'; action_remote runs setup.sh --remote then re-execs the
+        # launcher, so it never returns to this action on a real run — "No change" is the
+        # decline-only path.
+        if ui_confirm "Open 'Add remote access' now to set the new hostname?" no; then
+            action_remote
+        else
+            ui_log info "No change to DDNS."
+        fi
+        pause_for_menu
+        return 0
+    fi
+
+    # COLLECT + VERIFY. verify has zero blast radius (throwaway container), so we
+    # verify BEFORE the disruptive confirm/restart. Bounded so a reject can't spin:
+    # a non-TTY required-field collect already self-terminates on exhausted stdin,
+    # and this cap backstops the interactive reject re-prompt.
+    local payload="" fields_spec attempt
+    fields_spec=$(ddns_provider_fields "$new_provider") || fields_spec=""
+    for attempt in 1 2 3; do
+        local -A _ddns_new_fields=()
+        local spec name validator val
+        for spec in $fields_spec; do
+            name="${spec%%:*}"; validator="${spec##*:}"
+            val=$(ui_input_validated "Enter ${name//_/ }" "" "$validator")
+            # The validators tolerate surrounding whitespace (a dashboard paste
+            # often carries a trailing newline/space); ui_input_validated returns
+            # the raw entry, so trim here before storing so the written config is
+            # clean. Same trim + validator contract as the wizard's field loop.
+            val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+            _ddns_new_fields["$name"]="$val"
+        done
+        _ddns_new_fields[domain]="$domain"
+
+        if ! payload=$(ddns_render_config_json "$new_provider" _ddns_new_fields); then
+            ui_log warn "Couldn't build the DDNS config from those entries - no change made."
+            pause_for_menu; return 0
+        fi
+
+        local vtmp vbody verify_rc=2
+        vtmp=$(mktemp "$SCRIPT_DIR/.ddns-verify.XXXXXX" 2>/dev/null) || vtmp=""
+        vbody=$(mktemp 2>/dev/null) || vbody=""
+        if [[ -n "$vtmp" ]] && printf '%s\n' "$payload" > "$vtmp"; then
+            ui_spin "Testing your ${new_provider} credentials..." \
+                ddns_verify_via_container "$vtmp" "$vbody"
+            verify_rc=$?
+        fi
+        [[ -n "$vtmp" ]] && rm -f "$vtmp"
+
+        if (( verify_rc == 0 )); then
+            [[ -n "$vbody" ]] && rm -f "$vbody"
+            break
+        fi
+        if (( verify_rc == 1 )); then
+            [[ -n "$vbody" && -s "$vbody" ]] && ui_log warn "Provider rejected the credentials: $(cat "$vbody")"
+            [[ -n "$vbody" ]] && rm -f "$vbody"
+            if (( attempt < 3 )); then
+                ui_confirm "Those credentials were rejected. Re-enter them?" yes || {
+                    ui_log info "No change."; pause_for_menu; return 0; }
+                continue
+            fi
+            ui_log warn "Still rejected after ${attempt} attempts - no change made."
+            pause_for_menu; return 0
+        fi
+        # verify_rc == 2 -> degrade (docker/pull/timeout). Never restart a working
+        # live service on unverified creds; leave the current provider untouched.
+        [[ -n "$vbody" ]] && rm -f "$vbody"
+        ui_log warn "Couldn't verify the new credentials (Docker or network issue) - no change made."
+        pause_for_menu; return 0
+    done
+    [[ -z "$payload" ]] && { ui_log info "No change."; pause_for_menu; return 0; }
+
+    # WARN + CONFIRM the disruptive part (the live restart).
+    ui_confirm "Switch DDNS to '${new_provider}' and restart the updater now? Your current config is backed up and restored if it fails to start." no || {
+        ui_log info "No change."; pause_for_menu; return 0; }
+
+    # APPLY (verify-first). Snapshot the current config into a variable for rollback
+    # (the live file is chmod 600 owned by 1000:1000, so a cross-owner backup FILE is
+    # fragile; a direct read with a sudo -n fallback matches the wizard's recall).
+    local live="$SCRIPT_DIR/config/ddns-updater/config.json"
+    local old_payload
+    old_payload=$(cat "$live" 2>/dev/null)
+    [[ -z "$old_payload" ]] && old_payload=$(sudo -n cat "$live" 2>/dev/null)
+    if [[ -z "$old_payload" ]]; then
+        ui_log warn "Couldn't read the current DDNS config to make a rollback point - no change made."
+        pause_for_menu; return 0
+    fi
+
+    ui_log info "Switching DDNS provider to '${new_provider}'..."
+    if _ddns_write_live_config "$payload" && _ddns_restart_and_check; then
+        # Persist the non-secret provider key only after the live service comes up.
+        _set_env_var DDNS_PROVIDER "$new_provider"
+        _reload_env
+        # No cache to invalidate: the banner re-resolves the DDNS record every render,
+        # so it will honestly read "propagating" until the new record propagates.
+        # Honest verify tier (#248), matching the wizard: a token provider's verify
+        # 202 is genuine (the token IS the account key, it cannot mask), but a
+        # dyndns2 provider (Dynu) server-side no-ops on an UNCHANGED IP without
+        # checking the password — and this row is only reachable when the record
+        # already points here, so its verify ALWAYS nochg-masks. Say so rather than
+        # let "completed successfully" imply a credential check we couldn't make.
+        local _vtier
+        _vtier=$(ddns_provider_verify_tier "$new_provider" 2>/dev/null || printf 'token')
+        if [[ "$_vtier" == "dyndns2" ]]; then
+            ui_log warn "'${new_provider}' couldn't be fully re-verified — it reports success without re-checking the password when your IP hasn't changed. The day-2 Health check flags a wrong login on your next IP change."
+        fi
+        _show_action_result 0 "Update DDNS provider / credentials"
+    elif (( ! _DDNS_LIVE_MUTATED )); then
+        # The forward write never landed (e.g. no write access / no sudo) — the live
+        # config.json is untouched and still matches .env, so there's nothing to roll
+        # back and nothing is inconsistent. Report the no-op plainly.
+        ui_log warn "Couldn't write the new DDNS config - your existing DDNS setup is unchanged."
+        _show_action_result 1 "Update DDNS provider / credentials"
+    else
+        # The new config WAS written (the mv landed) but the updater didn't come up —
+        # roll back. Warn on ANY unclean rollback: a failed mv may leave the unverified
+        # provider live (content), and a failed perms repair may leave the restored
+        # config unreadable by the uid-1000 container (permissions). Either way the
+        # user must know rather than have us silently restart onto a broken config.
+        ui_log warn "ddns-updater didn't come up cleanly - restoring your previous DDNS config."
+        if ! _ddns_write_live_config "$old_payload"; then
+            ui_log error "Couldn't fully restore config/ddns-updater/config.json (content or permissions) - re-run 'Update DDNS provider / credentials' to fix it."
+        fi
+        docker restart ddns-updater >/dev/null 2>&1 || true
+        _show_action_result 1 "Update DDNS provider / credentials"
+    fi
+    pause_for_menu
+    return 0
 }
 
 # Reverse-map a composed profile name ("1080p Balanced") back to its
@@ -2207,6 +2563,7 @@ menu_post() {
         # Band 3 — occasional / setup / destructive
         # "Re-run configuration to add new services"  # hidden: noisy on re-run, use Features & settings instead
         "Diagnostics (ports, public IP, DNS, readiness)"
+        "Refresh status (re-check public IP & DDNS)"
     )
     # Offer the GUM installer only when it's missing (mirrors menu_pre:2161).
     # MUST stay before "Uninstall"/"Quit": inserting it after Uninstall would
@@ -2231,6 +2588,11 @@ menu_post() {
         "Manage hardware transcoding"*) submenu_manage_hardware ;;
         # "Re-run configuration"*)  action_configure ;;
         "Diagnostics"*)           submenu_diagnostics ;;
+        # Invalidate the session public-IP cache so the next banner render re-detects it
+        # (e.g. after a WAN-IP change). The DDNS record is re-resolved every render anyway,
+        # so a fresh public IP is all Refresh needs to re-classify DDNS ok/stale. No pause:
+        # fall through and the while-loop redraws immediately.
+        "Refresh status"*)        _MS_PUBLIC_IP_CHECKED=0 ;;
         "Features"*)              submenu_features ;;
         "Manage stack"*)          submenu_manage_stack ;;
         "Get enhanced menus"*)    action_install_gum ;;

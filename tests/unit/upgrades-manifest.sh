@@ -176,6 +176,10 @@ SCENARIO_COVERAGE = {
     "wireguard":      {"services": {"wireguard"}},
     "fail2ban-drift": {"services": {"fail2ban"}},
     "ddns-seed":      {"services": {"ddns-updater"}},
+    "ddns-verify":    {"services": {"ddns-updater"}},
+    # ddns-offline exercises the verify degrade path; not a preflight oracle for
+    # any lock row (so never consulted here), registered per the #237 DoD.
+    "ddns-offline":   {"services": {"ddns-updater"}},
 }
 
 def scenario_starts(svc, scen):

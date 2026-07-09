@@ -18,15 +18,17 @@ run_scenario() {
     # Runs the exact python from setup.sh — single entry for the base
     # domain (wildcard DNS handles subdomains).
     # ------------------------------------------------------------------
+    # Dynu collects password only (#248); the username is a constant placeholder
+    # the renderer auto-fills, so the seed carries no user-supplied username.
     local seed_rc
-    dind_exec 'DDNS_DOMAIN="ddns.test" DDNS_USERNAME="testuser" DDNS_PASSWORD="testpass123" \
+    dind_exec 'DDNS_DOMAIN="ddns.test" DDNS_PASSWORD="testpass123" \
         python3 -c '\''
 import os, json
 print(json.dumps({"settings": [{
     "provider": "dynu",
     "domain": os.environ["DDNS_DOMAIN"],
-    "username": os.environ["DDNS_USERNAME"],
     "password": os.environ["DDNS_PASSWORD"],
+    "username": "mediastack",
     "ip_version": "ipv4",
 }]}, indent=2))
 '\'' > config/ddns-updater/config.json' >/dev/null 2>&1
@@ -55,8 +57,8 @@ if prov != "dynu":
     errors.append(f"provider={prov}, expected dynu")
 if dom != "ddns.test":
     errors.append(f"domain={dom}, expected ddns.test")
-if e.get("username") != "testuser":
-    errors.append("username mismatch")
+if e.get("username") != "mediastack":
+    errors.append("username placeholder mismatch")
 if e.get("password") != "testpass123":
     errors.append("password mismatch")
 if e.get("ip_version") != "ipv4":
@@ -80,14 +82,14 @@ PYEOF' | tr -d '\r\n')
     # ------------------------------------------------------------------
     local special_pw='p@ss"w\rd$#!'
     docker exec -i -w /root/MediaStack \
-        -e "DDNS_DOMAIN=ddns.test" -e "DDNS_USERNAME=user" -e "DDNS_PASSWORD=$special_pw" \
+        -e "DDNS_DOMAIN=ddns.test" -e "DDNS_PASSWORD=$special_pw" \
         "$DIND_NAME" python3 <<'PY' > /tmp/ddns-special.json
 import os, json
 print(json.dumps({"settings": [{
     "provider": "dynu",
     "domain": os.environ["DDNS_DOMAIN"],
-    "username": os.environ["DDNS_USERNAME"],
     "password": os.environ["DDNS_PASSWORD"],
+    "username": "mediastack",
     "ip_version": "ipv4",
 }]}, indent=2))
 PY
@@ -125,9 +127,9 @@ _WIZ_ADMIN_PW=GeneratedPassword123
 _WIZ_ADMIN_EMAIL=owner@ddns.test
 _WIZ_DOMAIN=ddns.test
 _WIZ_REMOTE_WEB_STATE=unchecked
+_WIZ_DDNS_PROVIDER=dynu
+_WIZ_DDNS_FIELDS=([password]=testpass123)
 _WIZ_DDNS_PREFLIGHT_OK=true
-_WIZ_DDNS_USER=testuser
-_WIZ_DDNS_PW=testpass123
 _WIZ_WG_HOST=ddns.test
 _WIZ_WG_PORT=51820
 _WIZ_WG_DNS=1.1.1.1
@@ -177,9 +179,9 @@ _WIZ_ADMIN_PW=GeneratedPassword123
 _WIZ_ADMIN_EMAIL=owner@ddns.test
 _WIZ_DOMAIN=ddns.test
 _WIZ_REMOTE_WEB_STATE=unchecked
+_WIZ_DDNS_PROVIDER=dynu
+_WIZ_DDNS_FIELDS=([password]=testpass123)
 _WIZ_DDNS_PREFLIGHT_OK=true
-_WIZ_DDNS_USER=testuser
-_WIZ_DDNS_PW=testpass123
 _WIZ_WG_HOST=ddns.test
 _WIZ_WG_PORT=51820
 _WIZ_WG_DNS=1.1.1.1
@@ -232,9 +234,9 @@ _WIZ_ADMIN_PW=GeneratedPassword123
 _WIZ_ADMIN_EMAIL=owner@ddns.test
 _WIZ_DOMAIN=ddns.test
 _WIZ_REMOTE_WEB_STATE=unchecked
+_WIZ_DDNS_PROVIDER=dynu
+_WIZ_DDNS_FIELDS=([password]=testpass123)
 _WIZ_DDNS_PREFLIGHT_OK=true
-_WIZ_DDNS_USER=testuser
-_WIZ_DDNS_PW=testpass123
 _WIZ_WG_HOST=ddns.test
 _WIZ_WG_PORT=51820
 _WIZ_WG_DNS=1.1.1.1
@@ -276,7 +278,7 @@ write_env
     # Simulates re-running setup.sh when config.json already exists.
     # ------------------------------------------------------------------
     docker exec -i -w /root/MediaStack \
-        -e "DDNS_DOMAIN=ddns.test" -e "DDNS_USERNAME=CLOBBERED" -e "DDNS_PASSWORD=CLOBBERED" \
+        -e "DDNS_DOMAIN=ddns.test" -e "DDNS_PASSWORD=CLOBBERED" \
         "$DIND_NAME" python3 <<'PY'
 import os, json, pathlib
 config_path = pathlib.Path("config/ddns-updater/config.json")
@@ -286,18 +288,20 @@ else:
     print(json.dumps({"settings": [{
         "provider": "dynu",
         "domain": os.environ["DDNS_DOMAIN"],
-        "username": os.environ["DDNS_USERNAME"],
         "password": os.environ["DDNS_PASSWORD"],
+        "username": "mediastack",
         "ip_version": "ipv4",
     }]}, indent=2))
 PY
 
-    local guard_user
-    guard_user=$(dind_exec 'python3 -c "import json; print(json.load(open(\"config/ddns-updater/config.json\"))[\"settings\"][0][\"username\"], end=\"\")"' | tr -d '\r\n')
-    if [[ "$guard_user" == "testuser" ]]; then
+    # The persisted config now carries the constant username placeholder (#248), so
+    # the "not clobbered" proof is that the real credential (password) survived.
+    local guard_pw
+    guard_pw=$(dind_exec 'python3 -c "import json; print(json.load(open(\"config/ddns-updater/config.json\"))[\"settings\"][0][\"password\"], end=\"\")"' | tr -d '\r\n')
+    if [[ "$guard_pw" == "testpass123" ]]; then
         pass "DDNS overwrite guard preserves existing config.json"
     else
-        fail "DDNS overwrite guard" "username='$guard_user' (expected 'testuser')"
+        fail "DDNS overwrite guard" "password='$guard_pw' (expected 'testpass123')"
     fi
 
     # ------------------------------------------------------------------
@@ -366,6 +370,70 @@ PY
     else
         fail "configure_ddns_updater() reports status" "output: ${configure_out:0:200}"
     fi
+
+    # ------------------------------------------------------------------
+    # Test 7 (#236): all 6 providers render valid typed config.json via the
+    # shared renderer; a missing required field is refused. Uses a quoted
+    # heredoc into `bash` so no shell-quoting fights the assoc literals.
+    # ------------------------------------------------------------------
+    docker exec -i -w /root/MediaStack "$DIND_NAME" bash > /tmp/ddns-render-loop.out 2>/dev/null <<'SH'
+source scripts/lib/ddns_providers.sh
+fail=0
+render() { local key="$1"; shift; local -A f=([domain]="ddns.test"); while (( $# )); do f["$1"]="$2"; shift 2; done; ddns_render_config_json "$key" f; }
+declare -A vals=([dynu]="password p" [duckdns]="token t" [desec]="token t" [dynv6]="token t" [cloudflare]="zone_identifier 0123456789abcdef0123456789abcdef token t" [porkbun]="api_key k secret_api_key s")
+for k in dynu duckdns desec dynv6 cloudflare porkbun; do
+  out=$(render "$k" ${vals[$k]}) || { echo "RENDER-FAIL:$k"; fail=1; continue; }
+  printf '%s' "$out" | DDNS_K="$k" python3 -c 'import os,sys,json; sys.exit(0 if json.load(sys.stdin)["settings"][0]["provider"]==os.environ["DDNS_K"] else 1)' || { echo "MISMATCH:$k"; fail=1; }
+done
+render duckdns >/dev/null 2>&1 && { echo "MISSING-NOT-REFUSED"; fail=1; }
+(( fail == 0 )) && echo ALL-OK
+SH
+    local render_out
+    render_out=$(tr -d '\r' < /tmp/ddns-render-loop.out)
+    assert_contains "$render_out" "ALL-OK" "6-provider render: all render valid typed JSON; missing field refused"
+
+    # ------------------------------------------------------------------
+    # Test 8 (#236): state-leak — a Dynu -> DuckDNS switch through the real
+    # write_env leaves NO username/password key in the rendered config.json.
+    # ------------------------------------------------------------------
+    docker exec -i -w /root/MediaStack "$DIND_NAME" bash >/dev/null 2>&1 <<'SH'
+set -e
+source scripts/lib/common.sh
+source scripts/setup/env_gen.sh
+SCRIPT_DIR=/root/MediaStack
+_ENV_TZ=Etc/UTC; _ENV_PUID=1001; _ENV_PGID=1001; _ENV_HOST_ADDRESS=127.0.0.1
+_WIZ_TZ=Etc/UTC; _WIZ_DATA_DIR=/data; _WIZ_ADMIN_USER=admin; _WIZ_ADMIN_PW=GeneratedPassword123
+_WIZ_ADMIN_EMAIL=owner@ddns.test; _WIZ_DOMAIN=ddns.test; _WIZ_REMOTE_WEB_STATE=unchecked
+_WIZ_WG_HOST=ddns.test; _WIZ_WG_PORT=51820; _WIZ_WG_DNS=1.1.1.1; _WIZ_WG_ACCESS_TIER=full-lan
+_WIZ_WG_LAN_CIDR=192.168.1.0/24; _WIZ_WG_SERVER_LAN_IP=192.168.1.10
+_WIZ_WG_INIT_ALLOWED_IPS=192.168.1.0/24; _WIZ_WG_PER_CLIENT_FIREWALL=true
+_WIZ_TORRENT_PORT=6881; _WIZ_DL_LIMIT=0; _WIZ_UL_LIMIT=0; _WIZ_BAZARR_ENABLED=false; _WIZ_SMB_ENABLED=false
+_WIZ_DDNS_PROVIDER=dynu
+_WIZ_DDNS_FIELDS=([password]=secret)
+write_env
+_WIZ_DDNS_PROVIDER=duckdns
+_WIZ_DDNS_FIELDS=([token]=duck-token)
+write_env
+SH
+    local leak
+    leak=$(dind_exec 'python3 -c "import json; s=json.load(open(\"config/ddns-updater/config.json\"))[\"settings\"][0]; print(\"LEAK\" if (\"username\" in s or \"password\" in s) else s.get(\"provider\")+\":\"+s.get(\"token\",\"\"))"' | tr -d '\r\n')
+    assert_eq "duckdns:duck-token" "$leak" "state-leak: Dynu->DuckDNS switch leaves no username/password key in config.json"
+
+    # ------------------------------------------------------------------
+    # Test 9 (#236): container fail-fasts (exits) on a malformed config — the
+    # "bad shape stays a dead remote, not a false green" half of the contract.
+    # ------------------------------------------------------------------
+    dind_exec 'rm -rf /tmp/ddns-badshape && mkdir -p /tmp/ddns-badshape && printf "{ not valid json" > /tmp/ddns-badshape/config.json'
+    dind_exec "docker rm -f smoke-ddns-bad" >/dev/null 2>&1 || true
+    dind_exec "docker run -d --name smoke-ddns-bad -v /tmp/ddns-badshape:/updater/data -e TZ=Etc/UTC $ddns_image" >/dev/null 2>&1 || true
+    local bad_running="unknown"
+    for _ in 1 2 3 4 5; do
+        sleep 2
+        bad_running=$(dind_exec "docker inspect -f '{{.State.Running}}' smoke-ddns-bad 2>/dev/null" | tr -d '\r\n')
+        [[ "$bad_running" == "false" ]] && break
+    done
+    assert_eq "false" "$bad_running" "ddns-updater fail-fasts (exits) on a malformed config"
+    dind_exec "docker rm -f smoke-ddns-bad" >/dev/null 2>&1 || true
 
     # Cleanup.
     dind_exec "docker rm -f ddns-updater $ddns_container" >/dev/null 2>&1 || true

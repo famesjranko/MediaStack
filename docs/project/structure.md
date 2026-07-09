@@ -43,6 +43,7 @@ scripts/
     stack.sh                        Data/config dirs, compose up, health wait, access info
   lib/
     common.sh                       Logging, cfg_* YAML readers, api_get/api_post, key mgmt
+    ddns_providers.sh               DDNS provider registry + config.json renderer (6 providers; shared wizard/day-2)
     http.sh                         wait_for_service, js_post (cookie-session)
     json.sh                         json_get, json_path, json_has_name, json_array_nonempty
     nvidia_patch.sh                 Shared nvidia-patch pinning and verified execution helpers
@@ -156,5 +157,6 @@ scenarios).
 - Service main.sh > 200 lines → extract helpers within the service dir
 - Feature touches 2+ services → `scripts/flows/*.sh`, not inline in a service
 - New shared Sonarr/Radarr pattern → `scripts/lib/arr/`
+- New DDNS provider → registry cells in `scripts/lib/ddns_providers.sh` (`_DDNS_*` parallel arrays) + a field validator in `scripts/lib/validators.sh` + a `tests/unit/ddns-config.sh` fixture + docs. No wizard/day-2 flow-code edits — that is the whole point of the shared registry.
 - New test scenario → `tests/scenarios/<name>.sh` + register in run.sh case statement
 - Pre-seeded config for a new service → add the template under `config/examples/defaults/<svc>/…` (tracked) and gitignore the live `config/<svc>/` copy; `seed_config_from_templates` copies it on install automatically

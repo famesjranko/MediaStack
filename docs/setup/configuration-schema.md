@@ -216,6 +216,7 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `STAGE_3_GPU_ALLOW_HEVC_ENCODING` / `STAGE_3_GPU_ALLOW_AV1_ENCODING` | Hardware codec probes | `true` or `false` |
 | `STAGE_3_GPU_RENDER_DEVICE` | Intel/AMD render-node probe | `/dev/dri/renderD128` |
 | `DOMAIN` | prompt, blank to skip remote | `example.com` |
+| `DDNS_PROVIDER` | Stage 2 DDNS picker, blank if DDNS skipped | `dynu`, `duckdns`, `desec`, `dynv6`, `cloudflare`, `porkbun` |
 | `WG_HOST` | `${DOMAIN}` | `example.com` |
 | `WG_INIT_PASSWORD` | plaintext `JELLYFIN_ADMIN_PASSWORD` (first-boot only) | `'GeneratedPassword123'` |
 | `WG_DEFAULT_DNS` | default `1.1.1.1` | `1.1.1.1` |
@@ -230,6 +231,8 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `SMB_SHARE_SCOPE` | prompt after enabling SMB, default `data` | `data` or `system` |
 | `UFW_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 | `HARDENING_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
+
+**DDNS credentials (ADR-46):** the Stage 2 DDNS picker writes only the non-secret `DDNS_PROVIDER` to `.env`. The provider's credentials (Dynu username/password, DuckDNS/dynv6/deSEC tokens, Cloudflare zone-id + token, Porkbun API keys) live solely in the chmod-600 `config/ddns-updater/config.json` rendered by `ddns_render_config_json` — never in `.env`. A wizard re-run recalls the provider from `DDNS_PROVIDER` and pre-fills its credential prompts from that config.json.
 
 **Single-quoting rule:** `WG_INIT_PASSWORD` MUST be single-quoted because the plaintext value can contain shell-special characters (`$`, `"`, `\`, `#`) that Docker Compose interpolates in unquoted values. `setup.sh` writes the quotes automatically; the smoke test (`tests/scenarios/smoke.sh`) asserts the container receives the password byte-for-byte via `INIT_PASSWORD`. v15 reads `INIT_*` env vars at first boot only — after `/etc/wireguard/wg-easy.db` exists, changes to `WG_INIT_PASSWORD` are inert; rotate the admin password in the wg-easy UI instead. See ADR-28.
 

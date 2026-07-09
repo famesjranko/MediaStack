@@ -7,6 +7,22 @@
 # detect_env()  — non-interactive auto-detection, sets shell variables.
 # write_env()   — writes .env from globals set by detect_env + wizard.
 
+# ddns_render_config_json (the DDNS config.json renderer used by write_env)
+# lives in scripts/lib/ddns_providers.sh. Sourced here — not in wizard.sh —
+# because env_gen.sh is the one lib every setup + stage entrypoint (and their
+# unit tests) already source. Resolve from BASH_SOURCE, not $SCRIPT_DIR: some
+# callers (and the ddns-seed / stage2-flow tests) set SCRIPT_DIR *after*
+# sourcing this file.
+_env_gen_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/ddns_providers.sh
+source "$_env_gen_dir/../lib/ddns_providers.sh"
+
+# The wizard's collected DDNS credential fields (name -> value); the config.json
+# writer below reads it. Declared here too (idempotent; `declare -gA` on an
+# existing assoc preserves contents) so write_env sees a real associative array
+# even when a test drives it without sourcing stage2.sh.
+declare -gA _WIZ_DDNS_FIELDS
+
 # Seed the live config.yml from its tracked template if absent. config.yml is
 # gitignored and mutated in place by the wizard (quality preset, min_free_space,
 # bitrate, wizard_completed), so it is seeded — not tracked — like the service
@@ -138,6 +154,7 @@ write_env() {
     local prev_nvidia_driver_mode="${NVIDIA_DRIVER_MODE:-}"
     local prev_nvidia_patch_enabled="${NVIDIA_PATCH_ENABLED:-}"
     local prev_image_channel="${IMAGE_CHANNEL:-}"
+    local prev_ddns_provider="${DDNS_PROVIDER:-}"
     local prev_public_indexers="${PUBLIC_INDEXERS_ENABLED:-}"
     local prev_stage3_state="${STAGE_3_GPU_STATE:-}"
     local prev_stage3_vendor="${STAGE_3_GPU_VENDOR:-}"
@@ -165,7 +182,7 @@ import sys
 wanted = {
     "SONARR_API_KEY", "RADARR_API_KEY", "JELLYFIN_API_KEY", "BAZARR_API_KEY",
     "SEERR_API_KEY", "PORTAINER_API_KEY", "BESZEL_AGENT_KEY",
-    "STAGE_1_COMPLETE", "NPM_LE_SERVER", "JELLYFIN_GPU", "IMAGE_CHANNEL",
+    "STAGE_1_COMPLETE", "NPM_LE_SERVER", "JELLYFIN_GPU", "IMAGE_CHANNEL", "DDNS_PROVIDER",
     "PUBLIC_INDEXERS_ENABLED", "NVIDIA_DRIVER_MODE", "NVIDIA_PATCH_ENABLED",
     "STAGE_3_GPU_STATE", "STAGE_3_GPU_VENDOR", "STAGE_3_GPU_ENCODER",
     "STAGE_3_GPU_HW_DECODING_CODECS", "STAGE_3_GPU_DECODE_HEVC_10BIT",
@@ -202,6 +219,7 @@ PY
         prev_nvidia_driver_mode="${NVIDIA_DRIVER_MODE:-$prev_nvidia_driver_mode}"
         prev_nvidia_patch_enabled="${NVIDIA_PATCH_ENABLED:-$prev_nvidia_patch_enabled}"
         prev_image_channel="${IMAGE_CHANNEL:-$prev_image_channel}"
+        prev_ddns_provider="${DDNS_PROVIDER:-$prev_ddns_provider}"
         prev_public_indexers="${PUBLIC_INDEXERS_ENABLED:-$prev_public_indexers}"
         prev_stage3_state="${STAGE_3_GPU_STATE:-$prev_stage3_state}"
         prev_stage3_vendor="${STAGE_3_GPU_VENDOR:-$prev_stage3_vendor}"
@@ -362,10 +380,20 @@ PY
     _env_quote_preserved_secret prev_portainer_env "PORTAINER_API_KEY" "$prev_portainer"
     _env_quote_preserved_secret prev_beszel_env "BESZEL_AGENT_KEY" "$prev_beszel"
 
-    local ddns_username="" ddns_password=""
-    if [[ "${_WIZ_DDNS_PREFLIGHT_OK:-false}" == "true" ]]; then
-        ddns_username="${_WIZ_DDNS_USER:-}"
-        ddns_password="${_WIZ_DDNS_PW:-}"
+    # DDNS provider key (non-secret) is the only DDNS value written to .env; the
+    # credentials live solely in the chmod-600 config.json rendered below and are
+    # persisted on SHAPE-VALID render, not on live-verify — _WIZ_DDNS_PREFLIGHT_OK
+    # drives only the messaging tier (gating persistence on it would brick the 5
+    # providers #236 cannot verify, leaving a config-less dead remote).
+    # Keep the persisted DDNS_PROVIDER in sync with config.json: adopt the
+    # wizard's current provider only when it rendered shape-valid fields this run
+    # (same condition the config.json write gates on below); otherwise keep the
+    # last-persisted provider, which matches the config.json the shape-valid gate
+    # preserves. Without this, "change provider -> bad creds -> skip" would leave
+    # a stale .env provider hint disagreeing with the still-valid config.json.
+    local ddns_provider="${prev_ddns_provider:-}"
+    if [[ -n "${_WIZ_DDNS_PROVIDER:-}" && -n "${_WIZ_DDNS_FIELDS[*]+x}" ]]; then
+        ddns_provider="$_WIZ_DDNS_PROVIDER"
     fi
     if [[ -n "${_WIZ_DOMAIN:-}" && "${_WIZ_DOMAIN}" != "example.com" ]]; then
         if ! repair_ddns_updater_config_permissions; then
@@ -437,13 +465,11 @@ NVIDIA_DRIVER_MODE=${nvidia_driver_mode}
 DOMAIN=${_WIZ_DOMAIN:-example.com}
 REMOTE_WEB_STATE=${remote_web_state}
 NPM_LE_SERVER=${prev_npm_le_server}
-# DDNS creds: persisted so wizard re-runs (./setup.sh --remote) pre-fill the
-# Dynu prompts via _stage2_seed_wizard_defaults instead of asking again.
-# ddns-updater itself reads from config/ddns-updater/config.json, not these
-# vars — these exist purely for wizard recall on re-runs. Single-quoted
-# because passwords may contain shell-special chars.
-DDNS_USERNAME='${ddns_username}'
-DDNS_PASSWORD='${ddns_password}'
+# DDNS provider key (non-secret): persisted so wizard re-runs (./setup.sh
+# --remote) recall the provider and pre-fill its credential prompts. The
+# credentials themselves live ONLY in the chmod-600 config/ddns-updater/
+# config.json rendered below — never in .env.
+DDNS_PROVIDER=${ddns_provider}
 WG_HOST=${_WIZ_WG_HOST:-example.com}
 WG_PORT=${_WIZ_WG_PORT:-51820}
 # Single-quoted: plaintext password may contain shell-special chars (\$ " \).
@@ -523,33 +549,39 @@ EOF
     fi
     log_ok ".env generated (chmod 600)"
 
-    # Seed DDNS config.json before containers start.
-    # Always (over)write after the wizard verified Dynu credentials. The
-    # previous "skip if file exists" guard left stale-empty config.json in
-    # place when an earlier wizard run created the file with empty creds
-    # (e.g. wizard was killed mid-flow, or a prior code path skipped
-    # credential collection). Verified wizard creds are authoritative.
-    if [[ -n "$ddns_username" ]]; then
+    # Seed DDNS config.json before containers start. Persist on SHAPE-VALID
+    # render: a chosen provider plus every required field present. Wrong-but-
+    # shaped creds still write (and come up REMOTE_WEB_STATE=unchecked) — never a
+    # config-less dead remote. A Dynu bad-auth clears _WIZ_DDNS_FIELDS upstream,
+    # so wrong Dynu creds render empty and are refused here; a skipped DDNS step
+    # leaves the assoc empty too, so an existing config.json is preserved
+    # untouched. Always (over)write otherwise: the old "skip if file exists"
+    # guard left stale-empty config.json in place.
+    if [[ -n "$ddns_provider" && -n "${_WIZ_DDNS_FIELDS[*]+x}" ]]; then
         local ddns_config="$SCRIPT_DIR/config/ddns-updater/config.json"
         local ddns_dir
         ddns_dir="$(dirname "$ddns_config")"
         local ddns_tmp=""
-        local ddns_payload
-        ddns_payload=$(DDNS_DOMAIN="$_WIZ_DOMAIN" DDNS_USERNAME="$ddns_username" DDNS_PASSWORD="$ddns_password" \
-            python3 -c '
-import os, json
-print(json.dumps({"settings": [{
-    "provider": "dynu",
-    "domain": os.environ["DDNS_DOMAIN"],
-    "username": os.environ["DDNS_USERNAME"],
-    "password": os.environ["DDNS_PASSWORD"],
-    "ip_version": "ipv4",
-}]}, indent=2))
-')
+        local ddns_payload=""
+        # Build the render assoc from the wizard's collected credential fields
+        # plus the reserved `domain` (the shared media host, collected
+        # separately and rendered as a reserved key by ddns_render_config_json).
+        local -A _ddns_render_fields=()
+        local _rk
+        for _rk in "${!_WIZ_DDNS_FIELDS[@]}"; do
+            _ddns_render_fields["$_rk"]="${_WIZ_DDNS_FIELDS[$_rk]}"
+        done
+        _ddns_render_fields[domain]="$_WIZ_DOMAIN"
+        # On failure the renderer prints its reason to stderr and nothing to
+        # stdout; the empty payload then skips the write below and reuses the
+        # existing "Failed to write" warning (one message, not two).
+        if ! ddns_payload=$(ddns_render_config_json "$ddns_provider" _ddns_render_fields); then
+            ddns_payload=""
+        fi
         # Keep the temp file outside config/ddns-updater: that directory is
         # deliberately writable by the fixed uid-1000 ddns-updater container.
         local ddns_write_ok=false
-        if _ddns_prepare_config_dir "$ddns_dir"; then
+        if [[ -n "$ddns_payload" ]] && _ddns_prepare_config_dir "$ddns_dir"; then
             ddns_tmp=$(mktemp "$SCRIPT_DIR/.ddns-updater-config.XXXXXX" 2>/dev/null || true)
             if [[ -n "$ddns_tmp" ]] \
                 && printf '%s\n' "$ddns_payload" > "$ddns_tmp" 2>/dev/null \
@@ -584,6 +616,7 @@ print(json.dumps({"settings": [{
     export STORAGE_SENTINEL="$storage_sentinel"
     export UNPACKERR_TORRENT_PATHS="$unpackerr_torrent_paths"
     export IMAGE_CHANNEL="$image_channel"
+    export DDNS_PROVIDER="$ddns_provider"
     export PUBLIC_INDEXERS_ENABLED="$public_indexers_enabled"
     export MEDIASTACK_NETWORK_PREFIX="$mediastack_network_prefix"
     export MEDIASTACK_SUBNET="$mediastack_subnet"

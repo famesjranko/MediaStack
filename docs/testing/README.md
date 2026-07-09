@@ -393,7 +393,6 @@ bash tests/unit/packages.sh && bash tests/unit/test-runner.sh && bash tests/unit
 Stage 2 adds host-side unit coverage for the remote-access collection helpers. These run without Docker and are the fastest feedback loop for setup wizard changes:
 
 - `stage2-domain` — DNS/domain classification, Cloudflare proxy detection, and safe publication routing.
-- `stage2-dynu` — Dynu IP Update Protocol response mapping for accepted, unchanged, auth, host, abuse, DNS, and retry states.
 - `stage2-ports` — local TCP/UDP port classification without overclaiming public WAN reachability.
 - `stage2-wireguard` — ADR-29 access-tier env mapping, `detect_lan_cidr`
   normalization, and the Containers-tier port drift guard against
@@ -408,7 +407,7 @@ Stage 2 adds host-side unit coverage for the remote-access collection helpers. T
 The focused remote-access unit command is:
 
 ```bash
-bash tests/unit/stage2-domain.sh && bash tests/unit/stage2-dynu.sh && bash tests/unit/stage2-ports.sh && bash tests/unit/stage2-wireguard.sh && bash tests/unit/stage2-flow.sh && bash tests/unit/stage2-le.sh && bash tests/unit/stage2-npm-stale.sh && bash tests/unit/remote-web-state.sh
+bash tests/unit/stage2-domain.sh && bash tests/unit/stage2-ports.sh && bash tests/unit/stage2-wireguard.sh && bash tests/unit/stage2-flow.sh && bash tests/unit/stage2-le.sh && bash tests/unit/stage2-npm-stale.sh && bash tests/unit/remote-web-state.sh
 ```
 
 Stage 2 also adds WireGuard/remote-access DinD scenarios:

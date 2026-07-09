@@ -339,46 +339,179 @@ stage2_dns_classify() {
     return 0
 }
 
-stage2_dynu_validate_response() {
-    local response="$1"
-    local mode="${2:-token}"
-    local token="${response%%[[:space:]]*}"
+# Image the ephemeral verify launches — keep in sync with docker-compose.yml's
+# ddns-updater service. ponytail: a literal, not a shared constant, for one call
+# site; the drift-detector scenario (tests/scenarios/ddns-verify.sh) pins the
+# verify behaviour against this image's digest.
+_DDNS_VERIFY_IMAGE="qmcgaw/ddns-updater:latest"
 
-    case "$token" in
-        good|nochg)
-            printf 'ok'
-            return 0
-            ;;
-        badauth)
-            if [[ "$mode" == "message" ]]; then
-                printf "the Dynu username or password was not accepted. Either your Dynu account password OR a Dynu 'IP Update Password' works here - re-check both for typos and trailing spaces. If it keeps failing, set an 'IP Update Password' in Dynu (Control Panel > IP Update Settings) and use that"
-            else
-                printf 'badauth'
+# Delay before the single retry poll after a first 500 (#248). NOT a correctness
+# knob — the body classification below is the real arbiter, so an unhealed
+# transient just falls through to degrade (creds kept), never a wrong reject. This
+# only trades how often a slow transient auto-heals to 202 vs lands the honest
+# "unchecked" tier. ponytail: fixed single retry; if provider transients prove to
+# need longer or more attempts, widen this or loop with backoff (costs one more
+# provider push per attempt).
+_DDNS_VERIFY_RETRY_DELAY=8
+
+# -----------------------------------------------------------------------------
+# ddns_verify_via_container <config_json_path> [error_body_file]
+#
+# One uniform credential check for every DDNS provider, with zero blast radius:
+# run a throwaway ddns-updater container whose record resolver is blackholed
+# (RESOLVER_ADDRESS=127.0.0.1:1). The blackhole makes the container's hostname
+# lookup FAIL, which falls through to a REAL provider push at the current public
+# IP (upstream's "// update anyway" path). GET /update then maps the provider's
+# response. This is a REJECTION channel, not an acceptance channel: a 500 means
+# the credentials are definitely wrong; a 202 means accepted OR provider-masked
+# (a username/password provider server-side no-ops on an unchanged IP without
+# checking the password).
+#
+# The caller renders config.json first (ddns_render_config_json), so this file
+# stays free of provider-registry knowledge. The rendered config is copied into a
+# throwaway data dir; teardown removes both the container and the plaintext-cred
+# scratch on any exit.
+#
+# Exit codes:
+#   0  /update 202 — accepted (or masked); caller tiers the message by provider
+#   1  rejected — /update 500 (bad creds) OR the container fail-fasted on an
+#      invalid config (malformed token shape, bad domain eTLD). The provider /
+#      validation error is written to <error_body_file> when given (the caller
+#      prints it AFTER ui_spin returns, because ui_spin suppresses stdout), and
+#      the caller re-prompts. A fail-fast config error is a reject, not a degrade
+#      — otherwise a fat-fingered credential persists and the real ddns-updater
+#      dies at install.
+#   2  degrade — docker missing / image pull failed / container up but never
+#      answered / curl could not connect. NEVER re-prompts: the caller lands the
+#      honest "configured, unverified" tier. A pull failure must not look like
+#      bad creds.
+#
+# The blackhole MUST fast-refuse (127.0.0.1:1 = connection refused). An
+# unroutable / timing-out address would hit the container's context-deadline
+# branch, skip the push, and silently turn the rejection channel off.
+# -----------------------------------------------------------------------------
+ddns_verify_via_container() {
+    local config_json="$1" body_file="${2:-}"
+    command -v docker >/dev/null 2>&1 || return 2
+    [[ -f "$config_json" ]] || return 2
+
+    # The verify runs during Stage-2 collection, BEFORE pull_images, so on a fresh
+    # box the image may be absent. Pull it bounded (never an unbounded implicit
+    # pull that could hang the wizard); a pull failure degrades, never rejects.
+    if ! docker image inspect "$_DDNS_VERIFY_IMAGE" >/dev/null 2>&1; then
+        timeout 120 docker pull "$_DDNS_VERIFY_IMAGE" >/dev/null 2>&1 || return 2
+    fi
+
+    # Inner subshell so the cleanup trap is scoped here — it fires on the
+    # subshell's exit (return path OR a signal it converts to exit) without
+    # clobbering the caller's traps, and works whether we are invoked directly or
+    # inside ui_spin's background subshell. --rm does NOT reap a detached daemon on
+    # SIGTERM, so the trap removes the container explicitly.
+    (
+        local scratch cid=""
+        scratch=$(mktemp -d) || exit 2
+        trap 'rc=$?; [[ -n "$cid" ]] && docker rm -f "$cid" >/dev/null 2>&1; rm -rf "$scratch"; exit $rc' EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+
+        # The container runs as uid 1000. On the common single-user box the invoking
+        # uid is 1000, so a 600 copy is readable; widen to 644 so a non-1000
+        # installer box can still verify. The file is a throwaway that lives for
+        # seconds and holds the user's own creds on their own host.
+        # ponytail: if that brief world-read matters on a shared box, chown 1000
+        # under `sudo -n` instead; on failure the container just degrades to exit 2.
+        cp "$config_json" "$scratch/config.json" 2>/dev/null || exit 2
+        chmod 755 "$scratch" && chmod 644 "$scratch/config.json" || exit 2
+
+        # -p 127.0.0.1:0:8000 = ephemeral host port; the real ddns-updater service
+        # holds 8000:8000, so a fixed publish would collide during a day-2 verify.
+        cid=$(docker run -d -p 127.0.0.1:0:8000 \
+            -e RESOLVER_ADDRESS=127.0.0.1:1 -e PERIOD=0 \
+            -v "$scratch":/updater/data \
+            "$_DDNS_VERIFY_IMAGE" 2>/dev/null) || exit 2
+
+        # Wait for the HTTP server to publish its port. If the container EXITS
+        # before it appears, it fail-fasted on the config. An invalid config — a
+        # malformed token shape, a domain that fails the provider's eTLD check —
+        # is a REJECT (re-prompt), NOT a degrade: otherwise a fat-fingered
+        # credential would persist and the real ddns-updater would die at install.
+        # A container that is up but simply slow keeps the loop going.
+        local port=""
+        for _ in $(seq 1 20); do
+            port=$(docker port "$cid" 8000 2>/dev/null | head -1 | sed 's/.*://')
+            [[ -n "$port" ]] && break
+            if [[ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" != "true" ]]; then
+                local ferr
+                # Anchor on ddns-updater's config-validation phase wording only
+                # ("validating provider specific settings: <field> is not valid: …"),
+                # so an unrelated non-cred startup exit that merely happens to log
+                # "invalid" degrades (exit 2) instead of being misread as a
+                # bad-cred reject (exit 1) that clears good creds. A real cred/shape
+                # error always carries this phrasing.
+                ferr=$(docker logs "$cid" 2>&1 \
+                    | grep -iE 'validating .* settings|is not valid' \
+                    | tail -1)
+                if [[ -n "$ferr" ]]; then
+                    [[ -n "$body_file" ]] && printf '%s\n' "$ferr" > "$body_file"
+                    exit 1
+                fi
+                exit 2
             fi
-            return 1
-            ;;
-        nohost|abuse|notfqdn|numhost|dnserr|911|unknown|servererror|!donator)
-            printf '%s' "$token"
-            return 1
-            ;;
-        *)
-            printf 'unknown'
-            return 1
-            ;;
-    esac
-}
+            sleep 1
+        done
+        [[ -n "$port" ]] || exit 2
 
-stage2_dynu_preflight() {
-    local hostname="$1" username="$2" password="$3"
-    local response
-    response=$(curl -fsS --max-time 15 --get "https://api.dynu.com/nic/update" \
-        --data-urlencode "hostname=${hostname}" \
-        --data-urlencode "username=${username}" \
-        --data-urlencode "password=${password}" 2>/dev/null) || {
-        printf 'network'
-        return 1
-    }
-    stage2_dynu_validate_response "$response"
+        # Bounded poll: --max-time bounds ONE request; this caps the LOOP. The
+        # first /update runs a full synchronous cycle (fetch IP + push, ~5s), so
+        # give each request a generous timeout and break on the first real
+        # response. Capture the body inline (-o). A container that is up but never
+        # answers stays at 000 across the loop and degrades rather than spinning.
+        local resp="$scratch/resp"
+        _ddns_poll_update() {
+            local c="000" _i
+            for _i in $(seq 1 8); do
+                c=$(curl -s -o "$resp" -w '%{http_code}' --max-time 20 \
+                    "http://127.0.0.1:${port}/update" 2>/dev/null)
+                [[ -n "$c" && "$c" != "000" ]] && break
+                sleep 1
+            done
+            printf '%s' "$c"
+        }
+
+        # A 500 is NOT proof of bad credentials. ddns-updater returns 500 for its
+        # OWN transient failures too — a failed public-IP fetch alone yields
+        # 500 {"errors":["obtaining ipv4 address: ... connection refused"]} with
+        # ZERO provider contact, and a provider-side blip surfaces the same way.
+        # This is #248's flakiness: identical creds rejected on attempt 1, accepted
+        # on attempt 2, because attempt 1 cleared good creds on a transient 500. So
+        # a single 500 never decides — wait for the transient to clear and re-poll
+        # once (one extra push on a genuine badauth is bounded and harmless).
+        local code
+        code=$(_ddns_poll_update)
+        if [[ "$code" == "500" ]]; then
+            sleep "$_DDNS_VERIFY_RETRY_DELAY"
+            code=$(_ddns_poll_update)
+        fi
+
+        case "$code" in
+            202) exit 0 ;;
+            500)
+                [[ -n "$body_file" ]] && cp "$resp" "$body_file" 2>/dev/null
+                # A second 500, 8s apart. If the body is ddns-updater's OWN
+                # infrastructure vocabulary (IP-fetch / DNS / connection / deadline /
+                # throttle), this is an environment failure, NOT a credential
+                # rejection -> DEGRADE (exit 2): keep the shape-valid creds and land
+                # the honest "unchecked" tier instead of clearing good creds on a
+                # blip. Any other body (a real provider auth error) -> REJECT.
+                # Unknown text defaults to reject = the historical fail-safe.
+                if grep -qiE 'obtaining ip|dial tcp|no such host|i/o timeout|connection refused|connection reset|context deadline|too many requests' "$resp" 2>/dev/null; then
+                    exit 2
+                fi
+                exit 1
+                ;;
+            *)   exit 2 ;;
+        esac
+    )
 }
 
 stage2_check_http_ports() {

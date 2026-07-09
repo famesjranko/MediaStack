@@ -116,8 +116,10 @@ _demo_stage1_noninteractive() {
     _WIZ_WG_INIT_ALLOWED_IPS=""
     _WIZ_WG_PER_CLIENT_FIREWALL="true"
     _WIZ_WG_INIT_PASSWORD=""
-    _WIZ_DDNS_USER=""
-    _WIZ_DDNS_PW=""
+    _WIZ_DDNS_PROVIDER=""
+    _WIZ_DDNS_FIELDS=()
+    _WIZ_DDNS_PREFLIGHT_OK=""
+    _WIZ_DDNS_INVALIDATED=""
 
     local password_source="generated"
     # Pre-seed the prompt default ONLY if the existing password meets the

@@ -85,7 +85,7 @@ Generator: /project-stack (audit of existing codebase)
 ## Hosting
 - Platform: Self-hosted bare metal (user's own Debian box)
 - Remote access: NPM reverse proxy + Let's Encrypt + WireGuard VPN
-- DDNS: Optional (Dynu or 50+ providers via ddns-updater)
+- DDNS: Optional curated 6-provider wizard picker (Dynu, DuckDNS, deSEC, dynv6, Cloudflare, Porkbun) rendering `config/ddns-updater/config.json`; ddns-updater itself supports 50+ upstream (ADR-46)
 - Cost: $0/mo (hardware owned by user)
 
 ## Host Dependencies (installed by setup.sh --full)

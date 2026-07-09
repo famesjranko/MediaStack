@@ -301,6 +301,18 @@ assert_eq "0" \
     "$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")" \
     "bitrate: 0 means unlimited"
 
+# Decimals: the wizard accepts them (validate_mbps_decimal), so --bitrate-limit
+# must too — and re-applying over an existing decimal must still match.
+python3 "$WIZARD" --resolution 1080p --size balanced --languages english --bitrate-limit 3.5 --config "$config" >/dev/null 2>&1
+assert_eq "3.5" \
+    "$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")" \
+    "bitrate: decimal 3.5 accepted"
+
+python3 "$WIZARD" --resolution 1080p --size balanced --languages english --bitrate-limit 7 --config "$config" >/dev/null 2>&1
+assert_eq "7" \
+    "$(yaml_get "$config" "c['jellyfin']['remote_bitrate_limit']")" \
+    "bitrate: re-apply over a decimal returns to whole 7"
+
 # =========================================================================
 # Wizard GPU choice → GPU_TYPE mapping (mirrors wizard.sh lines 57-62)
 # =========================================================================
