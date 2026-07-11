@@ -9,6 +9,17 @@
 # setup_samba()     — Optional SMB share. Needs credentials + DATA_DIR from
 #                     .env; runs after the wizard.
 
+# uninstall_system_cleanup dispatches host-artefact teardown to the owning
+# modules (gpu_uninstall, storage_uninstall_watchdog); source them from a
+# BASH_SOURCE-resolved path so the calls resolve without relying on setup.sh's
+# source order (invariant #11). Both are side-effect-free and re-source-safe.
+_HARDENING_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=gpu.sh
+source "$_HARDENING_LIB_DIR/gpu.sh"
+# shellcheck source=storage.sh
+source "$_HARDENING_LIB_DIR/storage.sh"
+unset _HARDENING_LIB_DIR
+
 MEDIASTACK_STATE_DIR=/etc/mediastack
 MEDIASTACK_STATE_FILE="$MEDIASTACK_STATE_DIR/install-state"
 MEDIASTACK_APT_AUTO_CONF=/etc/apt/apt.conf.d/21mediastack-auto-upgrades
@@ -16,6 +27,11 @@ MEDIASTACK_APT_POLICY_CONF=/etc/apt/apt.conf.d/51mediastack-unattended-upgrades
 MEDIASTACK_SYSCTL_CONF=/etc/sysctl.d/90-mediastack-hardening.conf
 MEDIASTACK_UFW_AFTER_RULES=/etc/ufw/after.rules
 MEDIASTACK_UFW_AFTER_INIT=/etc/ufw/after.init
+
+# RFC1918 private ranges — the LAN scope for ufw "allow from <cidr>" rules.
+# The iptables after.rules heredoc keeps its own literals (interpolating an
+# array into that generated block is net-positive LoC).
+LAN_CIDRS=(10.0.0.0/8 172.16.0.0/12 192.168.0.0/16)
 
 _ms_state_get() {
     local key="$1"
@@ -176,9 +192,10 @@ ufw_allow_ssh_port() {
 
     ufw_valid_port "$port" || return 0
 
-    _ms_ufw_allow from 10.0.0.0/8 to any port "$port" proto tcp comment MediaStack:SSH-LAN >/dev/null
-    _ms_ufw_allow from 172.16.0.0/12 to any port "$port" proto tcp comment MediaStack:SSH-LAN >/dev/null
-    _ms_ufw_allow from 192.168.0.0/16 to any port "$port" proto tcp comment MediaStack:SSH-LAN >/dev/null
+    local cidr
+    for cidr in "${LAN_CIDRS[@]}"; do
+        _ms_ufw_allow from "$cidr" to any port "$port" proto tcp comment MediaStack:SSH-LAN >/dev/null
+    done
 
     if [[ -n "$active_client_ip" && "$active_server_port" == "$port" ]] \
         && ! ufw_rfc1918_ipv4 "$active_client_ip"; then
@@ -973,9 +990,10 @@ EOF
     sudo systemctl reload smbd >/dev/null 2>&1 || true
 
     # LAN-only SMB access
-    _ms_ufw_allow from 10.0.0.0/8 to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
-    _ms_ufw_allow from 172.16.0.0/12 to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
-    _ms_ufw_allow from 192.168.0.0/16 to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
+    local cidr
+    for cidr in "${LAN_CIDRS[@]}"; do
+        _ms_ufw_allow from "$cidr" to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
+    done
     sudo ufw reload >/dev/null 2>&1
 
     _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
@@ -1085,7 +1103,7 @@ _uninstall_ufw() {
             fi
             while read -r ssh_port; do
                 [[ -n "$ssh_port" ]] || continue
-                for ssh_cidr in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
+                for ssh_cidr in "${LAN_CIDRS[@]}"; do
                     sudo ufw allow from "$ssh_cidr" to any port "$ssh_port" proto tcp >/dev/null 2>&1 \
                         && ssh_kept=true
                 done
@@ -1109,10 +1127,7 @@ _uninstall_apt() {
         fi
         sudo rm -f "$path" || return 1
     done
-    sudo rm -f \
-        /etc/apt/sources.list.d/mediastack-nonfree.list \
-        /etc/apt/sources.list.d/mediastack-backports.list \
-        || true
+    gpu_uninstall  # apt sources owned by gpu.sh; removed by their owner
     log_ok "MediaStack apt sources and unattended-upgrades policy removed"
 }
 
@@ -1213,21 +1228,19 @@ _uninstall_samba() {
 
 uninstall_system_cleanup() {
     validate_install_state || { log_error "Missing or invalid MediaStack ownership ledger; refusing host cleanup"; return 1; }
-    local failed=0 svc
+    local failed=0
     _uninstall_ufw || { log_error "UFW cleanup failed"; failed=1; }
     _uninstall_apt || { log_error "APT cleanup failed"; failed=1; }
     _uninstall_sysctl || { log_error "sysctl cleanup failed"; failed=1; }
     _uninstall_samba || { log_error "Samba cleanup failed"; failed=1; }
+    storage_uninstall_watchdog || { log_error "Storage watchdog cleanup failed"; failed=1; }
 
-    for svc in mediastack-storage-watchdog mediastack-setup; do
-        if sudo test -f "/etc/systemd/system/${svc}.service"; then
-            sudo systemctl stop "${svc}.service" 2>/dev/null || failed=1
-            sudo systemctl disable "${svc}.service" 2>/dev/null || failed=1
-            sudo rm -f "/etc/systemd/system/${svc}.service" || failed=1
-        fi
-    done
-    sudo rm -f /etc/sudoers.d/mediastack-storage-watchdog || failed=1
-    sudo rm -rf /usr/local/libexec/mediastack || failed=1
+    # mediastack-setup unit + setup-result banner are stage/hardening-owned.
+    if sudo test -f /etc/systemd/system/mediastack-setup.service; then
+        sudo systemctl stop mediastack-setup.service 2>/dev/null || failed=1
+        sudo systemctl disable mediastack-setup.service 2>/dev/null || failed=1
+        sudo rm -f /etc/systemd/system/mediastack-setup.service || failed=1
+    fi
     sudo rm -f /etc/profile.d/mediastack-setup-result.sh || failed=1
     sudo systemctl daemon-reload 2>/dev/null || failed=1
 

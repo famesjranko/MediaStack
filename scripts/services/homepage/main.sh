@@ -19,20 +19,19 @@ configure_homepage() {
     local remote_state="${REMOTE_WEB_STATE:-}"
 
     local has_bazarr="" has_wireguard="" has_ddns="" has_beszel="" has_npm=""
-    if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx bazarr; then
+    if container_running bazarr; then
         has_bazarr=1
     fi
-    if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx wireguard; then
+    if container_running wireguard; then
         has_wireguard=1
     fi
-    if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx ddns-updater; then
+    if container_running ddns-updater; then
         has_ddns=1
     fi
-    if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx beszel; then
+    if container_running beszel; then
         has_beszel=1
     fi
-    if [[ -n "$domain" && "$domain" != "example.com" ]] && \
-       docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx npm; then
+    if [[ -n "$domain" && "$domain" != "example.com" ]] && container_running npm; then
         has_npm=1
     fi
 
@@ -54,8 +53,10 @@ configure_homepage() {
         HAS_BESZEL="$has_beszel" \
         BESZEL_EMAIL="${NPM_ADMIN_EMAIL:-}" \
         BESZEL_PW="${JELLYFIN_ADMIN_PASSWORD:-}" \
+        SERVICE_PORTS_JSON="$(service_http_ports_json)" \
+        SERVICE_URLS_JSON="$(service_internal_urls_json)" \
         python3 -c '
-import os, yaml
+import json, os, yaml
 
 host = os.environ["HOST_ADDR"]
 domain = os.environ["DOMAIN"]
@@ -74,13 +75,21 @@ has_ddns = os.environ["HAS_DDNS"]
 has_beszel = os.environ["HAS_BESZEL"]
 beszel_email = os.environ["BESZEL_EMAIL"]
 beszel_pw = os.environ["BESZEL_PW"]
+service_ports = json.loads(os.environ["SERVICE_PORTS_JSON"])
+service_urls = json.loads(os.environ["SERVICE_URLS_JSON"])
 
 use_domain = remote_state == "ready" and domain and domain != "example.com"
 
-def href(subdomain, port):
+def port(service):
+    return service_ports[service]
+
+def svc_url(service):
+    return service_urls[service]
+
+def href(subdomain, service):
     if use_domain:
         return f"https://{subdomain}.{domain}"
-    return f"http://{host}:{port}"
+    return f"http://{host}:{port(service)}"
 
 services = []
 
@@ -89,16 +98,16 @@ media = {"Media": [
     {"Jellyfin": {
         "icon": "jellyfin",
         "description": "Media Server",
-        "href": href("jellyfin", 8096),
-        "siteMonitor": "http://jellyfin:8096",
-        "widget": {"type": "jellyfin", "url": "http://jellyfin:8096", "key": jf_key},
+        "href": href("jellyfin", "jellyfin"),
+        "siteMonitor": svc_url("jellyfin"),
+        "widget": {"type": "jellyfin", "url": svc_url("jellyfin"), "key": jf_key},
     }},
     {"Seerr": {
         "icon": "seerr",
         "description": "Media Requests",
-        "href": href("seerr", 5055),
-        "siteMonitor": "http://seerr:5055",
-        **({"widget": {"type": "seerr", "url": "http://seerr:5055", "key": seerr_key}} if seerr_key else {}),
+        "href": href("seerr", "seerr"),
+        "siteMonitor": svc_url("seerr"),
+        **({"widget": {"type": "seerr", "url": svc_url("seerr"), "key": seerr_key}} if seerr_key else {}),
     }},
 ]}
 services.append(media)
@@ -108,23 +117,23 @@ mgmt = []
 mgmt.append({"Sonarr": {
     "icon": "sonarr",
     "description": "TV Shows",
-    "href": f"http://{host}:8989",
-    "siteMonitor": "http://sonarr:8989",
-    "widget": {"type": "sonarr", "url": "http://sonarr:8989", "key": sonarr_key},
+    "href": "http://{}:{}".format(host, port("sonarr")),
+    "siteMonitor": svc_url("sonarr"),
+    "widget": {"type": "sonarr", "url": svc_url("sonarr"), "key": sonarr_key},
 }})
 mgmt.append({"Radarr": {
     "icon": "radarr",
     "description": "Movies",
-    "href": f"http://{host}:7878",
-    "siteMonitor": "http://radarr:7878",
-    "widget": {"type": "radarr", "url": "http://radarr:7878", "key": radarr_key},
+    "href": "http://{}:{}".format(host, port("radarr")),
+    "siteMonitor": svc_url("radarr"),
+    "widget": {"type": "radarr", "url": svc_url("radarr"), "key": radarr_key},
 }})
 if has_bazarr:
     mgmt.append({"Bazarr": {
         "icon": "bazarr",
         "description": "Subtitles",
-        "href": f"http://{host}:6767",
-        "siteMonitor": "http://bazarr:6767",
+        "href": "http://{}:{}".format(host, port("bazarr")),
+        "siteMonitor": svc_url("bazarr"),
     }})
 services.append({"Media Management": mgmt})
 
@@ -133,15 +142,15 @@ services.append({"Downloads": [
     {"qBittorrent": {
         "icon": "qbittorrent",
         "description": "Torrent Client",
-        "href": f"http://{host}:8080",
-        "siteMonitor": "http://qbittorrent:8080",
-        "widget": {"type": "qbittorrent", "url": "http://qbittorrent:8080"},
+        "href": "http://{}:{}".format(host, port("qbittorrent")),
+        "siteMonitor": svc_url("qbittorrent"),
+        "widget": {"type": "qbittorrent", "url": svc_url("qbittorrent")},
     }},
     {"Jackett": {
         "icon": "jackett",
         "description": "Indexer Proxy",
-        "href": f"http://{host}:9117",
-        "siteMonitor": "http://jackett:9117",
+        "href": "http://{}:{}".format(host, port("jackett")),
+        "siteMonitor": svc_url("jackett"),
     }},
 ]})
 
@@ -151,25 +160,25 @@ if has_npm:
     npm_entry = {
         "icon": "nginx-proxy-manager",
         "description": "Reverse Proxy",
-        "href": f"http://{host}:81",
-        "siteMonitor": "http://npm:81",
+        "href": "http://{}:{}".format(host, port("npm")),
+        "siteMonitor": svc_url("npm"),
     }
     if npm_email and npm_pw:
-        npm_entry["widget"] = {"type": "npm", "url": "http://npm:81", "username": npm_email, "password": npm_pw}
+        npm_entry["widget"] = {"type": "npm", "url": svc_url("npm"), "username": npm_email, "password": npm_pw}
     net.append({"Nginx Proxy Manager": npm_entry})
 if has_wireguard:
     net.append({"WireGuard": {
         "icon": "wireguard",
         "description": "VPN",
-        "href": f"http://{host}:51821",
-        "siteMonitor": "http://wireguard:51821",
+        "href": "http://{}:{}".format(host, port("wireguard")),
+        "siteMonitor": svc_url("wireguard"),
     }})
 if has_ddns:
     net.append({"DDNS Updater": {
         "icon": "ddns-updater",
         "description": "Dynamic DNS",
-        "href": f"http://{host}:8000",
-        "siteMonitor": "http://ddns-updater:8000",
+        "href": "http://{}:{}".format(host, port("ddns-updater")),
+        "siteMonitor": svc_url("ddns-updater"),
     }})
 if net:
     services.append({"Network": net})
@@ -179,23 +188,23 @@ admin = []
 ptainer_entry = {
     "icon": "portainer",
     "description": "Container Management",
-    "href": f"http://{host}:9000",
-    "siteMonitor": "http://portainer:9000",
+    "href": "http://{}:{}".format(host, port("portainer")),
+    "siteMonitor": svc_url("portainer"),
 }
 if ptainer_key:
-    ptainer_entry["widget"] = {"type": "portainer", "url": "http://portainer:9000", "env": 1, "key": ptainer_key}
+    ptainer_entry["widget"] = {"type": "portainer", "url": svc_url("portainer"), "env": 1, "key": ptainer_key}
 admin.append({"Portainer": ptainer_entry})
 if has_beszel:
     beszel_entry = {
         "icon": "beszel",
         "description": "System Resources",
-        "href": f"http://{host}:8090",
-        "siteMonitor": "http://beszel:8090",
+        "href": "http://{}:{}".format(host, port("beszel")),
+        "siteMonitor": svc_url("beszel"),
     }
     if beszel_email and beszel_pw:
         beszel_entry["widget"] = {
             "type": "beszel",
-            "url": "http://beszel:8090",
+            "url": svc_url("beszel"),
             "username": beszel_email,
             "password": beszel_pw,
             "version": 2,
@@ -204,11 +213,11 @@ if has_beszel:
 admin.append({"Uptime Kuma": {
     "icon": "uptime-kuma",
     "description": "Service Monitoring",
-    "href": f"http://{host}:3001",
-    "siteMonitor": "http://uptime-kuma:3001",
+    "href": "http://{}:{}".format(host, port("uptime-kuma")),
+    "siteMonitor": svc_url("uptime-kuma"),
     "widget": {
         "type": "uptimekuma",
-        "url": "http://uptime-kuma:3001",
+        "url": svc_url("uptime-kuma"),
         "slug": "mediastack",
     },
 }})

@@ -64,6 +64,7 @@ This is the main tool once the stack is running. Each item is documented in dept
 | Manage updates | Per-service update status; update one or all; revert a service to its installed image |
 | Features & settings | Toggle subtitles, SMB share, indexers, firewall, and hardening; change quality profile; adjust bandwidth; add remote access |
 | Health & security | Run checks: fail2ban regex/jails, TLS expiry, DNS drift, disk %, and the UFW + Docker port lock |
+| Manage fail2ban | Banned IPs (pick one to unban, or unban and always-allow); manage the whitelist; per-jail stats and history |
 | Manage hardware transcoding (GPU) | Configure or change transcoding; NVIDIA driver/patch upkeep |
 | Diagnostics | Port-forward test, DNS check, readiness, and a connection speed test |
 | Uninstall MediaStack | Removes recorded host changes; keeps `data/` and `config/` |
@@ -302,7 +303,7 @@ The security model (UFW default-deny, NPM + Let's Encrypt, fail2ban, kernel hard
 
 - **Admin UIs are firewall-restricted to your LAN and VPN range**, so they aren't reachable from the internet even with ports open.
 - **HSTS:** once a browser sees the header it refuses plain HTTP for all subdomains, so configure SSL before adding new subdomains.
-- **Unban an IP:** `docker exec fail2ban fail2ban-client set <jail> unbanip <ip>`
+- **Unban an IP:** run `./mediastack` → **Manage fail2ban** → **Banned IPs**, pick the address, then **Unban** to release it across every jail (no need to shell into the container).
 
 </details>
 

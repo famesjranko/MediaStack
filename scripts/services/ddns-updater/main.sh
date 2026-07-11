@@ -5,7 +5,7 @@
 # This function reports status so configure.sh output is consistent.
 
 configure_ddns_updater() {
-    if ! docker ps --filter name=ddns-updater --format '{{.Names}}' 2>/dev/null | grep -q ddns-updater; then
+    if ! container_running ddns-updater; then
         return 0
     fi
 

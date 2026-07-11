@@ -26,7 +26,8 @@ configure_qbittorrent() {
     echo ""
     echo -e "${BOLD}Configuring qBittorrent...${NC}"
 
-    local qbt_url="http://localhost:8080"
+    local qbt_url
+    qbt_url="$(service_local_url qbittorrent)"
     local jar authed="" target_pw="${JELLYFIN_ADMIN_PASSWORD:-}" target_user="${JELLYFIN_ADMIN_USER:-admin}"
     jar=$(mktemp)
 
@@ -277,7 +278,8 @@ print(cat.get("savePath", ""))
 # Returns 0 on success, 1 on auth/apply failure.
 qbt_set_speed_limits() {
     local dl_mb="$1" ul_mb="$2"
-    local qbt_url="http://localhost:8080"
+    local qbt_url
+    qbt_url="$(service_local_url qbittorrent)"
     local target_pw="${JELLYFIN_ADMIN_PASSWORD:-}" target_user="${JELLYFIN_ADMIN_USER:-admin}"
 
     if [[ -z "$target_pw" ]]; then

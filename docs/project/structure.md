@@ -41,6 +41,7 @@ scripts/
     reboot.sh                       Post-reboot systemd service scheduling + cleanup
     hardening.sh                    OS hardening (UFW, sysctl, auto-updates) + optional SMB
     stack.sh                        Data/config dirs, compose up, health wait, access info
+    render/*.py                     Setup-time pure render/selector helpers
   lib/
     common.sh                       Logging, cfg_* YAML readers, api_get/api_post, key mgmt
     ddns_providers.sh               DDNS provider registry + config.json renderer (6 providers; shared wizard/day-2)
@@ -55,6 +56,7 @@ scripts/
   services/<svc>/                   Per-service configurators (13 services; Seerr is services/seerr/)
     main.sh                         configure_<svc>() — required
     templates/*.json                Static API payloads (no variable substitution)
+    render/*.py                     Optional pure per-service render/policy helpers
 
 config/                             Live service configs (all gitignored — runtime)
   examples/                         Tracked-in-git config templates
@@ -125,7 +127,8 @@ Cross-service logic that touches 2+ configurators goes in `scripts/flows/*.sh`
 3. Add `<svc>` to the loop in `scripts/configure.sh` (ordering matters — after dependencies)
 4. Add config.yml section if the service needs user-editable parameters
 5. Extract `templates/*.json` only for static payloads (no variable substitution) with 4+ fields
-6. Update this file's tree
+6. Put non-trivial pure JSON/policy transforms in `scripts/services/<svc>/render/*.py` when shell would only be a wrapper
+7. Update this file's tree
 
 ## Bumping a Service Version
 

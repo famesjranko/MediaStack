@@ -32,6 +32,10 @@ log_skip() { SKIP_MESSAGES+=("$1"); }
 log_info() { :; }
 
 save_api_key() { return 0; }
+service_local_url() {
+    [[ "$1" == "bazarr" ]] || return 1
+    printf 'http://localhost:6767'
+}
 
 get_api_key() {
     case "$1" in

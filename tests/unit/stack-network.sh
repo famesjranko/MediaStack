@@ -17,8 +17,16 @@ SCRIPT_DIR="$REPO_ROOT"
 source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
 
+if bash -euo pipefail -c "SCRIPT_DIR=/tmp; CONFIG_FILE=/dev/null; source '$REPO_ROOT/scripts/lib/common.sh'; source '$REPO_ROOT/scripts/setup/stack.sh'; source '$REPO_ROOT/scripts/setup/stack.sh'; declare -F ensure_mediastack_network_config >/dev/null"; then
+    pass "stack.sh module can be re-sourced under strict mode"
+else
+    fail "stack.sh module can be re-sourced under strict mode"
+fi
+
 set +e
 set +u
+
+NETWORK_SELECTOR="$REPO_ROOT/scripts/setup/render/network_selector.py"
 
 ROUTES_TEXT=""
 ADDRS_TEXT=""
@@ -83,6 +91,92 @@ cleanup_envs() {
     done
 }
 trap cleanup_envs EXIT
+
+run_selector() {
+    local routes="$1" addrs="$2" docker_json="$3" mediastack_json="$4"
+    shift 4
+    local dir
+    dir=$(mktemp -d)
+    _tmpdirs+=("$dir")
+    printf '%s' "$routes" > "$dir/routes.txt"
+    printf '%s' "$addrs" > "$dir/addrs.txt"
+    printf '%s' "$docker_json" > "$dir/docker.json"
+    printf '%s' "$mediastack_json" > "$dir/mediastack.json"
+    env "$@" python3 "$NETWORK_SELECTOR" "$dir/routes.txt" "$dir/addrs.txt" "$dir/docker.json" "$dir/mediastack.json"
+}
+
+selector_out=$(run_selector \
+    $'default via 192.168.1.1 dev eth0\n192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.50' \
+    '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0' \
+    '[]' '')
+assert_contains "$selector_out" "MEDIASTACK_NETWORK_PREFIX=172.28.0" "network selector render: default prefix protocol"
+assert_contains "$selector_out" "MEDIASTACK_SUBNET=172.28.0.0/24" "network selector render: default subnet protocol"
+
+selector_out=$(run_selector \
+    'default via 192.168.1.1 dev eth0' \
+    '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0' \
+    '[]' '' \
+    REQUESTED_PREFIX=172.30.42 REQUESTED_SUBNET=172.30.42.0/25 REQUESTED_GATEWAY=172.30.42.1)
+assert_contains "$selector_out" "MEDIASTACK_NETWORK_PREFIX=172.30.42" "network selector render: valid requested prefix wins"
+assert_contains "$selector_out" "MEDIASTACK_SUBNET=172.30.42.0/24" "network selector render: fresh requested prefix uses canonical /24"
+assert_contains "$selector_out" "MEDIASTACK_GATEWAY=172.30.42.1" "network selector render: requested gateway preserved"
+
+selector_out=$(run_selector \
+    'default via 192.168.1.1 dev eth0' \
+    '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0' \
+    '[]' '' \
+    REQUESTED_PREFIX=172.99.0)
+assert_contains "$selector_out" "MEDIASTACK_NETWORK_PREFIX=172.28.0" "network selector render: invalid requested prefix falls back"
+
+selector_out=$(run_selector \
+    '172.28.0.0/24 dev tun0 scope link' \
+    '10: tun0    inet 172.28.0.5/24 scope global tun0' \
+    '[]' '' \
+    STAGE1_COMPLETE=true REQUESTED_PREFIX=172.28.0 REQUESTED_SUBNET=172.28.0.0/24 REQUESTED_GATEWAY=172.28.0.1)
+assert_contains "$selector_out" "MEDIASTACK_NETWORK_PREFIX=172.29.0" "network selector render: STAGE1_COMPLETE true is not completed"
+
+selector_out=$(run_selector \
+    '172.28.0.0/24 dev tun0 scope link' \
+    '10: tun0    inet 172.28.0.5/24 scope global tun0' \
+    '[]' '' \
+    STAGE1_COMPLETE=1 REQUESTED_PREFIX=172.28.0 REQUESTED_SUBNET=172.28.0.0/24 REQUESTED_GATEWAY=172.28.0.1 2>&1)
+selector_rc=$?
+if [[ "$selector_rc" -ne 0 ]]; then
+    pass "network selector render: completed conflict exits non-zero"
+else
+    fail "network selector render: completed conflict exits non-zero" "expected non-zero"
+fi
+assert_contains "$selector_out" "ERROR: MediaStack is already installed" "network selector render: completed conflict emits ERROR"
+assert_contains "$selector_out" "INFO: MediaStack will not silently migrate" "network selector render: completed conflict emits INFO"
+
+selector_out=$(run_selector \
+    '172.29.0.0/24 dev br-mediastack proto kernel scope link src 172.29.0.1' \
+    '9: br-mediastack    inet 172.29.0.1/24 scope global br-mediastack' \
+    '[{"Name":"mediastack","IPAM":{"Config":[{"Subnet":"172.29.0.0/24","Gateway":"172.29.0.1"}]}}]' \
+    '[{"Name":"mediastack","IPAM":{"Config":[{"Subnet":"172.29.0.0/24","Gateway":"172.29.0.1"}]}}]' \
+    STAGE1_COMPLETE=1 REQUESTED_PREFIX=172.28.0 REQUESTED_SUBNET=172.28.0.0/24 REQUESTED_GATEWAY=172.28.0.1)
+assert_contains "$selector_out" "MEDIASTACK_NETWORK_PREFIX=172.29.0" "network selector render: completed install follows live network"
+
+selector_out=$(run_selector \
+    $'default via 192.168.1.1 dev eth0\n192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.50' \
+    '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0' \
+    '[]' '' \
+    STAGE1_COMPLETE=1 REQUESTED_PREFIX=172.28.0 REQUESTED_SUBNET=172.28.0.0/16 REQUESTED_GATEWAY=172.28.0.1)
+assert_contains "$selector_out" "MEDIASTACK_SUBNET=172.28.0.0/16" "network selector render: completed legacy /16 preserved"
+assert_contains "$selector_out" "MEDIASTACK_GATEWAY=172.28.0.1" "network selector render: completed requested gateway preserved"
+
+selector_out=$(run_selector \
+    '172.16.0.0/12 dev tun0 scope link' \
+    '10: tun0    inet 172.16.4.5/12 scope global tun0' \
+    '[]' '' 2>&1)
+selector_rc=$?
+if [[ "$selector_rc" -ne 0 ]]; then
+    pass "network selector render: exhausted range exits non-zero"
+else
+    fail "network selector render: exhausted range exits non-zero" "expected non-zero"
+fi
+assert_contains "$selector_out" "ERROR: No available MediaStack Docker subnet" "network selector render: exhaustion emits ERROR"
+assert_contains "$selector_out" "INFO: Disconnect or narrow the conflicting VPN route" "network selector render: exhaustion emits INFO"
 
 # No conflicts: default /24 is selected and written.
 ROUTES_TEXT=$'default via 192.168.1.1 dev eth0\n192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.50'

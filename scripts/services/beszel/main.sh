@@ -10,7 +10,8 @@ configure_beszel() {
     echo ""
     echo -e "${BOLD}Configuring Beszel...${NC}"
 
-    local hub_url="http://localhost:8090"
+    local hub_url
+    hub_url="$(service_local_url beszel)"
     local admin_email="${NPM_ADMIN_EMAIL:-}"
     local admin_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
 

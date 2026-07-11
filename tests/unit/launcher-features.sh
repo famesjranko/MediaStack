@@ -200,7 +200,7 @@ EOF
     _regenerate_override(){ :; }
     docker(){ echo "DOCKER $*" >> "$CAPTURE"; }
     # Capture wizard_apply.py calls, but let the real python3 run the .env writer
-    # (_env_write_kv invokes `python3 - <file> <key>` reading its script on stdin).
+    # (_env_write_kv invokes `python3 - <file> <key> <value>...` reading its script on stdin).
     python3(){ if [[ "$1" == "-" ]]; then command python3 "$@"; else echo "WIZARD $*" >> "$CAPTURE"; fi; }
     ui_log(){ :; }; pause_for_menu(){ :; }; _show_action_result(){ :; }
     ui_confirm(){ return 0; }

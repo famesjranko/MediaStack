@@ -2,12 +2,19 @@
 # Shared NPM remote-readiness checks. Sourceable by setup stages without
 # importing scripts/services/npm/main.sh.
 
+[[ -n "${_MS_NPM_REMOTE_SH:-}" ]] && return 0
+_MS_NPM_REMOTE_SH=1
+
 if [[ -z "${SCRIPT_DIR:-}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
 
+_NPM_REMOTE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=common.sh
+source "$_NPM_REMOTE_LIB_DIR/common.sh"
+
 npm_remote_container_running() {
-    [[ "$(docker inspect --format '{{.State.Running}}' npm 2>/dev/null || echo false)" == "true" ]]
+    container_running npm
 }
 
 npm_remote_cert_material_ready() {
@@ -119,7 +126,7 @@ print(value)
 }
 
 npm_remote_token() {
-    local api="${1:-http://localhost:81/api}"
+    local api="${1:-$(service_local_url npm)/api}"
     local email="${NPM_ADMIN_EMAIL:-}" password="${JELLYFIN_ADMIN_PASSWORD:-}"
     [[ -z "$email" || -z "$password" ]] && return 1
 
@@ -135,7 +142,7 @@ print(json.dumps({"identity": os.environ["NPM_EMAIL"], "secret": os.environ["NPM
 
 npm_remote_hosts_ready() {
     local domain="$1"
-    local api="${2:-http://localhost:81/api}"
+    local api="${2:-$(service_local_url npm)/api}"
     [[ -z "$domain" || "$domain" == "example.com" ]] && return 1
 
     local token hosts fqdn cert_id host_json host_id host_cert_id host_enabled

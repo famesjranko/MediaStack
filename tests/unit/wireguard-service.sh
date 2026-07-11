@@ -20,6 +20,10 @@ CLIENTS_STATE_FILE="$TMP_DIR/clients-state"
 INTERFACE_STATE_FILE="$TMP_DIR/interface-state"
 PEER_FIREWALL_STATE_FILE="$TMP_DIR/peer-firewall-state"
 
+# common.sh first: configure_wireguard now gates on container_running (common.sh).
+# The log_ok/log_warn/log_skip capture stubs below are defined AFTER this source,
+# so they still override common.sh's real loggers for message assertions.
+source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/lib/network.sh"
 source "$REPO_ROOT/scripts/services/wireguard/main.sh"
 
@@ -41,6 +45,11 @@ log_warn() { WARN_MESSAGES+=("$1"); }
 log_skip() { SKIP_MESSAGES+=("$1"); }
 
 docker() {
+    if [[ "${1:-}" == "inspect" ]]; then
+        # container_running wireguard -> {{.State.Running}} == true
+        printf 'true\n'
+        return 0
+    fi
     if [[ "${1:-}" == "ps" ]]; then
         printf 'wireguard\n'
         return 0

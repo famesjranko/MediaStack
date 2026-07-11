@@ -32,7 +32,7 @@ scripts/
     ├── sonarr/main.sh    + templates/download-client.json
     ├── radarr/main.sh    + templates/download-client.json
     ├── bazarr/main.sh                   # no templates — API payloads built via python3 json.dumps
-    ├── jellyfin/main.sh  + templates/{startup-config,remote-access,library}.json
+    ├── jellyfin/main.sh  + render/network_policy.py + templates/{startup-config,remote-access,library}.json
     ├── seerr/main.sh + templates/{sonarr-server,radarr-server}.json
     ├── portainer/main.sh                # no templates — payloads built inline via python3 json.dumps
     ├── homepage/main.sh
@@ -226,7 +226,7 @@ Sets Jellyfin's display name (Dashboard header, browser tab) via `GET`/`POST /Sy
 
 ### `configure_jellyfin_networking` (in `scripts/services/jellyfin/main.sh`)
 
-Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/network` (a different JSON blob from `/System/Configuration` used by streaming). Three fields:
+Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/network` (a different JSON blob from `/System/Configuration` used by streaming). `render/network_policy.py` compares the live JSON with MediaStack's desired policy and emits the skip/drift/apply decision that the shell wrapper logs and posts. Three fields:
 
 - **`AutoDiscovery: true`** — enables UDP 7359 broadcast for LAN device auto-discovery (port exposed in `docker-compose.yml`).
 - **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see ADR-23).

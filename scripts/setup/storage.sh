@@ -1,9 +1,31 @@
 # =============================================================================
 # MediaStack Setup - Storage modes, NAS guards, and watchdog install
 # =============================================================================
-# Sourced by setup.sh and selected scripts. Depends on common.sh when logging
-# helpers are desired, but keeps helpers defensive so the watchdog can source
-# simple .env state without pulling setup UI.
+# Sourced by setup.sh and selected scripts. Sources common.sh itself
+# (invariant #11): storage_env_set delegates to its _env_write_kv, and
+# common.sh is side-effect-free at source time so the watchdog stays safe.
+
+# No include guard of its own: this file is safe to re-source (plain function/
+# var definitions — the unit suite relies on re-sourcing to restore stubs);
+# common.sh guards itself, so the source below is a no-op after the first.
+_STORAGE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "$_STORAGE_LIB_DIR/../lib/common.sh"
+
+# Canonical NFS mount options — the recommended default seeded when the user
+# hasn't supplied custom opts. Owned here (the storage/NFS module) and consumed
+# by the wizard's Stage 1 collection too, since setup.sh sources storage.sh
+# before the wizard. The watchdog mount-helper heredoc (see
+# storage_mount_helper_content) keeps its own literal: that heredoc is emitted
+# into a standalone script that only sources storage.env and never sees this.
+DEFAULT_NFS_OPTS="vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec"
+
+# Watchdog host-artefact paths this module owns. Single source of truth so
+# storage_install_watchdog and storage_uninstall_watchdog can never drift (the
+# teardown was formerly re-typed in hardening.sh). Plain assignment — re-source safe.
+MEDIASTACK_STORAGE_WATCHDOG_UNIT="/etc/systemd/system/mediastack-storage-watchdog.service"
+MEDIASTACK_STORAGE_LIBEXEC_DIR="/usr/local/libexec/mediastack"
+MEDIASTACK_STORAGE_WATCHDOG_SUDOERS="/etc/sudoers.d/mediastack-storage-watchdog"
 
 storage_mode() {
     printf '%s\n' "${STORAGE_MODE:-local}"
@@ -146,7 +168,7 @@ storage_mount_nfs() {
     mountpoint="$(storage_mountpoint)"
     local host="${STORAGE_NFS_HOST:-}"
     local export_path="${STORAGE_NFS_EXPORT:-}"
-    local opts="${STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
+    local opts="${STORAGE_NFS_OPTS:-$DEFAULT_NFS_OPTS}"
 
     if [[ -z "$host" || -z "$export_path" ]]; then
         storage_log_err "NAS storage selected but NFS host/export is missing."
@@ -212,7 +234,7 @@ storage_probe_nas() {
     local host="${STORAGE_NFS_HOST:-}"
     local export_path="${STORAGE_NFS_EXPORT:-}"
     local opts probe_opts tmp rc=0
-    opts="${STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
+    opts="${STORAGE_NFS_OPTS:-$DEFAULT_NFS_OPTS}"
     _STORAGE_PROBE_CLASS=""
 
     if [[ -z "$host" || -z "$export_path" ]]; then
@@ -278,44 +300,8 @@ storage_probe_nas() {
 storage_env_set() {
     local key="$1" value="$2" env_file="${SCRIPT_DIR:-$(pwd)}/.env"
     [[ -f "$env_file" ]] || return 0
-
-    local env_tmp
-    if ! env_tmp=$(mktemp "${env_file}.tmp.XXXXXX"); then
-        return 1
-    fi
-    if ! chmod 600 "$env_tmp"; then
-        rm -f "$env_tmp" 2>/dev/null || true
-        return 1
-    fi
-
-    if ! KEY="$key" VALUE="$value" ENV_FILE="$env_file" TMP_ENV_FILE="$env_tmp" python3 - <<'PY'
-import os
-from pathlib import Path
-
-path = Path(os.environ["ENV_FILE"])
-tmp_path = Path(os.environ["TMP_ENV_FILE"])
-key = os.environ["KEY"]
-value = os.environ["VALUE"]
-quote = any(ch in value for ch in " \t$`'\"\\#;")
-rendered = f"{key}='{value}'" if quote else f"{key}={value}"
-lines = path.read_text().splitlines()
-for i, line in enumerate(lines):
-    if line.startswith(key + "="):
-        lines[i] = rendered
-        break
-else:
-    lines.append(rendered)
-tmp_path.write_text("\n".join(lines) + "\n")
-PY
-    then
-        rm -f "$env_tmp" 2>/dev/null || true
-        return 1
-    fi
-
-    if ! mv -f "$env_tmp" "$env_file"; then
-        rm -f "$env_tmp" 2>/dev/null || true
-        return 1
-    fi
+    # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
+    _env_write_kv "$env_file" "$key" "$value" >/dev/null || return 1
 }
 
 storage_classify_data_root() {
@@ -428,6 +414,7 @@ set +a
 mountpoint="${STORAGE_MOUNTPOINT:-}"
 host="${STORAGE_NFS_HOST:-}"
 export_path="${STORAGE_NFS_EXPORT:-}"
+# literal: emitted into a standalone script that can't see DEFAULT_NFS_OPTS
 opts="${STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
 expected_source="${STORAGE_EXPECTED_SOURCE:-${host}:${export_path}}"
 expected_fstype="${STORAGE_EXPECTED_FSTYPE:-nfs4}"
@@ -552,12 +539,12 @@ storage_install_watchdog() {
         return 0
     fi
     local script="$SCRIPT_DIR/scripts/storage-watchdog.sh"
-    local unit="/etc/systemd/system/mediastack-storage-watchdog.service"
-    local libexec_dir="/usr/local/libexec/mediastack"
+    local unit="$MEDIASTACK_STORAGE_WATCHDOG_UNIT"
+    local libexec_dir="$MEDIASTACK_STORAGE_LIBEXEC_DIR"
     local helper="$libexec_dir/storage-mount-helper"
     local config_dir="/etc/mediastack"
     local config_file="$config_dir/storage.env"
-    local sudoers_file="/etc/sudoers.d/mediastack-storage-watchdog"
+    local sudoers_file="$MEDIASTACK_STORAGE_WATCHDOG_SUDOERS"
     local install_user install_group
 
     if [[ ! -x "$script" ]]; then
@@ -587,4 +574,23 @@ storage_install_watchdog() {
     sudo systemctl enable mediastack-storage-watchdog.service >/dev/null
     sudo systemctl restart mediastack-storage-watchdog.service >/dev/null
     storage_log_ok "NAS storage watchdog enabled"
+}
+
+# Tear down the watchdog host artefacts this module owns (unit, sudoers, libexec),
+# called from the uninstall path so the teardown lives beside the installer above.
+# Mirror of the old inline block in hardening.sh: unit stop/disable/rm guarded on
+# presence, sudoers/libexec removed unconditionally. Does NOT daemon-reload — the
+# caller keeps its single trailing reload so the systemctl sequence is unchanged.
+# Returns non-zero if any removal fails (mirrors the old failed=1 accounting).
+# ponytail: blind rm, no sha-guard — all MediaStack-generated, no admin-editable content.
+storage_uninstall_watchdog() {
+    local rc=0
+    if sudo test -f "$MEDIASTACK_STORAGE_WATCHDOG_UNIT"; then
+        sudo systemctl stop mediastack-storage-watchdog.service 2>/dev/null || rc=1
+        sudo systemctl disable mediastack-storage-watchdog.service 2>/dev/null || rc=1
+        sudo rm -f "$MEDIASTACK_STORAGE_WATCHDOG_UNIT" || rc=1
+    fi
+    sudo rm -f "$MEDIASTACK_STORAGE_WATCHDOG_SUDOERS" || rc=1
+    sudo rm -rf "$MEDIASTACK_STORAGE_LIBEXEC_DIR" || rc=1
+    return $rc
 }

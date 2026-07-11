@@ -101,14 +101,18 @@ _record_configure_result() {
 }
 
 # Runs a configure_* function and records the service label in _CONFIGURE_OK
-# or _CONFIGURE_WARN based on whether it emitted any log_warn/log_error calls.
+# or _CONFIGURE_WARN. WARN when the function emitted any log_warn/log_error
+# (many configurators log-and-continue on partial failure, returning 0) OR
+# returned non-zero (rc contract: a non-zero return always badges WARN, even
+# if nothing was logged). Advisory drift notices use log_drift, which is
+# uncounted and never affects the badge.
 # Usage: _run_configure "Label|--only-flag" configure_fn [args...]
 _run_configure() {
     local _service="$1"; shift
     local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
     local _rc=0
     "$@" || _rc=$?
-    _record_configure_result "$_service" "$_w0"
+    _record_configure_result "$_service" "$_w0" "$(( _rc != 0 ))"
     return "$_rc"
 }
 
@@ -130,14 +134,14 @@ main() {
     if [[ -n "$ONLY_SERVICES" ]]; then
         log_info "Targeted run: ${ONLY_SERVICES}"
     fi
-    _should_configure qbittorrent && wait_for_service "qBittorrent" "http://localhost:8080"
-    _should_configure jackett     && wait_for_service "Jackett"     "http://localhost:9117"
-    _should_configure sonarr      && wait_for_service "Sonarr"      "http://localhost:8989"
-    _should_configure radarr      && wait_for_service "Radarr"      "http://localhost:7878"
-    _should_configure jellyfin    && wait_for_service "Jellyfin"    "http://localhost:8096"
-    _should_configure seerr  && wait_for_service "Seerr"  "http://localhost:5055"
-    _should_configure portainer   && wait_for_service "Portainer"   "http://localhost:9000"
-    _should_configure homepage    && wait_for_service "Homepage"    "http://localhost:3000"
+    _should_configure qbittorrent && wait_for_service "qBittorrent" "$(service_local_url qbittorrent)"
+    _should_configure jackett     && wait_for_service "Jackett"     "$(service_local_url jackett)"
+    _should_configure sonarr      && wait_for_service "Sonarr"      "$(service_local_url sonarr)"
+    _should_configure radarr      && wait_for_service "Radarr"      "$(service_local_url radarr)"
+    _should_configure jellyfin    && wait_for_service "Jellyfin"    "$(service_local_url jellyfin)"
+    _should_configure seerr       && wait_for_service "Seerr"       "$(service_local_url seerr)"
+    _should_configure portainer   && wait_for_service "Portainer"   "$(service_local_url portainer)"
+    _should_configure homepage    && wait_for_service "Homepage"    "$(service_local_url homepage)"
 
     # Portainer first: it has a 5-minute admin creation timeout from first
     # start. Running it before the slower services (indexer adds, Jellyfin
@@ -147,10 +151,10 @@ main() {
     _should_configure qbittorrent && _run_configure "qBittorrent|qbittorrent" configure_qbittorrent
     _should_configure jackett     && _run_configure "Jackett|jackett"         configure_jackett
     local _sonarr_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR )) _sonarr_warn=0
-    _should_configure sonarr      && configure_sonarr
+    if _should_configure sonarr; then configure_sonarr || _sonarr_warn=1; fi
     (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _sonarr_w0 )) && _sonarr_warn=1
     local _radarr_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR )) _radarr_warn=0
-    _should_configure radarr      && configure_radarr
+    if _should_configure radarr; then configure_radarr || _radarr_warn=1; fi
     (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _radarr_w0 )) && _radarr_warn=1
 
     # Indexer phase — Sonarr and Radarr add the same Jackett-fronted trackers,
@@ -169,7 +173,7 @@ main() {
         if _should_configure sonarr && [[ -n "${SONARR_API_KEY:-}" ]]; then
             local tv_cats; tv_cats=$(cfg_field "categories.tv")
             ( local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ));
-              configure_arr_indexers "sonarr" "http://localhost:8989/api/v3" "${SONARR_API_KEY}" "$tv_cats"
+              configure_arr_indexers "sonarr" "$(service_local_url sonarr)/api/v3" "${SONARR_API_KEY}" "$tv_cats"
               (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0 )) ) &
             _ix_pids+=($!)
             _ix_apps+=(sonarr)
@@ -177,7 +181,7 @@ main() {
         if _should_configure radarr && [[ -n "${RADARR_API_KEY:-}" ]]; then
             local movie_cats; movie_cats=$(cfg_field "categories.movies")
             ( local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ));
-              configure_arr_indexers "radarr" "http://localhost:7878/api/v3" "${RADARR_API_KEY}" "$movie_cats"
+              configure_arr_indexers "radarr" "$(service_local_url radarr)/api/v3" "${RADARR_API_KEY}" "$movie_cats"
               (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0 )) ) &
             _ix_pids+=($!)
             _ix_apps+=(radarr)
@@ -189,8 +193,8 @@ main() {
     fi
 
     if _should_configure bazarr; then
-        if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx bazarr; then
-            wait_for_service "Bazarr" "http://localhost:6767"
+        if container_running bazarr; then
+            wait_for_service "Bazarr" "$(service_local_url bazarr)"
             _run_configure "Bazarr|bazarr" configure_bazarr
         fi
     fi
@@ -204,12 +208,12 @@ main() {
     else
         if _should_configure sonarr; then
             local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
-            configure_arr_jellyfin_connection "sonarr" "http://localhost:8989/api/v3" "${SONARR_API_KEY:-}"
+            configure_arr_jellyfin_connection "sonarr" "$(service_local_url sonarr)/api/v3" "${SONARR_API_KEY:-}"
             (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )) && _sonarr_warn=1
         fi
         if _should_configure radarr; then
             local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
-            configure_arr_jellyfin_connection "radarr" "http://localhost:7878/api/v3" "${RADARR_API_KEY:-}"
+            configure_arr_jellyfin_connection "radarr" "$(service_local_url radarr)/api/v3" "${RADARR_API_KEY:-}"
             (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )) && _radarr_warn=1
         fi
     fi
@@ -231,16 +235,16 @@ main() {
     _should_configure homepage && _run_configure "Homepage|homepage" configure_homepage
 
     if _should_configure npm; then
-        if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx npm; then
-            wait_for_service "NPM" "http://localhost:81"
+        if container_running npm; then
+            wait_for_service "NPM" "$(service_local_url npm)"
             _run_configure "NPM|npm" configure_npm
         fi
     fi
     _should_configure ddns-updater && _run_configure "DDNS Updater|ddns-updater" configure_ddns_updater
 
     if _should_configure wireguard; then
-        if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx wireguard; then
-            wait_for_healthy "WireGuard" "wireguard" "http://localhost:51821"
+        if container_running wireguard; then
+            wait_for_healthy "WireGuard" "wireguard" "$(service_local_url wireguard)"
             if ! _run_configure "WireGuard|wireguard" configure_wireguard; then
                 log_error "WireGuard access-tier enforcement failed; fix the warnings above, then choose Features & settings -> Add remote access from the menu"
                 return 1
@@ -249,12 +253,12 @@ main() {
     fi
 
     if _should_configure uptime-kuma; then
-        wait_for_healthy "Uptime Kuma" "uptime-kuma" "http://localhost:3001"
+        wait_for_healthy "Uptime Kuma" "uptime-kuma" "$(service_local_url uptime-kuma)"
         _run_configure "Uptime Kuma|uptime-kuma" configure_uptime_kuma
     fi
 
     if _should_configure beszel; then
-        wait_for_service "Beszel" "http://localhost:8090"
+        wait_for_service "Beszel" "$(service_local_url beszel)"
         _run_configure "Beszel|beszel" configure_beszel
     fi
 
@@ -277,7 +281,7 @@ main() {
         # the placeholder touchfiles from setup.sh — a reload re-resolves them.
         # Note: iptables chains are created at jail start (actionstart_on_demand=false
         # in mediastack.conf) and survive reload, so no chain repair is needed here.
-        if docker compose ps --format '{{.Names}}' 2>/dev/null | grep -qx fail2ban; then
+        if container_running fail2ban; then
             docker exec fail2ban fail2ban-client reload >/dev/null 2>&1 && \
                 log_ok "fail2ban reloaded (jails watching real log files)" || \
                 log_warn "Could not reload fail2ban"

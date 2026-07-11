@@ -863,6 +863,7 @@ api_fetch() {
     printf '%s\n' '{"HardwareAccelerationType":"qsv","EnableHardwareEncoding":true,"HardwareDecodingCodecs":["h264"],"AllowHevcEncoding":false,"AllowAv1Encoding":false,"EnableDecodingColorDepth10Hevc":false,"EnableDecodingColorDepth10Vp9":false,"VaapiDevice":"","EnableTonemapping":true,"EnableVppTonemapping":false,"TonemappingAlgorithm":"bt2390"}'
 }
 log_warn() { drift_warn="$*"; }
+log_drift() { drift_warn="$*"; }
 JELLYFIN_GPU=intel
 STAGE_3_GPU_STATE=complete
 STAGE_3_GPU_ENCODER=qsv
@@ -874,7 +875,7 @@ STAGE_3_GPU_ALLOW_AV1_ENCODING=false
 configure_jellyfin_encoding "http://localhost:8096" "test-token"
 assert_eq "" "$api_fetch_post_body" "S3-08: completed Stage 3 does not overwrite manual Jellyfin codec drift"
 assert_contains "$drift_warn" "Leaving manual Jellyfin settings unchanged" "S3-08: completed hardware proof warns instead of reconciling codec drift"
-unset -f api_fetch log_warn
+unset -f api_fetch log_warn log_drift
 unset api_fetch_post_body drift_warn JELLYFIN_GPU STAGE_3_GPU_STATE STAGE_3_GPU_ENCODER
 unset STAGE_3_GPU_HW_DECODING_CODECS STAGE_3_GPU_DECODE_HEVC_10BIT STAGE_3_GPU_DECODE_VP9_10BIT
 unset STAGE_3_GPU_ALLOW_HEVC_ENCODING STAGE_3_GPU_ALLOW_AV1_ENCODING

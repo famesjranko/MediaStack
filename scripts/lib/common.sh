@@ -5,6 +5,9 @@
 # Depends on $SCRIPT_DIR and $CONFIG_FILE being exported by the caller.
 # No `set` flags here — libraries must not mutate the caller's shell options.
 
+[[ -n "${_MS_COMMON_SH:-}" ]] && return 0
+_MS_COMMON_SH=1
+
 # --- Terminal capability (colour gating) ---
 # Resolve term_caps.sh from this file's own dir (BASH_SOURCE), not $SCRIPT_DIR:
 # common.sh is sourced by configure.sh / setup.sh / update.sh / mediastack with
@@ -60,6 +63,11 @@ log_ok()    { ((_LOG_COUNTS_OK++)) || true;    _log_emit "${GREEN}$(_ui_status_t
 log_warn()  { ((_LOG_COUNTS_WARN++)) || true;  _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"; }
 log_error() { ((_LOG_COUNTS_ERROR++)) || true; _log_emit "${RED}$(_ui_status_token error)${NC} $1"; }
 log_skip()  { ((_LOG_COUNTS_SKIP++)) || true;  _log_emit "${GRAY}$(_ui_status_token skip)${NC} $1"; }
+# Advisory drift notice (invariant: re-runs warn on drift, never auto-reconcile).
+# Renders identically to log_warn but does not bump _LOG_COUNTS_WARN, so a
+# drift notice on a healthy service never flips its configure-summary badge
+# to WARN (see _record_configure_result in configure.sh).
+log_drift() { _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"; }
 
 log_capture_start() {
     _LOG_CAPTURE=$(mktemp)
@@ -85,129 +93,100 @@ log_capture_summary() {
 }
 
 # =============================================================================
-# Config reader (simple YAML parser via python3 - always available on Debian)
+# Config reader — one parametrised YAML reader (was nine near-identical readers)
 # =============================================================================
+# Every input (config path, dotted key, mode, optional default) reaches python
+# via argv — never string-formatted into the program text — so a key or path
+# with special characters can never corrupt the source. The public cfg_* names
+# below are thin adapters over cfg_read; they are kept as separate functions
+# because the unit tests stub them by name.
+cfg_read() {
+    # cfg_read <mode> <key> [default]   — reads $CONFIG_FILE (via argv).
+    # default: json mode = fallback JSON; value mode = absent-key fallback
+    # (empty string = emit nothing, rc 0).
+    python3 - "$CONFIG_FILE" "$@" <<'PY' 2>/dev/null
+import sys, json, yaml
 
-cfg() {
-    python3 -c "
-import yaml, sys
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-keys = '$1'.split('.')
-v = c
-for k in keys:
-    if isinstance(v, list):
-        v = v[int(k)]
+config_file, mode = sys.argv[1], sys.argv[2]
+key = sys.argv[3] if len(sys.argv) > 3 else ""
+default = sys.argv[4] if len(sys.argv) > 4 else None
+
+with open(config_file) as f:
+    data = yaml.safe_load(f)
+
+def walk(root, dotted):
+    node = root
+    for k in dotted.split('.'):
+        node = node[int(k)] if isinstance(node, list) else node[k]
+    return node
+
+if mode == "value":
+    try:
+        node = walk(data, key)
+    except (KeyError, IndexError, TypeError):
+        if default is None:
+            sys.exit(1)
+        node = None
+    # Absent (or present-but-null) key: with a default, emit it (empty
+    # default = emit nothing) and succeed. Without a default, an absent key
+    # keeps the non-zero rc; a legitimate null value still prints "None".
+    if default is not None and node is None:
+        if default:
+            print(default)
+        sys.exit(0)
+    if isinstance(node, list):
+        for item in node:
+            print(' '.join(str(x) for x in item.values()) if isinstance(item, dict) else item)
     else:
-        v = v[k]
-if isinstance(v, list):
-    for item in v:
-        if isinstance(item, dict):
-            print(' '.join(str(x) for x in item.values()))
-        else:
-            print(item)
+        print(node)
+elif mode == "pairs":
+    # A null/non-string value (e.g. a blank category path) fails the whole
+    # read before anything is printed (rc 1, like the pre-refactor readers'
+    # TypeError) — never emit "name:None" for a caller to configure verbatim.
+    items = walk(data, key).items()
+    if any(not isinstance(val, str) for _, val in items):
+        sys.exit(1)
+    for name, val in items:
+        print(f"{name}:{val}")
+elif mode == "json":
+    try:
+        node = walk(data, key)
+    except (KeyError, IndexError, TypeError):
+        node = None
+    if default is not None and not node:
+        print(default)
+    elif node is None:
+        sys.exit(1)
+    else:
+        print(json.dumps(node))
+elif mode == "indexers":
+    for idx in data.get('indexers', []):
+        print(idx['id'] + ':' + idx.get('type', 'general'))
+elif mode == "jf_libraries":
+    for lib in data['jellyfin']['libraries']:
+        print(lib['name'] + ':' + lib['type'] + ':' + lib['path'])
 else:
-    print(v)
-" 2>/dev/null
+    sys.exit("cfg_read: unknown mode " + mode)
+PY
 }
 
-# Get a specific field from indexed list items
-cfg_field() {
-    python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-keys = '$1'.split('.')
-v = c
-for k in keys:
-    if isinstance(v, list):
-        v = v[int(k)]
-    else:
-        v = v[k]
-print(v)
-" 2>/dev/null
-}
-
-# Get indexer list as id:type pairs
-cfg_indexers() {
-    python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-for idx in c.get('indexers', []):
-    print(idx['id'] + ':' + idx.get('type', 'general'))
-" 2>/dev/null
-}
-
-# Get quality IDs as a JSON array string (e.g. "[4,5,6]")
-cfg_quality_ids() {
-    local app="$1"
-    python3 -c "
-import yaml, json
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-ids = c['quality_profile']['${app}_qualities']
-print(json.dumps(list(ids)))
-" 2>/dev/null
-}
-
-# Get quality_definitions.<app> as a JSON object string. Returns {} if the
-# section is absent — callers should treat that as "skip, use upstream defaults".
-cfg_quality_definitions() {
-    local app="$1"
-    python3 -c "
-import yaml, json
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f) or {}
-d = (c.get('quality_definitions') or {}).get('$app') or {}
-print(json.dumps(d))
-" 2>/dev/null
-}
-
-# Get custom_formats section as a JSON object (name→score). Returns {} if absent.
-cfg_custom_format_scores() {
-    python3 -c "
-import yaml, json
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f) or {}
-d = c.get('custom_formats') or {}
-print(json.dumps(d))
-" 2>/dev/null
-}
-
-# Get qBittorrent categories as name:path pairs
-cfg_qbt_categories() {
-    python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-cats = c['qbittorrent']['categories']
-for name, path in cats.items():
-    print(name + ':' + path)
-" 2>/dev/null
-}
-
-# Get Bazarr languages as a list of language names
-cfg_bazarr_languages() {
-    python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-for lang in c.get('bazarr', {}).get('languages', []):
-    print(lang)
-" 2>/dev/null
-}
-
-# Get Jellyfin libraries as name:type:path
-cfg_jf_libraries() {
-    python3 -c "
-import yaml
-with open('$CONFIG_FILE') as f:
-    c = yaml.safe_load(f)
-for lib in c['jellyfin']['libraries']:
-    print(lib['name'] + ':' + lib['type'] + ':' + lib['path'])
-" 2>/dev/null
-}
+# Adapters — each pins the mode + key/default so call sites stay unchanged.
+# Scalar/leaf read (auto-iterates a list value, e.g. bazarr languages).
+cfg_field()                { cfg_read value "$1"; }
+# Indexer list as id:type pairs (type defaults to "general").
+cfg_indexers()             { cfg_read indexers ""; }
+# quality_profile.<app>_qualities as a JSON array; empty + non-zero rc if absent.
+cfg_quality_ids()          { cfg_read json "quality_profile.${1}_qualities"; }
+# quality_definitions.<app> as a JSON object; {} when the section is absent.
+cfg_quality_definitions()  { cfg_read json "quality_definitions.$1" '{}'; }
+# custom_formats (name→score) as a JSON object; {} when absent.
+cfg_custom_format_scores() { cfg_read json custom_formats '{}'; }
+# qBittorrent categories as name:path pairs.
+cfg_qbt_categories()       { cfg_read pairs qbittorrent.categories; }
+# Bazarr languages, one per line; empty + rc 0 when the key is absent.
+cfg_bazarr_languages()     { cfg_read value bazarr.languages ""; }
+# Jellyfin libraries as name:type:path.
+cfg_jf_libraries()         { cfg_read jf_libraries ""; }
 
 # =============================================================================
 # API key helpers
@@ -255,27 +234,31 @@ get_jackett_api_key() {
     [[ -f "$f" ]] && python3 -c "import json; print(json.load(open('$f')).get('APIKey',''))" 2>/dev/null || echo ""
 }
 
-# General-purpose, hardened "rewrite a KEY=value line in .env" primitive.
+# General-purpose, hardened "rewrite KEY=value line(s) in .env" primitive.
 #
-#   _env_write_kv <env_file> <key> <value>
+#   _env_write_kv <env_file> <key> <value> [<key> <value> ...]
 #
-# Single-quotes the value (so spaces, $, \, #, =, ", and leading/trailing
-# whitespace round-trip byte-exact when the file is re-sourced), rewrites the
-# matching key in place (or appends if absent) via an atomic temp-file replace
-# that preserves the file mode, and leaves every unrelated line untouched.
-# Refuses values containing a single quote or a newline (which cannot be safely
-# single-quoted) and refuses an invalid key name — in those cases the file is
-# left exactly as it was. Echoes a status word and returns non-zero on failure:
+# Takes one or more key->value pairs and applies them all in a SINGLE atomic
+# read-modify-write. Single-quotes each value (so spaces, $, \, #, =, ", and
+# leading/trailing whitespace round-trip byte-exact when the file is
+# re-sourced), rewrites each matching key in place (or appends if absent, in
+# argument order) via an atomic temp-file replace that preserves the file mode,
+# and leaves every unrelated line untouched. Refuses the WHOLE write (file left
+# exactly as it was) if any value contains a single quote or a newline, or any
+# key name is invalid. Echoes ONE aggregate status word and returns non-zero on
+# failure:
 #   changed | unchanged                              -> rc 0
-#   invalid-key | invalid-newline | invalid-quote
-#   read-error:<reason> | write-error:<reason>       -> rc 1
+#   invalid-args | invalid-key | invalid-newline
+#   invalid-quote | read-error:<reason>
+#   write-error:<reason>                             -> rc non-zero
 # Side-effect-free beyond the file write: it does NOT log or export — callers
-# decide how to surface the outcome. This is the one .env-mutation writer; both
-# save_api_key and the launcher's _set_env_var route through it (no second
-# hand-rolled, unquoted implementation).
+# decide how to surface the outcome. This is the one .env-mutation writer;
+# save_api_key, the launcher's _set_env_var, storage_env_set, and the stage2/
+# stage3 rewriters all route through it (no second hand-rolled implementation).
 _env_write_kv() {
-    local env_file="$1" key="$2" value="$3"
-    MEDIASTACK_ENV_WRITE_VALUE="$value" python3 - "$env_file" "$key" <<'PY'
+    local env_file="$1"
+    shift
+    python3 - "$env_file" "$@" <<'PY'
 import os
 import pathlib
 import re
@@ -285,20 +268,29 @@ import sys
 import tempfile
 
 env_path = pathlib.Path(sys.argv[1])
-key = sys.argv[2]
-value = os.environ.get("MEDIASTACK_ENV_WRITE_VALUE", "")
-
-if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-    print("invalid-key")
+args = sys.argv[2:]
+if not args or len(args) % 2 != 0:
+    print("invalid-args")
     sys.exit(2)
-if "\n" in value or "\r" in value:
-    print("invalid-newline")
-    sys.exit(3)
-if "'" in value:
-    print("invalid-quote")
-    sys.exit(4)
 
-encoded = f"{key}='{value}'\n"
+pairs = list(zip(args[0::2], args[1::2]))
+
+# Validate every key/value up front so a single bad pair refuses the WHOLE
+# write — the file is never left half-updated.
+for key, value in pairs:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+        print("invalid-key")
+        sys.exit(2)
+    if "\n" in value or "\r" in value:
+        print("invalid-newline")
+        sys.exit(3)
+    if "'" in value:
+        print("invalid-quote")
+        sys.exit(4)
+
+# A repeated key: last assignment wins (dict semantics).
+targets = {key: value for key, value in pairs}
+encoded = {key: f"{key}='{value}'\n" for key, value in targets.items()}
 
 try:
     original = env_path.read_text()
@@ -309,33 +301,38 @@ except OSError as exc:
 
 lines = original.splitlines(keepends=True)
 changed = False
-found = False
+found = set()
 new_lines = []
 
 for line in lines:
     body = line[:-1] if line.endswith("\n") else line
-    if body.startswith(f"{key}="):
-        found = True
-        raw_current = body.split("=", 1)[1]
-        try:
-            parsed = shlex.split(raw_current, posix=True)
-            current = parsed[0] if parsed else ""
-        except ValueError:
-            current = None
-
-        if current == value and line == encoded:
-            new_lines.append(line)
-        else:
-            new_lines.append(encoded)
-            changed = True
-    else:
+    matched = None
+    for key in targets:
+        if body.startswith(f"{key}="):
+            matched = key
+            break
+    if matched is None:
         new_lines.append(line)
+        continue
+    found.add(matched)
+    raw_current = body.split("=", 1)[1]
+    try:
+        parsed = shlex.split(raw_current, posix=True)
+        current = parsed[0] if parsed else ""
+    except ValueError:
+        current = None
+    if current == targets[matched] and line == encoded[matched]:
+        new_lines.append(line)
+    else:
+        new_lines.append(encoded[matched])
+        changed = True
 
-if not found:
-    if new_lines and not new_lines[-1].endswith("\n"):
-        new_lines[-1] += "\n"
-    new_lines.append(encoded)
-    changed = True
+for key in encoded:
+    if key not in found:
+        if new_lines and not new_lines[-1].endswith("\n"):
+            new_lines[-1] += "\n"
+        new_lines.append(encoded[key])
+        changed = True
 
 if not changed:
     print("unchanged")
@@ -404,4 +401,91 @@ save_api_key() {
     # Export to the live shell too — later steps in the same configure.sh
     # invocation can then read the value without needing to re-source .env.
     export "${key_name}=${key_value}"
+}
+
+# =============================================================================
+# Container state
+# =============================================================================
+
+# True iff a container named EXACTLY $1 exists and is running. One semantic for
+# the "is it up?" question that was open-coded across services in three divergent
+# idioms (`docker inspect .State.Running`, substring `docker ps --filter name=`,
+# project-scoped `docker compose ps`). Host-scoped and cwd-independent (unlike
+# `docker compose ps`), exact-match (unlike a bare `grep -q`), and safe when
+# docker is absent (inspect errors are swallowed → false). health.sh keeps its
+# own batch/health-aware probes (_health_svc_healthy, _health_f2b_running) —
+# those answer "running AND healthy", a different question.
+container_running() {
+    [[ "$(docker inspect --format '{{.State.Running}}' "$1" 2>/dev/null || echo false)" == "true" ]]
+}
+
+# =============================================================================
+# Service HTTP endpoints
+# =============================================================================
+
+# HTTP UI/API ports only. Do not use these for non-HTTP service ports such as
+# NPM 80/443, WireGuard UDP, qBittorrent peer traffic, or the Beszel agent.
+readonly -A _MS_SERVICE_HTTP_PORT=(
+    ["bazarr"]=6767
+    ["beszel"]=8090
+    ["ddns-updater"]=8000
+    ["flaresolverr"]=8191
+    ["homepage"]=3000
+    ["jackett"]=9117
+    ["jellyfin"]=8096
+    ["npm"]=81
+    ["portainer"]=9000
+    ["qbittorrent"]=8080
+    ["radarr"]=7878
+    ["seerr"]=5055
+    ["sonarr"]=8989
+    ["uptime-kuma"]=3001
+    ["wireguard"]=51821
+)
+
+service_http_port() {
+    local svc="${1:-}" port
+    port="${_MS_SERVICE_HTTP_PORT[$svc]:-}"
+    [[ -n "$port" ]] || return 1
+    printf '%s' "$port"
+}
+
+service_local_url() {
+    local svc="$1" port
+    port=$(service_http_port "$svc") || return 1
+    printf 'http://localhost:%s' "$port"
+}
+
+service_internal_url() {
+    local svc="$1" port
+    port=$(service_http_port "$svc") || return 1
+    printf 'http://%s:%s' "$svc" "$port"
+}
+
+service_http_ports_json() {
+    local svc args=()
+    for svc in "${!_MS_SERVICE_HTTP_PORT[@]}"; do
+        args+=("$svc" "${_MS_SERVICE_HTTP_PORT[$svc]}")
+    done
+    python3 - "${args[@]}" <<'PY'
+import json
+import sys
+
+pairs = sys.argv[1:]
+print(json.dumps({k: int(v) for k, v in zip(pairs[0::2], pairs[1::2])}))
+PY
+}
+
+service_internal_urls_json() {
+    local svc args=()
+    for svc in "${!_MS_SERVICE_HTTP_PORT[@]}"; do
+        args+=("$svc" "$(service_internal_url "$svc")")
+    done
+    python3 - "${args[@]}" <<'PY'
+import json
+import sys
+
+pairs = sys.argv[1:]
+print(json.dumps(dict(zip(pairs[0::2], pairs[1::2]))))
+PY
 }

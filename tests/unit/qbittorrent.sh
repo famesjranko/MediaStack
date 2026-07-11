@@ -29,6 +29,10 @@ LOG_WARN_MESSAGES=()
 log_ok() { LOG_OK_MESSAGES+=("$1"); }
 log_warn() { LOG_WARN_MESSAGES+=("$1"); }
 log_skip() { :; }
+service_local_url() {
+    [[ "$1" == "qbittorrent" ]] || return 1
+    printf 'http://localhost:8080'
+}
 
 cfg_field() {
     case "$1" in

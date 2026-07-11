@@ -10,7 +10,8 @@ configure_sonarr() {
     sonarr_key=$(get_api_key "$SCRIPT_DIR/config/sonarr/config.xml")
     if [[ -z "$sonarr_key" ]]; then log_error "Cannot read Sonarr API key"; return 1; fi
     log_ok "Sonarr API key: ${sonarr_key:0:8}..."
-    local base="http://localhost:8989/api/v3"
+    local base
+    base="$(service_local_url sonarr)/api/v3"
 
     if declare -F storage_is_manual >/dev/null && storage_is_manual; then
         log_skip "Sonarr root folder/download client skipped (manual app wiring)"

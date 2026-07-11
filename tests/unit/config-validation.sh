@@ -120,6 +120,31 @@ _CONFIGURE_OK=(); _CONFIGURE_WARN=(); _LOG_COUNTS_WARN=0; _LOG_COUNTS_ERROR=0
 configure_failure() { return 7; }
 _run_configure "Fixture|fixture" configure_failure
 assert_eq "7" "$?" "configure result wrapper preserves the service return code"
+assert_eq "1" "${#_CONFIGURE_WARN[@]}" "non-zero rc badges WARN even with nothing logged"
+
+# rc=0 but a counted log_warn fired during configure -> WARN.
+_CONFIGURE_OK=(); _CONFIGURE_WARN=(); _LOG_COUNTS_WARN=0; _LOG_COUNTS_ERROR=0
+configure_warns() { _LOG_COUNTS_WARN=$((_LOG_COUNTS_WARN+1)); return 0; }
+_run_configure "Fixture|fixture" configure_warns
+assert_eq "1" "${#_CONFIGURE_WARN[@]}" "counted log_warn with rc=0 badges WARN"
+
+# rc=0 and no counted warns (advisory log_drift does not count) -> OK.
+_CONFIGURE_OK=(); _CONFIGURE_WARN=(); _LOG_COUNTS_WARN=0; _LOG_COUNTS_ERROR=0
+configure_clean() { return 0; }
+_run_configure "Fixture|fixture" configure_clean
+assert_eq "1" "${#_CONFIGURE_OK[@]}" "clean rc=0 badges OK"
+assert_eq "0" "${#_CONFIGURE_WARN[@]}" "clean rc=0 records no WARN"
+
+# Advisory drift via the REAL log_drift (sourced from common.sh) must not bump
+# the warn counter, so a drift-only configurator still badges OK. Guards against
+# a regression that makes log_drift count.
+_log_emit() { :; }; _ui_status_token() { :; }
+eval "$(grep '^log_drift()' "$REPO_ROOT/scripts/lib/common.sh")"
+_CONFIGURE_OK=(); _CONFIGURE_WARN=(); _LOG_COUNTS_WARN=0; _LOG_COUNTS_ERROR=0
+configure_drift() { log_drift "advisory drift notice"; return 0; }
+_run_configure "Fixture|fixture" configure_drift
+assert_eq "1" "${#_CONFIGURE_OK[@]}" "advisory log_drift with rc=0 badges OK"
+assert_eq "0" "${#_CONFIGURE_WARN[@]}" "advisory log_drift does not badge WARN"
 
 # ─── summary ─────────────────────────────────────────────────────────────────
 

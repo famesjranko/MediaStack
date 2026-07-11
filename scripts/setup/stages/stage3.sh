@@ -230,62 +230,46 @@ stage3_set_gpu_env() {
 
     [[ -f "$env_path" ]] || return 1
 
-    ENV_PATH="$env_path" \
-    STAGE3_GPU="$gpu" \
-    STAGE3_STATE="$state" \
-    STAGE3_VENDOR="$vendor" \
-    STAGE3_ENCODER="$encoder" \
-    STAGE3_HW_DECODING_CODECS="$([[ "$gpu" == "none" ]] && printf '' || printf '%s' "${STAGE_3_GPU_HW_DECODING_CODECS:-}")" \
-    STAGE3_DECODE_HEVC_10BIT="$([[ "$gpu" == "none" ]] && printf '' || printf '%s' "${STAGE_3_GPU_DECODE_HEVC_10BIT:-false}")" \
-    STAGE3_DECODE_VP9_10BIT="$([[ "$gpu" == "none" ]] && printf '' || printf '%s' "${STAGE_3_GPU_DECODE_VP9_10BIT:-false}")" \
-    STAGE3_ALLOW_HEVC_ENCODING="$([[ "$gpu" == "none" ]] && printf '' || printf '%s' "${STAGE_3_GPU_ALLOW_HEVC_ENCODING:-false}")" \
-    STAGE3_ALLOW_AV1_ENCODING="$([[ "$gpu" == "none" ]] && printf '' || printf '%s' "${STAGE_3_GPU_ALLOW_AV1_ENCODING:-false}")" \
-    STAGE3_RENDER_DEVICE="$([[ "$gpu" == "none" || "$gpu" == "nvidia" ]] && printf '' || printf '%s' "${STAGE_3_GPU_RENDER_DEVICE:-}")" \
-    STAGE3_DRIVER_MODE="$driver_mode" \
-    python3 - <<'PY'
-import os
-import pathlib
-import tempfile
-
-path = pathlib.Path(os.environ["ENV_PATH"])
-updates = {
-    "JELLYFIN_GPU": os.environ["STAGE3_GPU"],
-    "STAGE_3_GPU_STATE": os.environ["STAGE3_STATE"],
-    "STAGE_3_GPU_VENDOR": os.environ["STAGE3_VENDOR"],
-    "STAGE_3_GPU_ENCODER": os.environ["STAGE3_ENCODER"],
-    "STAGE_3_GPU_HW_DECODING_CODECS": os.environ["STAGE3_HW_DECODING_CODECS"],
-    "STAGE_3_GPU_DECODE_HEVC_10BIT": os.environ["STAGE3_DECODE_HEVC_10BIT"],
-    "STAGE_3_GPU_DECODE_VP9_10BIT": os.environ["STAGE3_DECODE_VP9_10BIT"],
-    "STAGE_3_GPU_ALLOW_HEVC_ENCODING": os.environ["STAGE3_ALLOW_HEVC_ENCODING"],
-    "STAGE_3_GPU_ALLOW_AV1_ENCODING": os.environ["STAGE3_ALLOW_AV1_ENCODING"],
-    "STAGE_3_GPU_RENDER_DEVICE": os.environ["STAGE3_RENDER_DEVICE"],
-}
-# Only rewrite NVIDIA_DRIVER_MODE when a non-empty mode was passed; otherwise
-# leave the existing line untouched so unrelated callers don't clobber it.
-_mode = os.environ.get("STAGE3_DRIVER_MODE", "")
-if _mode:
-    updates["NVIDIA_DRIVER_MODE"] = _mode
-lines = path.read_text().splitlines()
-seen = set()
-out = []
-for line in lines:
-    if "=" in line and not line.startswith("#"):
-        key = line.split("=", 1)[0]
-        if key in updates:
-            out.append(f"{key}={updates[key]}")
-            seen.add(key)
-            continue
-    out.append(line)
-for key, value in updates.items():
-    if key not in seen:
-        out.append(f"{key}={value}")
-
-fd, tmp = tempfile.mkstemp(prefix=".env.", dir=str(path.parent), text=True)
-with os.fdopen(fd, "w") as fh:
-    fh.write("\n".join(out) + "\n")
-os.chmod(tmp, 0o600)
-os.replace(tmp, path)
-PY
+    # GPU-state map. When gpu=none every capability field is blanked; otherwise
+    # each falls back to the current env value (booleans default false). The
+    # render device is empty for none and nvidia (nvidia exposes the GPU via the
+    # runtime, not a /dev/dri node).
+    local -a _kv=(
+        JELLYFIN_GPU "$gpu"
+        STAGE_3_GPU_STATE "$state"
+        STAGE_3_GPU_VENDOR "$vendor"
+        STAGE_3_GPU_ENCODER "$encoder"
+    )
+    if [[ "$gpu" == "none" ]]; then
+        _kv+=(
+            STAGE_3_GPU_HW_DECODING_CODECS ""
+            STAGE_3_GPU_DECODE_HEVC_10BIT ""
+            STAGE_3_GPU_DECODE_VP9_10BIT ""
+            STAGE_3_GPU_ALLOW_HEVC_ENCODING ""
+            STAGE_3_GPU_ALLOW_AV1_ENCODING ""
+            STAGE_3_GPU_RENDER_DEVICE ""
+        )
+    else
+        _kv+=(
+            STAGE_3_GPU_HW_DECODING_CODECS "${STAGE_3_GPU_HW_DECODING_CODECS:-}"
+            STAGE_3_GPU_DECODE_HEVC_10BIT "${STAGE_3_GPU_DECODE_HEVC_10BIT:-false}"
+            STAGE_3_GPU_DECODE_VP9_10BIT "${STAGE_3_GPU_DECODE_VP9_10BIT:-false}"
+            STAGE_3_GPU_ALLOW_HEVC_ENCODING "${STAGE_3_GPU_ALLOW_HEVC_ENCODING:-false}"
+            STAGE_3_GPU_ALLOW_AV1_ENCODING "${STAGE_3_GPU_ALLOW_AV1_ENCODING:-false}"
+        )
+        if [[ "$gpu" == "nvidia" ]]; then
+            _kv+=(STAGE_3_GPU_RENDER_DEVICE "")
+        else
+            _kv+=(STAGE_3_GPU_RENDER_DEVICE "${STAGE_3_GPU_RENDER_DEVICE:-}")
+        fi
+    fi
+    # Only rewrite NVIDIA_DRIVER_MODE when a mode was passed; otherwise leave the
+    # existing line untouched so unrelated callers don't clobber it.
+    if [[ -n "$driver_mode" ]]; then
+        _kv+=(NVIDIA_DRIVER_MODE "$driver_mode")
+    fi
+    # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
+    _env_write_kv "$env_path" "${_kv[@]}" >/dev/null
 
     export JELLYFIN_GPU="$gpu"
     export STAGE_3_GPU_STATE="$state"

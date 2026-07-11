@@ -505,7 +505,7 @@ _stage1_collect_nas_settings() {
     # NFS mount options and the watchdog toggle are collected AFTER the connection
     # is verified and confirmed (_stage1_collect_nas_options). Seed the recommended
     # defaults here so the verification probe has something to mount with.
-    _WIZ_STORAGE_NFS_OPTS="${_WIZ_STORAGE_NFS_OPTS:-${_WIZ_PREV_STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}}"
+    _WIZ_STORAGE_NFS_OPTS="${_WIZ_STORAGE_NFS_OPTS:-${_WIZ_PREV_STORAGE_NFS_OPTS:-$DEFAULT_NFS_OPTS}}"
 
     # The safety marker is the watchdog's internal sentinel; users never name it.
     # Always default it under the mountpoint (silently).
@@ -586,7 +586,7 @@ _stage1_nas_review_box() {
 # options, so "yes" needs no re-check; custom options are unproven and re-probed.
 _stage1_collect_nas_options() {
     local nfs_opts_default
-    nfs_opts_default="${_WIZ_STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
+    nfs_opts_default="${_WIZ_STORAGE_NFS_OPTS:-$DEFAULT_NFS_OPTS}"
 
     if ui_confirm "Use the recommended NFS mount options?" "yes"; then
         _WIZ_STORAGE_NFS_OPTS="$nfs_opts_default"
@@ -672,7 +672,7 @@ _stage1_collect_manual_storage() {
         _WIZ_STORAGE_MODE="nas"
         _WIZ_STORAGE_PROTOCOL="nfs"
         _WIZ_STORAGE_WATCHDOG="true"
-        _WIZ_STORAGE_NFS_OPTS="${_WIZ_STORAGE_NFS_OPTS:-${_WIZ_PREV_STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}}"
+        _WIZ_STORAGE_NFS_OPTS="${_WIZ_STORAGE_NFS_OPTS:-${_WIZ_PREV_STORAGE_NFS_OPTS:-$DEFAULT_NFS_OPTS}}"
         if [[ -z "${_WIZ_STORAGE_NFS_HOST:-}" || -z "${_WIZ_STORAGE_NFS_EXPORT:-}" ]]; then
             _stage1_collect_nas_settings
         fi

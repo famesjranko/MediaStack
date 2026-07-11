@@ -617,6 +617,22 @@ if not any(n.subnet_of(r) for r in rfc1918):
     return 0
 }
 
+# Accepts a single IPv4/IPv6 host address; rejects CIDR / range / hostname.
+# Used by the fail2ban whitelist manual-entry path (mediastack). Mirrors
+# validate_lan_cidr: empty -> warn+1; python3 ipaddress via argv (invariant #10).
+validate_ip() {
+    local value="$1"
+    if [[ -z "$value" ]]; then
+        ui_log warn "An IP address is required (e.g. 203.0.113.45)."
+        return 1
+    fi
+    if ! python3 -c 'import sys, ipaddress; ipaddress.ip_address(sys.argv[1])' "$value" 2>/dev/null; then
+        ui_log warn "'$value' is not a valid IP address - enter a single IPv4 or IPv6 address (not a range or CIDR)."
+        return 1
+    fi
+    return 0
+}
+
 validate_timezone() {
     local value="$1"
     if [[ -z "$value" ]]; then

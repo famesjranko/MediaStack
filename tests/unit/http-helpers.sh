@@ -18,10 +18,9 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="http-helpers"
 echo -e "${CYAN}${BOLD}▶ scenario: http-helpers${NC}"
 
-# http.sh depends on log_* and color globals from common.sh.
-# Source common.sh with a dummy CONFIG_FILE (cfg() is never called here).
+# http.sh must source its own common.sh dependency. The dummy CONFIG_FILE is
+# present only for common.sh's cfg_* helpers, which are not called here.
 CONFIG_FILE=/dev/null
-source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/lib/http.sh"
 
 set +e
@@ -76,6 +75,23 @@ reset_mock() {
 }
 
 # ---------------------------------------------------------------------------
+# Source guards / dependency sourcing
+# ---------------------------------------------------------------------------
+
+if bash -euo pipefail -c "CONFIG_FILE=/dev/null; source '$REPO_ROOT/scripts/lib/http.sh'; declare -F log_warn >/dev/null && declare -F http_check >/dev/null && [[ \${GREEN+x} && \${RED+x} && \${NC+x} ]]"; then
+    pass "http.sh: sources common.sh in isolation"
+else
+    fail "http.sh: sources common.sh in isolation"
+fi
+
+_LOG_COUNTS_WARN=7
+source "$REPO_ROOT/scripts/lib/common.sh"
+assert_eq "7" "$_LOG_COUNTS_WARN" "common.sh: include guard preserves existing state on repeat source"
+
+source "$REPO_ROOT/scripts/lib/http.sh"
+assert_eq "function" "$(type -t http_check)" "http.sh: include guard keeps functions available on repeat source"
+
+# ---------------------------------------------------------------------------
 # json_body
 # ---------------------------------------------------------------------------
 
@@ -92,6 +108,33 @@ if json_body one 2>/dev/null; then
     fail "json_body: odd arg count exits non-zero"
 else
     pass "json_body: odd arg count exits non-zero"
+fi
+
+# ---------------------------------------------------------------------------
+# json_obj — typed key/type/value triples
+# ---------------------------------------------------------------------------
+
+assert_eq '{"Role": 1}' "$(json_obj Role int 1)" "json_obj: int type"
+assert_eq '{"trustProxy": true}' "$(json_obj trustProxy bool true)" "json_obj: bool true"
+# The trap: bool('false') is truthy in Python; must map "false" -> JSON false.
+assert_eq '{"trustProxy": false}' "$(json_obj trustProxy bool false)" "json_obj: bool false is not truthy"
+assert_eq '{"value": "404", "meta": {}}' "$(json_obj value str 404 meta json '{}')" "json_obj: str + nested json literal"
+assert_eq '{"user": "admin", "role": 1}' "$(json_obj user str admin role int 1)" "json_obj: multiple triples preserve order"
+
+result=$(json_obj pw str 'He said "hi" \ end')
+expected=$(python3 -c 'import json; print(json.dumps({"pw": "He said \"hi\" \\ end"}))')
+assert_eq "$expected" "$result" "json_obj: str value JSON-escaped"
+
+if json_obj a b 2>/dev/null; then
+    fail "json_obj: non-triple arg count exits non-zero"
+else
+    pass "json_obj: non-triple arg count exits non-zero"
+fi
+
+if json_obj k bogus v 2>/dev/null; then
+    fail "json_obj: unknown type exits non-zero"
+else
+    pass "json_obj: unknown type exits non-zero"
 fi
 
 # ---------------------------------------------------------------------------
@@ -175,6 +218,26 @@ reset_mock; MOCK_CURL_CODE=500
 wait_for_service "test-svc" "http://fake" >/dev/null
 rc=$?
 assert_eq "1" "$rc" "wait_for_service: timeout returns 1"
+unset -f sleep
+
+# ---------------------------------------------------------------------------
+# post_restart_wait — immediate success and timeout, no logging side effects
+# ---------------------------------------------------------------------------
+
+sleep() { :; }
+reset_mock; MOCK_CURL_CODE=200
+post_restart_wait "http://fake/health" 4 2 >/dev/null
+rc=$?
+assert_eq "0" "$rc" "post_restart_wait: immediate success returns 0"
+assert_eq "" "$LAST_LOG_FN" "post_restart_wait: success does not log"
+unset -f sleep
+
+sleep() { :; }
+reset_mock; MOCK_CURL_CODE=500
+post_restart_wait "http://fake/health" 4 2 >/dev/null
+rc=$?
+assert_eq "1" "$rc" "post_restart_wait: timeout returns 1"
+assert_eq "" "$LAST_LOG_FN" "post_restart_wait: timeout does not log"
 unset -f sleep
 
 # ---------------------------------------------------------------------------

@@ -248,8 +248,16 @@ _render_choose() {
     if (( default_index > 0 && default_index <= ${#items[@]} )); then
         selected_args=(--selected="${items[$((default_index - 1))]}")
     fi
+    # Clamp the list height to the terminal: an unclamped --height on a 40-item
+    # list overflows the screen. height = min(item count, max(3, rows - 4)); tput
+    # falls back to 24 when there's no TTY / it fails, so the clamp never divides by
+    # a bogus row count. Does not touch the exit-code contract below.
+    local rows; rows=$(tput lines 2>/dev/null) || rows=24
+    [[ "$rows" =~ ^[0-9]+$ ]] || rows=24
+    local max=$(( rows - 4 )); (( max < 3 )) && max=3
+    local height=${#items[@]}; (( height > max )) && height=$max
     local result rc
-    result=$(gum choose --header "  $prompt" --height="${#items[@]}" "${selected_args[@]}" "${items[@]}"); rc=$?
+    result=$(gum choose --header "  $prompt" --height="$height" "${selected_args[@]}" "${items[@]}"); rc=$?
     _gum_reraise_on_sigint "$rc"
     # Ctrl-C: gum exits 130 and _gum_reraise_on_sigint has re-raised SIGINT to $$.
     # But that signal stays PENDING while ui_choose is blocked in command

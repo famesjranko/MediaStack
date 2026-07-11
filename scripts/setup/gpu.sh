@@ -12,6 +12,11 @@ _GPU_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$_GPU_HELPER_DIR/lib/nvidia_patch.sh"
 unset _GPU_HELPER_DIR
 
+# apt sources this module owns. Single source of truth so install and uninstall
+# can never drift (see gpu_uninstall). Plain assignment — this file is re-sourced.
+MEDIASTACK_GPU_NONFREE_LIST=/etc/apt/sources.list.d/mediastack-nonfree.list
+MEDIASTACK_GPU_BACKPORTS_LIST=/etc/apt/sources.list.d/mediastack-backports.list
+
 detect_gpu() {
     GPU_TYPE="none"
     GPU_CANDIDATES=()
@@ -377,14 +382,14 @@ ensure_debian_nonfree() {
 
     if [[ ${#_needed[@]} -eq 0 ]]; then
         # All components already in sources.list — remove stale mediastack file
-        sudo rm -f /etc/apt/sources.list.d/mediastack-nonfree.list
+        sudo rm -f "$MEDIASTACK_GPU_NONFREE_LIST"
         return 0
     fi
 
     local _needed_str="${_needed[*]}"
     local _source_line
     printf -v _source_line 'deb http://deb.debian.org/debian %s %s\n' "$_codename" "$_needed_str"
-    if ! sudo tee /etc/apt/sources.list.d/mediastack-nonfree.list >/dev/null <<< "$_source_line"; then
+    if ! sudo tee "$MEDIASTACK_GPU_NONFREE_LIST" >/dev/null <<< "$_source_line"; then
         log_error "Failed to add Debian non-free apt source"
         return 1
     fi
@@ -415,12 +420,22 @@ ensure_debian_backports() {
     fi
     local _source_line
     printf -v _source_line 'deb http://deb.debian.org/debian %s-backports %s\n' "$_codename" "$_components"
-    if ! sudo tee /etc/apt/sources.list.d/mediastack-backports.list >/dev/null <<< "$_source_line"; then
+    if ! sudo tee "$MEDIASTACK_GPU_BACKPORTS_LIST" >/dev/null <<< "$_source_line"; then
         log_error "Failed to add Debian backports apt source"
         return 1
     fi
     log_ok "Enabled ${_codename}-backports (for a newer NVIDIA driver)"
     return 0
+}
+
+# Remove the apt sources this module owns, called from the uninstall path so the
+# teardown lives beside the writes above (was re-typed in hardening.sh).
+# ponytail: blind rm, no sha-guard — these files carry no admin-editable content,
+# unlike the apt.conf.d drop-ins _uninstall_apt guards.
+# `|| true`: apt-source removal is non-fatal (matches the old inline `rm … || true`)
+# and keeps this errexit-safe regardless of caller context, not just today's `||` callers.
+gpu_uninstall() {
+    sudo rm -f "$MEDIASTACK_GPU_NONFREE_LIST" "$MEDIASTACK_GPU_BACKPORTS_LIST" || true
 }
 
 _nvidia_blacklist_nouveau() {

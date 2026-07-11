@@ -53,10 +53,39 @@ assert_homepage_configured() {
         fail "step 8 Homepage: Jellyfin widget configured" "type: jellyfin not found"
     fi
 
-    if echo "$services_yaml" | grep -q "http://sonarr:8989"; then
-        pass "step 8 Homepage: Sonarr widget uses internal URL"
+    local missing_internal=()
+    for internal_url in \
+        "http://jellyfin:8096" \
+        "http://sonarr:8989" \
+        "http://radarr:7878" \
+        "http://qbittorrent:8080" \
+        "http://uptime-kuma:3001"; do
+        echo "$services_yaml" | grep -q "$internal_url" || missing_internal+=("$internal_url")
+    done
+    if [[ ${#missing_internal[@]} -eq 0 ]]; then
+        pass "step 8 Homepage: widgets use internal service URLs"
     else
-        fail "step 8 Homepage: Sonarr widget uses internal URL" "http://sonarr:8989 not found"
+        fail "step 8 Homepage: widgets use internal service URLs" "missing: ${missing_internal[*]}"
+    fi
+
+    local missing_conditional=() pair svc expected_url svc_status
+    for pair in \
+        "bazarr|http://bazarr:6767" \
+        "npm|http://npm:81" \
+        "wireguard|http://wireguard:51821" \
+        "ddns-updater|http://ddns-updater:8000" \
+        "beszel|http://beszel:8090"; do
+        svc="${pair%%|*}"
+        expected_url="${pair#*|}"
+        svc_stripped "$svc" && continue
+        svc_status=$(dind_exec "docker inspect --format '{{.State.Status}}' $svc 2>/dev/null" | tr -d '\r\n')
+        [[ "$svc_status" == "running" ]] || continue
+        echo "$services_yaml" | grep -q "$expected_url" || missing_conditional+=("$expected_url")
+    done
+    if [[ ${#missing_conditional[@]} -eq 0 ]]; then
+        pass "step 8 Homepage: conditional services use internal URLs"
+    else
+        fail "step 8 Homepage: conditional services use internal URLs" "missing: ${missing_conditional[*]}"
     fi
 
     local remote_state

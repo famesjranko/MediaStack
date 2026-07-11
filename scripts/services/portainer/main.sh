@@ -8,7 +8,8 @@ configure_portainer() {
     echo ""
     echo -e "${BOLD}Configuring Portainer...${NC}"
 
-    local portainer_url="http://localhost:9000"
+    local portainer_url
+    portainer_url="$(service_local_url portainer)"
     local admin_user="${JELLYFIN_ADMIN_USER:-admin}"
     local admin_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
 
@@ -33,9 +34,7 @@ configure_portainer() {
     fi
 
     local init_body
-    init_body=$(ADMIN_USER="$admin_user" ADMIN_PW="$admin_pw" python3 -c '
-import os, json
-print(json.dumps({"Username": os.environ["ADMIN_USER"], "Password": os.environ["ADMIN_PW"]}))')
+    init_body=$(json_body Username "$admin_user" Password "$admin_pw")
 
     if [[ "$admin_exists" == "false" ]]; then
         # If Portainer returned anything other than 404 (e.g. init timeout),
@@ -91,9 +90,7 @@ print(json.dumps({"Username": os.environ["ADMIN_USER"], "Password": os.environ["
 
     if [[ -z "$jwt" && "$admin_user" != "admin" ]]; then
         local legacy_body legacy_jwt
-        legacy_body=$(ADMIN_PW="$admin_pw" python3 -c '
-import os, json
-print(json.dumps({"Username": "admin", "Password": os.environ["ADMIN_PW"]}))')
+        legacy_body=$(json_body Username admin Password "$admin_pw")
         legacy_jwt=$(curl -s -X POST "$portainer_url/api/auth" \
             -H "Content-Type: application/json" \
             -d "$legacy_body" 2>/dev/null \
@@ -101,9 +98,7 @@ print(json.dumps({"Username": "admin", "Password": os.environ["ADMIN_PW"]}))')
 
         if [[ -n "$legacy_jwt" ]]; then
             local rename_body rename_resp rename_http rename_body_resp
-            rename_body=$(ADMIN_USER="$admin_user" python3 -c '
-import os, json
-print(json.dumps({"Username": os.environ["ADMIN_USER"], "Role": 1}))')
+            rename_body=$(json_obj Username str "$admin_user" Role int 1)
             rename_resp=$(curl -s -w "\n%{http_code}" -X PUT \
                 "$portainer_url/api/users/1" \
                 -H "Authorization: Bearer $legacy_jwt" \
@@ -145,9 +140,7 @@ print(json.dumps({"Username": os.environ["ADMIN_USER"], "Role": 1}))')
         fi
         if [[ -z "$ptkey_valid" ]]; then
             local token_body token_resp token_raw
-            token_body=$(ADMIN_PW="$admin_pw" python3 -c '
-import os, json
-print(json.dumps({"description": "Homepage", "password": os.environ["ADMIN_PW"]}))')
+            token_body=$(json_body description Homepage password "$admin_pw")
             token_resp=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
                 -H "Authorization: Bearer $jwt" \
                 -H "Content-Type: application/json" \

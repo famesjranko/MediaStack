@@ -149,7 +149,7 @@ sys.exit(0 if ok else 1)
                 # create. Don't touch it; the new name matches config.yml, so the
                 # fall-through SKIPs. Just surface the leftover so the user can
                 # remove it. Not a failure of this change, so not recorded.
-                log_warn "${app_label}: '$profile_name' already exists and the old '$rename_from' is still present (stale). Using '$profile_name'; delete '$rename_from' in ${app_label} (Settings -> Profiles) if no series/movies use it."
+                log_drift "${app_label}: '$profile_name' already exists and the old '$rename_from' is still present (stale). Using '$profile_name'; delete '$rename_from' in ${app_label} (Settings -> Profiles) if no series/movies use it."
                 ;;
             exists)
                 : # new name already present -> fall through to normal match/skip
@@ -207,7 +207,7 @@ print("drift\t" + "; ".join(drift) if drift else "match")
             return 0
             ;;
         drift)
-            log_warn "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit the profile in the $app_label UI (Settings -> Profiles), or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_drift "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit the profile in the $app_label UI (Settings -> Profiles), or rebuild (docker compose down -v && ./setup.sh --full)."
             return 0
             ;;
     esac
@@ -427,7 +427,7 @@ except Exception:
             fi
             ;;
         drift)
-            log_warn "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit scores in the $app_label UI (Settings -> Profiles -> $profile_name), or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_drift "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit scores in the $app_label UI (Settings -> Profiles -> $profile_name), or rebuild (docker compose down -v && ./setup.sh --full)."
             ;;
         *)
             log_warn "Could not determine $app_label format score status"
@@ -448,6 +448,9 @@ except Exception:
 # Args: <"sonarr"|"radarr"> <api-base-url> <api-key> <comma-separated-fallback-categories>
 configure_arr_indexers() {
     local app="$1" base="$2" key="$3" fallback_categories="$4"
+    local jackett_local_url jackett_internal_url
+    jackett_local_url="$(service_local_url jackett)"
+    jackett_internal_url="$(service_internal_url jackett)"
 
     local jackett_key
     jackett_key=$(get_jackett_api_key)
@@ -477,7 +480,7 @@ print('['+','.join(c.strip() for c in cats)+']')
 
         local cat_json
         cat_json=$(curl -sf --max-time 5 \
-            "http://localhost:9117/api/v2.0/indexers/$indexer_id/results/torznab/?apikey=$jackett_key&t=caps" 2>/dev/null \
+            "${jackett_local_url}/api/v2.0/indexers/$indexer_id/results/torznab/?apikey=$jackett_key&t=caps" 2>/dev/null \
             | python3 "$lib_dir/render/torznab_caps.py" "$app" 2>/dev/null || echo "")
 
         if [[ -z "$cat_json" || "$cat_json" == "[]" ]]; then
@@ -486,7 +489,7 @@ print('['+','.join(c.strip() for c in cats)+']')
 
         local indexer_json
         indexer_json=$(INDEXER_NAME="$indexer_id" \
-            BASE_URL="http://jackett:9117/api/v2.0/indexers/$indexer_id/results/torznab/" \
+            BASE_URL="${jackett_internal_url}/api/v2.0/indexers/$indexer_id/results/torznab/" \
             APIKEY="$jackett_key" \
             CATEGORIES="$cat_json" \
             APP="$app" \
@@ -634,7 +637,7 @@ for n in (i.get("name","") for i in items):
     if [[ -n "$stale" ]]; then
         while IFS= read -r name; do
             [[ -z "$name" ]] && continue
-            log_warn "${app^} indexer '$name' exists but is not in config.yml. configure.sh does not remove indexers on re-run. To remove: ${app^} UI -> Settings -> Indexers -> Delete, or rebuild."
+            log_drift "${app^} indexer '$name' exists but is not in config.yml. configure.sh does not remove indexers on re-run. To remove: ${app^} UI -> Settings -> Indexers -> Delete, or rebuild."
         done <<< "$stale"
     fi
 }
@@ -670,7 +673,7 @@ else:             print("absent")
             log_skip "${app^} root folder $root_folder already matches config.yml"
             ;;
         drift)
-            log_warn "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Media Management -> Root Folders -> delete the stale entry, or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_drift "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Media Management -> Root Folders -> delete the stale entry, or rebuild (docker compose down -v && ./setup.sh --full)."
             ;;
         *)
             local root_body
@@ -722,7 +725,7 @@ configure_arr_disk_threshold() {
     fi
 
     if [[ "$current_mb" != "100" ]]; then
-        log_warn "${app^} minimumFreeSpaceWhenImporting=${current_mb}MB differs from config.yml (${min_free_gb}GB=${min_free_mb}MB). configure.sh does not reconcile on re-run."
+        log_drift "${app^} minimumFreeSpaceWhenImporting=${current_mb}MB differs from config.yml (${min_free_gb}GB=${min_free_mb}MB). configure.sh does not reconcile on re-run."
         return 0
     fi
 
@@ -774,7 +777,7 @@ else:
             log_skip "${app^} qBittorrent category already matches config.yml ($dl_category)"
             ;;
         drift)
-            log_warn "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Download Clients -> qBittorrent -> update Category, or rebuild."
+            log_drift "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Download Clients -> qBittorrent -> update Category, or rebuild."
             ;;
         *)
             local dlclient_json
@@ -845,16 +848,10 @@ config["password"] = os.environ["JF_PW"]
 config["passwordConfirmation"] = os.environ["JF_PW"]
 json.dump(config, sys.stdout)' 2>/dev/null)
 
-    local host_port="${base#*://}"
-    host_port="${host_port%%/*}"
-    local port="${host_port##*:}"
-
     if api_put "$base/config/host" "$key" "$auth_config" >/dev/null 2>&1; then
         log_ok "${app^} Forms authentication enabled (user: $jf_user)"
         docker restart "$app" >/dev/null 2>&1
-        for _ in $(seq 1 30); do
-            curl -sf "http://localhost:$port" >/dev/null 2>&1 && break; sleep 2
-        done
+        post_restart_wait "$(service_local_url "$app")" || true
     else
         log_warn "Failed to enable ${app^} authentication"
     fi

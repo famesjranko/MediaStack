@@ -16,6 +16,17 @@ _NET_UL_MBPS=""
 declare -A _NET_PORT_STATUS 2>/dev/null || true
 _STAGE2_CLOUDFLARE_IPS_V4=""
 
+: "${DDNS_VERIFY_PULL_TIMEOUT_SECONDS:=120}"
+: "${DDNS_VERIFY_PORT_PUBLISH_ATTEMPTS:=20}"
+: "${DDNS_VERIFY_PORT_PUBLISH_SLEEP_SECONDS:=1}"
+: "${DDNS_VERIFY_UPDATE_POLL_ATTEMPTS:=8}"
+: "${DDNS_VERIFY_UPDATE_REQUEST_TIMEOUT_SECONDS:=20}"
+: "${DDNS_VERIFY_UPDATE_POLL_SLEEP_SECONDS:=1}"
+readonly DDNS_VERIFY_PULL_TIMEOUT_SECONDS
+readonly DDNS_VERIFY_PORT_PUBLISH_ATTEMPTS DDNS_VERIFY_PORT_PUBLISH_SLEEP_SECONDS
+readonly DDNS_VERIFY_UPDATE_POLL_ATTEMPTS DDNS_VERIFY_UPDATE_REQUEST_TIMEOUT_SECONDS
+readonly DDNS_VERIFY_UPDATE_POLL_SLEEP_SECONDS
+
 # -----------------------------------------------------------------------------
 # net_detect_public_ip — detect external IPv4 address
 # Sets _NET_PUBLIC_IP. Returns 0 if detected, 1 if not.
@@ -124,25 +135,6 @@ net_run_speedtest() {
 }
 
 # -----------------------------------------------------------------------------
-# net_check_tcp_port <port> — DEPRECATED: probe a TCP port on the public IP.
-# Uses `nc -z $PUBLIC_IP $port`, which depends on hairpin NAT and conflates
-# "is the port reachable from the internet?" with "is anything listening
-# locally?" Prefer net_check_tcp_port_external for forwarding checks, or
-# net_is_port_locally_bound for local availability checks.
-# Kept for back-compat with tests/unit/stage2-ports.sh which redefines it.
-# Returns 0 (open) or 1 (closed/error).
-# -----------------------------------------------------------------------------
-net_check_tcp_port() {
-    local port="$1"
-    if [[ "${UI_DEMO:-0}" == "1" ]]; then
-        [[ "$port" == "6881" || "$port" == "80" || "$port" == "443" ]] && return 0
-        return 1
-    fi
-    [[ -z "$_NET_PUBLIC_IP" ]] && return 1
-    nc -z -w5 "$_NET_PUBLIC_IP" "$port" 2>/dev/null
-}
-
-# -----------------------------------------------------------------------------
 # net_is_port_locally_bound <port>
 # True (return 0) if anything is currently listening on the local TCP port
 # (any interface, IPv4 or IPv6). False (return 1) if the port is free.
@@ -199,21 +191,6 @@ net_check_port_status() {
         udp)
             _NET_PORT_STATUS[$port]="udp-unverifiable"
             ;;
-    esac
-}
-
-# -----------------------------------------------------------------------------
-# net_port_status_label <port> — colored status string for display
-# Returns: "✓ open" (green) | "✗ closed" (yellow) | "UDP (unverifiable)" (gray)
-# -----------------------------------------------------------------------------
-net_port_status_label() {
-    local port="$1"
-    local status="${_NET_PORT_STATUS[$port]:-unknown}"
-    case "$status" in
-        open)             echo -e "${GREEN}${_G_CHECK} open${NC}" ;;
-        closed)           echo -e "${YELLOW}${_G_CROSS} closed${NC}" ;;
-        udp-unverifiable) echo -e "${GRAY}UDP (unverifiable)${NC}" ;;
-        *)                echo -e "${GRAY}? unknown${NC}" ;;
     esac
 }
 
@@ -399,7 +376,7 @@ ddns_verify_via_container() {
     # box the image may be absent. Pull it bounded (never an unbounded implicit
     # pull that could hang the wizard); a pull failure degrades, never rejects.
     if ! docker image inspect "$_DDNS_VERIFY_IMAGE" >/dev/null 2>&1; then
-        timeout 120 docker pull "$_DDNS_VERIFY_IMAGE" >/dev/null 2>&1 || return 2
+        timeout "$DDNS_VERIFY_PULL_TIMEOUT_SECONDS" docker pull "$_DDNS_VERIFY_IMAGE" >/dev/null 2>&1 || return 2
     fi
 
     # Inner subshell so the cleanup trap is scoped here — it fires on the
@@ -437,7 +414,7 @@ ddns_verify_via_container() {
         # credential would persist and the real ddns-updater would die at install.
         # A container that is up but simply slow keeps the loop going.
         local port=""
-        for _ in $(seq 1 20); do
+        for _ in $(seq 1 "$DDNS_VERIFY_PORT_PUBLISH_ATTEMPTS"); do
             port=$(docker port "$cid" 8000 2>/dev/null | head -1 | sed 's/.*://')
             [[ -n "$port" ]] && break
             if [[ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" != "true" ]]; then
@@ -457,7 +434,7 @@ ddns_verify_via_container() {
                 fi
                 exit 2
             fi
-            sleep 1
+            sleep "$DDNS_VERIFY_PORT_PUBLISH_SLEEP_SECONDS"
         done
         [[ -n "$port" ]] || exit 2
 
@@ -469,11 +446,11 @@ ddns_verify_via_container() {
         local resp="$scratch/resp"
         _ddns_poll_update() {
             local c="000" _i
-            for _i in $(seq 1 8); do
-                c=$(curl -s -o "$resp" -w '%{http_code}' --max-time 20 \
+            for _i in $(seq 1 "$DDNS_VERIFY_UPDATE_POLL_ATTEMPTS"); do
+                c=$(curl -s -o "$resp" -w '%{http_code}' --max-time "$DDNS_VERIFY_UPDATE_REQUEST_TIMEOUT_SECONDS" \
                     "http://127.0.0.1:${port}/update" 2>/dev/null)
                 [[ -n "$c" && "$c" != "000" ]] && break
-                sleep 1
+                sleep "$DDNS_VERIFY_UPDATE_POLL_SLEEP_SECONDS"
             done
             printf '%s' "$c"
         }

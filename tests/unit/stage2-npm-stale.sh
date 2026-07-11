@@ -42,6 +42,25 @@ if ! type _npm_warn_stale_managed_hosts >/dev/null 2>&1; then
     _npm_warn_stale_managed_hosts() { return 127; }
 fi
 
+DOCKER_INSPECT_ARGS_FILE="$TMP_ROOT/docker-inspect-args"
+DOCKER_INSPECT_RESULT=true
+docker() {
+    if [[ "$1" == "inspect" ]]; then
+        printf '%s\n' "$*" > "$DOCKER_INSPECT_ARGS_FILE"
+        printf '%s\n' "$DOCKER_INSPECT_RESULT"
+        return 0
+    fi
+    return 1
+}
+npm_remote_container_running; running_rc=$?
+assert_eq "0" "$running_rc" "npm_remote_container_running: returns true for running npm"
+assert_eq "inspect --format {{.State.Running}} npm" "$(cat "$DOCKER_INSPECT_ARGS_FILE")" "npm_remote_container_running: checks exact npm running state"
+DOCKER_INSPECT_RESULT=false
+npm_remote_container_running; stopped_rc=$?
+assert_eq "1" "$stopped_rc" "npm_remote_container_running: returns false for stopped npm"
+source "$REPO_ROOT/scripts/lib/npm_remote.sh"
+assert_eq "function" "$(type -t container_running)" "npm_remote.sh: sources common.sh and is repeat-source safe"
+
 FAKE_HOSTS='[
   {"id": 1, "domain_names": ["jellyfin.old.test"], "forward_host": "jellyfin", "forward_port": 8096, "enabled": true},
   {"id": 2, "domain_names": ["jellyfin.gate.test"], "forward_host": "jellyfin", "forward_port": 8096, "enabled": true},

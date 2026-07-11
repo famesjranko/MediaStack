@@ -18,7 +18,7 @@ Generator: /project-stack (audit of existing codebase)
 
 ## Language & Runtime
 - Primary: Bash 5.x (Debian default)
-- Secondary: Python 3.9+ (3 render helpers for JSON/XML transforms — stdlib only, no pip)
+- Secondary: Python 3.9+ (small render/config helpers for JSON/XML/network transforms — stdlib only, no pip)
 - Runtime: Debian 11 (Bullseye), 12 (Bookworm), or 13 (Trixie), headless. 11 is the floor (Python 3.9+, bash 5.x); 13 is the newest verified on real hardware
 - Package manager: apt (system packages only; no pip/npm/cargo)
 - Shell: bash with `set -euo pipefail` throughout
@@ -174,7 +174,7 @@ docker compose logs -f <service>
 - DinD test base: Debian over Alpine — BusyBox grep lacks -P, envsubst missing from Alpine default, musl/glibc edge cases. Matches production distro.
 - CI covers syntax, compose rendering, focused unit checks, public guards, wizard PTY scenarios, and image-digest drift alerts against the committed tested record. Full image-backed integration proof remains local/manual DinD so GitHub Actions does not need privileged nested Docker pulls.
 - Shell linting is still intentionally local/advisory until the existing shell surface is fully shellcheck-clean.
-- Python stdlib only: 3 small render helpers (quality_profile.py, torznab_caps.py, quality_definitions.py). No pip dependencies, no venv. Keeps host dependency footprint minimal.
+- Python stdlib only: small render/config helpers, no pip dependencies, no venv. Keeps host dependency footprint minimal.
 - Config via APIs: Services are configured by calling their HTTP APIs from bash, not by templating config files. More robust across image version upgrades.
 
 ## Reconsider If

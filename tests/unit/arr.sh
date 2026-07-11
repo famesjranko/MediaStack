@@ -26,6 +26,21 @@ JELLYFIN_ADMIN_PASSWORD='alpha\nbravo\tcharlie\u0031\\end'
 log_ok() { :; }
 log_warn() { :; }
 log_skip() { :; }
+service_local_url() {
+    case "$1" in
+        sonarr) printf 'http://localhost:8989' ;;
+        radarr) printf 'http://localhost:7878' ;;
+        jackett) printf 'http://localhost:9117' ;;
+        *) return 1 ;;
+    esac
+}
+service_internal_url() {
+    case "$1" in
+        jackett) printf 'http://jackett:9117' ;;
+        *) return 1 ;;
+    esac
+}
+post_restart_wait() { return 0; }
 
 api_get() {
     printf '%s\n' '{"authenticationMethod":"none","authenticationRequired":"disabled","existing":"kept"}'

@@ -31,6 +31,7 @@ Entry point for the entire project. Common modes:
 | `scripts/setup/reboot.sh` | `schedule_post_reboot`, `cleanup_post_reboot` | Systemd oneshot for post-reboot resume |
 | `scripts/setup/hardening.sh` | `setup_hardening` (gated by `UFW_ENABLED`/`HARDENING_ENABLED`), `setup_ufw`, `setup_ufw_docker_rules`, `setup_unattended_upgrades`, `setup_sysctl_hardening`, `verify_gpu_runtime` (always), `setup_samba` | OS hardening (opt-in) + optional SMB |
 | `scripts/setup/stack.sh` | `create_data_dirs`, `create_config_dirs`, `start_stack`, `wait_for_healthy`, `print_access_info`, `print_final_summary` | Data/config dirs, stack lifecycle, setup summary |
+| `scripts/setup/render/network_selector.py` | *(CLI)* | Select a non-conflicting Docker subnet from host route/address and Docker network snapshots |
 
 ## Current staged ordering
 

@@ -9,7 +9,8 @@ configure_seerr() {
     echo ""
     echo -e "${BOLD}Configuring Seerr...${NC}"
 
-    local seerr_url="http://localhost:5055"
+    local seerr_url
+    seerr_url="$(service_local_url seerr)"
     local jf_user="${JELLYFIN_ADMIN_USER:-admin}"
     local jf_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
 
@@ -162,7 +163,8 @@ PY
     #   3) only then call sync.
     # Gating on Jellyfin's RefreshLibrary scheduled task is the wrong signal:
     # Seerr never inspects scan task state.
-    local jf_url="http://localhost:8096"
+    local jf_url
+    jf_url="$(service_local_url jellyfin)"
     local seerr_jf_settings seerr_jf_key mf_resp mf_code mf_ok i
     if ! seerr_jf_settings=$(api_fetch "Seerr Jellyfin settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/jellyfin"); then
         seerr_jf_settings="{}"
@@ -342,7 +344,7 @@ print(json.dumps(body))
         log_skip "Seerr trustProxy already $want_trust"
     else
         local net_body
-        net_body=$(WANT="$want_trust" python3 -c 'import os, json; print(json.dumps({"trustProxy": os.environ["WANT"] == "true"}))')
+        net_body=$(json_obj trustProxy bool "$want_trust")
         if curl -fsS -X POST "$seerr_url/api/v1/settings/network" \
             -H "Content-Type: application/json" \
             -c "$cookiejar" -b "$cookiejar" \
@@ -362,11 +364,7 @@ print(json.dumps(body))
         if ! docker compose restart seerr >/dev/null 2>&1; then
             log_warn "Failed to restart Seerr - view logs from the menu: Manage stack -> Tail logs (live)"
         else
-            for _ in $(seq 1 30); do
-                curl -fsS "$seerr_url/api/v1/settings/public" >/dev/null 2>&1 && break
-                sleep 2
-            done
-            curl -fsS "$seerr_url/api/v1/settings/public" >/dev/null 2>&1 || \
+            post_restart_wait "$seerr_url/api/v1/settings/public" || \
                 log_warn "Seerr did not become healthy within 60s after restart - check 'docker logs seerr'"
         fi
     fi

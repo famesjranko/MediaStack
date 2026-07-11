@@ -584,5 +584,23 @@ reset_warn
 validate_mb_per_sec "x"; rc=$?
 assert_contains "$LAST_WARN" "MB/s" "validate_mb_per_sec: warn copy says MB/s (not Mbps)"
 
+# ---------------------------------------------------------------------------
+# Single-IP validator (fail2ban whitelist manual-entry path; #276). Accepts one
+# IPv4/IPv6 host; rejects CIDR / range / hostname / empty.
+# ---------------------------------------------------------------------------
+for ok in "203.0.113.45" "::1" "2001:db8::1"; do
+    reset_warn
+    validate_ip "$ok"; rc=$?
+    assert_eq "0" "$rc" "validate_ip: accepts '$ok'"
+    assert_eq "0" "$WARN_COUNT" "validate_ip: '$ok' emits no warn"
+done
+
+for bad in "1.2.3.4/32" "999.1.1.1" "nope" ""; do
+    reset_warn
+    validate_ip "$bad"; rc=$?
+    assert_eq "1" "$rc" "validate_ip: rejects '$bad'"
+    assert_eq "1" "$WARN_COUNT" "validate_ip: '$bad' warns once"
+done
+
 scenario_end "$CURRENT_SCENARIO"
 summary

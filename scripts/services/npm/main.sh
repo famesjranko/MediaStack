@@ -23,6 +23,29 @@ if ! type npm_remote_hosts_ready >/dev/null 2>&1; then
     source "$SCRIPT_DIR/scripts/lib/npm_remote.sh"
 fi
 
+: "${NPM_CERT_WAIT_MAX_POLLS:=120}"
+: "${NPM_CERT_WAIT_INTERVAL_SECONDS:=10}"
+: "${NPM_PROXY_CONF_WAIT_MAX_POLLS:=15}"
+: "${NPM_PROXY_CONF_WAIT_INTERVAL_SECONDS:=1}"
+: "${NPM_HOST_IDLE_MAX_POLLS:=12}"
+: "${NPM_HOST_IDLE_REQUEST_TIMEOUT_SECONDS:=3}"
+: "${NPM_HOST_IDLE_SLEEP_SECONDS:=5}"
+: "${NPM_HEALTH_REPAIR_MAX_ATTEMPTS:=30}"
+: "${NPM_HEALTH_PROBE_TIMEOUT_SECONDS:=5}"
+: "${NPM_HEALTH_REPAIR_SLEEP_SECONDS:=2}"
+: "${NPM_API_READ_TIMEOUT_SECONDS:=10}"
+: "${NPM_API_WRITE_TIMEOUT_SECONDS:=30}"
+: "${NPM_DNS_PROPAGATION_TIMEOUT_SECONDS:=180}"
+: "${NPM_DNS_PROPAGATION_INTERVAL_SECONDS:=10}"
+: "${NPM_CERT_POST_TIMEOUT_SECONDS:=180}"
+readonly NPM_CERT_WAIT_MAX_POLLS NPM_CERT_WAIT_INTERVAL_SECONDS
+readonly NPM_PROXY_CONF_WAIT_MAX_POLLS NPM_PROXY_CONF_WAIT_INTERVAL_SECONDS
+readonly NPM_HOST_IDLE_MAX_POLLS NPM_HOST_IDLE_REQUEST_TIMEOUT_SECONDS NPM_HOST_IDLE_SLEEP_SECONDS
+readonly NPM_HEALTH_REPAIR_MAX_ATTEMPTS NPM_HEALTH_PROBE_TIMEOUT_SECONDS NPM_HEALTH_REPAIR_SLEEP_SECONDS
+readonly NPM_API_READ_TIMEOUT_SECONDS NPM_API_WRITE_TIMEOUT_SECONDS
+readonly NPM_DNS_PROPAGATION_TIMEOUT_SECONDS NPM_DNS_PROPAGATION_INTERVAL_SECONDS
+readonly NPM_CERT_POST_TIMEOUT_SECONDS
+
 # ALL non-deleted cert ids matching this FQDN, NEWEST FIRST. Used by
 # _npm_usable_cert_id_by_fqdn to iterate from newest down to oldest. The
 # max-id-only variant masks a usable older cert when a newer not-yet-on-disk
@@ -75,13 +98,13 @@ _npm_certbot_busy() {
 }
 
 # Long poll: wait up to ~max_polls × interval seconds for a cert with
-# disk material to appear for FQDN. Defaults: 120 × 10s = 20 min.
+# disk material to appear for FQDN.
 # Returns 0 + cert_id on stdout when found; rc=1 on timeout.
 # Critically, rc=2 means the API was unreachable for the entire window,
 # so caller knows nothing about whether a cert is in flight.
 _npm_wait_usable_cert() {
     local _token="$1" _api="$2" _fqdn="$3"
-    local _max="${4:-120}" _interval="${5:-10}"
+    local _max="${4:-$NPM_CERT_WAIT_MAX_POLLS}" _interval="${5:-$NPM_CERT_WAIT_INTERVAL_SECONDS}"
     local _i _id _rc _api_ok=0
     for _i in $(seq 1 "$_max"); do
         _id=$(_npm_usable_cert_id_by_fqdn "$_token" "$_api" "$_fqdn")
@@ -117,7 +140,7 @@ _npm_proxy_conf_renders() {
 # (FQDN, cert_id). NPM writes asynchronously after API returns 2xx.
 _npm_wait_proxy_conf() {
     local _host_id="$1" _fqdn="$2" _cert_id="${3:-0}"
-    local _max="${4:-15}" _interval="${5:-1}"
+    local _max="${4:-$NPM_PROXY_CONF_WAIT_MAX_POLLS}" _interval="${5:-$NPM_PROXY_CONF_WAIT_INTERVAL_SECONDS}"
     local _i
     for _i in $(seq 1 "$_max"); do
         if _npm_proxy_conf_renders "$_host_id" "$_fqdn" "$_cert_id"; then
@@ -199,7 +222,7 @@ path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 _npm_disable_host() {
     local _token="$1" _api="$2" _host_id="$3" _host_json="${4:-}"
     if [[ -z "$_host_json" ]]; then
-        _host_json=$(curl -sf --max-time 10 -H "Authorization: Bearer $_token" \
+        _host_json=$(curl -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" -H "Authorization: Bearer $_token" \
             "$_api/nginx/proxy-hosts/$_host_id" 2>/dev/null) || return 1
     fi
     local _body
@@ -215,7 +238,7 @@ for k in ("id","created_on","modified_on","owner_user_id","owner",
     h.pop(k, None)
 print(json.dumps(h))
 ' 2>/dev/null)
-    curl -s -o /dev/null -w "%{http_code}" --max-time 30 -X PUT \
+    curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
         "$_api/nginx/proxy-hosts/$_host_id" \
         -H "Authorization: Bearer $_token" \
         -H "Content-Type: application/json" \
@@ -227,20 +250,16 @@ print(json.dumps(h))
 # certbot, so a previous cert request can leave the API "warm but slow". A
 # cheap GET /api before the next POST keeps cert issuances from overlapping.
 _npm_wait_idle() {
-    local _token="$1" _api="$2" _max="${3:-12}"
+    local _token="$1" _api="$2" _max="${3:-$NPM_HOST_IDLE_MAX_POLLS}"
     local _i
     for _i in $(seq 1 "$_max"); do
-        if curl -sf --max-time 3 -H "Authorization: Bearer $_token" \
+        if curl -sf --max-time "$NPM_HOST_IDLE_REQUEST_TIMEOUT_SECONDS" -H "Authorization: Bearer $_token" \
             "$_api" >/dev/null 2>&1; then
             return 0
         fi
-        sleep 5
+        sleep "$NPM_HOST_IDLE_SLEEP_SECONDS"
     done
     return 1
-}
-
-_npm_container_running() {
-    [[ "$(docker inspect --format '{{.State.Running}}' npm 2>/dev/null || echo false)" == "true" ]]
 }
 
 _npm_host_path_from_container_path() {
@@ -288,7 +307,7 @@ _npm_ensure_healthy() {
     [[ $(id -u) -ne 0 ]] && _sudo="sudo"
 
     # Fast path: nginx config valid → nothing to do.
-    if _npm_container_running; then
+    if npm_remote_container_running; then
         _npm_running="true"
         if docker exec npm nginx -t >/dev/null 2>&1; then
             return 0
@@ -337,7 +356,7 @@ _npm_ensure_healthy() {
     local _token
     _token=""
     if [[ "$_npm_running" == "true" ]]; then
-        _token=$(curl -sf --max-time 5 -X POST "http://localhost:81/api/tokens" \
+        _token=$(curl -sf --max-time "$NPM_HEALTH_PROBE_TIMEOUT_SECONDS" -X POST "$(service_local_url npm)/api/tokens" \
             -H "Content-Type: application/json" \
             -d "$(json_body identity "$_email" secret "$_pw")" 2>/dev/null | json_get token)
     fi
@@ -345,9 +364,9 @@ _npm_ensure_healthy() {
     if [[ -n "$_token" ]]; then
         local _host_json _body _hc
         for _host_id in "${_affected[@]}"; do
-            _host_json=$(curl -sf --max-time 10 \
+            _host_json=$(curl -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" \
                 -H "Authorization: Bearer $_token" \
-                "http://localhost:81/api/nginx/proxy-hosts/$_host_id" 2>/dev/null)
+                "$(service_local_url npm)/api/nginx/proxy-hosts/$_host_id" 2>/dev/null)
             [[ -z "$_host_json" ]] && continue
             _body=$(echo "$_host_json" | python3 -c '
 import sys, json
@@ -361,8 +380,8 @@ for k in ("id","created_on","modified_on","owner_user_id","owner",
     h.pop(k, None)
 print(json.dumps(h))
 ' 2>/dev/null)
-            _hc=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 -X PUT \
-                "http://localhost:81/api/nginx/proxy-hosts/$_host_id" \
+            _hc=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
+                "$(service_local_url npm)/api/nginx/proxy-hosts/$_host_id" \
                 -H "Authorization: Bearer $_token" \
                 -H "Content-Type: application/json" \
                 -d "$_body")
@@ -472,10 +491,10 @@ finally:
     # initialising, which then surfaces as HTTP 502 on the very next call.
     # We accept any non-5xx response (200, 400, 401) as "express is alive".
     local _i _probe_http
-    for _i in $(seq 1 30); do
+    for _i in $(seq 1 "$NPM_HEALTH_REPAIR_MAX_ATTEMPTS"); do
         if docker exec npm nginx -t >/dev/null 2>&1; then
-            _probe_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
-                -X POST "http://localhost:81/api/tokens" \
+            _probe_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_HEALTH_PROBE_TIMEOUT_SECONDS" \
+                -X POST "$(service_local_url npm)/api/tokens" \
                 -H "Content-Type: application/json" \
                 -d '{"identity":"_probe","secret":"_probe"}' 2>/dev/null)
             if [[ -n "$_probe_http" && "$_probe_http" =~ ^[1-4] ]]; then
@@ -483,7 +502,7 @@ finally:
                 return 0
             fi
         fi
-        sleep 2
+        sleep "$NPM_HEALTH_REPAIR_SLEEP_SECONDS"
     done
 
     log_error "NPM still unhealthy after offline repair - manual review needed"
@@ -526,7 +545,8 @@ configure_npm() {
     echo ""
     echo -e "${BOLD}Configuring Nginx Proxy Manager...${NC}"
 
-    local npm_api="http://localhost:81/api"
+    local npm_api
+    npm_api="$(service_local_url npm)/api"
     local npm_email="${NPM_ADMIN_EMAIL:-}"
     local npm_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
 
@@ -641,7 +661,7 @@ for s in json.load(sys.stdin):
 ' 2>/dev/null)
         if [[ "$default_site_value" == "congratulations" ]]; then
             local ds_body ds_http
-            ds_body=$(python3 -c 'import json; print(json.dumps({"value": "404", "meta": {}}))')
+            ds_body=$(json_obj value str 404 meta json '{}')
             ds_http=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
                 "$npm_api/settings/default-site" \
                 -H "Authorization: Bearer $npm_token" \
@@ -679,7 +699,7 @@ for s in json.load(sys.stdin):
         # proxy host could still reference it, and removing it would break the nginx
         # reload. Warn only (graceful re-run / never auto-reconcile).
         if [[ -f "$http_top_file" ]] && grep -q "zone=mediastack_ratelimit" "$http_top_file" 2>/dev/null; then
-            log_warn "NPM rate limiting disabled but a managed http_top.conf zone remains from a prior install - remove it manually or set rate_limiting.enabled: true"
+            log_drift "NPM rate limiting disabled but a managed http_top.conf zone remains from a prior install - remove it manually or set rate_limiting.enabled: true"
         fi
     elif [[ -f "$http_top_file" ]]; then
         local current_content
@@ -687,7 +707,7 @@ for s in json.load(sys.stdin):
         if [[ "$current_content" == "$expected_zone" ]]; then
             log_skip "NPM rate limit zone: ${rate_rps}r/s already configured"
         else
-            log_warn "NPM rate limit zone: http_top.conf exists but content differs from config.yml (${rate_rps}r/s expected)"
+            log_drift "NPM rate limit zone: http_top.conf exists but content differs from config.yml (${rate_rps}r/s expected)"
         fi
     else
         # NPM container creates config/npm/data/nginx/ as root; fix ownership
@@ -795,7 +815,7 @@ for host in json.load(sys.stdin):
 
         if [[ -n "$_public_ip" ]]; then
             log_info "Public IP: $_public_ip - waiting for DNS propagation..."
-            local _dns_wait=0 _dns_max=180 _dns_status_line=""
+            local _dns_wait=0 _dns_max="$NPM_DNS_PROPAGATION_TIMEOUT_SECONDS" _dns_status_line=""
             while (( _dns_wait < _dns_max )); do
                 local _all_dns_ok="yes"
                 local _dns_status=()
@@ -813,8 +833,8 @@ for host in json.load(sys.stdin):
                     log_ok "DNS propagated: ${fqdn_list[*]} -> $_public_ip (${_dns_wait}s)"
                     break
                 fi
-                sleep 10
-                (( _dns_wait += 10 ))
+                sleep "$NPM_DNS_PROPAGATION_INTERVAL_SECONDS"
+                (( _dns_wait += NPM_DNS_PROPAGATION_INTERVAL_SECONDS ))
                 echo -ne "."
             done
             [[ -z "$_dns_ok" ]] && echo "" && \
@@ -968,7 +988,7 @@ print(json.dumps({
                 if [[ "$should_post" == "true" ]]; then
                     local cert_resp cert_http
                     cert_post_attempted="true"
-                    cert_resp=$(curl -s -w "\n%{http_code}" --max-time 180 -X POST "$npm_api/nginx/certificates" \
+                    cert_resp=$(curl -s -w "\n%{http_code}" --max-time "$NPM_CERT_POST_TIMEOUT_SECONDS" -X POST "$npm_api/nginx/certificates" \
                         -H "Authorization: Bearer $npm_token" \
                         -H "Content-Type: application/json" \
                         -d "$cert_body" 2>/dev/null)
@@ -982,7 +1002,7 @@ print(json.dumps({
                 # ids, so an older ready cert isn't masked by a newer
                 # not-yet-finished row.
                 local found_cert_id wait_rc
-                found_cert_id=$(_npm_wait_usable_cert "$npm_token" "$npm_api" "$fqdn" 120 10)
+                found_cert_id=$(_npm_wait_usable_cert "$npm_token" "$npm_api" "$fqdn" "$NPM_CERT_WAIT_MAX_POLLS" "$NPM_CERT_WAIT_INTERVAL_SECONDS")
                 wait_rc=$?
                 if (( wait_rc == 0 )) && [[ -n "$found_cert_id" && "$found_cert_id" != "0" ]]; then
                     target_cert_id="$found_cert_id"
@@ -1064,7 +1084,7 @@ for k in ("id", "created_on", "modified_on", "owner_user_id", "owner",
     host.pop(k, None)
 print(json.dumps(host))
 ' 2>/dev/null)
-                update_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 -X PUT \
+                update_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
                     "$npm_api/nginx/proxy-hosts/$host_id" \
                     -H "Authorization: Bearer $npm_token" \
                     -H "Content-Type: application/json" \
@@ -1112,7 +1132,7 @@ print(json.dumps({
 }))')
                 # Capture the response body so we can read the new host id
                 # for the disk-render postcondition check.
-                proxy_resp=$(curl -s -w "\n%{http_code}" --max-time 30 -X POST \
+                proxy_resp=$(curl -s -w "\n%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X POST \
                     "$npm_api/nginx/proxy-hosts" \
                     -H "Authorization: Bearer $npm_token" \
                     -H "Content-Type: application/json" \

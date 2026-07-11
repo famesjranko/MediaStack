@@ -55,7 +55,6 @@ net_check_tcp_port_external() {
         *) return 1 ;;
     esac
 }
-net_check_tcp_port() { net_check_tcp_port_external "$@"; }   # back-compat for any caller
 
 if ! type stage2_check_http_ports >/dev/null 2>&1; then
     stage2_check_http_ports() { printf '__not_implemented__'; }

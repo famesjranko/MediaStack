@@ -41,8 +41,8 @@ assert_eq "6881" "$_WIZ_TORRENT_PORT" "stage1-qbit-math: default torrent port"
 # Semantics flipped: at this point qBittorrent isn't running, so a port that
 # IS open from this host means another process is squatting (real conflict);
 # closed means "free for qBit to bind, public reachability TBD after install."
-# UI_DEMO=1 makes net_check_tcp_port 6881 return 0 (open) — that should now
-# warn about a real conflict, not celebrate reachability.
+# net_is_port_locally_bound is stubbed to 0 (line 35) so port 6881 reads as
+# bound — that should warn about a real conflict, not celebrate reachability.
 assert_contains "$LOG_CAPTURE" "already in use by another process" "stage1-qbit-math: open-port flagged as real conflict (qBit not started yet)"
 if [[ "$LOG_CAPTURE" == *"hairpin NAT"* ]]; then
     fail "stage1-qbit-math: legacy hairpin caveat must not appear under new semantics"

@@ -2,11 +2,14 @@
 # 5. Jellyfin — first-run wizard (admin user, libraries) or re-auth on rerun
 # =============================================================================
 
+_JELLYFIN_SERVICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 configure_jellyfin() {
     echo ""
     echo -e "${BOLD}Configuring Jellyfin...${NC}"
 
-    local jf_url="http://localhost:8096"
+    local jf_url
+    jf_url="$(service_local_url jellyfin)"
     local jf_user="${JELLYFIN_ADMIN_USER:-admin}"
     local jf_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
 
@@ -209,7 +212,7 @@ else:
                 continue
                 ;;
             drift)
-                log_warn "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). Jellyfin cannot re-root a library without losing watch history. To migrate: Jellyfin UI -> Dashboard -> Libraries -> delete '$lib_name' and re-run configure.sh (accepts history loss), or rebuild (docker compose down -v && ./setup.sh --full)."
+                log_drift "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). Jellyfin cannot re-root a library without losing watch history. To migrate: Jellyfin UI -> Dashboard -> Libraries -> delete '$lib_name' and re-run configure.sh (accepts history loss), or rebuild (docker compose down -v && ./setup.sh --full)."
                 continue
                 ;;
         esac
@@ -284,7 +287,7 @@ print(c.get('HardwareAccelerationType', ''))" 2>/dev/null)
 
     local stage3_state="${STAGE_3_GPU_STATE:-}"
     if [[ "$stage3_state" == "complete" && "$current_accel" != "$accel_type" ]]; then
-        log_warn "Jellyfin transcoding is '$current_accel', expected '$accel_type' from completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; choose Manage hardware transcoding (GPU) -> Configure or change hardware transcoding to re-verify and apply."
+        log_drift "Jellyfin transcoding is '$current_accel', expected '$accel_type' from completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; choose Manage hardware transcoding (GPU) -> Configure or change hardware transcoding to re-verify and apply."
         return 0
     fi
 
@@ -295,7 +298,7 @@ print(c.get('HardwareAccelerationType', ''))" 2>/dev/null)
         esac
     fi
     if [[ "$current_accel" != "$accel_type" && "$current_accel" != "none" && -n "$current_accel" && "$allow_intel_method_switch" != "true" ]]; then
-        log_warn "Jellyfin transcoding is '$current_accel', expected '$accel_type' (from JELLYFIN_GPU=$gpu). To reset: Jellyfin Dashboard -> Playback -> Transcoding."
+        log_drift "Jellyfin transcoding is '$current_accel', expected '$accel_type' (from JELLYFIN_GPU=$gpu). To reset: Jellyfin Dashboard -> Playback -> Transcoding."
         return 0
     fi
 
@@ -372,7 +375,7 @@ if changed:
         return 0
     fi
     if [[ "$stage3_state" == "complete" ]]; then
-        log_warn "Jellyfin hardware transcoding settings differ from the completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; choose Manage hardware transcoding (GPU) -> Configure or change hardware transcoding to re-verify and apply."
+        log_drift "Jellyfin hardware transcoding settings differ from the completed hardware transcoding proof. Leaving manual Jellyfin settings unchanged; choose Manage hardware transcoding (GPU) -> Configure or change hardware transcoding to re-verify and apply."
         return 0
     fi
     encoding_body=$(echo "$encoding_result" | tail -n +2)
@@ -394,7 +397,7 @@ configure_jellyfin_server_name() {
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
 
     local want_name
-    want_name=$(cfg "jellyfin.server_name" 2>/dev/null || echo "MediaStack")
+    want_name=$(cfg_field "jellyfin.server_name" 2>/dev/null || echo "MediaStack")
     want_name="${want_name:-MediaStack}"
 
     local current_config
@@ -418,7 +421,7 @@ print(c.get('ServerName', ''))" 2>/dev/null)
     # Empty or docker-default hostname → first run, safe to set.
     # Anything else → user changed it in the UI, warn but don't overwrite.
     if [[ -n "$current_name" && "$current_name" != "jellyfin" ]]; then
-        log_warn "Jellyfin server name is '$current_name' (expected '$want_name'). Changed in Dashboard? Not overwriting."
+        log_drift "Jellyfin server name is '$current_name' (expected '$want_name'). Changed in Dashboard? Not overwriting."
         return 0
     fi
 
@@ -446,7 +449,7 @@ configure_jellyfin_streaming() {
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
 
     local bitrate_mbps
-    bitrate_mbps=$(cfg "jellyfin.remote_bitrate_limit" 2>/dev/null || echo "0")
+    bitrate_mbps=$(cfg_field "jellyfin.remote_bitrate_limit" 2>/dev/null || echo "0")
     bitrate_mbps="${bitrate_mbps:-0}"
     # Accept decimal Mbps (3.5, 12.5, etc.) — useful for ISPs whose upload
     # doesn't divide neatly across viewer counts. Reject only true garbage.
@@ -538,108 +541,9 @@ configure_jellyfin_networking() {
 
     local npm_proxy_ip="${MEDIASTACK_NPM_IP:-172.28.0.10}"
     local result
-    result=$(echo "$current_config" | REMOTE_READY="$remote_ready" HOST_ADDR="$host_addr" DOMAIN_VAL="$domain" NPM_PROXY_IP="$npm_proxy_ip" python3 -c "
-import sys, json, os
-
-c = json.load(sys.stdin)
-remote_ready = os.environ['REMOTE_READY'] == 'true'
-host = os.environ['HOST_ADDR']
-domain = os.environ['DOMAIN_VAL']
-
-want_auto = True
-# Use the npm container's pinned IP, not the hostname. Jellyfin caches
-# DNS resolution at startup (jellyfin/jellyfin#14731) and would reject
-# forwarded headers after any network rebuild — manifesting as a login
-# loop behind the proxy. The pinned IP comes from docker-compose.yml's
-# mediastack network IPAM block.
-NPM_PROXY_IP = os.environ.get('NPM_PROXY_IP') or '172.28.0.10'
-want_published = ['internal=http://{}:8096'.format(host)]
-if remote_ready:
-    want_published.append('external=https://jellyfin.{}'.format(domain))
-
-cur_auto = c.get('AutoDiscovery', True)
-cur_proxies = c.get('KnownProxies', [])
-cur_published = c.get('PublishedServerUriBySubnet', [])
-
-MANAGED_PROXY_VALUES = {'npm', '172.28.0.10', NPM_PROXY_IP}
-
-def desired_known_proxies(current):
-    if not isinstance(current, list):
-        current = []
-    out = []
-    managed_added = False
-    for entry in current:
-        if entry in MANAGED_PROXY_VALUES:
-            if remote_ready and not managed_added:
-                out.append(NPM_PROXY_IP)
-                managed_added = True
-            continue
-        out.append(entry)
-    if remote_ready and not managed_added:
-        out.append(NPM_PROXY_IP)
-    return out
-
-want_proxies = desired_known_proxies(cur_proxies)
-
-def is_our_published_entry(e):
-    if e.startswith('internal=http://') and e.endswith(':8096'):
-        host = e[len('internal=http://'):-len(':8096')]
-        if host == 'localhost':
-            return True
-        return all(c.isdigit() or c == '.' for c in host) and host.count('.') == 3
-    return e.startswith('external=https://jellyfin.')
-
-changes = {}
-drift = []
-skip_all = True
-
-# AutoDiscovery — default is True, we want True
-if cur_auto == want_auto:
-    pass
-elif cur_auto is not True:
-    drift.append('AutoDiscovery is {} (expected {})'.format(cur_auto, want_auto))
-
-# KnownProxies
-if cur_proxies == want_proxies:
-    pass
-else:
-    # Merge/remove only MediaStack-managed proxy entries. Preserve any
-    # user-added proxies so remote-ready and cleanup paths do not overwrite UI
-    # changes unrelated to NPM.
-    changes['KnownProxies'] = want_proxies
-    skip_all = False
-
-# PublishedServerUriBySubnet — recognise our own previous values so
-# HOST_ADDRESS or DOMAIN changes trigger an update, not a drift warning
-if cur_published == want_published:
-    pass
-elif not cur_published:
-    changes['PublishedServerUriBySubnet'] = want_published
-    skip_all = False
-elif all(is_our_published_entry(e) for e in cur_published):
-    changes['PublishedServerUriBySubnet'] = want_published
-    skip_all = False
-else:
-    drift.append('PublishedServerUriBySubnet is {} (expected {})'.format(cur_published, want_published))
-
-if drift and not changes:
-    print('DRIFT')
-    for d in drift:
-        print(d)
-elif skip_all and not changes:
-    print('SKIP')
-else:
-    for k, v in changes.items():
-        c[k] = v
-    if drift:
-        print('APPLY_WITH_DRIFT')
-        for d in drift:
-            print(d)
-        print('---')
-    else:
-        print('APPLY')
-    print(json.dumps(c))
-" 2>/dev/null)
+    result=$(printf '%s' "$current_config" \
+        | REMOTE_READY="$remote_ready" HOST_ADDR="$host_addr" DOMAIN_VAL="$domain" NPM_PROXY_IP="$npm_proxy_ip" \
+            python3 "$_JELLYFIN_SERVICE_DIR/render/network_policy.py" 2>/dev/null)
 
     local action
     action=$(echo "$result" | head -1)
@@ -653,10 +557,7 @@ else:
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
                     log_warn "Failed to recreate Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
                 fi
-                for _ in $(seq 1 30); do
-                    curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
-                done
-                if ! curl -sf http://localhost:8096/health >/dev/null 2>&1; then
+                if ! post_restart_wait "$jf_url/health"; then
                     log_warn "Jellyfin did not become healthy within 60s after recreate - check 'docker logs jellyfin'"
                 fi
             fi
@@ -664,7 +565,7 @@ else:
             ;;
         DRIFT)
             echo "$result" | tail -n +2 | while IFS= read -r msg; do
-                log_warn "Jellyfin networking: $msg - not overwriting (changed in UI?)"
+                log_drift "Jellyfin networking: $msg - not overwriting (changed in UI?)"
             done
             save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
             if [[ "$published_url_changed" == "true" ]]; then
@@ -672,10 +573,7 @@ else:
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
                     log_warn "Failed to recreate Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
                 fi
-                for _ in $(seq 1 30); do
-                    curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
-                done
-                if ! curl -sf http://localhost:8096/health >/dev/null 2>&1; then
+                if ! post_restart_wait "$jf_url/health"; then
                     log_warn "Jellyfin did not become healthy within 60s after recreate - check 'docker logs jellyfin'"
                 fi
             fi
@@ -686,7 +584,7 @@ else:
             drift_lines=$(echo "$result" | sed '1d;/^---$/,$d')
             body=$(echo "$result" | sed '1,/^---$/d')
             echo "$drift_lines" | while IFS= read -r msg; do
-                log_warn "Jellyfin networking: $msg - not overwriting (changed in UI?)"
+                log_drift "Jellyfin networking: $msg - not overwriting (changed in UI?)"
             done
             ;;
         APPLY)
@@ -726,10 +624,7 @@ else:
                 log_warn "Failed to restart Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
             fi
         fi
-        for _ in $(seq 1 30); do
-            curl -sf http://localhost:8096/health >/dev/null 2>&1 && break; sleep 2
-        done
-        if ! curl -sf http://localhost:8096/health >/dev/null 2>&1; then
+        if ! post_restart_wait "$jf_url/health"; then
             log_warn "Jellyfin did not become healthy within 60s after restart - check 'docker logs jellyfin'"
         fi
     else

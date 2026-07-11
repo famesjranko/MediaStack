@@ -9,7 +9,8 @@ configure_bazarr() {
     echo ""
     echo -e "${BOLD}Configuring Bazarr (subtitles)...${NC}"
 
-    local bazarr_url="http://localhost:6767"
+    local bazarr_url
+    bazarr_url="$(service_local_url bazarr)"
     local bazarr_config="$SCRIPT_DIR/config/bazarr/config/config.yaml"
 
     if [[ ! -f "$bazarr_config" ]]; then
@@ -240,5 +241,5 @@ conn.close()
     fi
 
     echo ""
-    log_info "Configure subtitle providers at http://localhost:6767/settings/providers"
+    log_info "Configure subtitle providers at ${bazarr_url}/settings/providers"
 }

@@ -1,8 +1,13 @@
 # =============================================================================
 # MediaStack HTTP helpers: service readiness polling and authenticated POSTs
 # =============================================================================
-# Sourced by scripts/configure.sh after lib/common.sh (depends on log_* and
-# color globals).
+
+[[ -n "${_MS_HTTP_SH:-}" ]] && return 0
+_MS_HTTP_SH=1
+
+_HTTP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=common.sh
+source "$_HTTP_LIB_DIR/common.sh"
 
 # Build a JSON object from key/value string pairs. All values are emitted as
 # strings and properly JSON-escaped (quotes, backslashes, control chars) —
@@ -16,6 +21,34 @@ pairs = sys.argv[1:]
 if len(pairs) % 2:
     sys.exit("json_body: odd number of args")
 print(json.dumps(dict(zip(pairs[0::2], pairs[1::2]))))
+' "$@"
+}
+
+# Build a JSON object from key/type/value triples, for bodies json_body (all
+# strings) cannot express. Types: str; int; bool ("true"/"1"/"yes"/"on" -> true,
+# anything else -> false); json (a raw JSON literal for nested/array/null, e.g.
+# '{}', '[1,2]', 'null'). Like json_body, values reach python via argv, so they
+# are JSON-escaped and never string-formatted into the program text.
+# Usage: json_obj key1 type1 value1 [key2 type2 value2 ...]
+json_obj() {
+    python3 -c '
+import sys, json
+args = sys.argv[1:]
+if len(args) % 3:
+    sys.exit("json_obj: args must be key type value triples")
+out = {}
+for k, t, v in zip(args[0::3], args[1::3], args[2::3]):
+    if t == "str":
+        out[k] = v
+    elif t == "int":
+        out[k] = int(v)
+    elif t == "bool":
+        out[k] = v.lower() in ("1", "true", "yes", "on")
+    elif t == "json":
+        out[k] = json.loads(v)
+    else:
+        sys.exit("json_obj: unknown type " + t)
+print(json.dumps(out))
 ' "$@"
 }
 
@@ -81,6 +114,18 @@ wait_for_healthy() {
     done
     echo -e " ${RED}timeout${NC}"
     return 1
+}
+
+# Poll an endpoint after a service restart/recreate. This helper intentionally
+# does not log: callers own the operation-specific warning and keep/abort choice.
+post_restart_wait() {
+    local url="$1" max="${2:-60}" interval="${3:-2}" elapsed=0
+    while (( elapsed < max )); do
+        curl -sf --max-time 5 "$url" >/dev/null 2>&1 && return 0
+        sleep "$interval"
+        (( elapsed += interval ))
+    done
+    curl -sf --max-time 5 "$url" >/dev/null 2>&1
 }
 
 # Poll Jellyfin's AuthenticateByName until it returns 200 (or fails fast on 401).

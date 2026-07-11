@@ -15,6 +15,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 CURL_LOG="$TMP_DIR/curl.log"
 
 source "$REPO_ROOT/scripts/lib/json.sh"
+# http.sh provides json_body / json_obj (used to build request bodies); the
+# real curl / wait_for_service are stubbed below. Matches runtime, where
+# configure.sh sources http.sh before the service configurators.
+source "$REPO_ROOT/scripts/lib/http.sh"
 source "$REPO_ROOT/scripts/services/portainer/main.sh"
 
 BOLD=""

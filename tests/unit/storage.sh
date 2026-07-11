@@ -260,30 +260,27 @@ printf '%s\n' \
     > "$SCRIPT_DIR/.env"
 cp "$SCRIPT_DIR/.env" "$SCRIPT_DIR/expected.env"
 
-python3() {
-    printf '%s\n' "partial update" > "$TMP_ENV_FILE"
-    return 1
-}
+# storage_env_set delegates to common.sh's _env_write_kv (the one blessed
+# .env writer, unit-tested in tests/unit/common.sh). Stub the writer to fail
+# and assert the wrapper propagates the failure and leaves .env intact.
+_env_write_kv() { return 1; }
 storage_env_set STORAGE_EXPECTED_SOURCE "192.0.2.10:/exports/media"
 storage_env_set_rc=$?
-unset -f python3
+# NB: this removes the REAL writer too (common.sh's include guard means the
+# later re-sources of storage.sh do not restore it). Nothing below reaches an
+# env-writing path; restub _env_write_kv if a future test needs one.
+unset -f _env_write_kv
 
 if [[ "$storage_env_set_rc" -ne 0 ]]; then
-    pass "storage_env_set: reports temp writer failure"
+    pass "storage_env_set: propagates writer failure"
 else
-    fail "storage_env_set: reports temp writer failure" "storage_env_set exited 0"
+    fail "storage_env_set: propagates writer failure" "storage_env_set exited 0"
 fi
 
 if cmp -s "$SCRIPT_DIR/expected.env" "$SCRIPT_DIR/.env"; then
     pass "storage_env_set: previous .env preserved on write failure"
 else
     fail "storage_env_set: previous .env preserved on write failure"
-fi
-
-if compgen -G "$SCRIPT_DIR/.env.tmp.*" >/dev/null; then
-    fail "storage_env_set: temp file cleaned up after write failure" "$(printf '%s ' "$SCRIPT_DIR"/.env.tmp.*)"
-else
-    pass "storage_env_set: temp file cleaned up after write failure"
 fi
 
 SCRIPT_DIR="$REPO_ROOT"
@@ -361,10 +358,14 @@ sudo() {
     printf '%s\n' "$*" >> "$SUDO_CALLS"
     "$@"
 }
+# storage_configure_expected writes the expected source/fstype via common.sh's
+# _env_write_kv; stub the writer as a no-op success so no real .env is touched
+# (its real behavior is covered in tests/unit/common.sh).
+_env_write_kv() { return 0; }
 storage_preflight_nas
 assert_eq "present" "$([[ -e "$STORAGE_SENTINEL" ]] && echo present || echo absent)" "NAS preflight: creates sentinel as installing user"
 assert_eq "absent" "$([[ -s "$SUDO_CALLS" ]] && echo present || echo absent)" "NAS preflight: does not sudo-write sentinel on export"
-unset -f storage_ensure_nfs_common storage_mount_nfs findmnt sudo
+unset -f storage_ensure_nfs_common storage_mount_nfs findmnt sudo _env_write_kv
 unset DATA_DIR STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_NFS_HOST STORAGE_NFS_EXPORT STORAGE_NFS_OPTS STORAGE_SENTINEL SUDO_CALLS
 source "$REPO_ROOT/scripts/setup/storage.sh"
 

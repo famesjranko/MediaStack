@@ -3,14 +3,15 @@
 # =============================================================================
 
 configure_wireguard() {
-    if ! docker ps --filter name=wireguard --format '{{.Names}}' 2>/dev/null | grep -qx wireguard; then
+    if ! container_running wireguard; then
         return 0
     fi
 
     echo ""
     echo -e "${BOLD}Configuring WireGuard...${NC}"
 
-    local wg_url="http://localhost:51821"
+    local wg_url
+    wg_url="$(service_local_url wireguard)"
     local wg_user="${JELLYFIN_ADMIN_USER:-admin}"
     local wg_pw="${JELLYFIN_ADMIN_PASSWORD:-}"
     local per_client_fw_raw="${WG_PER_CLIENT_FIREWALL:-true}"

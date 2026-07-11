@@ -10,6 +10,13 @@ fi
 source "$SCRIPT_DIR/scripts/lib/npm_remote.sh"
 source "$SCRIPT_DIR/scripts/lib/ddns_providers.sh"
 
+: "${STAGE2_DNS_PROPAGATION_MAX_ATTEMPTS:=12}"
+: "${STAGE2_DNS_PROPAGATION_SLEEP_SECONDS:=10}"
+: "${STAGE2_PORT_PROBE_MAX_ATTEMPTS:=3}"
+: "${STAGE2_PORT_PROBE_RETRY_SLEEP_SECONDS:=5}"
+readonly STAGE2_DNS_PROPAGATION_MAX_ATTEMPTS STAGE2_DNS_PROPAGATION_SLEEP_SECONDS
+readonly STAGE2_PORT_PROBE_MAX_ATTEMPTS STAGE2_PORT_PROBE_RETRY_SLEEP_SECONDS
+
 # DDNS credential fields for the chosen provider (name -> value). MUST be a real
 # associative array: assigning arr[key]=val to an undeclared name creates a plain
 # indexed array (key -> arithmetic 0) and silently drops every field. Declared
@@ -122,31 +129,8 @@ _stage2_set_remote_state() {
     local env_path="$SCRIPT_DIR/.env"
     [[ -f "$env_path" ]] || return 1
 
-    ENV_PATH="$env_path" REMOTE_STATE="$state" python3 -c '
-import os
-import pathlib
-import tempfile
-
-path = pathlib.Path(os.environ["ENV_PATH"])
-state = os.environ["REMOTE_STATE"]
-lines = path.read_text().splitlines()
-written = False
-out = []
-for line in lines:
-    if line.startswith("REMOTE_WEB_STATE="):
-        out.append(f"REMOTE_WEB_STATE={state}")
-        written = True
-    else:
-        out.append(line)
-if not written:
-    out.append(f"REMOTE_WEB_STATE={state}")
-
-fd, tmp = tempfile.mkstemp(prefix=".env.", dir=str(path.parent), text=True)
-with os.fdopen(fd, "w") as fh:
-    fh.write("\n".join(out) + "\n")
-os.chmod(tmp, 0o600)
-os.replace(tmp, path)
-'
+    # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
+    _env_write_kv "$env_path" REMOTE_WEB_STATE "$state" >/dev/null
     export REMOTE_WEB_STATE="$state"
 }
 
@@ -212,7 +196,7 @@ _stage2_le_request_log_text() {
 }
 
 _stage2_le_ready_hosts() {
-    local domain="$1" api="${2:-http://localhost:81/api}"
+    local domain="$1" api="${2:-$(service_local_url npm)/api}"
     local token hosts fqdn cert_id host_json host_id host_cert_id host_enabled ready=()
     token=$(npm_remote_token "$api") || return 1
     [[ -z "$token" ]] && return 1
@@ -717,13 +701,13 @@ _stage2_collect_domain() {
         # after the provider's authoritative update, dig may keep returning the
         # old IP for up to a few minutes. Auto-retry without nagging the user;
         # only fall through to the manual menu after 2 minutes.
-        if [[ "$ddns_pushed" == "true" && $retry_count -lt 12 ]]; then
+        if [[ "$ddns_pushed" == "true" && $retry_count -lt "$STAGE2_DNS_PROPAGATION_MAX_ATTEMPTS" ]]; then
             retry_count=$((retry_count + 1))
             if (( retry_count == 1 )); then
                 ui_log info "This is normal - public DNS can take 1-2 min to update. Setup is waiting, not stuck."
             fi
-            ui_log info "Waiting 10s for DNS propagation (attempt ${retry_count}/12)..."
-            sleep 10
+            ui_log info "Waiting ${STAGE2_DNS_PROPAGATION_SLEEP_SECONDS}s for DNS propagation (attempt ${retry_count}/${STAGE2_DNS_PROPAGATION_MAX_ATTEMPTS})..."
+            sleep "$STAGE2_DNS_PROPAGATION_SLEEP_SECONDS"
             continue
         fi
 
@@ -1071,7 +1055,7 @@ _stage2_port_gate() {
     # a real misconfig wait too long for the manual menu.
     local port_state failure action attempt
     while true; do
-        for attempt in 1 2 3; do
+        for attempt in $(seq 1 "$STAGE2_PORT_PROBE_MAX_ATTEMPTS"); do
             port_state=$(stage2_check_http_ports)
             if [[ "$port_state" == "ok" ]]; then
                 if (( attempt == 1 )); then
@@ -1081,9 +1065,9 @@ _stage2_port_gate() {
                 fi
                 return 0
             fi
-            if (( attempt < 3 )); then
-                ui_log info "Port probe ${attempt}/3 returned ${port_state} - retrying in 5s..."
-                sleep 5
+            if (( attempt < STAGE2_PORT_PROBE_MAX_ATTEMPTS )); then
+                ui_log info "Port probe ${attempt}/${STAGE2_PORT_PROBE_MAX_ATTEMPTS} returned ${port_state} - retrying in ${STAGE2_PORT_PROBE_RETRY_SLEEP_SECONDS}s..."
+                sleep "$STAGE2_PORT_PROBE_RETRY_SLEEP_SECONDS"
             fi
         done
 

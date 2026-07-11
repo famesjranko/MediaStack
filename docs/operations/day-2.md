@@ -276,6 +276,12 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
   ```bash
   docker compose restart fail2ban
   ```
+  To view or release bans without shelling into the container, use `./mediastack` → **Manage fail2ban**:
+    - **Banned IPs** — the hub. Every currently-banned address is one row (collapsed across jails); pick one, then **Unban** to release it, or **Unban + always allow** to release it *and* add it to the whitelist so it is never banned again. With more than one address banned, **Unban all** releases everything at once (each can still be re-banned on its next failed login).
+    - **Whitelist (always-allow IPs)** — the addresses/ranges fail2ban never bans. Add or remove your own entries; the four private-network defaults are locked.
+    - **Jail stats & history** — per-jail ban counts and all-time totals, a drill-down into any jail (with its watched log path), and the recent Ban/Unban log.
+
+  Two things to know: a ban blocks **all** services, not just the jail that fired it; and one unban clears the address from **every** jail at once.
 - GPU override file regeneration (new GPU hardware):
   ```bash
   ./setup.sh                 # re-detects GPU, regenerates override.yml

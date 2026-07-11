@@ -10,7 +10,8 @@ configure_radarr() {
     radarr_key=$(get_api_key "$SCRIPT_DIR/config/radarr/config.xml")
     if [[ -z "$radarr_key" ]]; then log_error "Cannot read Radarr API key"; return 1; fi
     log_ok "Radarr API key: ${radarr_key:0:8}..."
-    local base="http://localhost:7878/api/v3"
+    local base
+    base="$(service_local_url radarr)/api/v3"
 
     if declare -F storage_is_manual >/dev/null && storage_is_manual; then
         log_skip "Radarr root folder/download client skipped (manual app wiring)"

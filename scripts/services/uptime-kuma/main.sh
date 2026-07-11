@@ -4,6 +4,43 @@
 # Runs an ephemeral Node.js container on the mediastack network to configure
 # Uptime Kuma v2 via socket.io-client (direct Socket.IO). No npm packages on the host.
 
+_uptime_kuma_monitors_json() {
+    local running="$1"
+    RUNNING="$running" SERVICE_URLS_JSON="$(service_internal_urls_json)" python3 -c '
+import os, json
+
+running = set(os.environ["RUNNING"].split())
+service_urls = json.loads(os.environ["SERVICE_URLS_JSON"])
+
+def svc_url(service, path=""):
+    return service_urls[service] + path
+
+monitor_map = {
+    "jellyfin":     {"name": "Jellyfin",      "url": svc_url("jellyfin", "/health")},
+    "sonarr":       {"name": "Sonarr",         "url": svc_url("sonarr", "/ping")},
+    "radarr":       {"name": "Radarr",         "url": svc_url("radarr", "/ping")},
+    "jackett":      {"name": "Jackett",        "url": svc_url("jackett")},
+    "qbittorrent":  {"name": "qBittorrent",    "url": svc_url("qbittorrent")},
+    "seerr":        {"name": "Seerr",          "url": svc_url("seerr", "/api/v1/settings/public")},
+    "bazarr":       {"name": "Bazarr",         "url": svc_url("bazarr")},
+    "flaresolverr": {"name": "FlareSolverr",   "url": svc_url("flaresolverr", "/health")},
+    "homepage":     {"name": "Homepage",       "url": svc_url("homepage")},
+    "npm":          {"name": "NPM",            "url": svc_url("npm")},
+    "portainer":    {"name": "Portainer",      "url": svc_url("portainer")},
+    "wireguard":    {"name": "WireGuard",      "url": svc_url("wireguard")},
+    "ddns-updater": {"name": "DDNS Updater",   "url": svc_url("ddns-updater")},
+    "beszel":       {"name": "Beszel",         "url": svc_url("beszel", "/api/health")},
+}
+
+monitors = []
+for container, info in monitor_map.items():
+    if container in running:
+        monitors.append(info)
+
+print(json.dumps(monitors))
+'
+}
+
 configure_uptime_kuma() {
     echo ""
     echo -e "${BOLD}Configuring Uptime Kuma...${NC}"
@@ -16,35 +53,7 @@ configure_uptime_kuma() {
     running=$(docker compose ps --format '{{.Names}}' 2>/dev/null)
 
     local monitors_json
-    monitors_json=$(RUNNING="$running" python3 -c '
-import os, json
-
-running = set(os.environ["RUNNING"].split())
-
-monitor_map = {
-    "jellyfin":     {"name": "Jellyfin",      "url": "http://jellyfin:8096/health"},
-    "sonarr":       {"name": "Sonarr",         "url": "http://sonarr:8989/ping"},
-    "radarr":       {"name": "Radarr",         "url": "http://radarr:7878/ping"},
-    "jackett":      {"name": "Jackett",        "url": "http://jackett:9117"},
-    "qbittorrent":  {"name": "qBittorrent",    "url": "http://qbittorrent:8080"},
-    "seerr":        {"name": "Seerr",          "url": "http://seerr:5055/api/v1/settings/public"},
-    "bazarr":       {"name": "Bazarr",         "url": "http://bazarr:6767"},
-    "flaresolverr": {"name": "FlareSolverr",   "url": "http://flaresolverr:8191/health"},
-    "homepage":     {"name": "Homepage",       "url": "http://homepage:3000"},
-    "npm":          {"name": "NPM",            "url": "http://npm:81"},
-    "portainer":    {"name": "Portainer",      "url": "http://portainer:9000"},
-    "wireguard":    {"name": "WireGuard",      "url": "http://wireguard:51821"},
-    "ddns-updater": {"name": "DDNS Updater",   "url": "http://ddns-updater:8000"},
-    "beszel":       {"name": "Beszel",         "url": "http://beszel:8090/api/health"},
-}
-
-monitors = []
-for container, info in monitor_map.items():
-    if container in running:
-        monitors.append(info)
-
-print(json.dumps(monitors))
-')
+    monitors_json=$(_uptime_kuma_monitors_json "$running")
 
     if [[ -z "$monitors_json" || "$monitors_json" == "[]" ]]; then
         log_warn "No running services found to monitor"
@@ -62,6 +71,7 @@ print(json.dumps(monitors))
     result=$(timeout 120 docker run --rm --network mediastack \
         --env-file "$_kuma_envfile" \
         -e MONITORS_JSON="$monitors_json" \
+        -e KUMA_INTERNAL_URL="$(service_internal_url uptime-kuma)" \
         node:22-slim sh -c '
 cd /tmp && npm install --no-audit --no-fund --loglevel=error socket.io-client >&2 || { echo "{\"error\": \"npm install failed\"}" ; exit 1; }
 node -e "
@@ -71,7 +81,7 @@ const pw = process.env.KUMA_PW;
 const monitorsInput = JSON.parse(process.env.MONITORS_JSON);
 function connect() {
     return new Promise((resolve, reject) => {
-        const s = io(\"http://uptime-kuma:3001\", { transports: [\"websocket\"], reconnection: false });
+        const s = io(process.env.KUMA_INTERNAL_URL, { transports: [\"websocket\"], reconnection: false });
         const timer = setTimeout(() => { s.disconnect(); reject(new Error(\"connect timeout\")); }, 20000);
         s.on(\"connect\", () => { clearTimeout(timer); resolve(s); });
         s.on(\"connect_error\", (err) => { clearTimeout(timer); s.disconnect(); reject(err); });
