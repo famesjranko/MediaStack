@@ -23,6 +23,7 @@ RUN apt-get update && \
         sudo \
         sed \
         gettext-base \
+        inotify-tools \
         iptables \
         nfs-common \
         nfs-kernel-server \

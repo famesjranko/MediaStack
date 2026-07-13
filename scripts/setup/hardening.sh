@@ -10,14 +10,17 @@
 #                     .env; runs after the wizard.
 
 # uninstall_system_cleanup dispatches host-artefact teardown to the owning
-# modules (gpu_uninstall, storage_uninstall_watchdog); source them from a
-# BASH_SOURCE-resolved path so the calls resolve without relying on setup.sh's
-# source order (invariant #11). Both are side-effect-free and re-source-safe.
+# modules (gpu_uninstall, storage_uninstall_watchdog, f2b_uninstall_reload_watcher);
+# source them from a BASH_SOURCE-resolved path so the calls resolve without
+# relying on setup.sh's source order (invariant #11). All are side-effect-free
+# and re-source-safe.
 _HARDENING_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=gpu.sh
 source "$_HARDENING_LIB_DIR/gpu.sh"
 # shellcheck source=storage.sh
 source "$_HARDENING_LIB_DIR/storage.sh"
+# shellcheck source=fail2ban.sh
+source "$_HARDENING_LIB_DIR/fail2ban.sh"
 unset _HARDENING_LIB_DIR
 
 MEDIASTACK_STATE_DIR=/etc/mediastack
@@ -1234,6 +1237,7 @@ uninstall_system_cleanup() {
     _uninstall_sysctl || { log_error "sysctl cleanup failed"; failed=1; }
     _uninstall_samba || { log_error "Samba cleanup failed"; failed=1; }
     storage_uninstall_watchdog || { log_error "Storage watchdog cleanup failed"; failed=1; }
+    f2b_uninstall_reload_watcher || { log_error "fail2ban reload watcher cleanup failed"; failed=1; }
 
     # mediastack-setup unit + setup-result banner are stage/hardening-owned.
     if sudo test -f /etc/systemd/system/mediastack-setup.service; then

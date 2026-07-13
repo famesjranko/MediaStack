@@ -165,6 +165,71 @@ health_fail2ban_jails() {
     return 0
 }
 
+# True (0) when a currently-active log file (written within findtime, non-empty)
+# is NOT among the files the live jail has open — i.e. the jail is tailing a
+# stale rotated file. False (1) = watching the active file, or no recent activity
+# to miss. 2 = fail2ban-client did not respond (e.g. socket busy mid-reload) —
+# the caller reports skip, not stale, so a transient never reads as a stuck jail.
+# The size filter skips the empty placeholder touchfiles from setup.
+# $3 = the jail's own logpath basename glob (e.g. log_*.log) so the scan matches
+# exactly what the jail watches — a stray *.log the jail does not glob must not be
+# read as "the active file".
+_f2b_watch_stale() {
+    local svc="$1" logdir="$2" pat="$3" raw files newest
+    raw=$(docker exec fail2ban fail2ban-client status "$svc" 2>/dev/null) || return 2
+    files=$(tr -d '\r' <<<"$raw" | sed -n 's/.*File list:[[:space:]]*//p' | head -1)
+    # Newest non-empty file modified within findtime (1800s). busybox-safe
+    # (crazymax/fail2ban is Alpine — no GNU `find -printf`); dir+glob via argv (#10).
+    newest=$(docker exec fail2ban sh -c '
+        d="$1"; now=$(date +%s); best=""; best_t=0
+        for f in "$d"/$2; do
+            [ -s "$f" ] || continue
+            t=$(stat -c %Y "$f" 2>/dev/null) || continue
+            [ "$t" -gt "$best_t" ] && { best_t=$t; best=$f; }
+        done
+        [ -n "$best" ] && [ $((now - best_t)) -lt 1800 ] && printf "%s\n" "$best"
+    ' _ "$logdir" "$pat" 2>/dev/null)
+    [[ -z "$newest" ]] && return 1
+    grep -qF "$newest" <<<"$files" && return 1
+    return 0
+}
+
+# Prove the live jail is actually tailing the CURRENT dated log file, not a stale
+# rotated one. Complements health_fail2ban_regex (which re-globs fresh, so it
+# cannot see a jail stuck on yesterday's file after a daily rollover). The inotify
+# reload watcher (mediastack-fail2ban-reload.service, #291) keeps these aligned;
+# this is the safety net for the watcher silently failing. svc = jellyfin (seerr's
+# on-disk filename is not yet confirmed to land in a *.log the jail watches).
+health_fail2ban_watching() {
+    local svc="${1:-}"
+    [[ -z "$svc" ]] && { echo "skip|fail2ban watching: no service given"; return 0; }
+    _health_f2b_running || { echo "skip|fail2ban ${svc} watching: fail2ban not running (LAN-only install)"; return 0; }
+    _health_svc_healthy "$svc" || { echo "skip|fail2ban ${svc} watching: ${svc} not running/ready"; return 0; }
+
+    local logdir pat
+    case "$svc" in
+        jellyfin) logdir='/var/log/jellyfin'; pat='log_*.log' ;;
+        *) echo "skip|fail2ban ${svc} watching: no watch-probe defined"; return 0 ;;
+    esac
+
+    # A mismatch right at rollover is benign — the watcher reloads within its
+    # settle window. Re-check once after a short grace and only fail on a
+    # PERSISTENT mismatch (a genuinely stuck watcher). Grace overridable for tests.
+    local rc=0
+    _f2b_watch_stale "$svc" "$logdir" "$pat" || rc=$?
+    [[ $rc -eq 1 ]] && { echo "ok|fail2ban ${svc} is watching the current log file"; return 0; }
+    [[ $rc -eq 2 ]] && { echo "skip|fail2ban ${svc} watching: fail2ban-client not responding (likely mid-reload)"; return 0; }
+    sleep "${F2B_HEALTH_SETTLE_GRACE:-20}"
+    rc=0
+    _f2b_watch_stale "$svc" "$logdir" "$pat" || rc=$?
+    case $rc in
+        0) echo "fail|fail2ban ${svc} jail is watching a STALE log file after rotation — brute-force bans NOT firing (reload watcher stuck?)" ;;
+        2) echo "skip|fail2ban ${svc} watching: fail2ban-client not responding (likely mid-reload)" ;;
+        *) echo "ok|fail2ban ${svc} log file re-followed after rotation" ;;
+    esac
+    return 0
+}
+
 # Days until the Let's Encrypt cert expires. Only certs bound to live proxy hosts
 # (a stale/superseded npm-<N> dir would false-fail). Root-owned → sudo -n.
 health_cert_expiry() {
@@ -312,6 +377,7 @@ _health_each() {
         "fail2ban jails"           health_fail2ban_jails       "" \
         "fail2ban jellyfin filter" health_fail2ban_regex       jellyfin \
         "fail2ban seerr filter"    health_fail2ban_regex       seerr \
+        "fail2ban jellyfin watch"  health_fail2ban_watching    jellyfin \
         "TLS certificate"          health_cert_expiry          "" \
         "DNS / public IP"          health_dns_drift            "" \
         "disk space"               health_disk_pct             "" \

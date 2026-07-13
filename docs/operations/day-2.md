@@ -282,6 +282,8 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
     - **Jail stats & history** — per-jail ban counts and all-time totals, a drill-down into any jail (with its watched log path), and the recent Ban/Unban log.
 
   Two things to know: a ban blocks **all** services, not just the jail that fired it; and one unban clears the address from **every** jail at once.
+
+  Daily log rotation needs no action. Jellyfin and Seerr write a new dated log file each day; the `mediastack-fail2ban-reload.service` watcher reloads fail2ban whenever a new file appears, so the jails keep following the current log without a manual restart. If that watcher ever stops, the Health & security menu's *fail2ban jellyfin watch* check reports a jail left on a stale file.
 - GPU override file regeneration (new GPU hardware):
   ```bash
   ./setup.sh                 # re-detects GPU, regenerates override.yml

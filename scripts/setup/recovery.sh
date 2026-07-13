@@ -198,6 +198,11 @@ run_remote_ready_recovery() {
     pull_images
     start_stack
     wait_all_healthy
+    # Remote access just came up → install the fail2ban log-rotation reload
+    # watcher (issue #291). Sudo is primed above (prompt_sudo_cache).
+    if container_running fail2ban; then
+        f2b_install_reload_watcher
+    fi
     (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage,ddns-updater,wireguard)
     print_access_info
     if stage3_pending_nvidia_reboot_same_boot; then

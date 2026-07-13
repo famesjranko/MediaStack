@@ -24,7 +24,7 @@ install_base_packages() {
     # declined hardening (an incomplete opt-out).
     ui_spin "Installing base packages..." sudo apt-get install -y -qq \
         curl ca-certificates gnupg lsb-release sudo pciutils python3-yaml python3-bcrypt \
-        gettext-base ufw git htop bind9-dnsutils smartmontools mokutil
+        gettext-base ufw git htop bind9-dnsutils smartmontools mokutil inotify-tools
     log_ok "Base packages installed"
 
     # Optional fallback speed-test tool. The wizard's primary method is a
@@ -84,6 +84,10 @@ install_docker() {
         log_info "Installing Docker..."
     fi
 
+    # configure_docker_apt_repo runs backgrounded under ui_spin and calls sudo
+    # internally, so ui_spin's direct-`sudo` prime can't reach it — warm the
+    # credential cache in the foreground here (see scripts/lib/ui.sh).
+    sudo -v 2>/dev/null || true
     ui_spin "Adding Docker apt repository..." configure_docker_apt_repo
     ui_spin "Updating package lists..."       sudo apt-get update -qq
 

@@ -202,6 +202,8 @@ _dry_run_install_stubs() {
     create_config_dirs()      { mkdir -p config/ddns-updater 2>/dev/null; _dry_run_would "create config directories"; }
     generate_override()       { printf 'services: {}\n' > docker-compose.override.yml 2>/dev/null; _dry_run_would "generate docker-compose.override.yml for GPU '${1:-none}'"; }
     storage_install_watchdog(){ _dry_run_would "install the storage watchdog service"; }
+    f2b_install_reload_watcher(){ _dry_run_would "install the fail2ban log-rotation reload watcher"; }
+    f2b_uninstall_reload_watcher(){ return 0; }
     setup_samba()             { _dry_run_would "configure the Samba host share"; }
     setup_ufw_service_ports() { _dry_run_would "configure the UFW firewall rules"; }
     install_base_packages()   { _dry_run_would "install base packages"; }

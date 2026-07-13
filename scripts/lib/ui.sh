@@ -117,6 +117,16 @@ ui_spin() {
         _render_spin_demo "$label" "${UI_DEMO_DELAY:-0}"
         return 0
     fi
+    # A backgrounded sudo's password prompt lands on /dev/tty but is instantly
+    # overwritten by the spinner's \r repaint, so a cold credential cache would
+    # hang invisibly. Warm the timestamp in the FOREGROUND first: no-op on a warm
+    # cache or NOPASSWD; a visible prompt on a cold cache; fails fast (the wrapped
+    # command then surfaces the error as before) when there is no tty. Covers every
+    # site that wraps `sudo` directly — install and day-2. The two sites that instead
+    # wrap a *function* / `bash -c` calling sudo internally (configure_docker_apt_repo
+    # in packages.sh, the NPM/DDNS configure.sh in stage2.sh) can't be reached by this
+    # `$1` check, so they prime in the foreground at their own call site.
+    [[ "${1:-}" == "sudo" ]] && { sudo -v 2>/dev/null || true; }
     _render_spin "$label" "$@"
 }
 

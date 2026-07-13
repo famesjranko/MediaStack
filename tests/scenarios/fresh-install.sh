@@ -203,6 +203,7 @@ PYEOF
     assert_beszel_configured "$configure_log"
     assert_npm_configured "$jf_password"
     assert_fail2ban_configured
+    assert_fail2ban_rotation
     assert_ratelimit_disabled
     assert_env_backpopulation
     assert_jellyfin_encoding

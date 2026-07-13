@@ -117,7 +117,8 @@ Passed directly to `POST /api/v2/app/setPreferences`:
 |-------|-------------|
 | `save_path` | `save_path` |
 | `temp_path` | `temp_path` (with `temp_path_enabled:true`) |
-| `max_ratio` | `max_ratio` |
+| `max_ratio` | `max_ratio` (with `max_ratio_enabled:true`) |
+| `max_seeding_time` | `max_seeding_time` (minutes; with `max_seeding_time_enabled:true`) |
 | `max_active_downloads` | `max_active_downloads` |
 | `max_active_uploads` | `max_active_uploads` |
 | `max_active_torrents` | `max_active_torrents` |
@@ -125,7 +126,7 @@ Passed directly to `POST /api/v2/app/setPreferences`:
 | `ul_speed_limit` | `up_limit` (converted from MB/s to bytes/s; `.env QBT_UL_LIMIT` overrides) |
 | `categories` | `name:path` pairs → `POST /api/v2/torrents/createCategory` per entry |
 
-**Not configurable here:** `max_ratio_act`, `web_ui_auth_subnet_whitelist`, connection limits — hardcoded in `scripts/services/qbittorrent/templates/preferences.json`. See [configure-flow.md](configure-flow.md) Observations.
+**Not configurable here:** `max_ratio_act`, `bypass_auth_subnet_whitelist`, connection limits — hardcoded in the `setPreferences` payload in `scripts/services/qbittorrent/main.sh`. See [configure-flow.md](configure-flow.md) Observations.
 
 ### `sonarr` / `radarr`
 
@@ -287,6 +288,8 @@ These service configs are shipped with the repo. They live under `config/` but s
 | `[npm-ratelimit]` | **Disabled by default** (`enabled = false`, ADR-35) — companion to `config.yml`'s `rate_limiting.enabled`. `logpath = /var/log/npm/proxy-host-*_*.log`. When enabled, catches IPs that accumulate 429 (Too Many Requests) responses from nginx `limit_req`; overrides `[DEFAULT]` with `maxretry = 10`, `findtime = 60` (validated against `config.yml`'s `rate_limiting.ban_maxretry` / `ban_findtime` by `configure_npm` — drift is warned, not reconciled). Uses the `npm-ratelimit` filter (see below). |
 
 Log paths are mounted read-only from the producing service's config dir (fail2ban volume mounts in `docker-compose.yml`).
+
+These globs are resolved to concrete files only at jail start / `fail2ban-client reload`. Jellyfin and Seerr roll to a new date-stamped file (`log_YYYYMMDD.log`) each day, so a long-running host needs a reload after each rollover or the jail keeps tailing the previous day's file. On proxy-profile installs the `mediastack-fail2ban-reload.service` watcher (`scripts/fail2ban-reload-watcher.sh`) does this automatically — it reloads fail2ban whenever a new log file appears (ADR-50, issue #291). The day-2 health menu's *fail2ban jellyfin watch* metric flags a jail left on a stale file if the watcher ever stops.
 
 ### `config/fail2ban/filter.d/jellyfin.conf`
 

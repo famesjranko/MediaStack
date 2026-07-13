@@ -42,7 +42,7 @@ printf "tok:%s|%s|%s|%s|%s\n" "$(_ui_status_token ok)" "$(_ui_status_token warn)
 # Render SNIP in a clean non-TTY subprocess (so colour is off -> output is plain
 # text and easy to match) with the given forcing env applied.
 _render() {  # $1 = space-separated env assignments; $2 = snippet
-    local -a base=(-u UI_FORCE_GLYPHS -u UI_ASCII -u UI_FORCE_COLOR -u NO_COLOR TERM=xterm)
+    local -a base=(-u UI_FORCE_GLYPHS -u UI_ASCII -u UI_FORCE_COLOR -u FORCE_COLOR -u NO_COLOR TERM=xterm)
     local -a extra; read -ra extra <<<"$1"
     env "${base[@]}" "${extra[@]}" bash -c "source '$UI'; source '$COMMON'; $2" 2>&1
 }

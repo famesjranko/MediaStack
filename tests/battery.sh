@@ -10,7 +10,9 @@
 #
 # image-override is the one scenario that must run on its OWN DinD: it sets
 # MS_TEST_IMAGE_OVERRIDES, which patches the compose for the whole DinD and would
-# poison every other scenario. It is a fast --no-preload run.
+# poison every other scenario. It runs TWICE with --reset-between (fast,
+# --no-preload) so the 2nd run also guards that dind_reset re-applies the
+# override after landing a pristine compose (#286/#288).
 #
 # Usage:
 #   ./tests/battery.sh          # run the whole battery
@@ -63,7 +65,7 @@ done
 
 echo -e "${BOLD}battery: ${#ALL_SCENARIOS[@]} scenarios${NC}"
 echo -e "  main (one DinD, --reset-between, ${#MAIN[@]} scenarios): ${MAIN[*]}"
-(( HAVE_IMAGE_OVERRIDE )) && echo -e "  isolated: image-override (own DinD, MS_TEST_IMAGE_OVERRIDES)"
+(( HAVE_IMAGE_OVERRIDE )) && echo -e "  isolated: image-override ×2 (own DinD, --reset-between, MS_TEST_IMAGE_OVERRIDES)"
 if (( LIST_ONLY )); then
     echo -e "${GREEN}battery: --list only; nothing run.${NC}"
     exit 0
@@ -84,9 +86,14 @@ fi
 
 if (( HAVE_IMAGE_OVERRIDE )); then
     echo ""
-    echo -e "${BLUE}${BOLD}━━ battery: image-override (isolated DinD) ━━${NC}"
-    if MS_TEST_IMAGE_OVERRIDES="wireguard=example.invalid/wg:0" bash tests/run.sh --no-preload image-override; then
-        RESULTS+=("PASS  image-override (1)")
+    echo -e "${BLUE}${BOLD}━━ battery: image-override (isolated DinD, ×2 --reset-between) ━━${NC}"
+    # Run image-override TWICE with --reset-between: the 2nd run happens AFTER
+    # dind_reset lands a pristine compose, so it passes only if dind_reset
+    # re-applied the override (regression guard for the #286 fix, per #288).
+    # Without that re-apply the post-reset compose has the un-overridden image
+    # and run #2's assert_eq fails → run.sh exits non-zero → this block FAILs.
+    if MS_TEST_IMAGE_OVERRIDES="wireguard=example.invalid/wg:0" bash tests/run.sh --no-preload --reset-between image-override image-override; then
+        RESULTS+=("PASS  image-override (2, reset-between)")
     else
         rc=$?
         RESULTS+=("${RED}FAIL  image-override (run.sh exit ${rc})${NC}")

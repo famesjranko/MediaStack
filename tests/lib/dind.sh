@@ -9,14 +9,17 @@
 # Repo root = parent of tests/
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# Build the Debian DinD image from tests/Dockerfile.dind if it's missing.
-# Cached by docker's layer cache — no-op once built unless the Dockerfile
-# changes. Stays on debian:bookworm-slim to match production's distro.
+# Build/refresh the Debian DinD image from tests/Dockerfile.dind. ALWAYS runs
+# `docker build`: an unchanged Dockerfile is a ~1s layer-cache no-op, while a
+# changed Dockerfile.dind (or dind-entrypoint.sh) actually rebuilds. The old
+# `docker image inspect` short-circuit skipped the rebuild, so a Dockerfile
+# change silently shipped a stale image (e.g. missing a newly-added package).
+# Runs once per `tests/run.sh` invocation (via dind_up), so the cache-hit cost
+# is negligible. A failed build leaves the previous tag intact, so callers MUST
+# check the return (dind_up does) — else a broken rebuild would run stale.
+# Stays on debian:bookworm-slim to match production's distro.
 dind_build() {
-    if docker image inspect "$DIND_IMAGE" >/dev/null 2>&1; then
-        return 0
-    fi
-    echo -e "${BLUE}[dind]${NC} building $DIND_IMAGE from tests/Dockerfile.dind"
+    echo -e "${BLUE}[dind]${NC} building $DIND_IMAGE from tests/Dockerfile.dind (layer-cached if unchanged)"
     docker build -q -t "$DIND_IMAGE" -f "$REPO_ROOT/tests/Dockerfile.dind" "$REPO_ROOT/tests" >/dev/null
 }
 
@@ -26,7 +29,7 @@ dind_build() {
 # anonymous volume. Without -v those volumes pile up at ~2-5 GB each until the
 # host disk fills. Same flag is used in dind_down().
 dind_up() {
-    dind_build
+    dind_build || return 1
     docker rm -fv "$DIND_NAME" >/dev/null 2>&1 || true
     echo -e "${BLUE}[dind]${NC} starting $DIND_NAME ($DIND_IMAGE)"
 
@@ -191,6 +194,12 @@ dind_reset() {
         dind_exec "rm -rf /root/MediaStack" || true
     fi
     dind_copy_repo || return 1
+    # Re-apply image overrides: dind_copy_repo lands a pristine compose, so
+    # without this a --reset-between battery would silently drop the overrides
+    # for every scenario after the first and preflight the un-overridden image.
+    # No-op when MS_TEST_IMAGE_OVERRIDES is unset. Mirrors the main-flow order
+    # in tests/run.sh (copy -> override -> strip).
+    dind_override_images || return 1
     dind_strip_services
 }
 

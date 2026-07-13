@@ -44,7 +44,20 @@ _health_f2b_regex_count() {
 
 # jails status via docker exec; dns; disk; cert/ufw/iptables via sudo
 JAILS="Jail list:	jellyfin, npm, seerr"
-docker() { local a=" $* "; [[ "$a" == *"fail2ban-client status"* ]] && { printf '%s\n' "$JAILS"; return 0; }; return 0; }
+# Watching probe fixtures: `status jellyfin` -> File list; the `sh -c` newest-file
+# scan -> F2B_WATCH_NEWEST directly. This pins the verdict LOGIC only; the real
+# container-side busybox scan (health.sh:_f2b_watch_stale) is NOT run here — it is
+# verified against the live crazymax/fail2ban image separately. Note the metric
+# fails OPEN: if that scan ever errors, `newest` is empty -> verdict "ok".
+F2B_WATCH_FILES="/var/log/jellyfin/log_now.log"; F2B_WATCH_NEWEST="/var/log/jellyfin/log_now.log"
+F2B_CLIENT_OK=1   # 0 = `fail2ban-client status jellyfin` errors (socket busy mid-reload)
+docker() {
+    local a=" $* "
+    [[ "$a" == *"fail2ban-client status jellyfin"* ]] && { (( F2B_CLIENT_OK )) || return 1; printf 'File list:\t%s\n' "$F2B_WATCH_FILES"; return 0; }
+    [[ "$a" == *"fail2ban-client status"* ]] && { printf '%s\n' "$JAILS"; return 0; }
+    [[ "$a" == *" sh -c "* ]] && { printf '%s\n' "$F2B_WATCH_NEWEST"; return 0; }
+    return 0
+}
 DNS_TOKEN="ok"
 net_detect_public_ip() { _NET_PUBLIC_IP="203.0.113.9"; return 0; }
 stage2_dns_classify()  { printf '%s' "$DNS_TOKEN"; [[ "$DNS_TOKEN" == "ok" ]]; }
@@ -86,6 +99,22 @@ _v ok "jails: all present => ok" health_fail2ban_jails
 JAILS="Jail list:	jellyfin, seerr"; _v fail "jails: npm missing => fail" health_fail2ban_jails
 JAILS="Jail list:	jellyfin, npm, seerr"
 F2B_RUNNING=0; _v skip "jails: fail2ban down => skip" health_fail2ban_jails; F2B_RUNNING=1
+
+# --- fail2ban watching (rotation / stale-file, #291) -----------------------
+F2B_HEALTH_SETTLE_GRACE=0   # re-check is instant under the sleep shim
+F2B_WATCH_FILES="/var/log/jellyfin/log_now.log"
+F2B_WATCH_NEWEST="/var/log/jellyfin/log_now.log"
+_v ok   "watching: newest file is watched => ok"       health_fail2ban_watching jellyfin
+F2B_WATCH_NEWEST="/var/log/jellyfin/log_next.log"
+_v fail "watching: jail stuck on stale file => fail"   health_fail2ban_watching jellyfin
+F2B_CLIENT_OK=0
+_v skip "watching: fail2ban-client error => skip (no false stale)" health_fail2ban_watching jellyfin
+F2B_CLIENT_OK=1
+F2B_WATCH_NEWEST=""
+_v ok   "watching: no recent activity => ok"           health_fail2ban_watching jellyfin
+F2B_WATCH_NEWEST="/var/log/jellyfin/log_next.log"
+F2B_RUNNING=0; _v skip "watching: fail2ban down => skip"     health_fail2ban_watching jellyfin; F2B_RUNNING=1
+SVC_HEALTHY=0; _v skip "watching: service not ready => skip" health_fail2ban_watching jellyfin; SVC_HEALTHY=1
 
 # --- dns drift -------------------------------------------------------------
 DOMAIN="example.org"

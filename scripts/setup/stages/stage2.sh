@@ -1410,6 +1410,16 @@ _stage2_install() {
     start_stack
     wait_all_healthy
 
+    # fail2ban only runs on remote-access (proxy-profile) installs, which is a
+    # Stage 2 decision — hence installed here, not in Stage 1 beside the storage
+    # watchdog. Install the log-rotation reload watcher when fail2ban is up; tear
+    # it down otherwise (LAN-only re-run). Gated on ground truth, not a wizard var.
+    if container_running fail2ban; then
+        f2b_install_reload_watcher
+    else
+        f2b_uninstall_reload_watcher || true
+    fi
+
     echo ""
     log_info "Running remote-access auto-configuration..."
     local remote_config_rc=0
@@ -1426,6 +1436,10 @@ _stage2_install() {
     if [[ "${UI_DEMO:-0}" == "1" ]]; then
         (cd "$SCRIPT_DIR" && MEDIASTACK_NPM_ATTEMPT_REMOTE=$attempt_remote ./scripts/configure.sh --only npm,ddns-updater,wireguard) || remote_config_rc=$?
     elif type ui_spin >/dev/null 2>&1; then
+        # configure.sh --only npm runs sudo internally (configure_npm), but it is
+        # wrapped in `bash -c` here so ui_spin's direct-`sudo` prime can't reach it —
+        # warm the credential cache in the foreground first (see scripts/lib/ui.sh).
+        sudo -v 2>/dev/null || true
         ui_spin "$spin_msg" \
             bash -c "cd '$SCRIPT_DIR' && MEDIASTACK_NPM_ATTEMPT_REMOTE=$attempt_remote ./scripts/configure.sh --only npm,ddns-updater,wireguard" || remote_config_rc=$?
     else

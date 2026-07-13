@@ -23,6 +23,7 @@ scripts/
   port-check.sh                     Port forwarding verification (DNS, TCP 80/443/6881, UDP 51820)
   nvidia-repatch.sh                 Re-apply NVENC patch after driver update
   storage-watchdog.sh               NAS mount/sentinel watchdog for managed network storage
+  fail2ban-reload-watcher.sh        Reloads fail2ban on log rotation (new dated file) so jail globs re-resolve (installed by scripts/setup/fail2ban.sh)
   setup/                            Setup modules sourced by setup.sh
     checks.sh                       Prerequisite checks (root, debian, docker, compose, disk)
     packages.sh                     Base package + Docker installation (--full only)

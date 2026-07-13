@@ -61,6 +61,7 @@ source "$SCRIPT_DIR/scripts/lib/validators.sh"
 # --profile set, also used by the installer (scripts/setup/stack.sh).
 source "$SCRIPT_DIR/scripts/lib/profiles.sh"
 source "$SCRIPT_DIR/scripts/setup/storage.sh"
+source "$SCRIPT_DIR/scripts/setup/fail2ban.sh"
 
 # Source .env if it exists, so STAGE_1_COMPLETE / DOMAIN / JELLYFIN_GPU /
 # NVIDIA_DRIVER_MODE / etc. are available. Don't fail if missing — pre-install
@@ -1820,6 +1821,7 @@ submenu_health() {
                 _health_present_spin "Checking fail2ban jails..." health_fail2ban_jails
                 _health_present_spin "Checking fail2ban jellyfin filter (~15s)..." health_fail2ban_regex jellyfin
                 _health_present_spin "Checking fail2ban seerr filter (~15s)..." health_fail2ban_regex seerr
+                _health_present_spin "Checking fail2ban jellyfin log watch..." health_fail2ban_watching jellyfin
                 pause_for_menu ;;
             "TLS certificate"*)
                 _health_prime_sudo

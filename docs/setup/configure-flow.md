@@ -27,7 +27,7 @@ scripts/
 │       └── templates/
 │           └── indexer.json  # legacy static template; variable JSON is rendered with Python/json_body
 └── services/
-    ├── qbittorrent/main.sh + templates/preferences.json
+    ├── qbittorrent/main.sh              # no templates — setPreferences payload built inline via python3 json.dumps
     ├── jackett/main.sh                  # no templates — mostly auth loops, no extractable payloads
     ├── sonarr/main.sh    + templates/download-client.json
     ├── radarr/main.sh    + templates/download-client.json
@@ -89,7 +89,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 **Writes:**
 
-- `POST /api/v2/app/setPreferences` — save path/temp path for managed app wiring, max ratio, connection limits, queueing, `web_ui_auth_subnet_whitelist=172.16.0.0/12`. In manual app wiring, save/temp paths are skipped while auth, port, limits, and subnet whitelist are still applied. The `max_ratio_act` field is hardcoded to `0` (pause) — not taken from `config.yml`. This is the documented value; Sonarr/Radarr's download-client validator rejects any non-pause setting.
+- `POST /api/v2/app/setPreferences` — save path/temp path for managed app wiring, max ratio, connection limits, queueing, `bypass_auth_subnet_whitelist=172.16.0.0/12`. In manual app wiring, save/temp paths are skipped while auth, port, limits, and subnet whitelist are still applied. The `max_ratio_act` field is hardcoded to `0` (pause) — not taken from `config.yml`. This is the documented value; Sonarr/Radarr's download-client validator rejects any non-pause setting.
 - WebUI username/password alignment to `JELLYFIN_ADMIN_USER` + `JELLYFIN_ADMIN_PASSWORD` via `setPreferences`. Uses `python3 json.dumps` for credential values.
 - Categories via `POST /api/v2/torrents/createCategory` per entry in `cfg_qbt_categories`, skipped for manual app wiring. If `editCategory` reports failure, configure.sh fetches categories again and treats the category as successful when the live save path matches config.yml.
 
