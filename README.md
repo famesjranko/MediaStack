@@ -408,6 +408,13 @@ docker compose --profile proxy --profile remote --profile subtitles --profile au
 
 ---
 
+## Contributing
+
+Bug reports, feature ideas, and pull requests are welcome. Start with
+[`CONTRIBUTING.md`](.github/CONTRIBUTING.md).
+
+---
+
 ## License
 
 MediaStack is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE)

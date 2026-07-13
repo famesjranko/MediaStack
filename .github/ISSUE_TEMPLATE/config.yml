@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/famesjranko/MediaStack/security/policy
+    about: Please don't open a public issue for a vulnerability or leaked credential; report it privately instead.
