@@ -45,6 +45,8 @@ The installer detects the GPU, creates the storage layout (local, NAS/NFS, or ma
 
 **Before install**
 
+<img src="docs/assets/mediastack-day1-menu.png" alt="The ./mediastack launcher before install: a boxed status header over an arrow-key menu (Install MediaStack, System readiness check, Test port forwarding)" width="680">
+
 | Menu item | What it does |
 |:----------|:-------------|
 | Install MediaStack | Runs the full installer (`setup.sh`) |
@@ -53,6 +55,8 @@ The installer detects the GPU, creates the storage layout (local, NAS/NFS, or ma
 | Check domain DNS | Verifies that your subdomain A-records resolve to your IP |
 
 **After install: the day-2 menu**
+
+<img src="docs/assets/mediastack-day2-menu.png" alt="The ./mediastack day-2 management menu: a status header (running containers, domain, host, IPs) over the management options" width="680">
 
 This is the main tool once the stack is running. Each item is documented in depth in [`docs/operations/day-2.md`](docs/operations/day-2.md).
 

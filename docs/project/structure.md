@@ -84,6 +84,8 @@ docs/                               Product and project docs (human-facing)
   README.md                         Docs index and reviewer reading order
   assets/                           Docs images and static media
     mediastack-banner.png           README banner
+    mediastack-day1-menu.png        README: pre-install launcher menu (generated)
+    mediastack-day2-menu.png        README: day-2 management menu (generated)
   design/
     architecture.md                 System architecture and service graph
   setup/
