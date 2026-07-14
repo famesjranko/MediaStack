@@ -183,4 +183,28 @@ for s in "${SCENARIOS[@]}"; do
     scenario_end "$s"
 done
 
+# --- Record a preflight pass receipt for the images this run overrode ---
+# When this run applied MS_TEST_IMAGE_OVERRIDES *and* every scenario passed, vouch
+# for the exact image@digest tested under each scenario. scripts/image-drift.py
+# reads this to refuse accepting an untested digest into the lock. Local-only and
+# gitignored; append + dedup so a maintainer's separate per-scenario runs (e.g.
+# fresh-install then autoheal) accumulate. Tag-only overrides carry no digest to
+# vouch for, so they are skipped. Parse the env directly (dind_override_images
+# validated every pair and aborted the run above on a bad one; its own
+# .image-override-applied record lives inside the DinD copy, not on the host).
+if [[ "${FAIL_COUNT:-0}" -eq 0 && -n "$MS_TEST_IMAGE_OVERRIDES" ]]; then
+    for _ovr in $(echo "$MS_TEST_IMAGE_OVERRIDES" | tr ',' ' '); do
+        _rsvc="${_ovr%%=*}"; _rref="${_ovr#*=}"
+        [[ -n "$_rsvc" && "$_rref" == *"@sha256:"* ]] || continue
+        _rimg="${_rref%@*}"; _rdig="${_rref##*@}"
+        for _rscn in "${SCENARIOS[@]}"; do
+            _rrow="${_rsvc}"$'\t'"${_rimg}"$'\t'"${_rdig}"$'\t'"${_rscn}"
+            if [[ ! -f tests/.image-preflight-passed.tsv ]] \
+               || ! grep -qxF "$_rrow" tests/.image-preflight-passed.tsv; then
+                printf '%s\n' "$_rrow" >>tests/.image-preflight-passed.tsv
+            fi
+        done
+    done
+fi
+
 # summary + exit handled by trap

@@ -59,6 +59,20 @@ plus `fresh-install` where relevant — note `fresh-install` does **not** start 
 (wireguard) or `subtitles` (bazarr) profiles, so those use dedicated scenarios. Services marked
 `compose-only` / `manual` have no automated oracle — verify by hand.
 
+**What a green `fresh-install` preflight proves — and what it does not.** It boots the full
+default-profile stack, runs the real `scripts/configure.sh` (which must exit 0), and reads back each
+service's live API to assert the resulting configuration matches `config.yml`/`.env`. So it is a deep
+test of the **configurator's write/read contract** against the candidate image — the drift class that
+bites most often (an image whose API schema shifts breaks `configure.sh` or a shape assertion). It
+also exercises a few live integration paths: qBittorrent WebUI login, Jackett per-indexer `t=caps`,
+and an arr→qBittorrent `downloadclient/testall` connect (proves Sonarr/Radarr actually authenticate
+to the download client, not just that the client object is shaped right). It does **not** exercise the
+media pipeline end to end: no release search, grab, import, rename, Jellyfin media scan, or VPN
+routing. Those depend on live trackers and real downloads and are non-deterministic in hermetic DinD,
+so they are deliberately excluded — a flaky preflight maintainers learn to ignore is worse than an
+honest, narrower one. Read a green preflight as *"boots + configures + connects to its download
+client"*, not *"every user workflow works"*.
+
 **fail2ban filters are re-verified when you preflight jellyfin or seerr.** Both are
 `scenario:fresh-install`, and `fresh-install.sh` runs `assert_fail2ban_configured`, which
 active-probes a real auth failure and confirms that service's fail2ban filter still matches the
@@ -107,6 +121,14 @@ step:
 ```bash
 python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
 ```
+
+**Accept is receipt-gated.** A passing `./tests/run.sh` that applied `MS_TEST_IMAGE_OVERRIDES` records
+what it tested to the gitignored `tests/.image-preflight-passed.tsv`. `--accept-services` /
+`--accept-current` then refuse to write a drifted digest into the lock unless that receipt vouches for
+the exact `image@digest` under the service's manifest scenario — so a digest cannot enter the tested
+baseline without a local preflight that actually pulled it and passed. Tiers with no scenario oracle
+(`compose-only` / `manual`) warn instead of block; `--no-verify-preflight` overrides the gate for a
+hand-verified accept.
 
 Stable-channel users receive newly accepted digests after updating the repo and running
 `./scripts/update.sh`. Latest-channel users may already be running the moved upstream digest.

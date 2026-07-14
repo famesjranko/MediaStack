@@ -38,6 +38,28 @@ print("ok" if rc is True and rf is True else f"completed={rc} failed={rf}")' 2>/
         && pass "step 3 Sonarr: download client cleanup enabled" \
         || fail "step 3 Sonarr: download client cleanup enabled" "$sonarr_dc_cleanup"
 
+    # Live test-connection: prove Sonarr can actually authenticate to and reach the
+    # qBittorrent container, not merely that the client object is shaped right. Both
+    # run inside the DinD stack, so this is hermetic (unlike a live-tracker search,
+    # which is deliberately out of scope). Catches an upstream image change that keeps
+    # the config API stable but breaks the runtime arr->download-client contract.
+    local sonarr_dc_test
+    sonarr_dc_test=$(dind_exec "curl -sf -X POST -H 'X-Api-Key: $SONARR_KEY' -H 'Content-Type: application/json' -d '{}' $sonarr_base/downloadclient/testall" \
+        | python3 -c "
+import sys, json
+try: results = json.load(sys.stdin)
+except Exception: results = []
+if not results:
+    print('empty')
+else:
+    bad = [str(r.get('id')) for r in results if not r.get('isValid')]
+    print('ok' if not bad else 'invalid:' + ','.join(bad))" 2>/dev/null)
+    case "$sonarr_dc_test" in
+        ok)     pass "step 3 Sonarr: download client reachable (testall connects to qBittorrent)" ;;
+        empty)  fail "step 3 Sonarr: download client test-connection" "testall returned no results" ;;
+        *)      fail "step 3 Sonarr: download client test-connection" "$sonarr_dc_test" ;;
+    esac
+
     local sonarr_qp_id sonarr_qp_check
     sonarr_qp_id=$(echo "$sonarr_qp" | python3 -c "
 import sys,json

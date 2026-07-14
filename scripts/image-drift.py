@@ -99,6 +99,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--preflight-receipt",
+        default="tests/.image-preflight-passed.tsv",
+        metavar="PATH",
+        help=(
+            "Local preflight pass-receipt written by tests/run.sh (service<TAB>image<TAB>"
+            "digest<TAB>scenario). An accept refuses a drifted digest unless PATH vouches "
+            "for it under the service's manifest scenario. Gitignored; absent in CI."
+        ),
+    )
+    parser.add_argument(
+        "--no-verify-preflight",
+        action="store_true",
+        help=(
+            "Skip the preflight-receipt gate on --accept-services/--accept-current "
+            "(e.g. a compose-only/manual tier verified by hand). Warns loudly."
+        ),
+    )
+    parser.add_argument(
         "--status",
         action="store_true",
         help="Print a per-service update status table (user-facing) and exit",
@@ -472,6 +490,112 @@ def merge_selective(
         current_by_service[row.service] if row.service in selected else row
         for row in previous
     ]
+
+
+def read_pass_receipts(path: pathlib.Path | None) -> dict[str, set[tuple[str, str, str]]]:
+    """Load the local preflight pass-receipts written by tests/run.sh.
+
+    Each row is ``service<TAB>image<TAB>digest<TAB>scenario``, appended by a
+    ``./tests/run.sh`` invocation that applied ``MS_TEST_IMAGE_OVERRIDES`` and had
+    every scenario pass. Returns service -> set of ``(image, digest, scenario)``
+    that passed. A missing file is empty (nothing vouched for, so accept fails
+    closed). Malformed rows are skipped rather than aborting an accept — a dropped
+    row just reads as "no receipt", the safe direction.
+    """
+    receipts: dict[str, set[tuple[str, str, str]]] = {}
+    if path is None or not path.exists():
+        return receipts
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) != 4:
+            continue
+        service, image, digest, scenario = parts
+        receipts.setdefault(service, set()).add((image, digest, scenario))
+    return receipts
+
+
+def _digest_changed(previous_row: ImageDigest | None, current_row: ImageDigest | None) -> bool:
+    """True when current_row is a digest/image entering the lock (new or drifted)."""
+    if current_row is None:
+        return False
+    if previous_row is None:
+        return True
+    return previous_row.image != current_row.image or previous_row.digest != current_row.digest
+
+
+def verify_preflight_receipts(
+    services: set[str],
+    previous: list[ImageDigest],
+    current: list[ImageDigest],
+    receipts: dict[str, set[tuple[str, str, str]]],
+    no_verify: bool = False,
+) -> None:
+    """Refuse to accept a drifted digest with no passing local preflight receipt.
+
+    Only services whose ``(image, digest)`` actually differs from the lock are
+    gated — restamped/unchanged rows write nothing new, so they need no receipt.
+    For a service whose manifest preflight token is ``scenario:X`` (which every
+    service currently uses), require a receipt ``(image, digest, X)``: proof that
+    ``./tests/run.sh X`` pulled that exact digest and passed. The three recognized
+    non-scenario tiers (``compose-only``/``manual``/``unit:`` — schema-valid but
+    unused today) can't produce a run.sh receipt, so they warn rather than block.
+    Any *other* token — including an empty one, which means the service is absent
+    from the upgrades manifest — is not a recognized oracle and blocks fail-closed
+    rather than degrading to a warning (else an added, unmanifested service would
+    slip an untested digest into the lock). ``no_verify`` skips the gate with a loud
+    warning. Raises SystemExit (exit 1) listing every unproven service — the same
+    fail-closed idiom as resolve_accept_services.
+    """
+    previous_by_service = {row.service: row for row in previous}
+    current_by_service = {row.service: row for row in current}
+    changed = sorted(
+        name
+        for name in services
+        if _digest_changed(previous_by_service.get(name), current_by_service.get(name))
+    )
+
+    if no_verify:
+        if changed:
+            print(
+                "WARNING: --no-verify-preflight — accepting image drift without a passing "
+                "local preflight receipt: " + ", ".join(changed),
+                file=sys.stderr,
+            )
+        return
+
+    missing: list[str] = []
+    for name in changed:
+        current_row = current_by_service[name]
+        token = current_row.preflight or ""
+        if token.startswith("scenario:"):
+            scenario = token.split(":", 1)[1]
+            if (current_row.image, current_row.digest, scenario) not in receipts.get(name, set()):
+                missing.append(
+                    f"  {name}: no passing preflight receipt for {current_row.image}@{current_row.digest}\n"
+                    f'    run: MS_TEST_IMAGE_OVERRIDES="{name}={current_row.image}@{current_row.digest}" ./tests/run.sh {scenario}'
+                )
+        elif token.startswith("unit:") or token in ("compose-only", "manual"):
+            print(
+                f"WARNING: {name}: preflight tier '{token}' has no automated "
+                "receipt; accepting on maintainer review.",
+                file=sys.stderr,
+            )
+        else:
+            missing.append(
+                f"  {name}: preflight tier '{token or 'unknown'}' is not a recognized oracle "
+                "(expected scenario:/unit:/compose-only/manual); accept cannot vouch for "
+                f"{current_row.image}@{current_row.digest} — check the service's upgrades-manifest row"
+            )
+    if missing:
+        raise SystemExit(
+            "refusing to accept untested image drift (no passing local preflight receipt):\n"
+            + "\n".join(missing)
+            + "\n\nRun the preflight(s) above, then re-run accept. To override a tier with no "
+            "scenario oracle that you verified by hand, pass --no-verify-preflight."
+        )
 
 
 def preflight_command(row: ImageDigest) -> str:
@@ -944,6 +1068,17 @@ def main() -> int:
             )
             return 1
         if current_path:
+            # No previous baseline means every row is new, so there is nothing to
+            # diff a receipt against — the preflight gate can't run here. Say so
+            # loudly rather than record an unverified baseline silently; the honest
+            # bootstrap acknowledges it by passing --no-verify-preflight.
+            if not args.no_verify_preflight:
+                print(
+                    "WARNING: recording a fresh baseline with no prior lock to gate against — "
+                    "digests are unverified by the preflight receipt gate. Confirm each was "
+                    "preflighted, or pass --no-verify-preflight to vouch for them by hand.",
+                    file=sys.stderr,
+                )
             write_tsv(current_path, current)
         print("No previous image digest baseline found; current digests recorded as baseline.")
         summary = markdown_summary([], [], [])
@@ -957,6 +1092,15 @@ def main() -> int:
         # Selective accept resolves and writes the merged lock here, then returns
         # before the full-snapshot write below, so it never clobbers the merge.
         selected = resolve_accept_services(args.accept_services, previous, current, added, removed)
+        # Gate: refuse any selected digest lacking a passing local preflight receipt
+        # (raises before the write below, so a blocked accept never touches the lock).
+        verify_preflight_receipts(
+            selected,
+            previous,
+            current,
+            read_pass_receipts(pathlib.Path(args.preflight_receipt)),
+            no_verify=args.no_verify_preflight,
+        )
         merged = merge_selective(previous, current, selected)
         write_tsv(current_path, merged)
         print(
@@ -969,7 +1113,30 @@ def main() -> int:
             print("Drifted services left pending: " + ", ".join(pending) + ".")
         return 0
 
+    # A full --accept-current write happens at `write_tsv(current_path, current)`
+    # below, so gate it here first — a blocked accept must raise before the lock is
+    # overwritten. Only added/drifted rows are checked; unchanged restamps are free.
+    if args.accept_current and (added or changed or removed):
+        verify_preflight_receipts(
+            {row.service for row in added} | {curr.service for _, curr in changed},
+            previous,
+            current,
+            read_pass_receipts(pathlib.Path(args.preflight_receipt)),
+            no_verify=args.no_verify_preflight,
+        )
+
     if current_path:
+        # --write-current names an output lock. accept_services has already returned
+        # above, so --accept-current is the only accept that legitimately writes here;
+        # writing the drifted snapshot into an existing lock with neither accept flag
+        # would slip image drift past the receipt gate (ADR-52). Refuse that, while
+        # still allowing a no-drift restamp write.
+        if (added or changed or removed) and not args.accept_current:
+            raise SystemExit(
+                "refusing to write image drift to --write-current without an accept flag "
+                "(--accept-current/--accept-services are receipt-gated); omit --write-current to "
+                "only report drift."
+            )
         write_tsv(current_path, current)
     summary = markdown_summary(added, changed, removed)
     print(summary)

@@ -3,15 +3,15 @@
 service	image	digest	tested_at_utc	preflight
 jellyfin	jellyfin/jellyfin:latest	sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db	2026-06-08T07:15:51Z	scenario:fresh-install
 sonarr	linuxserver/sonarr:latest	sha256:4b025354d338999e03bf6dbdadcdde94815d39d4a5aba5de3cdc86a56d7d6c51	2026-07-12T00:37:59Z	scenario:fresh-install
-radarr	linuxserver/radarr:latest	sha256:28852d0eacababc206762af48fe86d78594a4f434cc46b358f9764a857098662	2026-07-12T00:37:59Z	scenario:fresh-install
-jackett	linuxserver/jackett:latest	sha256:cfb83d8fbb9942bcddc3024be1576030f45f7b229800f661221c598370d5800d	2026-07-12T00:37:59Z	scenario:fresh-install
-qbittorrent	linuxserver/qbittorrent:latest	sha256:2e074403c7b72e6d89cee3d0d41a47f7b5708c6a9e5316f3958c90765cbe12ce	2026-07-12T00:37:59Z	scenario:fresh-install
+radarr	linuxserver/radarr:latest	sha256:2b2c1c05eb3f648d2c80dfab9486147dd7bb0ad4d77fa972fc1c5de8f1da3738	2026-07-14T03:21:20Z	scenario:fresh-install
+jackett	linuxserver/jackett:latest	sha256:49005ea618773b2ef90d73c359c8b616d406163a170c747259d052456d054bd5	2026-07-14T03:21:20Z	scenario:fresh-install
+qbittorrent	linuxserver/qbittorrent:latest	sha256:352371a7242e8b4aa10958ca02076d1023758070519b89a10251475fb9f1a35a	2026-07-14T03:21:20Z	scenario:fresh-install
 flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47	2026-06-01T06:49:06Z	scenario:fresh-install
 seerr	ghcr.io/seerr-team/seerr:latest	sha256:c92d2dc117f62185e7bcb88cd56efd374ea79210eaf433275449e8d5988eb5a8	2026-06-11T16:38:18Z	scenario:fresh-install
 unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:9dd75b959e2574ed03c75776e25ed1e05109955903dbd3726796b071f8c6531e	2026-07-12T00:37:59Z	scenario:unpackerr
 bazarr	linuxserver/bazarr:latest	sha256:5d916d07404296ec35ee726e13e0e558f05952724cf494a7f009d913fb2b12f3	2026-07-04T20:04:46Z	scenario:bazarr
 homepage	ghcr.io/gethomepage/homepage:latest	sha256:a0b71c8e757298d02560186bab9fbe3fc2d375c523a62cc1019177b37e48aa28	2026-06-22T12:58:26Z	scenario:fresh-install
-portainer	portainer/portainer-ce:latest	sha256:5f9b4bda5582fc72c07d730f86168205f4042d82c9cde011c9146b12496e4625	2026-07-04T20:04:46Z	scenario:fresh-install
+portainer	portainer/portainer-ce:latest	sha256:f6bc23d1695530a609563fd65c180aaafec0fc02e019d5fc63d16b6fbe83addd	2026-07-14T05:14:33Z	scenario:fresh-install
 npm	jc21/nginx-proxy-manager:2	sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb	2026-06-08T07:15:51Z	scenario:npm-heal
 fail2ban	crazymax/fail2ban:latest	sha256:7cd8a427a44675397398a8dace2a3d755e62c72527f8730e4fd37697731a9321	2026-06-01T06:49:06Z	scenario:fail2ban-drift
 ddns-updater	qmcgaw/ddns-updater:latest	sha256:9313e1c31f366c89dc0819e5eff85576cb23821424c0c267fa66cfa39aabde83	2026-06-01T06:49:06Z	scenario:ddns-verify
@@ -19,4 +19,4 @@ uptime-kuma	louislam/uptime-kuma:2	sha256:91e963bfda569ba115206e843febb446f473ab
 beszel	henrygd/beszel:latest	sha256:a849ad80814b6a1a3be665304dcace5d4854b3bed7bde4dd1227e8ce1b82d477	2026-06-01T06:49:06Z	scenario:fresh-install
 beszel-agent	henrygd/beszel-agent:alpine	sha256:c6e925e00784b90eab68e2b813e4c722cf185f378d77e1129a97c064ca5fa7e4	2026-06-01T06:49:06Z	scenario:fresh-install
 wireguard	ghcr.io/wg-easy/wg-easy:15	sha256:93bbd593e07bab98d02807a28770ac87ab6c48818e319e68c1f66561feb99876	2026-06-01T06:49:06Z	scenario:wireguard
-autoheal	willfarrell/autoheal:latest	sha256:0b973869d2b60c2281f11b2360879104cfaa6fc30cd8d63789b99d4f3934c91c	2026-07-12T00:37:59Z	scenario:autoheal
+autoheal	willfarrell/autoheal:latest	sha256:f589bb9739fafd3d44c5e1ee8c11ac2b62b980e28608d80ce234195315fc0a09	2026-07-14T03:21:20Z	scenario:autoheal

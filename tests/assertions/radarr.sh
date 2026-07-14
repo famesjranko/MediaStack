@@ -36,6 +36,28 @@ print("ok" if rc is True and rf is True else f"completed={rc} failed={rf}")' 2>/
     [[ "$radarr_dc_cleanup" == "ok" ]] \
         && pass "step 4 Radarr: download client cleanup enabled" \
         || fail "step 4 Radarr: download client cleanup enabled" "$radarr_dc_cleanup"
+
+    # Live test-connection: prove Radarr can actually authenticate to and reach the
+    # qBittorrent container, not merely that the client object is shaped right. Both
+    # run inside the DinD stack, so this is hermetic (unlike a live-tracker search,
+    # which is deliberately out of scope). Catches an upstream image change that keeps
+    # the config API stable but breaks the runtime arr->download-client contract.
+    local radarr_dc_test
+    radarr_dc_test=$(dind_exec "curl -sf -X POST -H 'X-Api-Key: $RADARR_KEY' -H 'Content-Type: application/json' -d '{}' $radarr_base/downloadclient/testall" \
+        | python3 -c "
+import sys, json
+try: results = json.load(sys.stdin)
+except Exception: results = []
+if not results:
+    print('empty')
+else:
+    bad = [str(r.get('id')) for r in results if not r.get('isValid')]
+    print('ok' if not bad else 'invalid:' + ','.join(bad))" 2>/dev/null)
+    case "$radarr_dc_test" in
+        ok)     pass "step 4 Radarr: download client reachable (testall connects to qBittorrent)" ;;
+        empty)  fail "step 4 Radarr: download client test-connection" "testall returned no results" ;;
+        *)      fail "step 4 Radarr: download client test-connection" "$radarr_dc_test" ;;
+    esac
     local radarr_qp_id radarr_qp_check
     radarr_qp_id=$(echo "$radarr_qp" | python3 -c "
 import sys,json
