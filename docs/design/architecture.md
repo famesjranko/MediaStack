@@ -116,7 +116,7 @@ Two depends_on styles are in use:
       │                     │  
       ▼                     ▼
   ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-  │   jellyfin    │  │  seerr   │  │   homepage    │  │   portainer   │  │  uptime-kuma  │
+  │   jellyfin    │  │    seerr      │  │   homepage    │  │   portainer   │  │  uptime-kuma  │
   │    :8096      │  │    :5055      │  │    :3000      │  │    :9000      │  │    :3001      │
   └──────┬────────┘  └──────┬────────┘  └───────────────┘  │  distroless   │  │  monitors all │
          │ scans media      │ request                      └───────────────┘  └───────────────┘
