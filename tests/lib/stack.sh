@@ -168,12 +168,24 @@ services:
 EOF'
 }
 
+# Ensure an image is present in DinD, retrying a cold pull; inspect-first so a
+# registry blip can't fail a scenario whose image is already cached (GHCR/pebble).
+dind_pull_retry() {  # <image>
+    local img="$1" attempt
+    for attempt in 1 2 3; do
+        dind_exec "docker image inspect $img >/dev/null 2>&1 || docker pull $img >/dev/null 2>&1" && return 0
+        (( attempt < 3 )) && sleep $(( attempt * 5 ))
+    done
+    return 1
+}
+
 # Launch Pebble + challtestsrv inside DinD on the mediastack network.
 # Pebble validates HTTP-01 challenges; its default httpPort is 5002 but NPM
 # listens on 80, so we mount a custom config overriding httpPort to 80.
 pebble_up() {
     echo -e "${BLUE}[pebble]${NC} starting pebble-challtestsrv"
-    dind_exec 'docker pull ghcr.io/letsencrypt/pebble-challtestsrv >/dev/null 2>&1'
+    dind_pull_retry ghcr.io/letsencrypt/pebble-challtestsrv \
+        || { echo -e "${BLUE}[pebble]${NC} challtestsrv image pull failed after retries"; return 1; }
     dind_exec 'docker run -d --name pebble-challtestsrv --network mediastack \
         ghcr.io/letsencrypt/pebble-challtestsrv >/dev/null'
 
@@ -191,7 +203,8 @@ pebble_up() {
     fi
 
     echo -e "${BLUE}[pebble]${NC} starting pebble"
-    dind_exec 'docker pull ghcr.io/letsencrypt/pebble >/dev/null 2>&1'
+    dind_pull_retry ghcr.io/letsencrypt/pebble \
+        || { echo -e "${BLUE}[pebble]${NC} pebble image pull failed after retries"; return 1; }
     dind_exec 'cat > /tmp/pebble-config.json <<PEBBLECFG
 {
   "pebble": {

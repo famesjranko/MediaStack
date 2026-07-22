@@ -31,7 +31,7 @@ remote_after_skip_seed_env() {
 
 remote_after_skip_prepare_public_route_user() {
     if ! dind_exec "id -u mstest >/dev/null 2>&1"; then
-        dind_exec "apt-get update >/dev/null && apt-get install -y -qq sudo >/dev/null"
+        dind_exec "apt-get -o Acquire::Retries=3 update >/dev/null && apt-get -o Acquire::Retries=3 install -y -qq sudo >/dev/null"
         dind_exec "useradd -m -s /bin/bash -G docker mstest"
         dind_exec "printf 'mstest ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/90-mediastack-mstest && chmod 440 /etc/sudoers.d/90-mediastack-mstest"
     fi
