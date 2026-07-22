@@ -181,8 +181,9 @@ check_internet_reachability() {
     # PRE-03: hard-fail when Docker Hub is unreachable. Let's Encrypt is
     # remote-access-only, so Stage 1 LAN setup warns but continues; Stage 2
     # performs the real certificate attempt and classifies failures.
-    # Single 5s timeout each (D-10..D-13).
-    # HEAD over GET (-I) — lighter and sufficient. No retry loop (D-13).
+    # 5s per attempt, up to 3 tries so one transient blip (a slow HEAD ->
+    # curl 28) does not abort setup (ADR-53).
+    # HEAD over GET (-I) — lighter and sufficient.
     #
     # CR-02 fix: use `cmd || rc=$?` (single-statement capture) so a
     # failed curl does NOT trip `set -e` before rc is read. The pattern
@@ -198,7 +199,7 @@ check_internet_reachability() {
     fi
 
     local rc=0
-    curl --max-time 5 -fsSI https://hub.docker.com >/dev/null 2>&1 || rc=$?
+    curl --max-time 5 --retry 2 --retry-connrefused --retry-all-errors -fsSI https://hub.docker.com >/dev/null 2>&1 || rc=$?
     if (( rc != 0 )); then
         log_error "Pre-flight: Docker Hub unreachable (${rc}). Check your internet, retry."
         exit 1
@@ -206,7 +207,7 @@ check_internet_reachability() {
     log_ok "Internet reachability: Docker Hub"
 
     rc=0
-    curl --max-time 5 -fsSI https://acme-v02.api.letsencrypt.org/directory >/dev/null 2>&1 || rc=$?
+    curl --max-time 5 --retry 2 --retry-connrefused --retry-all-errors -fsSI https://acme-v02.api.letsencrypt.org/directory >/dev/null 2>&1 || rc=$?
     if (( rc != 0 )); then
         log_warn "Pre-flight: Let's Encrypt unreachable (${rc}). LAN setup can continue; Stage 2 remote access will verify certificates when selected."
         return 0

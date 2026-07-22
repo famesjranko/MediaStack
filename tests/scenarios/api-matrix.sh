@@ -81,10 +81,27 @@ run_scenario() {
     # ------------------------------------------------------------------
     # 1. Bring up only the API-bearing services required by the loaded modules.
     # ------------------------------------------------------------------
-    dind_exec "docker compose up -d sonarr radarr qbittorrent jackett jellyfin seerr"
-    [[ $? -eq 0 ]] && pass "api-matrix: compose up sonarr radarr qbittorrent jackett jellyfin seerr" || fail "api-matrix: compose up sonarr radarr qbittorrent jackett jellyfin seerr"
+    # `up`'s implicit pull has no retry — a transient registry EOF fails all six
+    # services, burning six 360s health waits. Pull first with retry; fail-fast.
+    local api_svcs="sonarr radarr qbittorrent jackett jellyfin seerr"
+    local pull_ok=0 attempt
+    for attempt in 1 2 3; do
+        dind_exec "docker compose pull --policy missing $api_svcs" && { pull_ok=1; break; }
+        (( attempt < 3 )) && sleep $(( attempt * 5 ))
+    done
+    if (( ! pull_ok )); then
+        fail "api-matrix: compose pull $api_svcs" "registry unreachable after 3 attempts"
+        return 1
+    fi
 
-    for svc in sonarr radarr qbittorrent jackett jellyfin seerr; do
+    if dind_exec "docker compose up -d $api_svcs"; then
+        pass "api-matrix: compose up $api_svcs"
+    else
+        fail "api-matrix: compose up $api_svcs"
+        return 1
+    fi
+
+    for svc in $api_svcs; do
         wait_healthy "$svc" 360 \
             && pass "api-matrix: $svc healthy" \
             || fail "api-matrix: $svc healthy"

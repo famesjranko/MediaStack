@@ -13,6 +13,8 @@
 #   3. python bytecode — py_compile over every tracked *.py
 #   4. compose render  — docker compose config across the profile combinations
 #   5. host unit tests — every tests/unit/*.sh, each under a 300s timeout
+#   6. publish guards  — scripts/dev/sync-public-selftest.sh (needs ripgrep;
+#                        skipped, not failed, when rg is absent)
 #
 # Needs the docker CLI: tier 4 renders the compose file, and tier 2 runs the
 # pinned linter as a docker image (via tests/lint.sh). It starts no service
@@ -137,5 +139,27 @@ for f in tests/unit/*.sh; do
         fail=1
     fi
 done
+
+# --- 6. sync-public publish guards -------------------------------------------
+# Skip-not-fail when rg is absent: a clean dev box may lack it (CI installs it).
+# The -x gate matters too — the public mirror strips scripts/dev/ but runs this
+# same unit.sh with rg, so without it tier 6 would hit the absent selftest
+# (rc 127) and redden public CI (#334).
+group "sync-public guards"
+if command -v rg >/dev/null 2>&1 && [[ -x scripts/dev/sync-public-selftest.sh ]]; then
+    timeout 300 scripts/dev/sync-public-selftest.sh
+    rc=$?
+    if (( rc != 0 )); then
+        if (( rc == 124 )); then
+            err "sync-public selftest timed out" "exceeded 300s — likely a hang"
+        else
+            err "sync-public selftest failed" "scripts/dev/sync-public-selftest.sh"
+        fi
+        fail=1
+    fi
+else
+    echo "SKIP: sync-public selftest (needs ripgrep + scripts/dev/, absent here)"
+fi
+endgroup
 
 exit "$fail"
