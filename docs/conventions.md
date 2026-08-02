@@ -14,10 +14,13 @@ header is the source of truth for the tier and single-stage selector names —
 read [`../tests/check.sh`](../tests/check.sh) rather than a list copied here.
 
 ```
-./tests/check.sh fast       # image-free edit loop, no Docker
+./tests/check.sh fast       # edit loop; no DinD or service containers
 ./tests/check.sh            # default tier: the local equivalent of the PR gate
 ./tests/check.sh <selector> # exactly one stage
 ```
+
+The fast tier uses Docker for pinned ShellCheck unless ShellCheck `0.11.0` is
+installed natively. It does not start DinD or product service containers.
 
 CI's required-status-check names are the job names in
 [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml); the full test

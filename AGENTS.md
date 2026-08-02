@@ -36,7 +36,7 @@ Compose. Every design choice serves zero-friction setup and low maintenance.
 ## Before you claim you are done
 
 ```
-./tests/check.sh fast     # image-free: shellcheck, shfmt, ruff, mypy, secrets
+./tests/check.sh fast     # edit loop; ShellCheck may use Docker
 ./tests/check.sh          # default tier — the local equivalent of the CI gate
 ```
 

@@ -117,8 +117,8 @@ docs/                               Product and project docs (human-facing)
   conventions.md                    Commands, placement, enforcement, and contribution rules
   assets/                           Docs images and static media
     mediastack-banner.png           README banner
-    mediastack-day1-menu.png        README: pre-install launcher menu (generated)
-    mediastack-day2-menu.png        README: day-2 management menu (generated)
+    mediastack-day1-menu.png        README: pre-install launcher menu (manual snapshot)
+    mediastack-day2-menu.png        README: day-2 management menu (manual snapshot)
   design/
     architecture.md                 System architecture and service graph
   decisions/                        Decision records (slug-named; shape + index checked by tests/unit/docs.sh)

@@ -6,8 +6,8 @@
 #
 # Usage:
 #   ./tests/check.sh          # default tier
-#   ./tests/check.sh fast     # image-free edit-loop checks: shellcheck, shfmt,
-#                              # ruff, mypy, secrets. No Docker.
+#   ./tests/check.sh fast     # edit-loop checks: shellcheck, shfmt, ruff, mypy,
+#                              # secrets. No DinD or service containers.
 #   ./tests/check.sh full     # everything, including the complete DinD battery.
 #   ./tests/check.sh lint     # single stage: shellcheck sweep only.
 #   ./tests/check.sh shfmt    # single stage: shell formatting only.
@@ -23,8 +23,9 @@
 # Tiers are cumulative and cost-ordered:
 #   fast    - lint (tests/lint.sh), shell formatting (tests/format.sh), python
 #             lint + format (ruff), python types (mypy) and the secret scan
-#             over the working tree (tests/secret-scan.sh). Runnable in an edit
-#             loop: no Docker. The history scan is a separate stage, not a tier.
+#             over the working tree (tests/secret-scan.sh). It starts no DinD
+#             or service containers; ShellCheck uses Docker unless the pinned
+#             native version is installed. History is a separate selector.
 #   default - fast + tests/unit.sh (adds compose render, host unit tests,
 #             shell syntax and Python bytecode) + the image-free
 #             wizard-ui scenarios (tests/ci-scenarios.sh via tests/run.sh).

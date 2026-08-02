@@ -19,16 +19,15 @@ the repository's only long-lived branch.
 
 ## Running the checks
 
-The whole host test tier runs in one shot, and is the exact gate CI runs on
-every pull request:
+The default check is the local equivalent of the full pull-request gate:
 
 ```
-./tests/unit.sh    # shell syntax, shellcheck, py_compile, compose render, and every tests/unit/*.sh
+./tests/check.sh
 ```
 
-`tests/unit.sh` needs the Docker CLI (for the compose render and the pinned
-shellcheck image). Without Docker, you can still run the individual pure-bash
-unit tests directly:
+It includes formatting, lint, type, secret, compose, host-unit, and image-free
+wizard checks. It needs Docker. Without Docker, you can still run relevant
+individual pure-bash units directly, but that is not the complete PR gate:
 
 ```
 ./tests/unit/gpu-branching.sh
@@ -43,8 +42,8 @@ WAN firewall) are explicit operator-run checks and never run in CI.
 Before opening a pull request:
 
 1. Run `bash -n` on changed shell scripts.
-2. Run `./tests/unit.sh` (or the relevant `tests/unit/*.sh` if you cannot run Docker).
-3. Confirm compose still validates; `./tests/unit.sh` renders it with a generated `.env`.
+2. Run `./tests/check.sh` (or clearly state which narrower checks you could run).
+3. Confirm compose still validates; the default check renders it with `.env.example`.
 4. Update docs when commands, service behavior, config keys, or test surfaces change.
 
 Public tracker/indexer changes must stay opt-in and must not make legal

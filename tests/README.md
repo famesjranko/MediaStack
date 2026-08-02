@@ -484,10 +484,10 @@ Not every test needs DinD. Pure-bash units — function-level checks that can ru
 ./tests/unit/gpu-branching.sh
 ```
 
-`./tests/unit.sh` runs the whole host tier in one shot — static validation (shell syntax, shellcheck, `py_compile`, compose render) **plus** every `tests/unit/*.sh` below — and is the exact tier CI's PR check runs. Mirroring `tests/lint.sh`, it is the single source of truth invoked identically by developers, agents, and CI. Unlike the individual units it needs the docker CLI (compose render + the pinned shellcheck image), so it is not a "no Docker" runner.
+`./tests/unit.sh` runs the whole host-unit tier in one shot — static validation (shell syntax, shellcheck, `py_compile`, compose render) **plus** every `tests/unit/*.sh` below. It is one stage of the PR gate, whose full local equivalent is `./tests/check.sh`. Mirroring `tests/lint.sh`, the host-unit runner is invoked identically by developers, agents, and CI. Unlike the individual units it needs the Docker CLI (compose render + the pinned ShellCheck image unless version 0.11.0 is installed natively).
 
 ```bash
-./tests/unit.sh        # static validation + every unit test (what CI runs)
+./tests/unit.sh        # static validation + every host unit
 ```
 
 Current units:
@@ -723,9 +723,10 @@ does not reimplement their file discovery or logic:
 
 - **fast** — `./tests/lint.sh --severity=warning` (shellcheck), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
-  pinned gitleaks over this repository's tree and full history — all five from
-  `tools.toml`. Image-free, no Docker; the pinned tools need network on a cold tool
-  cache.
+  pinned gitleaks over this repository's tree — all five from `tools.toml`. It starts
+  no DinD or service containers; ShellCheck uses Docker unless version 0.11.0 is
+  installed natively. The pinned tools need network on a cold tool cache. History is
+  the separate `./tests/check.sh secrets-history` pre-push selector.
 - **default** (`fast` plus) — the gate GitHub Actions runs on push to `main` and on
   every pull request (`.github/workflows/ci.yml`): `./tests/unit.sh` (shell syntax,
   shellcheck, `py_compile`, compose render, every host unit) and the image-free
