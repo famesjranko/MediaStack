@@ -26,7 +26,7 @@
 #             over the working tree (tests/secret-scan.sh). Runnable in an edit
 #             loop: no Docker. The history scan is a separate stage, not a tier.
 #   default - fast + tests/unit.sh (adds compose render, host unit tests,
-#             shell syntax, python bytecode, publish guards) + the image-free
+#             shell syntax and Python bytecode) + the image-free
 #             wizard-ui scenarios (tests/ci-scenarios.sh via tests/run.sh).
 #             This is the PR gate's local equivalent.
 #   full    - default + tests/battery.sh (the complete DinD scenario battery).
@@ -206,7 +206,7 @@ if [[ -n "$STAGE" ]]; then
                 secret_scan_history_gate
             ;;
         unit)
-            stage unit "unit: tests/unit.sh (compose, host units, syntax, bytecode, publish guards)" \
+            stage unit "unit: tests/unit.sh (compose, host units, syntax, bytecode)" \
                 "bash tests/unit.sh" bash tests/unit.sh
             ;;
         wizard)
@@ -233,7 +233,7 @@ stage fast "secrets: gitleaks tree" \
     secret_scan_gate
 [[ "$TIER" == "fast" ]] && exit 0
 
-stage default "unit: tests/unit.sh (compose, host units, syntax, bytecode, publish guards)" \
+stage default "unit: tests/unit.sh (compose, host units, syntax, bytecode)" \
     "bash tests/unit.sh" bash tests/unit.sh
 stage default "wizard: image-free scenarios" \
     'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $(bash tests/ci-scenarios.sh)' \

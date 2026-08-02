@@ -160,9 +160,10 @@ command() {
     fi
     builtin command "$@"
 }
+sudo() { return 1; }
 state=$(check_secure_boot)
 assert_eq "unavailable" "$state" "check_secure_boot: mokutil absent"
-unset -f command
+unset -f command sudo
 
 # ---------------------------------------------------------------------------
 # verify_gpu_usable
