@@ -1,9 +1,11 @@
-# Pinned developer toolchain. Nothing here is a runtime dependency: the stack
-# itself stays stdlib-only bash + python3, and none of these tools is fetched
-# by setup.sh, the launcher, or any test the CI tiers run.
+# Pinned developer toolchain. Nothing here is a product runtime dependency:
+# setup.sh and the launcher never fetch these tools, while local and CI gates
+# may fetch them into developer caches.
 #
 # Every entry pins an exact version plus whatever integrity material the
-# distribution publishes. A floating install is not a pin.
+# distribution publishes. A floating install is not a pin. Shell runners
+# repeat executable version arguments for portability; keep them aligned with
+# this reviewable manifest when changing a pin.
 
 [gitleaks]
 # Formal secret scanner. Two modes, both proven against synthetic canaries:

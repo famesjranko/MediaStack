@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # tests/unit.sh — MediaStack host unit + static-validation runner.
 #
-# Single source of truth for the host-side "static validation + unit test" tier,
-# invoked identically by developers, agents, and CI (same pattern as tests/lint.sh).
+# Canonical runner for the host-side "static validation + unit test" tier.
+# Direct local runs execute every tier. CI may visibly skip ShellCheck and mypy
+# here only after separate required jobs have run those same gates.
 #
 # Runs the following, aggregating failures (it never aborts on the first one, so
 # one run reports every problem):
 #   1. shell syntax    — bash -n over every tracked *.sh + the mediastack launcher
 #   2. shellcheck      — ./tests/lint.sh --severity=warning (the repo lint gate)
 #   3. python bytecode — py_compile over every tracked *.py
-#   4. python types    — pinned mypy (tools.toml [mypy]) over every tracked *.py
+#   4. python types    — pinned mypy (recorded in tools.toml) over every tracked *.py
 #   5. compose render  — docker compose config across the profile combinations
 #   6. host unit tests — every tests/unit/*.sh, each under a 300s timeout
 #

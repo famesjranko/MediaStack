@@ -123,14 +123,13 @@ needs no special flags — and neither do you.
 It prefers a native `shellcheck` at the pinned version and falls back to the pinned
 `koalaman/shellcheck:v0.11.0` docker image, so the analysing engine is identical
 everywhere.
-The default severity is `--severity=warning` — the same gate CI uses (via `tests/unit.sh`).
+The default severity is `--severity=warning` — the same gate CI's
+`lint-shellcheck` job uses via `./tests/check.sh lint`.
 A bare `./tests/lint.sh` therefore gives the same pass/fail result as CI; no flag needed.
 
-> **Version skew is real.** CI's native `shellcheck` and the pinned
-> `koalaman/shellcheck:stable` image are different versions that disagree on a few
-> codes (notably `SC2218`). A per-file/inline `# shellcheck disable=` can therefore
-> pass with the docker image yet still fail the CI gate — so suppress version-skewed
-> codes in `.shellcheckrc` (`disable=`), never inline. See the `SC2218` note there.
+Repo-wide suppressions live in `.shellcheckrc`, with a reason beside each one.
+Keep shared architectural suppressions there instead of scattering inline
+directives through individual files.
 
 ### Fast tier for the two expensive roots
 
@@ -184,10 +183,11 @@ over every pinned flag.
 
 ## Python type checking
 
-`./tests/unit.sh` runs mypy (pinned version + stub, `tools.toml` `[mypy]`) with
+`./tests/unit.sh` runs mypy (pinned version + stub, recorded in `tools.toml`
+`[mypy]`) with
 `check_untyped_defs` over every tracked `*.py`, config in `pyproject.toml`
-`[tool.mypy]`. Run it directly with the `invoke` command in `tools.toml`
-`[mypy]` — that pin is the single source of truth, not restated here.
+`[tool.mypy]`. The executable shell runners repeat those versions explicitly;
+keep their invocations aligned when changing a pin.
 
 The gate is mypy exiting 0 — every finding was fixed rather than shipping a
 suppression baseline, so there is nothing to compare against and nothing to
@@ -484,7 +484,15 @@ Not every test needs DinD. Pure-bash units — function-level checks that can ru
 ./tests/unit/gpu-branching.sh
 ```
 
-`./tests/unit.sh` runs the whole host-unit tier in one shot — static validation (shell syntax, shellcheck, `py_compile`, compose render) **plus** every `tests/unit/*.sh` below. It is one stage of the PR gate, whose full local equivalent is `./tests/check.sh`. Mirroring `tests/lint.sh`, the host-unit runner is invoked identically by developers, agents, and CI. Unlike the individual units it needs the Docker CLI (compose render + the pinned ShellCheck image unless version 0.11.0 is installed natively).
+`./tests/unit.sh` runs the whole host-unit tier in one shot — static validation
+(shell syntax, ShellCheck, `py_compile`, mypy, compose render) **plus** every
+`tests/unit/*.sh` below. It is one stage of the PR gate, whose full local
+equivalent is `./tests/check.sh`. A direct local invocation runs every tier. CI
+calls `./tests/check.sh unit` with the ShellCheck and mypy tiers visibly skipped
+because separate required jobs already run those same gates. Unlike the
+individual units, the complete local tier needs the Docker CLI (compose render
+and the pinned ShellCheck image unless version 0.11.0 is installed natively)
+and `uv` for mypy.
 
 ```bash
 ./tests/unit.sh        # static validation + every host unit
@@ -727,10 +735,12 @@ does not reimplement their file discovery or logic:
   no DinD or service containers; ShellCheck uses Docker unless version 0.11.0 is
   installed natively. The pinned tools need network on a cold tool cache. History is
   the separate `./tests/check.sh secrets-history` pre-push selector.
-- **default** (`fast` plus) — the gate GitHub Actions runs on push to `main` and on
-  every pull request (`.github/workflows/ci.yml`): `./tests/unit.sh` (shell syntax,
-  shellcheck, `py_compile`, compose render, every host unit) and the image-free
-  wizard scenarios in DinD — `MS_TEST_SKIP_PRELOAD=1 ./tests/run.sh $(bash tests/ci-scenarios.sh)`.
+- **default** (`fast` plus) — the coverage GitHub Actions runs on push to `main`
+  and on every pull request (`.github/workflows/ci.yml`): the host-unit stages
+  (shell syntax, `py_compile`, compose render, every host unit) and the
+  image-free wizard scenarios in DinD. CI runs ShellCheck and mypy in separate
+  required jobs, then skips their duplicate `tests/unit.sh` tiers. Locally,
+  `./tests/check.sh` runs the same coverage serially without skips.
 - **full** (`default` plus) — the complete local/on-demand gate, adding
   `./tests/battery.sh`. `battery.sh` alone is not the default tier's superset — it
   never invokes `unit.sh`, and it runs every scenario under `tests/scenarios/`,

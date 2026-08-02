@@ -18,14 +18,9 @@ external-sources=true
 #   SC2218 — "function only defined later": the mirror image of SC2329 — unit
 #            harnesses deliberately call a product function before a later
 #            `source`/mock (re)defines it (often to assert production source
-#            order). Whether shellcheck resolves the real definition depends on
-#            its version's source-following, so leaving this on makes the gate
-#            non-reproducible (CI's native shellcheck and the pinned docker image
-#            disagree). Product code is SC2218-clean; only the test mocks trip it.
-#            Verified: docker :stable (0.11.0) fires SC2218 AND honors an inline
-#            `# shellcheck disable=SC2218`; CI's native shellcheck disagrees, so a
-#            per-file/inline disable can pass locally yet still fail the CI gate —
-#            suppress version-skewed codes HERE (globally), never inline.
+#            order). Product code is SC2218-clean; only the intentional test
+#            mock ordering trips it, so the shared suppression belongs here
+#            instead of beside every fixture.
 #   SC1091 — "not following": the runtime-generated ./.env and other sourced
 #            files are absent at lint time. Expected.
 #   SC1090 — "can't follow non-constant source": dynamic `source "$VAR"` paths.

@@ -101,8 +101,8 @@ stage() {
     fi
 }
 
-# tools.toml [mypy] is the single source of truth for this invocation; MYPY_CACHE_DIR
-# is set outside the tree since mypy self-ignores .mypy_cache/ (invisible to git status).
+# tools.toml [mypy] records this pin; MYPY_CACHE_DIR is set outside the tree
+# since mypy self-ignores .mypy_cache/ (invisible to git status).
 mypy_type_check() {
     local cache_dir rc
     cache_dir=$(mktemp -d) || return 1
@@ -113,8 +113,8 @@ mypy_type_check() {
     return "$rc"
 }
 
-# tools.toml [ruff] is the single source of truth for these two invocations;
-# RUFF_CACHE_DIR is set outside the tree since ruff self-ignores .ruff_cache/.
+# tools.toml [ruff] records this pin; RUFF_CACHE_DIR is set outside the tree
+# since ruff self-ignores .ruff_cache/.
 # The lint pass runs first because its findings explain a format diff.
 ruff_python_check() {
     local cache_dir rc
@@ -207,7 +207,7 @@ if [[ -n "$STAGE" ]]; then
                 secret_scan_history_gate
             ;;
         unit)
-            stage unit "unit: tests/unit.sh (compose, host units, syntax, bytecode)" \
+            stage unit "unit: tests/unit.sh (compose, host units, syntax, bytecode, types)" \
                 "bash tests/unit.sh" bash tests/unit.sh
             ;;
         wizard)
@@ -234,7 +234,7 @@ stage fast "secrets: gitleaks tree" \
     secret_scan_gate
 [[ "$TIER" == "fast" ]] && exit 0
 
-stage default "unit: tests/unit.sh (compose, host units, syntax, bytecode)" \
+stage default "unit: tests/unit.sh (compose, host units, syntax, bytecode, types)" \
     "bash tests/unit.sh" bash tests/unit.sh
 stage default "wizard: image-free scenarios" \
     'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $(bash tests/ci-scenarios.sh)' \

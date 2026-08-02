@@ -75,10 +75,10 @@ rather than a pass.
 
 ## Suppressions
 
-Suppress a version-skewed shellcheck code globally in `.shellcheckrc`, not
-inline: the pinned Docker linter and a host shellcheck can disagree about
-whether an inline directive applies, which makes the gate non-reproducible.
-`.shellcheckrc` explains each currently-suppressed code.
+Keep repo-wide ShellCheck suppressions in `.shellcheckrc`, not scattered inline
+through individual files. The file explains each currently suppressed code;
+the runner accepts a native ShellCheck only when it matches the pinned version
+and otherwise uses the pinned container.
 
 ## Contributing
 
