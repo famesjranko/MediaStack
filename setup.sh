@@ -187,7 +187,7 @@ main() {
         return $?
     fi
 
-    # Initialise globals BEFORE pre-flight so PRE-07's stash_gpu_type has a
+    # Initialise globals BEFORE pre-flight so stash_gpu_type has a
     # defined destination. In --full mode, GPU_TYPE is re-stashed after base
     # packages install pciutils so bare Debian hosts do not miss GPUs.
     # FULL_MODE must be parsed before Docker-dependent checks so
@@ -263,21 +263,21 @@ main() {
             continue)
                 return 0
                 ;;
-            completed|abort)
+            completed | abort)
                 return "$existing_install_rc"
                 ;;
             wipe)
-                if (( existing_install_rc != 0 )); then
+                if ((existing_install_rc != 0)); then
                     return "$existing_install_rc"
                 fi
                 ;;
             "")
-                if (( existing_install_rc != 0 )); then
+                if ((existing_install_rc != 0)); then
                     return "$existing_install_rc"
                 fi
                 ;;
             *)
-                if (( existing_install_rc != 0 )); then
+                if ((existing_install_rc != 0)); then
                     return "$existing_install_rc"
                 fi
                 ;;
@@ -304,7 +304,7 @@ main() {
     fi
 
     # Standard setup (both --full and default reach here)
-    # check_docker + check_compose moved to pre-flight battery (D-04).
+    # check_docker + check_compose moved to pre-flight battery.
     cleanup_post_reboot
 
     # Ensure python3-yaml is available for configure.sh
@@ -312,7 +312,7 @@ main() {
         ui_spin "Installing python3-yaml..." sudo apt-get install -y -qq python3-yaml
     fi
 
-    # check_disk_space replaced by check_disk_floor in pre-flight battery (PRE-01).
+    # check_disk_space replaced by check_disk_floor in pre-flight battery.
     detect_host_memory
     echo ""
 
@@ -343,7 +343,9 @@ main() {
     run_wizard
 
     # Re-source .env for DATA_DIR/PUID/PGID
-    set -a; source "$SCRIPT_DIR/.env"; set +a
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
 
     if [[ "$watchdog_paused_before_wizard" != "true" && "${WIZARD_RAN_INSTALL:-false}" != "true" && "${STAGE_1_COMPLETE:-}" != "1" ]]; then
         storage_pause_watchdog_for_install || return 1
@@ -362,7 +364,7 @@ main() {
         return 0
     fi
 
-    # Belt-and-braces guard against BL-03: if a completed Stage 1 ever reaches
+    # Belt-and-braces guard: if a completed Stage 1 ever reaches
     # this point with WIZARD_RAN_INSTALL unset (e.g. future edit clears it),
     # the late install block below would tear down the running stack on every
     # re-run. Project invariants require re-runs to skip already-configured

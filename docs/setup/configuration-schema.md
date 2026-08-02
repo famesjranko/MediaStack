@@ -26,6 +26,8 @@ Fallback Torznab category IDs for Sonarr/Radarr indexer registration.
 
 `configure_arr_indexers` (`scripts/lib/arr/main.sh`, delegating to `scripts/lib/arr/render/torznab_caps.py`) **auto-discovers categories from each indexer's Torznab caps** first. Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Many trackers use native 100xxx IDs that standard Torznab doesn't cover — without them, the *arr app's add-time test rejects the indexer. These `config.yml` values are the fallback when caps discovery fails.
 
+Stored as a stringified comma-list (`"5000,5030,5040"`), parsed via inline Python split in `configure_arr_indexers`; that keeps the shared-helper contract a single string field instead of a YAML list of integers.
+
 ### `quality_profile`
 
 > See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for the actual file-size and format-score numbers across all cells, the resolution × size model, and the SD floor.
@@ -77,7 +79,7 @@ Consumed by `configure_quality_definitions` (`scripts/lib/arr/main.sh`, with dif
 
 ### `custom_formats`
 
-Release-attribute scoring that **steers** selection within a quality tier. A simple `name: score` mapping where higher scores are preferred and negative scores penalise. Scores do **not** gate file size (the `quality_definitions` bounds do) and, by default, nothing is hard-blocked — the neutral baseline penalises low-quality re-encode groups and nudges toward named releases, without ever refusing a grab. Set a format's score to `0` to make it neutral, or to `-10000` to **hard-block** it (no default format does). Delete the entire section to skip custom format configuration. See [`quality-bounds.md`](../reference/quality-bounds.md#custom-format-scores) and ADR-43.
+Release-attribute scoring that **steers** selection within a quality tier. A simple `name: score` mapping where higher scores are preferred and negative scores penalise. Scores do **not** gate file size (the `quality_definitions` bounds do) and, by default, nothing is hard-blocked — the neutral baseline penalises low-quality re-encode groups and nudges toward named releases, without ever refusing a grab. Set a format's score to `0` to make it neutral, or to `-10000` to **hard-block** it (no default format does). Delete the entire section to skip custom format configuration. See [`quality-bounds.md`](../reference/quality-bounds.md#custom-format-scores).
 
 Format *definitions* (regex conditions, implementation type) are developer-managed in `scripts/lib/arr/custom_formats.yml` — users only tune scores here.
 
@@ -126,7 +128,7 @@ Passed directly to `POST /api/v2/app/setPreferences`:
 | `ul_speed_limit` | `up_limit` (converted from MB/s to bytes/s; `.env QBT_UL_LIMIT` overrides) |
 | `categories` | `name:path` pairs → `POST /api/v2/torrents/createCategory` per entry |
 
-**Not configurable here:** `max_ratio_act`, `bypass_auth_subnet_whitelist`, connection limits — hardcoded in the `setPreferences` payload in `scripts/services/qbittorrent/main.sh`. See [configure-flow.md](configure-flow.md) Observations.
+**Not configurable here:** `max_ratio_act`, `bypass_auth_subnet_whitelist`, connection limits — hardcoded in the `setPreferences` payload in `scripts/services/qbittorrent/main.sh`. See [configure-flow.md](configure-flow.md) Step 1 for why `max_ratio_act` is pinned to pause.
 
 ### `sonarr` / `radarr`
 
@@ -161,7 +163,7 @@ List of `{name, type, path}`. `type` is Jellyfin's `collectionType` (`movies`, `
 
 ### `rate_limiting`
 
-Optional nginx rate limiting for internet-facing proxy hosts (Jellyfin, Seerr) via NPM's advanced config. **Disabled by default** (`enabled: false`) for parity with upstream Jellyfin/Seerr, neither of which rate-limits — a blanket server-level limit applies to every path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback (and the `[npm-ratelimit]` jail could then ban the household's own public IP). Login brute-force is covered regardless by the 401/403 auth jails. See ADR-35.
+Optional nginx rate limiting for internet-facing proxy hosts (Jellyfin, Seerr) via NPM's advanced config. **Disabled by default** (`enabled: false`) for parity with upstream Jellyfin/Seerr, neither of which rate-limits — a blanket server-level limit applies to every path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback (and the `[npm-ratelimit]` jail could then ban the household's own public IP). Login brute-force is covered regardless by the 401/403 auth jails.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
@@ -177,13 +179,13 @@ Consumed by `configure_npm` (`scripts/services/npm/main.sh`). When `enabled: tru
 3. Reloads nginx inside the NPM container to activate.
 4. Checks that the `[npm-ratelimit]` jail values in `config/fail2ban/jail.d/mediastack.conf` match `ban_maxretry` / `ban_findtime`.
 
-When `enabled: false` (the default), each of those steps logs a skip. To re-enable, set `enabled: true` **and** set `enabled = true` on the `[npm-ratelimit]` jail in `config/fail2ban/jail.d/mediastack.conf`. The proper future fix is per-path exemption (a second zone + per-`location` config) so streaming/image paths are never limited — see ADR-35.
+When `enabled: false` (the default), each of those steps logs a skip. To re-enable, set `enabled: true` **and** set `enabled = true` on the `[npm-ratelimit]` jail in `config/fail2ban/jail.d/mediastack.conf`. The proper future fix is per-path exemption (a second zone + per-`location` config) so streaming/image paths are never limited.
 
 ---
 
 ## `.env.example` — secrets and host values
 
-`.env.example` is the template; `.env` is generated by `setup.sh` (chmod 600).
+`.env.example` is the template; `.env` is generated by `setup.sh` (chmod 600). The API-key fields near the end of `.env.example` ship empty; `configure.sh` populates them on install. A user who copies `.env.example` to `.env` directly, skipping `setup.sh`, still ends up with a working file — but `.env.example` is then documenting "initial state" as much as "template", which is worth remembering when editing it.
 
 ### User-set (interactive prompts in `setup.sh`)
 
@@ -233,17 +235,17 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `UFW_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 | `HARDENING_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 
-**DDNS credentials (ADR-46):** the Stage 2 DDNS picker writes only the non-secret `DDNS_PROVIDER` to `.env`. The provider's credentials (Dynu username/password, DuckDNS/dynv6/deSEC tokens, Cloudflare zone-id + token, Porkbun API keys) live solely in the chmod-600 `config/ddns-updater/config.json` rendered by `ddns_render_config_json` — never in `.env`. A wizard re-run recalls the provider from `DDNS_PROVIDER` and pre-fills its credential prompts from that config.json.
+**DDNS credentials:** the Stage 2 DDNS picker writes only the non-secret `DDNS_PROVIDER` to `.env`. The provider's credentials (Dynu username/password, DuckDNS/dynv6/deSEC tokens, Cloudflare zone-id + token, Porkbun API keys) live solely in the chmod-600 `config/ddns-updater/config.json` rendered by `ddns_render_config_json` — never in `.env`. A wizard re-run recalls the provider from `DDNS_PROVIDER` and pre-fills its credential prompts from that config.json.
 
-**Single-quoting rule:** `WG_INIT_PASSWORD` MUST be single-quoted because the plaintext value can contain shell-special characters (`$`, `"`, `\`, `#`) that Docker Compose interpolates in unquoted values. `setup.sh` writes the quotes automatically; the smoke test (`tests/scenarios/smoke.sh`) asserts the container receives the password byte-for-byte via `INIT_PASSWORD`. v15 reads `INIT_*` env vars at first boot only — after `/etc/wireguard/wg-easy.db` exists, changes to `WG_INIT_PASSWORD` are inert; rotate the admin password in the wg-easy UI instead. See ADR-28.
+**Single-quoting rule:** `WG_INIT_PASSWORD` MUST be single-quoted because the plaintext value can contain shell-special characters (`$`, `"`, `\`, `#`) that Docker Compose interpolates in unquoted values. `setup.sh` writes the quotes automatically; the smoke test (`tests/scenarios/smoke.sh`) asserts the container receives the password byte-for-byte via `INIT_PASSWORD`. v15 reads `INIT_*` env vars at first boot only — after `/etc/wireguard/wg-easy.db` exists, changes to `WG_INIT_PASSWORD` are inert; rotate the admin password in the wg-easy UI instead.
 
 **SMB scope:** `SMB_SHARE_SCOPE=data` shares `${DATA_DIR}` as `Media` and is the recommended default. `SMB_SHARE_SCOPE=system` keeps the intentional full `/` admin share available as `MediaStackSystem`.
 
-**Host security toggles (ADR-40):** `UFW_ENABLED` gates the UFW firewall (default-deny inbound + the Docker-port restriction chain); `HARDENING_ENABLED` gates unattended security upgrades + kernel sysctl hardening. Both are chosen in the Stage 1 wizard (default *yes*) and are reversible from the day-2 **Features & settings** menu. Reading code treats an **absent** key as `true`, so installs predating these keys stay hardened after an upgrade. Turning a toggle *off* in the day-2 menu reverts via the ownership ledger (`_uninstall_ufw` / `_uninstall_sysctl` / `_uninstall_apt`): it removes only MediaStack-owned rules/files and never touches firewall rules or sysctls the user changed themselves.
+**Host security toggles:** `UFW_ENABLED` gates the UFW firewall (default-deny inbound + the Docker-port restriction chain); `HARDENING_ENABLED` gates unattended security upgrades + kernel sysctl hardening. Both are chosen in the Stage 1 wizard (default *yes*) and are reversible from the day-2 **Features & settings** menu. Reading code treats an **absent** key as `true`, so installs predating these keys stay hardened after an upgrade. Turning a toggle *off* in the day-2 menu reverts via the ownership ledger (`_uninstall_ufw` / `_uninstall_sysctl` / `_uninstall_apt`): it removes only MediaStack-owned rules/files and never touches firewall rules or sysctls the user changed themselves.
 
 **Storage modes:** `local` is the standard managed `/data` layout. `nas` means MediaStack mounts/verifies NFS storage and, when `STORAGE_WATCHDOG` is on (default), runs the guard + storage watchdog. The watchdog is opt-out in the Stage 1 wizard and reversible from the day-2 **Features & settings** menu (NAS installs only); with it off, NAS storage is still mounted and verified once at install but data services are not auto-stopped/restarted if the mount drops. NAS sentinel and managed directory writes are made as the installing user when possible so root-squashed NFS exports work. `manual` is represented by `STORAGE_APP_WIRING=manual`: the stack is installed but storage-facing app configuration is skipped so the user can wire Jellyfin, Sonarr/Radarr, qBittorrent, Seerr, and Unpackerr manually. Manual app wiring can still use `STORAGE_MODE=nas` when the user wants NAS guard/watchdog protection. See [storage.md](storage.md) for the operational flow and guard/watchdog behavior.
 
-**VPN access tiers (ADR-29):** The wizard asks for an access tier instead of a tunnel mode. `WG_INIT_ALLOWED_IPS` (client-side routing) and the wg-easy server-side `firewallIps` for the initial peer are both derived from the tier. Per-client firewall is on for every new install.
+**VPN access tiers:** The wizard asks for an access tier instead of a tunnel mode. `WG_INIT_ALLOWED_IPS` (client-side routing) and the wg-easy server-side `firewallIps` for the initial peer are both derived from the tier. Per-client firewall is on for every new install.
 
 | Tier | Client `AllowedIPs` (routing) | Server `firewallIps` (enforcement) | Audience |
 |------|-----------------------|--------------------|----------|
@@ -285,11 +287,11 @@ These service configs are shipped with the repo. They live under `config/` but s
 | `[jellyfin]` | `logpath = /var/log/jellyfin/log_*.log`. |
 | `[npm]` | Two log globs: `default-host_*.log` + `proxy-host-*_*.log`. |
 | `[seerr]` | `logpath = /var/log/seerr/*.log`. |
-| `[npm-ratelimit]` | **Disabled by default** (`enabled = false`, ADR-35) — companion to `config.yml`'s `rate_limiting.enabled`. `logpath = /var/log/npm/proxy-host-*_*.log`. When enabled, catches IPs that accumulate 429 (Too Many Requests) responses from nginx `limit_req`; overrides `[DEFAULT]` with `maxretry = 10`, `findtime = 60` (validated against `config.yml`'s `rate_limiting.ban_maxretry` / `ban_findtime` by `configure_npm` — drift is warned, not reconciled). Uses the `npm-ratelimit` filter (see below). |
+| `[npm-ratelimit]` | **Disabled by default** (`enabled = false`) — companion to `config.yml`'s `rate_limiting.enabled`. `logpath = /var/log/npm/proxy-host-*_*.log`. When enabled, catches IPs that accumulate 429 (Too Many Requests) responses from nginx `limit_req`; overrides `[DEFAULT]` with `maxretry = 10`, `findtime = 60` (validated against `config.yml`'s `rate_limiting.ban_maxretry` / `ban_findtime` by `configure_npm` — drift is warned, not reconciled). Uses the `npm-ratelimit` filter (see below). |
 
 Log paths are mounted read-only from the producing service's config dir (fail2ban volume mounts in `docker-compose.yml`).
 
-These globs are resolved to concrete files only at jail start / `fail2ban-client reload`. Jellyfin and Seerr roll to a new date-stamped file (`log_YYYYMMDD.log`) each day, so a long-running host needs a reload after each rollover or the jail keeps tailing the previous day's file. On proxy-profile installs the `mediastack-fail2ban-reload.service` watcher (`scripts/fail2ban-reload-watcher.sh`) does this automatically — it reloads fail2ban whenever a new log file appears (ADR-50, issue #291). The day-2 health menu's *fail2ban jellyfin watch* metric flags a jail left on a stale file if the watcher ever stops.
+These globs are resolved to concrete files only at jail start / `fail2ban-client reload`. Jellyfin and Seerr roll to a new date-stamped file (`log_YYYYMMDD.log`) each day, so a long-running host needs a reload after each rollover or the jail keeps tailing the previous day's file. On proxy-profile installs the `mediastack-fail2ban-reload.service` watcher (`scripts/fail2ban-reload-watcher.sh`) does this automatically — it reloads fail2ban whenever a new log file appears. The day-2 health menu's *fail2ban jellyfin watch* metric flags a jail left on a stale file if the watcher ever stops.
 
 ### `config/fail2ban/filter.d/jellyfin.conf`
 
@@ -321,7 +323,7 @@ Matches current Seerr warning records for both Jellyfin authentication (`Auth`) 
 failregex = \s429\s.*\[Client <ADDR>\]
 ```
 
-Matches 429 (Too Many Requests) responses in NPM's nginx access log. Same log format as `npm.conf` — status appears before `[Client]`. Paired with the `[npm-ratelimit]` jail to ban IPs that repeatedly trigger nginx `limit_req` rate limits (configured via `config.yml`'s `rate_limiting` section). The filter ships in place but is inert by default because rate limiting is disabled, so nginx emits no 429s to match (ADR-35).
+Matches 429 (Too Many Requests) responses in NPM's nginx access log. Same log format as `npm.conf` — status appears before `[Client]`. Paired with the `[npm-ratelimit]` jail to ban IPs that repeatedly trigger nginx `limit_req` rate limits (configured via `config.yml`'s `rate_limiting` section). The filter ships in place but is inert by default because rate limiting is disabled, so nginx emits no 429s to match.
 
 ### `config/jackett/Jackett/ServerConfig.json`
 
@@ -394,13 +396,3 @@ Adding a new service with tracked config therefore means:
 
 1. Create `config/<service>/` with the files to track.
 2. Add exactly the runtime subpaths to `.gitignore` — not the whole service dir.
-
-## Observations / open questions
-
-- **`quality_profile.cutoff_id` vs `quality_id`.** Anyone reading the `quality_profile` section in `config.yml` without the comment would assume it's a quality ID. Naming it `cutoff_group_id` would be self-documenting.
-- **NPM filter regex is format-dependent.** `config/fail2ban/filter.d/npm.conf` matches a specific NPM access log format. No test tails a real 401/403 line against it; if NPM changes its log format in a future image, every request would stop triggering bans and fail2ban would log silently. A regression test here would be cheap — generate a known-bad login and assert fail2ban counted it.
-- **Seerr filter is image-format-dependent.** It matches the current `[warn][Auth]` and `[warn][API]` sign-in records. `fail2ban-drift` provides focused coverage and `fresh-install` proves the jail starts with the shipped image.
-- **~~qBittorrent pre-seed `MaxRatioAction=1` disagrees with API-applied `0`~~** — fixed: pre-seed now ships `MaxRatioAction=0`.
-- **`.env.example` documents `WG_INIT_PASSWORD=''`** with single quotes but a user copying the file without understanding the rule could paste a password containing `$` or `"` unquoted. The smoke test verifies survival through `.env` → compose → container, but a runtime check on the live `.env` would catch hand-edited drift earlier.
-- **`categories` string format.** `"5000,5030,5040"` is a stringified comma-list; `configure_arr_indexers` parses it via inline Python split (`scripts/lib/arr/main.sh`). A list-of-ints would be more natural in YAML but would require changing the shared-helper contract.
-- **`.env` API-key fields exist in `.env.example`** (the API key block near the end of the file). If a user copies `.env.example` to `.env` themselves (skipping `setup.sh`), the empty keys are fine — `configure.sh` populates them. But it means `.env.example` changes meaning from "template" to "initial state", which is easy to overlook during review.

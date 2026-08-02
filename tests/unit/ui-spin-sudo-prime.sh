@@ -24,17 +24,28 @@ source "$REPO_ROOT/scripts/lib/ui.sh"
 # the exact call order the guard produces. ui_spin invokes the renderer as
 # `_render_spin "$label" "$@"`, so the label is the renderer's first argument.
 CALLS=""
-sudo()              { CALLS+="sudo:$*|"; return "${SUDO_RC:-0}"; }
-_render_spin()      { CALLS+="render:$*|"; return 0; }
-_render_spin_demo() { CALLS+="demo:$*|"; return 0; }
+sudo() {
+    CALLS+="sudo:$*|"
+    return "${SUDO_RC:-0}"
+}
+_render_spin() {
+    CALLS+="render:$*|"
+    return 0
+}
+_render_spin_demo() {
+    CALLS+="demo:$*|"
+    return 0
+}
 
 # 1) sudo-wrapped: the prime (`sudo -v`) fires first, then the spinner renders.
-CALLS=""; ui_spin "Installing..." sudo apt-get install foo
+CALLS=""
+ui_spin "Installing..." sudo apt-get install foo
 assert_eq "sudo:-v|render:Installing... sudo apt-get install foo|" "$CALLS" \
     "ui_spin primes sudo in the foreground before the spinner backgrounds it"
 
 # 2) non-sudo command: no prime.
-CALLS=""; ui_spin "Working..." echo hello
+CALLS=""
+ui_spin "Working..." echo hello
 assert_eq "render:Working... echo hello|" "$CALLS" \
     "ui_spin does not prime sudo for a non-sudo command"
 
@@ -52,7 +63,8 @@ assert_eq "sudo:-v|render:Installing... sudo apt-get install bar|" "$CALLS" \
     "a failing prime still primes then renders"
 
 # 4) demo mode short-circuits before the guard: no prime.
-CALLS=""; UI_DEMO=1 UI_DEMO_DELAY=0 ui_spin "Installing..." sudo apt-get install baz
+CALLS=""
+UI_DEMO=1 UI_DEMO_DELAY=0 ui_spin "Installing..." sudo apt-get install baz
 assert_eq "demo:Installing... 0|" "$CALLS" \
     "demo mode short-circuits before the sudo prime"
 

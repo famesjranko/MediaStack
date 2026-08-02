@@ -66,9 +66,9 @@ check_compose() {
 }
 
 _resolve_data_partition() {
-    # PRE-01 helper. Reads DATA_DIR from .env if set, else defaults to /data.
+    # Reads DATA_DIR from .env if set, else defaults to /data.
     # Walks up to nearest existing parent so disk-floor check works on a fresh
-    # host where /data doesn't yet exist (D-07).
+    # host where /data doesn't yet exist.
     local data_dir=""
     if [[ -s "$SCRIPT_DIR/.env" ]]; then
         data_dir=$(awk -F= '/^DATA_DIR=/ {print $2; exit}' "$SCRIPT_DIR/.env" | tr -d '"' | tr -d "'")
@@ -81,11 +81,11 @@ _resolve_data_partition() {
 }
 
 check_disk_floor() {
-    # PRE-01: hard-fail when root <10 GB or data partition <30 GB.
+    # Hard-fail when root <10 GB or data partition <30 GB.
     # On single-FS hosts (root and data on the same mountpoint), run one
-    # check at the higher 30 GB floor (D-08).
+    # check at the higher 30 GB floor.
     #
-    # WR-01 fix: empty `df` output (cgroup mounts, long device paths,
+    # Empty `df` output (cgroup mounts, long device paths,
     # locale issues, df failure) is treated as a hard fail BEFORE any
     # comparison branch — silently passing on unparseable disk state
     # converts the floor into a false positive.
@@ -101,7 +101,7 @@ check_disk_floor() {
     root_free=$(df -BG / 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
     data_free=$(df -BG "$data_path" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
 
-    # WR-01 hard-fail: empty df output on / is unrecoverable; we cannot
+    # Hard-fail: empty df output on / is unrecoverable; we cannot
     # prove the disk floor.
     if [[ -z "$root_free" ]]; then
         log_error "Pre-flight: could not read free space on /. df output was empty or unparsable."
@@ -116,8 +116,8 @@ check_disk_floor() {
     # Unparsable df output remains a hard-fail above: that means the check
     # itself can't run, not that disk is small.
     if [[ "$root_mount" == "$data_mount" ]]; then
-        # Single-FS host: one check at 30 GB floor (D-08).
-        if (( root_free < 30 )); then
+        # Single-FS host: one check at 30 GB floor.
+        if ((root_free < 30)); then
             log_warn "Pre-flight: / has only ${root_free}GB free; recommended minimum is 30GB. Continuing anyway."
         else
             log_ok "Disk: ${root_free}GB free (single FS)"
@@ -131,16 +131,16 @@ check_disk_floor() {
         exit 1
     fi
 
-    if (( root_free < 10 )); then
+    if ((root_free < 10)); then
         log_warn "Pre-flight: / has only ${root_free}GB free; recommended minimum is 10GB. Continuing anyway."
     fi
-    if (( data_free < 30 )); then
+    if ((data_free < 30)); then
         log_warn "Pre-flight: ${data_path} has only ${data_free}GB free; recommended minimum is 30GB. Continuing anyway."
     fi
 
     # Soft warn when both above floor but combined ≤50 GB (Pattern B).
-    local combined=$(( root_free + data_free ))
-    if (( combined <= 50 )); then
+    local combined=$((root_free + data_free))
+    if ((combined <= 50)); then
         log_warn "Disk: only ${combined}GB combined free across / and ${data_path}. Recommended: 50GB+."
     else
         log_ok "Disk: /=${root_free}GB free, ${data_path}=${data_free}GB free"
@@ -148,11 +148,11 @@ check_disk_floor() {
 }
 
 check_ram_warn() {
-    # PRE-02: tiered RAM warning. Never hard-fails — 4 GB SBCs are valid
-    # targets (D-14, D-15). Two tiers:
-    #   < 2 GB free: stack-wide warning (the original D-14 floor).
+    # Tiered RAM warning. Never hard-fails — 4 GB SBCs are valid
+    # targets. Two tiers:
+    #   < 2 GB free: stack-wide warning (the original floor).
     #   < 4 GB free: flaresolverr/Chromium may flap (~1 GB working set).
-    # Defensive guard for kernels without MemAvailable (kernel <3.14 — L1).
+    # Defensive guard for kernels without MemAvailable (kernel <3.14).
     local free_gb="" total_gb=""
     if grep -q '^MemAvailable:' /proc/meminfo 2>/dev/null; then
         free_gb=$(awk '/^MemAvailable:/ {print int($2/1024/1024)}' /proc/meminfo)
@@ -168,9 +168,9 @@ check_ram_warn() {
     # alone tells them nothing about whether the host has 2 GB or 32 GB.
     local ctx="${free_gb}GB"
     [[ -n "$total_gb" ]] && ctx="${free_gb}GB free of ${total_gb}GB total"
-    if (( free_gb < 2 )); then
+    if ((free_gb < 2)); then
         log_warn "Only ${ctx} - Bazarr/Seerr may struggle. Continuing."
-    elif (( free_gb < 4 )); then
+    elif ((free_gb < 4)); then
         log_warn "Only ${ctx} - flaresolverr (Cloudflare bypass) needs ~1GB for Chromium and may flap on this host. If indexer tests stall, consider disabling the public indexer preset. Continuing."
     else
         log_ok "RAM: ${ctx}"
@@ -178,14 +178,14 @@ check_ram_warn() {
 }
 
 check_internet_reachability() {
-    # PRE-03: hard-fail when Docker Hub is unreachable. Let's Encrypt is
+    # Hard-fail when Docker Hub is unreachable. Let's Encrypt is
     # remote-access-only, so Stage 1 LAN setup warns but continues; Stage 2
     # performs the real certificate attempt and classifies failures.
     # 5s per attempt, up to 3 tries so one transient blip (a slow HEAD ->
-    # curl 28) does not abort setup (ADR-53).
+    # curl 28) does not abort setup.
     # HEAD over GET (-I) — lighter and sufficient.
     #
-    # CR-02 fix: use `cmd || rc=$?` (single-statement capture) so a
+    # Use `cmd || rc=$?` (single-statement capture) so a
     # failed curl does NOT trip `set -e` before rc is read. The pattern
     # `cmd; rc=$?; if (( rc != 0 ))` is set-e-broken — set -e fires on
     # the cmd line and the next statement never runs.
@@ -200,7 +200,7 @@ check_internet_reachability() {
 
     local rc=0
     curl --max-time 5 --retry 2 --retry-connrefused --retry-all-errors -fsSI https://hub.docker.com >/dev/null 2>&1 || rc=$?
-    if (( rc != 0 )); then
+    if ((rc != 0)); then
         log_error "Pre-flight: Docker Hub unreachable (${rc}). Check your internet, retry."
         exit 1
     fi
@@ -208,7 +208,7 @@ check_internet_reachability() {
 
     rc=0
     curl --max-time 5 --retry 2 --retry-connrefused --retry-all-errors -fsSI https://acme-v02.api.letsencrypt.org/directory >/dev/null 2>&1 || rc=$?
-    if (( rc != 0 )); then
+    if ((rc != 0)); then
         log_warn "Pre-flight: Let's Encrypt unreachable (${rc}). LAN setup can continue; Stage 2 remote access will verify certificates when selected."
         return 0
     fi
@@ -217,15 +217,15 @@ check_internet_reachability() {
 }
 
 prompt_sudo_cache() {
-    # PRE-04: pre-cache sudo creds so downstream sudo calls don't re-prompt
-    # mid-wizard. 15-minute cache is the sudoers default (D-16). Distinct
-    # error for "sudo not installed" vs "no sudo access" (D-18 + RESEARCH §5).
+    # Pre-cache sudo creds so downstream sudo calls don't re-prompt
+    # mid-wizard. 15-minute cache is the sudoers default. Distinct
+    # error for "sudo not installed" vs "no sudo access".
     if ! command -v sudo &>/dev/null; then
         log_error "Pre-flight: sudo not installed. Install it: apt-get install sudo"
         exit 1
     fi
 
-    # Passwordless sudo (NOPASSWD or valid cached timestamp) — D-17.
+    # Passwordless sudo (NOPASSWD or valid cached timestamp).
     if sudo -n true 2>/dev/null; then
         log_ok "Passwordless sudo confirmed"
         return 0
@@ -243,22 +243,22 @@ prompt_sudo_cache() {
 }
 
 stash_gpu_type() {
-    # PRE-07: WIRE — invoke the existing detect_gpu (gpu.sh:9-31), which
+    # Invoke the existing detect_gpu (gpu.sh:9-31), which
     # already populates GPU_TYPE in {nvidia, amd, intel, none} and gracefully
-    # handles `lspci` absence (D-25, D-26). Hardware transcoding consumes the
+    # handles `lspci` absence. Hardware transcoding consumes the
     # global GPU_TYPE downstream.
     detect_gpu
     log_info "GPU type: ${GPU_TYPE}"
 }
 
 detect_existing_install() {
-    # PRE-05: detects an existing MediaStack install per D-19 predicate:
+    # Detects an existing MediaStack install per this predicate:
     # .env non-empty AND STAGE_1_COMPLETE=1 AND (ddns config exists OR
     # jellyfin container running).
-    # When detected, presents three choices via ui_choose (D-20). Runs LAST
-    # in the pre-flight battery (D-04) so all hard fails fire first.
+    # When detected, presents three choices via ui_choose. Runs LAST
+    # in the pre-flight battery so all hard fails fire first.
     #
-    # CONTRACT (CR-01 fix): this function never returns non-zero on the
+    # CONTRACT: this function never returns non-zero on the
     # "no install detected" path. It sets the global EXISTING_INSTALL_DETECTED
     # to true|false so the call site (setup.sh::main) can read state without
     # tripping `set -euo pipefail`.
@@ -288,7 +288,7 @@ detect_existing_install() {
     else
         # Capture, never pipe to grep -q (SIGPIPE+pipefail race —
         # see project memory feedback_sigpipe_pipefail_flake.md).
-        # Wrap in `timeout 5` per RESEARCH §7 / L3 (degraded daemon
+        # Wrap in `timeout 5` (degraded daemon
         # would otherwise hang for ~30s).
         local jellyfin_id
         jellyfin_id=$(timeout 5 docker ps --filter name=jellyfin -q 2>/dev/null || true)
@@ -300,7 +300,7 @@ detect_existing_install() {
 
     $detected || return 0
 
-    # Existing install detected — present the three-way prompt (D-20 order).
+    # Existing install detected — present the three-way prompt in fixed order.
     log_warn "Existing MediaStack install detected (.env + ${evidence})."
     local choice
     choice=$(ui_choose "What would you like to do?" \
@@ -317,21 +317,21 @@ detect_existing_install() {
                 show_existing_install_menu || menu_rc=$?
                 case "${RECOVERY_MENU_ACTION:-}" in
                     wipe)
-                        if (( menu_rc == 0 )); then
+                        if ((menu_rc == 0)); then
                             nuke_existing_install
                             local wipe_rc=$?
-                            if (( wipe_rc == 0 )); then
+                            if ((wipe_rc == 0)); then
                                 RECOVERY_MENU_ACTION=""
                             fi
                             return "$wipe_rc"
                         fi
                         return "$menu_rc"
                         ;;
-                    continue|completed|abort)
+                    continue | completed | abort)
                         return "$menu_rc"
                         ;;
                     *)
-                        if (( menu_rc != 0 )); then
+                        if ((menu_rc != 0)); then
                             return "$menu_rc"
                         fi
                         log_ok "Continuing with existing install. No changes made."
@@ -361,8 +361,8 @@ detect_existing_install() {
 }
 
 _print_destroy_preview() {
-    # PRE-06 helper. DELETE/PRESERVE text reflects the actual destroy commands
-    # per D-23 (down -v + rm .env + rm .nvidia-finalize-pending, no git clean):
+    # nuke_existing_install helper. DELETE/PRESERVE text reflects the actual destroy commands
+    # (down -v + rm .env + rm .nvidia-finalize-pending, no git clean):
     # compose declares NO named volumes and config/ is a host bind mount, so
     # BOTH data/ and config/ survive 'down -v' and are listed under PRESERVE.
     # Optional _mode param: "wipe" (default), "full-wipe", or "uninstall".
@@ -411,9 +411,9 @@ PREVIEW
     fi
     echo ""
     case "$_mode" in
-        wipe)       printf 'Reinstalling keeps your old settings. To start truly clean, clear ./config\nyourself first - this wipe deliberately does not.\n\n' ;;
-        full-wipe)  printf 'This is a complete reset. All service databases, settings, and credentials\nwill be lost. Use this to recover from a broken install.\n\n' ;;
-        uninstall)  printf 'data/ (your media) is preserved. config/ settings, databases, and credentials\nare removed so a later reinstall starts clean. The MediaStack directory remains.\n\n' ;;
+        wipe) printf 'Reinstalling keeps your old settings. To start truly clean, clear ./config\nyourself first - this wipe deliberately does not.\n\n' ;;
+        full-wipe) printf 'This is a complete reset. All service databases, settings, and credentials\nwill be lost. Use this to recover from a broken install.\n\n' ;;
+        uninstall) printf 'data/ (your media) is preserved. config/ settings, databases, and credentials\nare removed so a later reinstall starts clean. The MediaStack directory remains.\n\n' ;;
     esac
 }
 
@@ -431,9 +431,9 @@ wipe_config_runtime() {
 }
 
 nuke_existing_install() {
-    # PRE-06: typed-DESTROY confirmation + destroy command sequence.
+    # Typed-DESTROY confirmation + destroy command sequence.
     # Satisfies the documented rebuild path: down -v + rm .env.
-    # data/ bind mount is NEVER touched (preserved per D-21).
+    # data/ bind mount is NEVER touched.
     # Optional _mode: "wipe" (default, continues to fresh setup), "full-wipe"
     # (also wipes config/ via sudo, preserving config/examples/ — the live
     # pre-seeds are re-seeded from those templates on the next install), or
@@ -445,8 +445,8 @@ nuke_existing_install() {
     local _input
     _input=$(ui_input "Type DESTROY to confirm (anything else aborts)" "")
 
-    # CR strip — defensive against pasted input from Windows clients
-    # (RESEARCH §4). No whitespace trim — D-22 locks "one typo aborts".
+    # CR strip — defensive against pasted input from Windows clients.
+    # No whitespace trim — one typo aborts.
     local cleaned="${_input//$'\r'/}"
 
     if [[ "$cleaned" != "DESTROY" ]]; then
@@ -469,19 +469,18 @@ nuke_existing_install() {
     fi
     storage_pause_watchdog_for_install || return 1
 
-    # Destroy command sequence — D-23 verbatim and rebuild-path invariant.
-    # No git clean (D-23 explicit — would risk deleting user-valued files
+    # Destroy command sequence — the documented rebuild path, verbatim.
+    # No git clean (deliberate — would risk deleting user-valued files
     # in config/jellyfin/data, etc.).
     #
-    # CR-04 fix: D-04's prompt_sudo_cache pre-cached creds specifically so
+    # The pre-flight prompt_sudo_cache pre-cached creds specifically so
     # this destroy could use sudo when the user's docker group membership
-    # isn't loaded yet (the canonical `--full` first-run case). Detect
-    # docker-group membership; sudo only when not. Capture rc and emit a
-    # warn before `rm -f .env` so the user knows if the destroy was
-    # incomplete (D-24 user-observability — no more silent `|| true`).
+    # isn't loaded yet (the canonical `--full` first-run case). Capture rc
+    # and emit a warn before `rm -f .env` so the user knows if the destroy was
+    # incomplete (user-observability — no more silent `|| true`).
     local _down_rc=0
     docker compose --profile "*" down -v --remove-orphans || _down_rc=$?
-    if (( _down_rc != 0 )); then
+    if ((_down_rc != 0)); then
         log_warn "Pre-flight: destroy did not complete cleanly (docker compose exit ${_down_rc}). Inspect: docker ps -a; docker volume ls"
         if [[ "$_mode" == "uninstall" ]]; then
             [[ "$_watchdog_was_enabled" == "false" ]] \

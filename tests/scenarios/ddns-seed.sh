@@ -18,7 +18,7 @@ run_scenario() {
     # Runs the exact python from setup.sh — single entry for the base
     # domain (wildcard DNS handles subdomains).
     # ------------------------------------------------------------------
-    # Dynu collects password only (#248); the username is a constant placeholder
+    # Dynu collects password only; the username is a constant placeholder
     # the renderer auto-fills, so the seed carries no user-supplied username.
     local seed_rc
     dind_exec 'DDNS_DOMAIN="ddns.test" DDNS_PASSWORD="testpass123" \
@@ -34,7 +34,7 @@ print(json.dumps({"settings": [{
 '\'' > config/ddns-updater/config.json' >/dev/null 2>&1
     seed_rc=$?
 
-    if (( seed_rc == 0 )); then
+    if ((seed_rc == 0)); then
         pass "DDNS seed python snippet executes inside DinD"
     else
         fail "DDNS seed python snippet executes inside DinD"
@@ -83,7 +83,7 @@ PYEOF' | tr -d '\r\n')
     local special_pw='p@ss"w\rd$#!'
     docker exec -i -w /root/MediaStack \
         -e "DDNS_DOMAIN=ddns.test" -e "DDNS_PASSWORD=$special_pw" \
-        "$DIND_NAME" python3 <<'PY' > /tmp/ddns-special.json
+        "$DIND_NAME" python3 <<'PY' >/tmp/ddns-special.json
 import os, json
 print(json.dumps({"settings": [{
     "provider": "dynu",
@@ -146,7 +146,7 @@ _WIZ_SMB_ENABLED=false
 write_env
 '\''' >/dev/null 2>&1
     writer_rc=$?
-    if (( writer_rc == 0 )); then
+    if ((writer_rc == 0)); then
         pass "DDNS setup writer succeeds with simulated installer uid 1001"
     else
         fail "DDNS setup writer succeeds with simulated installer uid 1001"
@@ -198,7 +198,7 @@ _WIZ_SMB_ENABLED=false
 write_env
 '\''' >/dev/null 2>&1
     symlink_writer_rc=$?
-    if (( symlink_writer_rc == 0 )); then
+    if ((symlink_writer_rc == 0)); then
         pass "DDNS setup writer succeeds while legacy temp symlink exists"
     else
         fail "DDNS setup writer succeeds while legacy temp symlink exists"
@@ -214,7 +214,7 @@ write_env
     local dir_symlink_repair_rc
     dind_exec "bash -c 'source scripts/lib/common.sh && source scripts/setup/env_gen.sh && SCRIPT_DIR=/root/MediaStack repair_ddns_updater_config_permissions'" >/dev/null 2>&1
     dir_symlink_repair_rc=$?
-    if (( dir_symlink_repair_rc != 0 )); then
+    if ((dir_symlink_repair_rc != 0)); then
         pass "DDNS permission repair rejects symlinked config directory"
     else
         fail "DDNS permission repair rejects symlinked config directory"
@@ -253,7 +253,7 @@ _WIZ_SMB_ENABLED=false
 write_env
 '\''' >/dev/null 2>&1
     dir_symlink_writer_rc=$?
-    if (( dir_symlink_writer_rc != 0 )); then
+    if ((dir_symlink_writer_rc != 0)); then
         pass "DDNS setup writer rejects symlinked config directory"
     else
         fail "DDNS setup writer rejects symlinked config directory"
@@ -294,7 +294,7 @@ else:
     }]}, indent=2))
 PY
 
-    # The persisted config now carries the constant username placeholder (#248), so
+    # The persisted config now carries the constant username placeholder, so
     # the "not clobbered" proof is that the real credential (password) survived.
     local guard_pw
     guard_pw=$(dind_exec 'python3 -c "import json; print(json.load(open(\"config/ddns-updater/config.json\"))[\"settings\"][0][\"password\"], end=\"\")"' | tr -d '\r\n')
@@ -312,7 +312,10 @@ PY
     # Honor a candidate-image override (launched outside compose, so
     # dind_override_images can't reach it — resolve the tag explicitly).
     local ddns_image
-    ddns_image=$(ms_test_image ddns-updater qmcgaw/ddns-updater:latest) || { fail "ddns-seed: resolve ddns-updater image override"; return 1; }
+    ddns_image=$(ms_test_image ddns-updater qmcgaw/ddns-updater:latest) || {
+        fail "ddns-seed: resolve ddns-updater image override"
+        return 1
+    }
     dind_exec "docker run -d --name $ddns_container \
         -p 18000:8000 \
         -v /root/MediaStack/config/ddns-updater:/updater/data \
@@ -372,11 +375,11 @@ PY
     fi
 
     # ------------------------------------------------------------------
-    # Test 7 (#236): all 6 providers render valid typed config.json via the
+    # Test 7: all 6 providers render valid typed config.json via the
     # shared renderer; a missing required field is refused. Uses a quoted
     # heredoc into `bash` so no shell-quoting fights the assoc literals.
     # ------------------------------------------------------------------
-    docker exec -i -w /root/MediaStack "$DIND_NAME" bash > /tmp/ddns-render-loop.out 2>/dev/null <<'SH'
+    docker exec -i -w /root/MediaStack "$DIND_NAME" bash >/tmp/ddns-render-loop.out 2>/dev/null <<'SH'
 source scripts/lib/ddns_providers.sh
 fail=0
 render() { local key="$1"; shift; local -A f=([domain]="ddns.test"); while (( $# )); do f["$1"]="$2"; shift 2; done; ddns_render_config_json "$key" f; }
@@ -389,11 +392,11 @@ render duckdns >/dev/null 2>&1 && { echo "MISSING-NOT-REFUSED"; fail=1; }
 (( fail == 0 )) && echo ALL-OK
 SH
     local render_out
-    render_out=$(tr -d '\r' < /tmp/ddns-render-loop.out)
+    render_out=$(tr -d '\r' </tmp/ddns-render-loop.out)
     assert_contains "$render_out" "ALL-OK" "6-provider render: all render valid typed JSON; missing field refused"
 
     # ------------------------------------------------------------------
-    # Test 8 (#236): state-leak — a Dynu -> DuckDNS switch through the real
+    # Test 8: state-leak — a Dynu -> DuckDNS switch through the real
     # write_env leaves NO username/password key in the rendered config.json.
     # ------------------------------------------------------------------
     docker exec -i -w /root/MediaStack "$DIND_NAME" bash >/dev/null 2>&1 <<'SH'
@@ -420,7 +423,7 @@ SH
     assert_eq "duckdns:duck-token" "$leak" "state-leak: Dynu->DuckDNS switch leaves no username/password key in config.json"
 
     # ------------------------------------------------------------------
-    # Test 9 (#236): container fail-fasts (exits) on a malformed config — the
+    # Test 9: container fail-fasts (exits) on a malformed config — the
     # "bad shape stays a dead remote, not a false green" half of the contract.
     # ------------------------------------------------------------------
     dind_exec 'rm -rf /tmp/ddns-badshape && mkdir -p /tmp/ddns-badshape && printf "{ not valid json" > /tmp/ddns-badshape/config.json'

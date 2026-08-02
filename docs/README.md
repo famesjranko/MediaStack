@@ -8,6 +8,7 @@ installation, runtime, test, and maintenance surface.
 | Doc | One-line hook |
 |-----|---------------|
 | [design/architecture.md](design/architecture.md) | Services, dependency graph, bridge network, security layer, and media layout. |
+| [decisions/README.md](decisions/README.md) | Decision records: the reasoning the code and tests do not carry, with rejected alternatives and reopen conditions. |
 
 ## Setup
 
@@ -31,7 +32,7 @@ installation, runtime, test, and maintenance surface.
 
 | Doc | One-line hook |
 |-----|---------------|
-| [testing/README.md](testing/README.md) | DinD, unit, and scenario test surfaces (live-host proof is maintainer-only). |
+| [../tests/README.md](../tests/README.md) | DinD, unit, and scenario test surfaces (live-host proof is maintainer-only). |
 | [reference/quality-bounds.md](reference/quality-bounds.md) | Quality profile bounds and tuning reference. |
 
 ## Project
@@ -40,6 +41,7 @@ installation, runtime, test, and maintenance surface.
 |-----|---------------|
 | [project/stack.md](project/stack.md) | Runtime, services, commands, and host dependencies. |
 | [project/structure.md](project/structure.md) | Directory tree, placement rules, and service-add workflow. |
+| [conventions.md](conventions.md) | Gate commands, placement, what is enforced, and what is not. |
 
 ## Reading Order
 
@@ -48,7 +50,7 @@ installation, runtime, test, and maintenance surface.
 3. [setup/storage.md](setup/storage.md)
 4. [setup/configure-flow.md](setup/configure-flow.md)
 5. [setup/configuration-schema.md](setup/configuration-schema.md)
-6. [testing/README.md](testing/README.md)
+6. [../tests/README.md](../tests/README.md)
 7. [operations/day-2.md](operations/day-2.md)
 8. [operations/upgrades.md](operations/upgrades.md)
 9. [project/stack.md](project/stack.md)

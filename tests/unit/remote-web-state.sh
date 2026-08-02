@@ -127,7 +127,7 @@ write_access_env() {
     local domain="$2"
     SCRIPT_DIR="$TMP_ROOT/access-$state"
     mkdir -p "$SCRIPT_DIR"
-    cat > "$SCRIPT_DIR/.env" <<EOF
+    cat >"$SCRIPT_DIR/.env" <<EOF
 JELLYFIN_ADMIN_PASSWORD='GeneratedPassword123'
 DOMAIN=${domain}
 REMOTE_WEB_STATE=${state}

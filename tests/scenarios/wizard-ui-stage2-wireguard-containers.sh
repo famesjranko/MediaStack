@@ -31,6 +31,6 @@ run_scenario() {
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "Access level: Containers" "wizard-ui stage2 wg containers: containers access-level message shown"
-    assert_eq "containers" "$(env_get WG_ACCESS_TIER)"  "wizard-ui stage2 wg containers: WG_ACCESS_TIER=containers"
-    assert_eq "skipped"    "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 wg containers: Skip Stage 2 -> REMOTE_WEB_STATE=skipped"
+    assert_eq "containers" "$(env_get WG_ACCESS_TIER)" "wizard-ui stage2 wg containers: WG_ACCESS_TIER=containers"
+    assert_eq "skipped" "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 wg containers: Skip Stage 2 -> REMOTE_WEB_STATE=skipped"
 }

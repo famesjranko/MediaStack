@@ -19,14 +19,17 @@ source "$REPO_ROOT/scripts/setup/packages.sh"
 set +e
 set +u
 
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
 
 # packages.sh wraps apt calls in ui_spin (defined in ui.sh, not sourced here).
 # Run the wrapped command in-process so the sudo shim records the apt install.
-ui_spin() { shift; "$@"; }
+ui_spin() {
+    shift
+    "$@"
+}
 
 PACKAGE_CALLS=()
 
@@ -61,7 +64,7 @@ docker() {
 sudo() {
     PACKAGE_CALLS+=("sudo $*")
     case "${1:-}" in
-        gpg|tee)
+        gpg | tee)
             cat >/dev/null
             ;;
     esac

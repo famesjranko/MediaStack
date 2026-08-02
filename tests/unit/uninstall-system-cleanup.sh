@@ -11,7 +11,10 @@ CURRENT_SCENARIO="uninstall-system-cleanup"
 scenario_begin "$CURRENT_SCENARIO"
 source "$REPO_ROOT/setup.sh"
 set +e +u
-log_ok() { :; }; log_info() { :; }; log_warn() { :; }; log_error() { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
+log_error() { :; }
 
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -41,7 +44,10 @@ SAMBA_CONFIGURED=false
 EOF
 chmod 0600 "$MEDIASTACK_STATE_FILE"
 SUDO_TRACE="$TMP_DIR/sudo-trace"
-sudo() { printf '%s\n' "$1" >>"$SUDO_TRACE"; command "$@"; }
+sudo() {
+    printf '%s\n' "$1" >>"$SUDO_TRACE"
+    command "$@"
+}
 assert_eq "1" "$(_ms_state_get STATE_FORMAT)" "ledger: root-owned state is read through sudo"
 assert_contains "$(cat "$SUDO_TRACE")" "awk" "ledger: reader invokes sudo awk"
 validate_install_state
@@ -56,7 +62,7 @@ user_rules='ufw allow 9999/tcp'
 user_hash=$(printf '%s\n' "$user_rules" | sha256sum | awk '{print $1}')
 _ms_state_get() {
     case "$1" in
-        UFW_DEFAULTS_APPLIED|UFW_ENABLED_BY_MEDIASTACK) echo true ;;
+        UFW_DEFAULTS_APPLIED | UFW_ENABLED_BY_MEDIASTACK) echo true ;;
         UFW_DEFAULT_INCOMING) echo deny ;;
         UFW_DEFAULT_OUTGOING) echo allow ;;
         UFW_RULES_BEFORE_SHA256) echo "$user_hash" ;;
@@ -72,7 +78,8 @@ sudo() {
                     printf '%s\n' '[ 1] 9999/tcp ALLOW Anywhere # user' '[ 2] 80/tcp ALLOW Anywhere # MediaStack:HTTP-ACME' '[ 4] 443/tcp ALLOW Anywhere # MediaStack:HTTPS'
                 else
                     printf '%s\n' '[ 1] 9999/tcp ALLOW Anywhere # user'
-                fi ;;
+                fi
+                ;;
             "status verbose") printf '%s\n' 'Status: active' 'Default: deny (incoming), allow (outgoing), disabled (routed)' ;;
             "status") echo 'Status: active' ;;
             "show added") printf '%s\n' "$user_rules" ;;
@@ -103,10 +110,10 @@ unset SSH_CONNECTION
 empty_hash=$(printf '' | sha256sum | awk '{print $1}')
 _ms_state_get() {
     case "$1" in
-        UFW_DEFAULTS_APPLIED|UFW_ENABLED_BY_MEDIASTACK) echo true ;;
+        UFW_DEFAULTS_APPLIED | UFW_ENABLED_BY_MEDIASTACK) echo true ;;
         UFW_DEFAULT_INCOMING) echo deny ;;
         UFW_DEFAULT_OUTGOING) echo allow ;;
-        UFW_RULES_BEFORE_SHA256) echo "$empty_hash" ;;   # drift: live rules differ
+        UFW_RULES_BEFORE_SHA256) echo "$empty_hash" ;; # drift: live rules differ
         UFW_RULE_COUNT) echo 0 ;;
     esac
 }
@@ -115,8 +122,8 @@ sudo() {
     if [[ "$1" == ufw ]]; then
         UFW_CALLS+=("${*:2}")
         case "${*:2}" in
-            "status numbered") echo 'Status: active' ;;                 # no MediaStack-tagged rules
-            "show added") echo 'ufw allow 9999/tcp' ;;                  # untagged user rule = drift
+            "status numbered") echo 'Status: active' ;; # no MediaStack-tagged rules
+            "show added") echo 'ufw allow 9999/tcp' ;;  # untagged user rule = drift
             "status verbose") printf '%s\n' 'Status: active' 'Default: deny (incoming), allow (outgoing), disabled (routed)' ;;
             "status") echo 'Status: active' ;;
         esac
@@ -169,7 +176,7 @@ _ms_state_get() {
     case "$1" in
         UFW_RULE_COUNT) echo 1 ;;
         UFW_RULE_1) echo 'allow 80/tcp comment MediaStack:HTTP-ACME' ;;
-        UFW_DEFAULTS_APPLIED|UFW_ENABLED_BY_MEDIASTACK) echo false ;;
+        UFW_DEFAULTS_APPLIED | UFW_ENABLED_BY_MEDIASTACK) echo false ;;
         UFW_RULES_BEFORE_SHA256) printf '' | sha256sum | awk '{print $1}' ;;
         UFW_DEFAULT_INCOMING) echo deny ;;
         UFW_DEFAULT_OUTGOING) echo allow ;;
@@ -221,12 +228,15 @@ _ms_state_get() {
 sysctl() {
     [[ "$1" == -n ]] || return 0
     case "$2" in
-        *.accept_redirects|*.send_redirects) echo 0 ;;
+        *.accept_redirects | *.send_redirects) echo 0 ;;
         *) echo 1 ;;
     esac
 }
 sudo() {
-    if [[ "$1" == sysctl ]]; then SYSCTL_WRITES+=("$*"); return 0; fi
+    if [[ "$1" == sysctl ]]; then
+        SYSCTL_WRITES+=("$*")
+        return 0
+    fi
     command "$@"
 }
 _uninstall_sysctl
@@ -250,7 +260,8 @@ sudo() {
 setup_sysctl_hardening >/dev/null 2>&1
 case "$(tr '\n' ' ' <"$SYSCTL_TRACE")" in
     *"state:SYSCTL_FILE_CREATED sudo:tee"*"state:SYSCTL_FILE_SHA256 sudo:sysctl"*)
-        pass "sysctl: ownership is durable before file creation and apply" ;;
+        pass "sysctl: ownership is durable before file creation and apply"
+        ;;
     *) fail "sysctl: ownership is durable before file creation and apply" "$(cat "$SYSCTL_TRACE")" ;;
 esac
 unset -f sudo sysctl _ms_state_set
@@ -266,12 +277,12 @@ id() { [[ "$1" == -nG ]] && echo media; }
 smbd() { :; }
 _ms_state_get() {
     case "$1" in
-        SAMBA_CONFIGURED|SAMBA_OWNERSHIP_RECORDED|SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK|SAMBA_PASSDB_CREATED_BY_MEDIASTACK|SAMBA_GROUP_ADDED_BY_MEDIASTACK) echo true ;;
+        SAMBA_CONFIGURED | SAMBA_OWNERSHIP_RECORDED | SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK | SAMBA_PASSDB_CREATED_BY_MEDIASTACK | SAMBA_GROUP_ADDED_BY_MEDIASTACK) echo true ;;
         SAMBA_SETUP_PENDING) echo false ;;
         SAMBA_INCLUDE_SHA256) echo "$samba_hash" ;;
         SAMBA_EFFECTIVE_SHA256) echo "$effective_hash" ;;
         SAMBA_USER) echo mediaadmin ;;
-        SAMBA_PASSDB_PREEXISTED|SAMBA_GROUP_PREEXISTED) echo false ;;
+        SAMBA_PASSDB_PREEXISTED | SAMBA_GROUP_PREEXISTED) echo false ;;
         SAMBA_GROUP) echo media ;;
     esac
 }
@@ -279,7 +290,10 @@ sudo() {
     case "$1" in
         testparm) printf '%s\n' "$effective" ;;
         pdbedit) return 0 ;;
-        smbpasswd|gpasswd|apt-get|systemctl) SAMBA_CALLS+=("$*"); return 0 ;;
+        smbpasswd | gpasswd | apt-get | systemctl)
+            SAMBA_CALLS+=("$*")
+            return 0
+            ;;
         *) command "$@" ;;
     esac
 }
@@ -289,7 +303,7 @@ assert_contains "${SAMBA_CALLS[*]}" "smbpasswd -x mediaadmin" "Samba: MediaStack
 assert_contains "${SAMBA_CALLS[*]}" "gpasswd -d mediaadmin media" "Samba: MediaStack-added group membership removed"
 assert_contains "${SAMBA_CALLS[*]}" "apt-get remove -y -qq samba" "Samba: explicitly owned package removed"
 case "${SAMBA_CALLS[*]}" in
-    *autoremove*|*userdel*) fail "Samba: no autoremove or Linux-account deletion" "${SAMBA_CALLS[*]}" ;;
+    *autoremove* | *userdel*) fail "Samba: no autoremove or Linux-account deletion" "${SAMBA_CALLS[*]}" ;;
     *) pass "Samba: no autoremove or Linux-account deletion" ;;
 esac
 
@@ -299,11 +313,11 @@ rm -f "$SAMBA_INCLUDE_FILE"
 SAMBA_CALLS=()
 _ms_state_get() {
     case "$1" in
-        SAMBA_OWNERSHIP_RECORDED|SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK|SAMBA_SETUP_PENDING) echo true ;;
-        SAMBA_CONFIGURED|SAMBA_PASSDB_PREEXISTED|SAMBA_GROUP_PREEXISTED|SAMBA_PASSDB_CREATED_BY_MEDIASTACK|SAMBA_GROUP_ADDED_BY_MEDIASTACK) echo false ;;
+        SAMBA_OWNERSHIP_RECORDED | SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK | SAMBA_SETUP_PENDING) echo true ;;
+        SAMBA_CONFIGURED | SAMBA_PASSDB_PREEXISTED | SAMBA_GROUP_PREEXISTED | SAMBA_PASSDB_CREATED_BY_MEDIASTACK | SAMBA_GROUP_ADDED_BY_MEDIASTACK) echo false ;;
         SAMBA_USER) echo mediaadmin ;;
         SAMBA_GROUP) echo media ;;
-        SAMBA_SERVICE_WAS_ENABLED|SAMBA_SERVICE_WAS_ACTIVE) echo false ;;
+        SAMBA_SERVICE_WAS_ENABLED | SAMBA_SERVICE_WAS_ACTIVE) echo false ;;
     esac
 }
 _uninstall_samba
@@ -319,12 +333,18 @@ touch "$SCRIPT_DIR/.env"
 WATCHDOG_CALLS=()
 ui_input() { echo DESTROY; }
 storage_pause_watchdog_for_install() { return 0; }
-docker() { [[ "$*" == *" down "* ]] && return 42; return 0; }
+docker() {
+    [[ "$*" == *" down "* ]] && return 42
+    return 0
+}
 sudo() {
     if [[ "$1" == systemctl ]]; then
         case "$2" in
-            is-enabled|is-active) return 0 ;;
-            *) WATCHDOG_CALLS+=("${*:2}"); return 0 ;;
+            is-enabled | is-active) return 0 ;;
+            *)
+                WATCHDOG_CALLS+=("${*:2}")
+                return 0
+                ;;
         esac
     fi
     command "$@"
@@ -338,9 +358,15 @@ SCRIPT_DIR="$ORIGINAL_SCRIPT_DIR"
 
 # --uninstall dispatch precedes a ready Stage 3 marker.
 STAGE3_CALLS=0
-ui_banner() { :; }; check_not_root() { :; }; check_debian() { :; }; prompt_sudo_cache() { :; }
+ui_banner() { :; }
+check_not_root() { :; }
+check_debian() { :; }
+prompt_sudo_cache() { :; }
 validate_install_state() { return 1; }
-stage3_marker_exists() { STAGE3_CALLS=$((STAGE3_CALLS + 1)); return 0; }
+stage3_marker_exists() {
+    STAGE3_CALLS=$((STAGE3_CALLS + 1))
+    return 0
+}
 record_launcher_outcome() { :; }
 main --uninstall >/dev/null 2>&1
 assert_eq "1" "$?" "routing: invalid-ledger uninstall fails closed"

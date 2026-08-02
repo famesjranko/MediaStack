@@ -252,10 +252,12 @@ print("enabled=" + str(h.get("enabled")) + " cert_id=" + str(h.get("certificate_
     fi
     case "$row_state" in
         "enabled=False cert_id=0")
-            pass "post-heal: host_id=$host_id row reset to enabled=False cert=0" ;;
+            pass "post-heal: host_id=$host_id row reset to enabled=False cert=0"
+            ;;
         *)
             fail "post-heal: host_id=$host_id row reset" \
-                "got '$row_state' (token HTTP=$token_resp; row HTTP=$row_http body=${row_body:0:200})" ;;
+                "got '$row_state' (token HTTP=$token_resp; row HTTP=$row_http body=${row_body:0:200})"
+            ;;
     esac
 
     # ------------------------------------------------------------------

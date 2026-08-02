@@ -48,7 +48,7 @@ reset_env() {
     printf '%s\n' \
         "TEST_API_KEY=old" \
         "OTHER_KEY=keep" \
-        > "$SCRIPT_DIR/.env"
+        >"$SCRIPT_DIR/.env"
     chmod 600 "$SCRIPT_DIR/.env"
     unset TEST_API_KEY NEW_API_KEY
     LAST_WARN=""
@@ -84,7 +84,7 @@ assert_eq "$append_value" "$(source_env_value "$SCRIPT_DIR/.env" NEW_API_KEY)" "
 
 reset_env
 same_value='abc&def|ghi/jkl'
-printf '%s\n' "TEST_API_KEY=$same_value" "OTHER_KEY=keep" > "$SCRIPT_DIR/.env"
+printf '%s\n' "TEST_API_KEY=$same_value" "OTHER_KEY=keep" >"$SCRIPT_DIR/.env"
 save_api_key TEST_API_KEY "$same_value"
 rc=$?
 assert_eq "0" "$rc" "save_api_key: canonicalizes existing unquoted value"
@@ -114,7 +114,7 @@ assert_contains "$LAST_WARN" "single quote" "save_api_key: single quote rejectio
 # _set_env_var (the launcher's .env writer) — must round-trip nasty values
 # byte-exact through a re-source and never disturb unrelated keys. It shares
 # the one hardened writer with save_api_key, so the same quoting/atomic
-# guarantees apply (#15 / #34 cluster).
+# guarantees apply.
 # ---------------------------------------------------------------------------
 # Stand in the launcher's shoes: it defines _set_env_var inline, so mirror the
 # exact current body here pointed at the same shared writer, then exercise it.
@@ -189,12 +189,12 @@ assert_eq "1" "$?" "_set_env_var: returns non-zero when .env is absent"
 
 # ---------------------------------------------------------------------------
 # _env_write_kv MAP mode — several key->value pairs applied in ONE atomic
-# write. Backs storage_env_set + the stage2/stage3 .env rewriters (C4 / #269):
+# write. Backs storage_env_set + the stage2/stage3 .env rewriters:
 # one replace + two appends, idempotence, mode preservation, and all-or-nothing
 # refusal when any pair is bad.
 # ---------------------------------------------------------------------------
 reset_env
-chmod 640 "$SCRIPT_DIR/.env"           # non-default mode must survive the write
+chmod 640 "$SCRIPT_DIR/.env" # non-default mode must survive the write
 map_status=$(_env_write_kv "$SCRIPT_DIR/.env" \
     TEST_API_KEY 'a b $c' \
     BRAND_NEW 'appended #1' \
@@ -238,7 +238,7 @@ assert_eq "" "$(grep '^GOOD_KEY=' "$SCRIPT_DIR/.env" || true)" "_env_write_kv ma
 # a fixture, plus the absent-key / empty-config edges.
 # ---------------------------------------------------------------------------
 CFG_FIXTURE="$TMP_DIR/cfg-fixture.yml"
-cat > "$CFG_FIXTURE" <<'YAML'
+cat >"$CFG_FIXTURE" <<'YAML'
 categories:
   tv: "5000,5030,5040"
 min_free_space_gb: 20
@@ -295,7 +295,7 @@ missing=$(cfg_field no.such.key 2>/dev/null || echo "FELLBACK")
 assert_eq "FELLBACK" "$missing" "cfg_field: absent key returns non-zero (fallback fires)"
 
 # Empty config: the json-default readers still yield {} (not a crash / empty).
-: > "$TMP_DIR/empty.yml"
+: >"$TMP_DIR/empty.yml"
 assert_eq "{}" "$(CONFIG_FILE="$TMP_DIR/empty.yml" cfg_custom_format_scores)" "cfg_custom_format_scores: empty config -> {}"
 assert_eq "{}" "$(CONFIG_FILE="$TMP_DIR/empty.yml" cfg_quality_definitions sonarr)" "cfg_quality_definitions: empty config -> {}"
 
@@ -308,7 +308,7 @@ fi
 
 # Present-but-null languages key (user deleted all list items): same
 # empty + rc 0 contract, never a literal "None" for the profile builder.
-printf 'bazarr:\n  languages:\n' > "$TMP_DIR/null-langs.yml"
+printf 'bazarr:\n  languages:\n' >"$TMP_DIR/null-langs.yml"
 if bl=$(CONFIG_FILE="$TMP_DIR/null-langs.yml" cfg_bazarr_languages 2>/dev/null); then
     assert_eq "" "$bl" "cfg_bazarr_languages: present-but-null key -> empty, rc 0"
 else
@@ -317,7 +317,7 @@ fi
 
 # A null/non-string category path fails the whole pairs read (rc 1, matching
 # the old reader's TypeError) instead of emitting "name:None".
-cat > "$TMP_DIR/bad-cats.yml" <<'YAML'
+cat >"$TMP_DIR/bad-cats.yml" <<'YAML'
 qbittorrent:
   categories:
     tv-sonarr:

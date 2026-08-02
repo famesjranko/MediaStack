@@ -27,12 +27,12 @@ Options:
 EOF
 }
 
-while (( $# > 0 )); do
+while (($# > 0)); do
     case "$1" in
         --prune)
             PRUNE_IMAGES=true
             ;;
-        -h|--help)
+        -h | --help)
             usage
             exit 0
             ;;
@@ -57,7 +57,7 @@ source "$SCRIPT_DIR/scripts/setup/storage.sh"
 
 IMAGE_CHANNEL="${IMAGE_CHANNEL:-stable}"
 case "${IMAGE_CHANNEL,,}" in
-    stable|latest)
+    stable | latest)
         IMAGE_CHANNEL="${IMAGE_CHANNEL,,}"
         ;;
     *)
@@ -107,10 +107,10 @@ for attempt in 1 2 3; do
         pull_ok=true
         break
     fi
-    if (( attempt < 3 )); then
+    if ((attempt < 3)); then
         echo "Pull failed (attempt ${attempt}/3). Retrying in ${backoff}s..."
         sleep "$backoff"
-        backoff=$(( backoff * 2 ))
+        backoff=$((backoff * 2))
     fi
 done
 if ! $pull_ok; then
@@ -132,8 +132,11 @@ if source "$SCRIPT_DIR/scripts/lib/health.sh" 2>/dev/null && _health_f2b_running
     echo ""
     echo "Verifying fail2ban protection still matches current log formats..."
     for _hc_svc in jellyfin seerr; do
-        docker inspect "$_hc_svc" >/dev/null 2>&1 || continue   # not in this deploy → don't wait on it
-        for _hc_i in $(seq 1 30); do _health_svc_healthy "$_hc_svc" && break; sleep 2; done
+        docker inspect "$_hc_svc" >/dev/null 2>&1 || continue # not in this deploy → don't wait on it
+        for _hc_i in $(seq 1 30); do
+            _health_svc_healthy "$_hc_svc" && break
+            sleep 2
+        done
     done
     health_present_fail2ban_updates jellyfin seerr
 fi
@@ -142,14 +145,14 @@ echo ""
 if $PRUNE_IMAGES; then
     echo "Cleaning up dangling Docker images across this host..."
     echo "WARNING: docker image prune is host-wide; it can remove dangling images from other Docker projects on this machine."
-# NOTE: docker image prune is host-wide — it removes dangling (untagged,
-# unreferenced) images from every Docker project on this host, not just
-# MediaStack's. The obvious scoping fix `--filter label=com.docker.compose.project=mediastack`
-# is a no-op: compose project labels live on containers/networks/volumes, not
-# on pulled images, and MediaStack uses `image:` (no `build:`). Running
-# containers' images are protected; the prune only sweeps untagged leftovers
-# from prior `compose pull` cycles. On a single-project host this is what
-# users want. Multi-project hosts: see https://docs.docker.com/reference/cli/docker/image/prune/
+    # NOTE: docker image prune is host-wide — it removes dangling (untagged,
+    # unreferenced) images from every Docker project on this host, not just
+    # MediaStack's. The obvious scoping fix `--filter label=com.docker.compose.project=mediastack`
+    # is a no-op: compose project labels live on containers/networks/volumes, not
+    # on pulled images, and MediaStack uses `image:` (no `build:`). Running
+    # containers' images are protected; the prune only sweeps untagged leftovers
+    # from prior `compose pull` cycles. On a single-project host this is what
+    # users want. Multi-project hosts: see https://docs.docker.com/reference/cli/docker/image/prune/
     docker image prune -f
 else
     echo "Skipping image prune. Dangling images from old service versions are left in place."

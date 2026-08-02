@@ -38,7 +38,7 @@ run_scenario() {
     dind_exec "mkdir -p /tmp/ms-data"
 
     # ------------------------------------------------------------------
-    # 0b. Compose contract: image pin, capability set (ADR-17 still applies),
+    # 0b. Compose contract: image pin, capability set,
     # bridge attach with pinned IPv4. Config dir is user-owned to mirror
     # setup.sh's non-root install path; DAC_OVERRIDE lets container root
     # write wg0.conf and wg-easy.db there.
@@ -66,11 +66,11 @@ run_scenario() {
     cap_config=$(dind_exec "docker compose --profile remote config --format json | python3 -c 'import json,sys; svc=json.load(sys.stdin)[\"services\"][\"wireguard\"]; print(\",\".join(svc.get(\"cap_add\", []))); print(\",\".join(svc.get(\"cap_drop\", [])))'" | tr -d '\r')
     cap_add=$(printf '%s\n' "$cap_config" | sed -n '1p')
     cap_drop=$(printf '%s\n' "$cap_config" | sed -n '2p')
-    assert_eq "NET_ADMIN,NET_RAW,SYS_MODULE,DAC_OVERRIDE" "$cap_add" "WireGuard cap_add matches ADR-17"
+    assert_eq "NET_ADMIN,NET_RAW,SYS_MODULE,DAC_OVERRIDE" "$cap_add" "WireGuard cap_add is exactly the four capabilities wg-easy needs"
     assert_eq "ALL" "$cap_drop" "WireGuard drops default capabilities"
 
     bridge_ip=$(dind_exec "docker compose --profile remote config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"services\"][\"wireguard\"][\"networks\"][\"mediastack\"][\"ipv4_address\"])'" | tr -d '\r\n')
-    assert_eq "172.28.0.11" "$bridge_ip" "WireGuard pinned to mediastack .11 (ADR-23)"
+    assert_eq "172.28.0.11" "$bridge_ip" "WireGuard pinned to the mediastack .11 static octet"
 
     # ------------------------------------------------------------------
     # 1. Bring up wireguard via --profile remote
@@ -78,7 +78,7 @@ run_scenario() {
     echo "  starting wireguard (pulling image)…"
     dind_exec "docker compose --profile remote up -d wireguard" >/dev/null 2>&1
     local up_rc=$?
-    if (( up_rc != 0 )); then
+    if ((up_rc != 0)); then
         fail "docker compose up wireguard" "exit $up_rc"
         dind_exec "docker compose --profile remote logs wireguard" 2>&1 | tail -30
         return 1
@@ -154,10 +154,10 @@ run_scenario() {
     peer_http=$(dind_exec "curl -s -o /dev/null -w '%{http_code}' -u admin:$wg_password -X POST http://localhost:51821/api/client -H 'Content-Type: application/json' -d '{\"name\":\"test-peer\",\"expiresAt\":null}'" | tr -d '\r\n')
     test_peer_id=$(dind_exec "curl -s -u admin:$wg_password http://localhost:51821/api/client | python3 -c 'import sys,json; clients=json.load(sys.stdin); print(next((str(c.get(\"id\", \"\")) for c in clients if c.get(\"name\") == \"test-peer\"), \"\"))'" | tr -d '\r\n')
     case "$peer_http" in
-        200|201) pass "POST /api/client creates peer (HTTP $peer_http)" ;;
+        200 | 201) pass "POST /api/client creates peer (HTTP $peer_http)" ;;
         *)
             if [[ -n "$test_peer_id" ]]; then
-                pass "POST /api/client returned HTTP $peer_http but peer persisted (ADR-28 read-back path)"
+                pass "POST /api/client returned HTTP $peer_http but peer persisted (read-back path)"
             else
                 fail "POST /api/client creates peer" "HTTP $peer_http"
             fi

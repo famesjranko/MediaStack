@@ -44,8 +44,14 @@ ms_stub_core() {
         fi
         if [[ "${1:-}" == "compose" ]]; then
             case " $* " in
-                *" config --services "*) _stub_compose_service_list; return 0 ;;
-                *" config --images "*)   _stub_compose_image_list;   return 0 ;;
+                *" config --services "*)
+                    _stub_compose_service_list
+                    return 0
+                    ;;
+                *" config --images "*)
+                    _stub_compose_image_list
+                    return 0
+                    ;;
             esac
             return 0
         fi
@@ -59,13 +65,13 @@ ms_stub_core() {
         command openssl "$@"
     }
     if [[ -n "$api_key" ]]; then
-        cat > scripts/configure.sh <<CONFIGURE
+        cat >scripts/configure.sh <<CONFIGURE
 #!/usr/bin/env bash
 sed -i 's/^JELLYFIN_API_KEY=.*/JELLYFIN_API_KEY=$api_key/' .env
 exit 0
 CONFIGURE
     else
-        printf '#!/usr/bin/env bash\nexit 0\n' > scripts/configure.sh
+        printf '#!/usr/bin/env bash\nexit 0\n' >scripts/configure.sh
     fi
     chmod +x scripts/configure.sh
 }
@@ -74,7 +80,10 @@ CONFIGURE
 ms_stub_common_env() {
     timedatectl() { echo Etc/UTC; }
     free() { printf 'Mem: 16Gi 1Gi 15Gi 0Gi 0Gi 15Gi\n'; }
-    net_detect_public_ip() { _NET_PUBLIC_IP=203.0.113.10; return 0; }
+    net_detect_public_ip() {
+        _NET_PUBLIC_IP=203.0.113.10
+        return 0
+    }
 }
 
 # Image-pull / stack-start / health-wait / access-info no-ops shared by Stage 1
@@ -94,7 +103,11 @@ ms_stub_service_lifecycle() {
 ms_stub_stage1_storage() {
     df() { printf 'Filesystem 1G-blocks Used Avail Use%% Mounted on\n/dev/ms-test 500G 50G 450G 10%% /\n'; }
     findmnt() { return 1; }
-    net_run_speedtest() { _NET_DL_MBPS=120; _NET_UL_MBPS=40; return 0; }
+    net_run_speedtest() {
+        _NET_DL_MBPS=120
+        _NET_UL_MBPS=40
+        return 0
+    }
     net_check_port_status() { _NET_PORT_STATUS["$1"]=closed; }
     net_is_port_locally_bound() { return 1; }
     validate_smb_port() { return 0; }
@@ -103,7 +116,10 @@ ms_stub_stage1_storage() {
     # The wizard verifies via storage_probe_nas (non-destructive) instead of
     # mounting; drive its classification from the (stubbable) classifier so the
     # existing-share scenario's empty/mediastack/conflict cases still work.
-    storage_probe_nas() { _STORAGE_PROBE_CLASS="$(storage_classify_data_root "${DATA_DIR:-/data}")"; return 0; }
+    storage_probe_nas() {
+        _STORAGE_PROBE_CLASS="$(storage_classify_data_root "${DATA_DIR:-/data}")"
+        return 0
+    }
     storage_preflight_nas() { return 0; }
 }
 
@@ -112,7 +128,10 @@ ms_stub_stage1_storage() {
 # create_config_dirs runs the managed-seed cleanup the wizard would.
 ms_stub_stage1_install() {
     stop_existing_stack() { log_info "stub stop_existing_stack"; }
-    create_data_dirs() { mkdir -p "${DATA_DIR:-/tmp/ms-wizard-data}"; log_info "stub create_data_dirs"; }
+    create_data_dirs() {
+        mkdir -p "${DATA_DIR:-/tmp/ms-wizard-data}"
+        log_info "stub create_data_dirs"
+    }
     create_config_dirs() {
         mkdir -p config/ddns-updater
         if declare -F clear_qbittorrent_managed_seed_for_manual_storage >/dev/null; then
@@ -120,7 +139,10 @@ ms_stub_stage1_install() {
         fi
         log_info "stub create_config_dirs"
     }
-    generate_override() { printf 'services: {}\n' > docker-compose.override.yml; log_info "stub generate_override $1"; }
+    generate_override() {
+        printf 'services: {}\n' >docker-compose.override.yml
+        log_info "stub generate_override $1"
+    }
     storage_install_watchdog() { log_info "stub storage_install_watchdog"; }
     # Relocated into _stage1_install (setup_hardening runs before the stack is
     # exposed; ufw/samba after STAGE_1_COMPLETE, before print_access_info); stub

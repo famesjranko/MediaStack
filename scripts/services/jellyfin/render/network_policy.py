@@ -8,6 +8,7 @@ protocol consumed by configure_jellyfin_networking:
     APPLY + JSON body
     APPLY_WITH_DRIFT + warning lines + --- + JSON body
 """
+
 import json
 import os
 import sys
@@ -77,18 +78,11 @@ def main() -> int:
 
     if cur_published == want_published:
         pass
-    elif not cur_published:
-        changes["PublishedServerUriBySubnet"] = want_published
-        skip_all = False
-    elif all(is_our_published_entry(entry) for entry in cur_published):
+    elif not cur_published or all(is_our_published_entry(entry) for entry in cur_published):
         changes["PublishedServerUriBySubnet"] = want_published
         skip_all = False
     else:
-        drift.append(
-            "PublishedServerUriBySubnet is {} (expected {})".format(
-                cur_published, want_published
-            )
-        )
+        drift.append(f"PublishedServerUriBySubnet is {cur_published} (expected {want_published})")
 
     if drift and not changes:
         print("DRIFT")

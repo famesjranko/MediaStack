@@ -7,7 +7,8 @@
 #   push_jackett.sh apply                                    # configure_jackett
 set -uo pipefail
 
-mode="$1"; shift
+mode="$1"
+shift
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR" || exit 1
@@ -24,7 +25,7 @@ export CONFIG_FILE
 [[ -f "$CONFIG_FILE" ]] || cp "$SCRIPT_DIR/config.yml" "$CONFIG_FILE"
 
 if [[ "$mode" == "seed-config" ]]; then
-    (( $# >= 1 )) || {
+    (($# >= 1)) || {
         echo "usage: push_jackett.sh seed-config <id[:type]> [id[:type] ...]" >&2
         exit 2
     }

@@ -113,7 +113,7 @@ assert_eq "-10" \
 
 # =========================================================================
 # 1080p Balanced — the recommended cell (effect-equivalent of the old
-# "balanced": carries ADR-25's 720p/1080p values, plus the SD floor).
+# "balanced": carries the calibrated 720p/1080p values, plus the SD floor).
 # =========================================================================
 config=$(apply_and_parse 1080p balanced)
 
@@ -136,11 +136,11 @@ assert_eq "[1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 14, 15, 20]" \
 
 assert_eq "30.0" \
     "$(yaml_get "$config" "c['quality_definitions']['sonarr']['HDTV-720p']['preferred']")" \
-    "1080p balanced: sonarr HDTV-720p preferred carried from ADR-25"
+    "1080p balanced: sonarr HDTV-720p preferred is the calibrated 30.0"
 
 assert_eq "50.0" \
     "$(yaml_get "$config" "c['quality_definitions']['radarr']['WEBDL-1080p']['preferred']")" \
-    "1080p balanced: radarr WEBDL-1080p preferred carried from ADR-25"
+    "1080p balanced: radarr WEBDL-1080p preferred is the calibrated 50.0"
 
 assert_eq "0" \
     "$(yaml_get "$config" "c['custom_formats']['x264']")" \
@@ -320,7 +320,7 @@ wizard_gpu_mapping() {
     local gpu_choice="$1"
     case "$gpu_choice" in
         "NVIDIA GPU"*) echo "nvidia" ;;
-        "AMD VAAPI"*)  echo "amd" ;;
+        "AMD VAAPI"*) echo "amd" ;;
         "Intel Quick"*) echo "intel" ;;
         *) echo "none" ;;
     esac

@@ -1,6 +1,6 @@
 # tests/api-matrix/seerr.sh — Sonarr/Radarr -> Seerr connection matrix.
 #
-# Deliberately scoped to "service connections" (#164): the exact wiring
+# Deliberately scoped to "service connections": the exact wiring
 # connect_arr_to_seerr writes into Seerr for each app, plus its idempotent
 # already-connected skip path. Jellyfin library-sync membership, default
 # permissions/quotas, and trustProxy are already covered at their default
@@ -30,14 +30,17 @@ _srm_cfg_field() {
 # quality-rename modules left Sonarr/Radarr in - not a stale config.yml
 # snapshot from before those modules ran.
 # curl a JSON *arr endpoint inside DinD with a short retry. The *arr APIs answer
-# with transient non-2xx under load (#171); an unguarded `curl -sf` miss here
+# with transient non-2xx under load; an unguarded `curl -sf` miss here
 # would silently yield an empty expected value and a FALSE assertion (e.g.
 # "expected empty, got 8/1080p Balanced" when the product stored a valid
 # profile). Retry a few times before giving up.
 _srm_curl_json() {
     local url="$1" key="$2" out attempt
     for attempt in 1 2 3; do
-        out=$(dind_exec "curl -sf -H 'X-Api-Key: $key' $url") && { printf '%s' "$out"; return 0; }
+        out=$(dind_exec "curl -sf -H 'X-Api-Key: $key' $url") && {
+            printf '%s' "$out"
+            return 0
+        }
         sleep "$attempt"
     done
     return 1
@@ -63,7 +66,10 @@ PY
 _srm_expected_lang_id() {
     local base="$1" key="$2"
     local profiles
-    profiles=$(_srm_curl_json "$base/languageprofile" "$key") || { echo "1"; return; }
+    profiles=$(_srm_curl_json "$base/languageprofile" "$key") || {
+        echo "1"
+        return
+    }
     SRM_PROFILES="$profiles" python3 - <<'PY'
 import json
 import os
@@ -167,8 +173,14 @@ matrix_seerr() {
 
     local app base key port expected
     for app in sonarr radarr; do
-        if [[ "$app" == sonarr ]]; then base="$sonarr_base"; key="$sonarr_key"; port=8989
-        else base="$radarr_base"; key="$radarr_key"; port=7878
+        if [[ "$app" == sonarr ]]; then
+            base="$sonarr_base"
+            key="$sonarr_key"
+            port=8989
+        else
+            base="$radarr_base"
+            key="$radarr_key"
+            port=7878
         fi
 
         settings=$(_srm_settings "$app" "$cookiejar") || {

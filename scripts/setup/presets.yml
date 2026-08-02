@@ -118,8 +118,8 @@ resolutions:
 # reference; `compact` ≈ 0.7× and `large` ≈ 1.2× its preferred/max (mins are the
 # source floor, size-independent). Bounds are MB/min (Sonarr per-episode, Radarr
 # per-movie); preferred sits in the middle of what real sources produce, max is a
-# sane ceiling — NOT TRaSH's "unlimited" (see quality-bounds.md / ADR-25).
-# The 720p/1080p balanced+large rows are ADR-25's calibrated values, carried over;
+# sane ceiling — NOT TRaSH's "unlimited" (see docs/reference/quality-bounds.md).
+# The 720p/1080p balanced+large rows carry the calibrated reference values;
 # the SD-floor rows and compact's non-WEB rows are derived from the scalar model.
 # Tables are full (SD → 1080p); composition MASKS them to the resolution's tiers.
 #
@@ -127,7 +127,7 @@ resolutions:
 # release-quality scoring is size-independent; the size axis is the bounds
 # envelope only. No format hard-blocks by default (only -10000 would, and none
 # is used); oversized releases are gated by the bounds. Kept as three blocks
-# (not shared) so a future preset could diverge them (e.g. a 4K size). See ADR-43.
+# (not shared) so a future preset could diverge them (e.g. a 4K size).
 # ---------------------------------------------------------------------------
 sizes:
   compact:

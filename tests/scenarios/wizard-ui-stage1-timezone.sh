@@ -2,8 +2,8 @@
 #
 # The system screen offers Continue / Override timezone / Abort. This drives the
 # middle branch: pick "Override timezone", enter a valid zone that differs from
-# the detected default, and confirm it lands in .env as TZ. Closes matrix cell
-# S1.0's override path (the all-defaults runs take "Continue"). The DinD image
+# the detected default, and confirm it lands in .env as TZ. This is the only run
+# that covers the override path (the all-defaults runs take "Continue"). The DinD image
 # ships a full tzdata tree, so America/New_York validates against
 # /usr/share/zoneinfo without extra setup.
 

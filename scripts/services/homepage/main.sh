@@ -237,11 +237,11 @@ print(yaml.safe_dump(services, default_flow_style=False, sort_keys=False))
         if [[ "$existing" == "$new_services" ]]; then
             log_skip "Homepage services.yaml already up to date"
         else
-            echo "$new_services" > "$services_file"
+            echo "$new_services" >"$services_file"
             log_ok "Homepage services.yaml generated"
         fi
     else
-        echo "$new_services" > "$services_file"
+        echo "$new_services" >"$services_file"
         log_ok "Homepage services.yaml generated"
     fi
 
@@ -252,7 +252,7 @@ print(yaml.safe_dump(services, default_flow_style=False, sort_keys=False))
     local bookmarks_file="$SCRIPT_DIR/config/homepage/bookmarks.yaml"
     if [[ ! -f "$bookmarks_file" ]] || ! grep -qx '\[\]' "$bookmarks_file"; then
         local tmp="${bookmarks_file}.tmp.$$"
-        echo '[]' > "$tmp" && mv "$tmp" "$bookmarks_file"
+        echo '[]' >"$tmp" && mv "$tmp" "$bookmarks_file"
         log_ok "Homepage bookmarks.yaml reset (removed defaults)"
     fi
 
@@ -317,7 +317,10 @@ else:
     if [[ -f "$widgets_file" ]] && grep -q "cputemp:" "$widgets_file"; then
         local has_temp=false _z
         for _z in /sys/class/thermal/thermal_zone*/temp; do
-            [[ -r "$_z" && -n "$(cat "$_z" 2>/dev/null)" ]] && { has_temp=true; break; }
+            [[ -r "$_z" && -n "$(cat "$_z" 2>/dev/null)" ]] && {
+                has_temp=true
+                break
+            }
         done
         if grep -q "cputemp: $has_temp" "$widgets_file"; then
             log_skip "Homepage cputemp already $has_temp"
@@ -391,9 +394,9 @@ else:
     case "$nas_result" in
         SKIP) log_skip "Homepage NAS storage label already correct" ;;
         OK) if [[ "$want" == true ]]; then
-                log_ok "Homepage NAS storage label enabled"
-            else
-                log_ok "Homepage NAS storage label reset (not NAS+watchdog)"
-            fi ;;
+            log_ok "Homepage NAS storage label enabled"
+        else
+            log_ok "Homepage NAS storage label reset (not NAS+watchdog)"
+        fi ;;
     esac
 }

@@ -1,0 +1,65 @@
+# Pinned developer toolchain. Nothing here is a runtime dependency: the stack
+# itself stays stdlib-only bash + python3, and none of these tools is fetched
+# by setup.sh, the launcher, or any test the CI tiers run.
+#
+# Every entry pins an exact version plus whatever integrity material the
+# distribution publishes. A floating install is not a pin.
+
+[gitleaks]
+# Formal secret scanner. Two modes, both proven against synthetic canaries:
+# `dir` reads a working tree as it stands, `git` reads reachable history.
+# A tree scan says nothing about a secret that was committed and later
+# removed - only the history mode reaches those blobs.
+version = "8.30.1"
+platform = "linux_x64"
+url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+sha256 = "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+# The extracted binary, re-verified on every scan. A version string is
+# self-reported: a shell script that echoes one passes a version check.
+binary_sha256 = "88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509"
+checksums_url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt"
+checksums_sha256 = "061476c21adaf5441516f96f185c1a4706a83cd6329b9b38762271b3d4a52fae"
+config = ".gitleaks.toml"
+install = "./tests/secret-scan.sh install"
+tree = "./tests/secret-scan.sh tree <path>"
+history = "./tests/secret-scan.sh history <repo> [<git-log-opts>]"
+doc = "https://github.com/gitleaks/gitleaks/blob/v8.30.1/README.md"
+
+[shfmt]
+# Shell code formatter, applied to every tracked shell file - production,
+# runtime and tests alike. Enforces consistent indentation and layout.
+version = "3.13.1"
+source = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_amd64"
+# The URL serves the binary itself, so this is also the sha of the cached tool,
+# re-verified on every run. mvdan/sh publishes no checksum file; computed locally.
+sha256 = "fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1"
+install = "./tests/format.sh install"
+invoke = "./tests/format.sh check"
+write = "./tests/format.sh write"
+# The wrapper is the gate, not the bare binary: it applies -ln bash -i 4 -ci -bn -d
+# over `git ls-files` discovery. Without -d (or -l) and without a path, shfmt reads
+# stdin and exits 0 having checked nothing. shfmt also honours .editorconfig over
+# every flag above, so the wrapper refuses to run if one appears.
+
+[mypy]
+# Python static type checker. Pinned 1.20.2, not the system 2.3.0: mypy 2.x
+# rejects --python-version 3.9 on the CLI, and when the same value comes from
+# pyproject.toml instead it warns and silently proceeds at 3.10 - the Debian 11
+# floor (docs/project/stack.md) would stop being checked while the gate still
+# reported success. types-PyYAML is pinned alongside it: the finding set
+# differs without the stub — confirmed by testing both ways, not assumed.
+version = "1.20.2"
+types_pyyaml_version = "6.0.12.20260724"
+invoke = "uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy ."
+# mypy writes a self-ignoring .mypy_cache/, invisible to plain git status -
+# set MYPY_CACHE_DIR outside the tree for every invocation.
+
+[ruff]
+# Python formatter and linter. Both commands below read pyproject.toml from
+# the repo root; a config file with any other name is parsed as ruff.toml
+# and rejected.
+version = "0.15.22"
+source = "pypi"
+invoke = "ruff check . && ruff format --check ."
+# Ruff writes .ruff_cache/ and self-ignores it, so git status can't see it -
+# set RUFF_CACHE_DIR outside the tree for every invocation.

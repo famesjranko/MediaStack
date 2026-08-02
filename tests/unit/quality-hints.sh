@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/quality-hints.sh
 #
-# Regression for #96: the shared two-axis quality picker
+# Regression guard: the shared two-axis quality picker
 # (scripts/lib/quality_select.sh, used by BOTH the install wizard and the day-2
 # launcher) must show size-menu GB hints that match the resolution just chosen —
 # 720p shows 720p sizes, 1080p shows 1080p sizes — NOT always the 1080p column
@@ -36,7 +36,7 @@ scenario_begin "$CURRENT_SCENARIO"
 # size is irrelevant; we assert on the LABELS, not the choice).
 # ---------------------------------------------------------------------------
 pick_size_labels() {
-  WANT_RES="$1" PICK_SCRIPT_DIR="$REPO_ROOT" bash -c '
+    WANT_RES="$1" PICK_SCRIPT_DIR="$REPO_ROOT" bash -c '
     set -uo pipefail
     log_error(){ echo "ERR: $*" >&2; }
     SCRIPT_DIR="$PICK_SCRIPT_DIR"
@@ -66,32 +66,32 @@ labels_1080="$(pick_size_labels 1080p)"
 # Non-vacuity guard: the capture must be non-empty AND carry a GB hint at all.
 # Without this, the negative assertions below would pass even if the fix had
 # made the hint vanish entirely (the exact failure mode being guarded).
-assert_contains "$labels_720"  "GB/movie" "720p: size menu carries a GB hint (capture non-empty)"
+assert_contains "$labels_720" "GB/movie" "720p: size menu carries a GB hint (capture non-empty)"
 assert_contains "$labels_1080" "GB/movie" "1080p: size menu carries a GB hint (capture non-empty)"
 
-# Positive, per resolution — these FAIL on pre-#96 code (which renders the 1080p
+# Positive, per resolution — these FAIL on the pre-fix code (which renders the 1080p
 # column "~N GB/movie at 1080p" for EVERY resolution). Source of truth:
 # docs/reference/quality-bounds.md "Cells at a glance".
-assert_contains "$labels_720"  "~1.5-3 GB/movie" "720p Compact hint is the 720p number (~1.5-3)"
-assert_contains "$labels_720"  "~2-4 GB/movie"   "720p Balanced hint is the 720p number (~2-4)"
-assert_contains "$labels_720"  "~3-5 GB/movie"   "720p Large hint is the 720p number (~3-5)"
-assert_contains "$labels_1080" "~2-4 GB/movie"   "1080p Compact hint is the 1080p number (~2-4)"
-assert_contains "$labels_1080" "~4-8 GB/movie"   "1080p Balanced hint is the 1080p number (~4-8)"
-assert_contains "$labels_1080" "~6-15 GB/movie"  "1080p Large hint is the 1080p number (~6-15)"
+assert_contains "$labels_720" "~1.5-3 GB/movie" "720p Compact hint is the 720p number (~1.5-3)"
+assert_contains "$labels_720" "~2-4 GB/movie" "720p Balanced hint is the 720p number (~2-4)"
+assert_contains "$labels_720" "~3-5 GB/movie" "720p Large hint is the 720p number (~3-5)"
+assert_contains "$labels_1080" "~2-4 GB/movie" "1080p Compact hint is the 1080p number (~2-4)"
+assert_contains "$labels_1080" "~4-8 GB/movie" "1080p Balanced hint is the 1080p number (~4-8)"
+assert_contains "$labels_1080" "~6-15 GB/movie" "1080p Large hint is the 1080p number (~6-15)"
 
 # Negative — proves resolution-awareness, not merely "a hint exists". 720p must
 # not show the 1080p-Large number, and the contradictory "at 1080p" anchor (the
 # whole bug) must be gone. (assert.sh has no assert_not_contains; herestring,
 # not a pipe, to avoid the SIGPIPE-under-pipefail race.)
 if grep -qF "~6-15 GB/movie" <<<"$labels_720"; then
-  fail "720p does not show the 1080p-Large size" "720p menu contained '~6-15 GB/movie'"
+    fail "720p does not show the 1080p-Large size" "720p menu contained '~6-15 GB/movie'"
 else
-  pass "720p does not show the 1080p-Large size (~6-15 GB/movie)"
+    pass "720p does not show the 1080p-Large size (~6-15 GB/movie)"
 fi
 if grep -qF "at 1080p" <<<"$labels_720"; then
-  fail "size hints no longer say 'at 1080p'" "720p menu still contained 'at 1080p'"
+    fail "size hints no longer say 'at 1080p'" "720p menu still contained 'at 1080p'"
 else
-  pass "size hints no longer say 'at 1080p'"
+    pass "size hints no longer say 'at 1080p'"
 fi
 
 # ---------------------------------------------------------------------------

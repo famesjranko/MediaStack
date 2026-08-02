@@ -30,11 +30,17 @@ configure_beszel() {
     auth_body=$(B_EMAIL="$admin_email" B_PW="$admin_pw" python3 -c '
 import os, json
 print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_PW"]}))
-' 2>/dev/null) || { log_warn "Failed to build auth payload"; return 0; }
+' 2>/dev/null) || {
+        log_warn "Failed to build auth payload"
+        return 0
+    }
 
     auth_resp=$(curl -sS -X POST "$hub_url/api/collections/users/auth-with-password" \
         -H "Content-Type: application/json" \
-        -d "$auth_body" -w "\n%{http_code}" 2>/dev/null) || { log_warn "Beszel hub not reachable - skipping"; return 0; }
+        -d "$auth_body" -w "\n%{http_code}" 2>/dev/null) || {
+        log_warn "Beszel hub not reachable - skipping"
+        return 0
+    }
 
     local auth_code="${auth_resp##*$'\n'}"
     auth_resp="${auth_resp%$'\n'*}"

@@ -8,7 +8,10 @@ configure_radarr() {
 
     local radarr_key
     radarr_key=$(get_api_key "$SCRIPT_DIR/config/radarr/config.xml")
-    if [[ -z "$radarr_key" ]]; then log_error "Cannot read Radarr API key"; return 1; fi
+    if [[ -z "$radarr_key" ]]; then
+        log_error "Cannot read Radarr API key"
+        return 1
+    fi
     log_ok "Radarr API key: ${radarr_key:0:8}..."
     local base
     base="$(service_local_url radarr)/api/v3"
@@ -22,7 +25,8 @@ configure_radarr() {
     fi
 
     # Quality Profile + per-tier size bounds
-    local quality_ids; quality_ids=$(cfg_quality_ids "radarr")
+    local quality_ids
+    quality_ids=$(cfg_quality_ids "radarr")
     configure_quality_profile "radarr" "$base" "$radarr_key" "$quality_ids"
     configure_quality_definitions "radarr" "$base" "$radarr_key"
 

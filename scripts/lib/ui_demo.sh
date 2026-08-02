@@ -117,10 +117,10 @@ run_demo() {
     for i in $(seq 1 8); do
         local services=("sonarr" "radarr" "jackett" "jellyfin" "qbittorrent")
         local remaining=()
-        for ((j=i; j<${#services[@]}; j++)); do
+        for ((j = i; j < ${#services[@]}; j++)); do
             remaining+=("${services[$j]}")
         done
-        ui_status "Waiting... ($((i*5))s) Still starting: ${remaining[*]:-none}"
+        ui_status "Waiting... ($((i * 5))s) Still starting: ${remaining[*]:-none}"
         _demo_delay 0.4
     done
     ui_status_clear

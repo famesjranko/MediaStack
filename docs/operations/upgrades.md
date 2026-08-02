@@ -15,22 +15,22 @@ recorded pin policy disagrees with the live compose tag.
 
 ## Pin policy & recovery model
 
-Compose tags remain readable and selective (ADR-24): `latest` is acceptable where the integration
+Compose tags remain readable and selective: `latest` is acceptable where the integration
 surface is low-risk or covered by tests; major/exact pins are used where an upstream major has broken
 us or the API is unstable. `stable`/`latest` is an **install-time** choice: a Stable install
 generates `image: tag@sha256:digest` overrides from `docs/operations/image-digests.lock` (the
 versions the installer was tested against), a Latest install installs raw compose tags. Post-install
 a service stays on its installed image until the user updates it from the day-2 menu — there is no
 auto-updater. When an upgrade outruns what the configurator supports, the recovery model is **clean
-cutover** (Invariant 2): `docker compose down -v && ./setup.sh --full`. There is no in-place
+cutover**: `docker compose down -v && ./setup.sh --full`. There is no in-place
 multi-version support.
 
-## User-facing per-service updates (ADR-30)
+## User-facing per-service updates
 
 The day-2 `./mediastack` → **Manage updates** menu lets a user update one service to the newest image
 for its compose tag, recorded as a sticky `latest` override in the gitignored
 `config/state/image-policy.tsv` (`service<TAB>stable|latest|<image>@sha256:<digest>` — a digest value
-pins the service to its installed image for "Revert", #208). This is **user intent, not a
+pins the service to its installed image for "Revert"). This is **user intent, not a
 maintainer signal** — it never edits `docs/operations/image-digests.lock`. The lock stays the tested
 record; `_effective_channel` (`scripts/setup/override.sh`) layers the per-service override on top of
 the global `IMAGE_CHANNEL` when generating the compose override. An updated service follows its
@@ -81,7 +81,7 @@ brute-force bans is caught at preflight, before the digest reaches the stable ba
 **only** automated signal for that break. fail2ban's own `scenario:fail2ban-drift` row uses static
 fixture logs, so it guards the fail2ban engine/filters against a *fail2ban* image bump but does
 **not** see a jellyfin/seerr format change. (Vetting-time counterpart of the day-2
-"Health & security → fail2ban" check; see ADR-44.)
+"Health & security → fail2ban" check — see [day-2 health & security](day-2.md).)
 
 ## CI image drift alert
 
@@ -206,26 +206,25 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 
 <!-- upgrades-manifest:start -->
 
-| Service | Pin policy | API stability | Preflight | Touchpoint | ADR |
-|---|---|---|---|---|---|
-| autoheal | latest | n/a | scenario:autoheal | docker-compose.yml AUTOHEAL_CONTAINER_LABEL=all + tests/scenarios/autoheal.sh — proves Autoheal detects an unhealthy fixture container and restarts it (fresh-install only proves the container starts/runs, not that it acts) | ADR-24 |
-| bazarr | latest | stable | scenario:bazarr | scripts/services/bazarr/main.sh + tests/assertions/bazarr.sh (subtitles profile) | ADR-24 |
-| beszel | latest | stable | scenario:fresh-install | scripts/services/beszel/main.sh + tests/assertions/beszel.sh | ADR-24 |
-| beszel-agent | variant:alpine | stable | scenario:fresh-install | configured indirectly via beszel; tests/assertions/beszel.sh checks running-state only (no API assertion) | ADR-24 |
-| ddns-updater | latest | stable | scenario:ddns-verify | run tests/scenarios/ddns-verify.sh on every bump — it pins the blackhole force-verify contract (RESOLVER_ADDRESS=127.0.0.1:1 -> // update anyway -> real push -> 500 maps to reject) the whole verify rests on; tests/scenarios/ddns-seed.sh still covers seed + startup; qdm12/ddns-updater#780 (?force=true) is the exit ramp if a digest breaks the fall-through (ADR-46); scripts/services/ddns-updater/main.sh | ADR-24 |
-| fail2ban | latest | stable | scenario:fail2ban-drift | config/fail2ban/ + tests/assertions/fail2ban.sh | ADR-24 |
-| flaresolverr | latest | n/a | scenario:fresh-install | healthcheck only (image pulls, container starts, /health passes); no deterministic Cloudflare-solve oracle, see "FlareSolverr — confidence boundary" above | ADR-24 |
-| homepage | latest | stable | scenario:fresh-install | scripts/services/homepage/main.sh + tests/assertions/homepage.sh | ADR-13, ADR-24 |
-| jackett | latest | stable | scenario:fresh-install | scripts/services/jackett/main.sh + tests/assertions/jackett.sh | ADR-24 |
-| jellyfin | latest | stable | scenario:fresh-install | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh + fail2ban filter (assert_fail2ban_configured) | ADR-11, ADR-12, ADR-24, ADR-44 |
-| seerr | latest | stable | scenario:fresh-install | scripts/services/seerr/main.sh + tests/assertions/seerr.sh + fail2ban filter (assert_fail2ban_configured) | ADR-24, ADR-44 |
-| npm | major:2 | major-gated | scenario:npm-heal | scripts/services/npm/main.sh + tests/assertions/npm.sh | ADR-21, ADR-24 |
-| portainer | latest | stable | scenario:fresh-install | scripts/services/portainer/main.sh + tests/assertions/portainer.sh | ADR-24 |
-| qbittorrent | latest | stable | scenario:fresh-install | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh | ADR-6, ADR-24 |
-| radarr | latest | stable | scenario:fresh-install | scripts/services/radarr/main.sh + tests/assertions/radarr.sh | ADR-24 |
-| sonarr | latest | stable | scenario:fresh-install | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh | ADR-24 |
-| unpackerr | latest | stable | scenario:unpackerr | docker-compose.yml unpackerr environment (UN_SONARR_0_*/UN_RADARR_0_*) + tests/scenarios/unpackerr.sh — proves generated-key/authenticated completed-Radarr-queue → configured torrent-path archive extraction; does not prove a live qBittorrent transfer or Arr import | ADR-24 |
-| uptime-kuma | major:2 | major-gated | scenario:fresh-install | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime_kuma.sh | ADR-14, ADR-24 |
-| wireguard | major:15 | unstable | scenario:wireguard | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios | ADR-24, ADR-28, ADR-29 |
-
+| Service | Pin policy | API stability | Preflight | Touchpoint |
+|---|---|---|---|---|
+| autoheal | latest | n/a | scenario:autoheal | docker-compose.yml AUTOHEAL_CONTAINER_LABEL=all + tests/scenarios/autoheal.sh — proves Autoheal detects an unhealthy fixture container and restarts it (fresh-install only proves the container starts/runs, not that it acts) |
+| bazarr | latest | stable | scenario:bazarr | scripts/services/bazarr/main.sh + tests/assertions/bazarr.sh (subtitles profile) |
+| beszel | latest | stable | scenario:fresh-install | scripts/services/beszel/main.sh + tests/assertions/beszel.sh |
+| beszel-agent | variant:alpine | stable | scenario:fresh-install | configured indirectly via beszel; tests/assertions/beszel.sh checks running-state only (no API assertion) |
+| ddns-updater | latest | stable | scenario:ddns-verify | run tests/scenarios/ddns-verify.sh on every bump — it pins the blackhole force-verify contract (RESOLVER_ADDRESS=127.0.0.1:1 -> // update anyway -> real push -> 500 maps to reject) the whole verify rests on; tests/scenarios/ddns-seed.sh still covers seed + startup; qdm12/ddns-updater#780 (?force=true) is the exit ramp if a digest breaks the fall-through; scripts/services/ddns-updater/main.sh |
+| fail2ban | latest | stable | scenario:fail2ban-drift | config/fail2ban/ + tests/assertions/fail2ban.sh |
+| flaresolverr | latest | n/a | scenario:fresh-install | healthcheck only (image pulls, container starts, /health passes); no deterministic Cloudflare-solve oracle, see "FlareSolverr — confidence boundary" above |
+| homepage | latest | stable | scenario:fresh-install | scripts/services/homepage/main.sh + tests/assertions/homepage.sh |
+| jackett | latest | stable | scenario:fresh-install | scripts/services/jackett/main.sh + tests/assertions/jackett.sh |
+| jellyfin | latest | stable | scenario:fresh-install | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh + fail2ban filter (assert_fail2ban_configured) |
+| seerr | latest | stable | scenario:fresh-install | scripts/services/seerr/main.sh + tests/assertions/seerr.sh + fail2ban filter (assert_fail2ban_configured) |
+| npm | major:2 | major-gated | scenario:npm-heal | scripts/services/npm/main.sh + tests/assertions/npm.sh |
+| portainer | latest | stable | scenario:fresh-install | scripts/services/portainer/main.sh + tests/assertions/portainer.sh |
+| qbittorrent | latest | stable | scenario:fresh-install | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh |
+| radarr | latest | stable | scenario:fresh-install | scripts/services/radarr/main.sh + tests/assertions/radarr.sh |
+| sonarr | latest | stable | scenario:fresh-install | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh |
+| unpackerr | latest | stable | scenario:unpackerr | docker-compose.yml unpackerr environment (UN_SONARR_0_*/UN_RADARR_0_*) + tests/scenarios/unpackerr.sh — proves generated-key/authenticated completed-Radarr-queue → configured torrent-path archive extraction; does not prove a live qBittorrent transfer or Arr import |
+| uptime-kuma | major:2 | major-gated | scenario:fresh-install | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime_kuma.sh |
+| wireguard | major:15 | unstable | scenario:wireguard | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios |
 <!-- upgrades-manifest:end -->

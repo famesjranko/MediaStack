@@ -120,10 +120,11 @@ run_scenario() {
     #    the restart check below meaningless.
     # ------------------------------------------------------------------
     local status="" waited=0
-    while (( waited < 30 )); do
+    while ((waited < 30)); do
         status=$(dind_exec "docker inspect --format '{{.State.Health.Status}}' $AUTOHEAL_FIXTURE 2>/dev/null" | tr -d '\r\n')
         [[ "$status" == "unhealthy" ]] && break
-        sleep 2; waited=$((waited + 2))
+        sleep 2
+        waited=$((waited + 2))
     done
     if [[ "$status" == "unhealthy" ]]; then
         pass "autoheal: fixture reached unhealthy (${waited}s)"
@@ -139,10 +140,11 @@ run_scenario() {
     # ------------------------------------------------------------------
     local started="$baseline_started"
     waited=0
-    while (( waited < 90 )); do
+    while ((waited < 90)); do
         started=$(dind_exec "docker inspect --format '{{.State.StartedAt}}' $AUTOHEAL_FIXTURE 2>/dev/null" | tr -d '\r\n')
         [[ -n "$started" && "$started" != "$baseline_started" ]] && break
-        sleep 3; waited=$((waited + 3))
+        sleep 3
+        waited=$((waited + 3))
     done
     if [[ -n "$started" && "$started" != "$baseline_started" ]]; then
         pass "autoheal: fixture restarted (StartedAt $baseline_started -> $started, ${waited}s)"

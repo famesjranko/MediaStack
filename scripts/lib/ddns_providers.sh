@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # scripts/lib/ddns_providers.sh
 # =============================================================================
-# MediaStack DDNS provider registry + config.json renderer (epic #234)
+# MediaStack DDNS provider registry + config.json renderer
 # =============================================================================
 # Pure data + rendering. No docker, no network, no side effects. The single
 # source of provider knowledge shared by the install wizard (stage2) and the
 # day-2 "Update DDNS provider / credentials" action, so adding a provider is registry cells +
-# a validator + a test fixture + docs — never flow-code edits (plan §3).
+# a validator + a test fixture + docs — never flow-code edits.
 #
 # Flat parallel arrays indexed together (model scripts/lib/quality_select.sh),
 # not a TAB-record declare -gA blob. Sourced by scripts/setup/env_gen.sh (the
@@ -19,11 +19,11 @@ _MS_DDNS_PROVIDERS_SH_LOADED=1
 
 # Provider keys — the index that ties every parallel array together. Order is the
 # picker order AND the default (first row is the pre-selected default). DuckDNS
-# leads deliberately (#248): it is a token provider, so its verify cannot be
+# leads deliberately: it is a token provider, so its verify cannot be
 # Layer-2-masked — a wrong token is rejected even on an unchanged IP — which makes
 # it the one free provider whose setup is genuinely verified end-to-end. Dynu's
 # dyndns2 verify can only ever be "accepted or masked", so it is offered but not
-# the default. (No "recommended" copy — the tell-me-more list stays neutral, #247;
+# the default. (No "recommended" copy — the tell-me-more list stays neutral;
 # leading with the verifiable provider is the nudge.)
 _DDNS_KEY=(duckdns dynu desec dynv6 cloudflare porkbun)
 
@@ -41,11 +41,11 @@ _DDNS_LABEL=(
 _DDNS_CATEGORY=(free free free free byo byo)
 
 # Space-separated "name:validator" field specs — drives both the wizard input
-# loop (#236) and validator dispatch. `domain` is deliberately NOT here: it is
+# loop and validator dispatch. `domain` is deliberately NOT here: it is
 # the shared media host, collected separately, and rendered as a reserved key.
 # Dynu collects password only: its dyndns2 /nic/update authenticates on
 # hostname-ownership + password and IGNORES the username entirely — confirmed on a
-# live account (#248: a wrong username + right password successfully repointed the
+# live account (a wrong username + right password successfully repointed the
 # record; a right password to an unowned hostname is still rejected). Asking for a
 # username only invites a fat-finger on a field that is never checked, so we drop
 # the prompt and auto-fill a constant placeholder in _DDNS_CONST_JSON below
@@ -61,23 +61,23 @@ _DDNS_FIELDS=(
     "api_key:validate_api_key secret_api_key:validate_api_key"
 )
 
-# The mask axis (research §9 finding 6), NOT the wire protocol: username/password
+# The mask axis, NOT the wire protocol: username/password
 # dyndns2 providers can server-side no-op ("nochg") without checking the password
 # when the IP is unchanged, so their /update 202 is "accepted OR masked"; token
 # providers cannot mask (the token IS the account key) so their 202 is a true
-# verify. Consumed by #237's tiered verify messaging.
+# verify. Consumed by the tiered verify messaging.
 # ponytail: deSEC is conservatively grouped dyndns2; upgrading it to token is a
 # cheap follow-up once someone confirms on a free account that it does not
-# no-op-before-auth on an unchanged IP (research §9, plan §Decisions).
+# no-op-before-auth on an unchanged IP.
 _DDNS_VERIFY_TIER=(token dyndns2 dyndns2 token token token)
 
 # Per-provider constant JSON skeleton, merged into the rendered settings block
 # via json.loads (so ttl/proxied stay native int/bool — no :int/:bool sigil
 # parser). Cloudflare carries ttl/proxied defaults. All are IPv4-only
 # (MediaStack uses HTTP-01, so the DDNS requirement is IPv4 resolution, not
-# wildcard TLS — research §4). NB: dynv6 takes only token+ip_version here —
+# wildcard TLS). NB: dynv6 takes only token+ip_version here —
 # ddns-updater detects and sends the public IP itself, so the native dynv6
-# `ipv4=auto` param (research §4) has no place in the container config; the
+# `ipv4=auto` param has no place in the container config; the
 # container silently ignores an `ipv4` key (verified against qdm12/ddns-updater
 # docs + the pinned image).
 # Dynu carries a constant "username" placeholder: ddns-updater's Dynu provider
@@ -144,7 +144,7 @@ ddns_provider_pick() {
 # ddns_category_names <free|byo> — print the display name (the ui_choose label
 # minus its "Category · " prefix) of every provider in <category>, one per line.
 # Lets the wizard describe the free / bring-your-own provider sets from the
-# registry instead of a second hardcoded list (#247). Trailing `return 0` because
+# registry instead of a second hardcoded list. Trailing `return 0` because
 # the final loop iteration's [[ ]] test is false whenever <category> isn't the
 # last row, which would otherwise return 1 and trip the wizard's `set -e`.
 ddns_category_names() {
@@ -186,7 +186,7 @@ ddns_provider_category() {
 # array (passed by NAME, so the wizard and day-2 share one renderer without a
 # branded global). The assoc must hold `domain` plus every field named in
 # _DDNS_FIELDS[key]. Emits {"settings":[{...}]} on stdout via python json.dumps
-# (invariant 5), key order: provider, domain, <fields in spec order>, then the
+# (never string-templated), key order: provider, domain, <fields in spec order>, then the
 # provider's constant skeleton. Any required field missing or empty → non-zero +
 # a stderr message and nothing on stdout. Values pass to python as env vars
 # (never interpolated into the source), so any character is JSON-escaped safely.

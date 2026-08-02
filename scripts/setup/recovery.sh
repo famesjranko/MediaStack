@@ -38,7 +38,7 @@ recovery_menu_remote_available() {
     # surface "Add remote access". Real installs always go through
     # _stage2_install (sets `unchecked`) or _stage2_skip_https (sets `skipped`).
     case "${REMOTE_WEB_STATE:-}" in
-        ""|unchecked|skipped|failed) return 0 ;;
+        "" | unchecked | skipped | failed) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -46,7 +46,7 @@ recovery_menu_remote_available() {
 recovery_menu_transcoding_available() {
     [[ "${GPU_TYPE:-none}" != "none" ]] || return 1
     case "${STAGE_3_GPU_STATE:-}" in
-        complete|pending) return 1 ;;
+        complete | pending) return 1 ;;
         *) return 0 ;;
     esac
 }
@@ -81,7 +81,7 @@ show_existing_install_menu() {
             "A fresh reinstall is still available, but it requires typing DESTROY."
             "For day-to-day management (status, updates, features), run ./mediastack instead."
         )
-        if (( ${#status_lines[@]} > 0 )); then
+        if ((${#status_lines[@]} > 0)); then
             box_lines+=("" "Current setup:")
             local line
             for line in "${status_lines[@]}"; do
@@ -175,7 +175,7 @@ run_remote_recovery() {
 
     local rc=0
     run_stage2 || rc=$?
-    if (( rc == 0 )); then
+    if ((rc == 0)); then
         if stage3_pending_nvidia_reboot_same_boot; then
             print_final_summary
             stage3_prompt_pending_nvidia_reboot
@@ -199,7 +199,7 @@ run_remote_ready_recovery() {
     start_stack
     wait_all_healthy
     # Remote access just came up → install the fail2ban log-rotation reload
-    # watcher (issue #291). Sudo is primed above (prompt_sudo_cache).
+    # watcher. Sudo is primed above (prompt_sudo_cache).
     if container_running fail2ban; then
         f2b_install_reload_watcher
     fi
@@ -272,7 +272,7 @@ _nvidia_unlock_maintenance_guard() {
 run_nvidia_unlock_maintenance() {
     local action="$1"
     case "$action" in
-        update|repatch) ;;
+        update | repatch) ;;
         *) return 2 ;;
     esac
     _nvidia_unlock_maintenance_guard "--nvidia-unlock-${action}" || return 1
@@ -281,7 +281,7 @@ run_nvidia_unlock_maintenance() {
     if [[ "$action" == "repatch" ]]; then
         apply_nvidia_patch
         local _rc=$?
-        (( _rc == 0 )) && type clear_setup_result_banner >/dev/null 2>&1 && clear_setup_result_banner
+        ((_rc == 0)) && type clear_setup_result_banner >/dev/null 2>&1 && clear_setup_result_banner
         return "$_rc"
     fi
 
@@ -302,7 +302,10 @@ run_nvidia_unlock_maintenance() {
 
     if (cd "$SCRIPT_DIR" && docker compose ps --status running --services 2>/dev/null | grep -qx jellyfin); then
         jellyfin_running=true
-        (cd "$SCRIPT_DIR" && docker compose stop jellyfin) || { rm -rf "$_nvidia_tmp"; return 1; }
+        (cd "$SCRIPT_DIR" && docker compose stop jellyfin) || {
+            rm -rf "$_nvidia_tmp"
+            return 1
+        }
     fi
 
     if ! _nvidia_unload_loaded_modules; then

@@ -7,7 +7,8 @@
 #   push_qbt.sh speedlimit <dl_mb> <ul_mb>   # day-2 qbt_set_speed_limits
 set -uo pipefail
 
-mode="$1"; shift
+mode="$1"
+shift
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR" || exit 1

@@ -10,7 +10,8 @@
 #                                           # (day-2 reuse path, same session)
 set -uo pipefail
 
-mode="$1"; shift
+mode="$1"
+shift
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR" || exit 1
@@ -44,7 +45,8 @@ case "$mode" in
             echo "usage: push_seerr.sh connect <sonarr|radarr> <cookiejar>" >&2
             exit 2
         }
-        app="$1"; cookiejar="$2"
+        app="$1"
+        cookiejar="$2"
         case "$app" in
             sonarr) connect_arr_to_seerr sonarr 8989 "http://localhost:5055" "$cookiejar" ;;
             radarr) connect_arr_to_seerr radarr 7878 "http://localhost:5055" "$cookiejar" ;;

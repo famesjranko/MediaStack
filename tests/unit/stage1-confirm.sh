@@ -24,8 +24,14 @@ _WIZ_IMAGE_CHANNEL="stable"
 docker() {
     if [[ "${1:-}" == "compose" ]]; then
         case " $* " in
-            *" config --services "*) printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer uptime-kuma beszel; return 0 ;;
-            *" config --images "*) printf '%s\n' image{1..10}; return 0 ;;
+            *" config --services "*)
+                printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer uptime-kuma beszel
+                return 0
+                ;;
+            *" config --images "*)
+                printf '%s\n' image{1..10}
+                return 0
+                ;;
         esac
     fi
     command docker "$@"
@@ -36,7 +42,7 @@ CONFIRM_FILE=$(mktemp)
 trap 'rm -f "$CONFIRM_FILE"' EXIT
 ui_section() { :; }
 ui_box() {
-    printf '%s\n' "$@" > "$CONFIRM_FILE"
+    printf '%s\n' "$@" >"$CONFIRM_FILE"
 }
 
 ui_choose() { echo "Install"; }
@@ -53,7 +59,7 @@ assert_contains "$CONFIRM_CAPTURE" "no public access - LAN only" "stage1-confirm
 assert_contains "$CONFIRM_CAPTURE" "Firewall" "stage1-confirm: firewall row shown in plan"
 assert_contains "$CONFIRM_CAPTURE" "Hardening" "stage1-confirm: hardening row shown in plan"
 
-# WR-07: when 'docker compose config --services' returns nothing, the wizard
+# When 'docker compose config --services' returns nothing, the wizard
 # must fail loudly with log_error + exit 1 rather than fall back to a
 # hardcoded service list (the old fallback omitted unpackerr/flaresolverr
 # and would have shown the user an inaccurate commitment).
@@ -70,8 +76,9 @@ ERR_CAPTURE=""
 # Recording hook for debugging; not asserted.
 # shellcheck disable=SC2034
 log_error() { ERR_CAPTURE="$*"; }
-( _stage1_confirm ) ; rc=$?
-assert_eq "1" "$rc" "stage1-confirm (WR-07): empty service enumeration exits 1"
+(_stage1_confirm)
+rc=$?
+assert_eq "1" "$rc" "stage1-confirm: empty service enumeration exits 1"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

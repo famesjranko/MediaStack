@@ -247,24 +247,27 @@ configure_jellyfin_encoding() {
 
     if [[ "$gpu" == "none" || -z "$gpu" ]]; then
         case "${STAGE_3_GPU_STATE:-}" in
-            skipped)  log_skip "Hardware transcoding: skipped - Jellyfin will use software transcoding" ;;
+            skipped) log_skip "Hardware transcoding: skipped - Jellyfin will use software transcoding" ;;
             fallback) log_skip "Hardware transcoding: fallback - Jellyfin will use software transcoding" ;;
-            *)        log_skip "Hardware transcoding: not configured yet - setup handles GPU after Core LAN" ;;
+            *) log_skip "Hardware transcoding: not configured yet - setup handles GPU after Core LAN" ;;
         esac
         return 0
     fi
 
     local accel_type
     case "$gpu" in
-        nvidia)    accel_type="nvenc" ;;
+        nvidia) accel_type="nvenc" ;;
         intel)
             case "${STAGE_3_GPU_ENCODER:-qsv}" in
                 vaapi) accel_type="vaapi" ;;
-                *)     accel_type="qsv" ;;
+                *) accel_type="qsv" ;;
             esac
             ;;
-        amd)       accel_type="vaapi" ;;
-        *) log_skip "Hardware transcoding: unknown GPU type '$gpu'"; return 0 ;;
+        amd) accel_type="vaapi" ;;
+        *)
+            log_skip "Hardware transcoding: unknown GPU type '$gpu'"
+            return 0
+            ;;
     esac
     local render_device="${STAGE_3_GPU_RENDER_DEVICE:-/dev/dri/renderD128}"
 
@@ -294,7 +297,7 @@ print(c.get('HardwareAccelerationType', ''))" 2>/dev/null)
     local allow_intel_method_switch=false
     if [[ "$gpu" == "intel" && "$stage3_state" == "pending" ]]; then
         case "$current_accel:$accel_type" in
-            qsv:vaapi|vaapi:qsv) allow_intel_method_switch=true ;;
+            qsv:vaapi | vaapi:qsv) allow_intel_method_switch=true ;;
         esac
     fi
     if [[ "$current_accel" != "$accel_type" && "$current_accel" != "none" && -n "$current_accel" && "$allow_intel_method_switch" != "true" ]]; then
@@ -306,13 +309,13 @@ print(c.get('HardwareAccelerationType', ''))" 2>/dev/null)
     local encoding_result encoding_action encoding_body
     encoding_result=$(echo "$current_config" \
         | ACCEL_TYPE="$accel_type" \
-          HW_DECODING_CODECS="${STAGE_3_GPU_HW_DECODING_CODECS:-h264}" \
-          DECODE_HEVC_10BIT="${STAGE_3_GPU_DECODE_HEVC_10BIT:-false}" \
-          DECODE_VP9_10BIT="${STAGE_3_GPU_DECODE_VP9_10BIT:-false}" \
-          ALLOW_HEVC_ENCODING="${STAGE_3_GPU_ALLOW_HEVC_ENCODING:-false}" \
-          ALLOW_AV1_ENCODING="${STAGE_3_GPU_ALLOW_AV1_ENCODING:-false}" \
-          RENDER_DEVICE="$render_device" \
-          python3 -c "
+            HW_DECODING_CODECS="${STAGE_3_GPU_HW_DECODING_CODECS:-h264}" \
+            DECODE_HEVC_10BIT="${STAGE_3_GPU_DECODE_HEVC_10BIT:-false}" \
+            DECODE_VP9_10BIT="${STAGE_3_GPU_DECODE_VP9_10BIT:-false}" \
+            ALLOW_HEVC_ENCODING="${STAGE_3_GPU_ALLOW_HEVC_ENCODING:-false}" \
+            ALLOW_AV1_ENCODING="${STAGE_3_GPU_ALLOW_AV1_ENCODING:-false}" \
+            RENDER_DEVICE="$render_device" \
+            python3 -c "
 import sys, json, os
 c = json.load(sys.stdin)
 accel = os.environ['ACCEL_TYPE']

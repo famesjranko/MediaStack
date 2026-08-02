@@ -25,6 +25,6 @@ run_scenario() {
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "Hardware transcoding is optional" "wizard-ui stage3 offer skip: offer box shown (Stage 3 routes box to stderr)"
     assert_contains "$transcript" "Detected GPU: NVIDIA" "wizard-ui stage3 offer skip: detected GPU surfaced"
-    assert_eq "none"    "$(env_get JELLYFIN_GPU)"      "wizard-ui stage3 offer skip: JELLYFIN_GPU=none"
+    assert_eq "none" "$(env_get JELLYFIN_GPU)" "wizard-ui stage3 offer skip: JELLYFIN_GPU=none"
     assert_eq "skipped" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 offer skip: STAGE_3_GPU_STATE=skipped"
 }

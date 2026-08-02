@@ -51,7 +51,7 @@ assert_contains() {
     local haystack="$1" needle="$2" name="$3"
     case "$haystack" in
         *"$needle"*) pass "$name" ;;
-        *)           fail "$name" "'$needle' not found" ;;
+        *) fail "$name" "'$needle' not found" ;;
     esac
 }
 
@@ -85,7 +85,7 @@ summary() {
     local total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
     echo ""
     echo -e "${BOLD}──────────────────────────────────────────${NC}"
-    if (( FAIL_COUNT == 0 )); then
+    if ((FAIL_COUNT == 0)); then
         echo -e "${GREEN}${BOLD}  ${PASS_COUNT} passed, ${SKIP_COUNT} skipped (total ${total}) in ${SECONDS}s${NC}"
     else
         echo -e "${RED}${BOLD}  ${PASS_COUNT} passed, ${FAIL_COUNT} FAILED, ${SKIP_COUNT} skipped (total ${total}) in ${SECONDS}s${NC}"
@@ -96,5 +96,5 @@ summary() {
         done
     fi
     echo -e "${BOLD}──────────────────────────────────────────${NC}"
-    return $(( FAIL_COUNT > 0 ))
+    return $((FAIL_COUNT > 0))
 }

@@ -57,13 +57,13 @@ dig() {
         break
     done
     case "$query" in
-        jellyfin.ok.test|seerr.ok.test) printf '203.0.113.10\n' ;;
-        jellyfin.system-only.test|seerr.system-only.test)
+        jellyfin.ok.test | seerr.ok.test) printf '203.0.113.10\n' ;;
+        jellyfin.system-only.test | seerr.system-only.test)
             [[ "$google_resolver" == "true" ]] && return 1
             printf '203.0.113.10\n'
             ;;
-        jellyfin.mismatch.test|seerr.mismatch.test) printf '203.0.113.99\n' ;;
-        jellyfin.cloudflare.test|seerr.cloudflare.test) printf '198.51.100.8\n' ;;
+        jellyfin.mismatch.test | seerr.mismatch.test) printf '203.0.113.99\n' ;;
+        jellyfin.cloudflare.test | seerr.cloudflare.test) printf '198.51.100.8\n' ;;
         apex-only.test) printf '203.0.113.10\n' ;;
         *) return 0 ;;
     esac
@@ -87,30 +87,34 @@ if ! type validate_wireguard_hostname >/dev/null 2>&1; then
 fi
 
 reset_warn
-validate_domain_name "media.mediastack.testhost"; rc=$?
-assert_eq "0" "$rc" "S2-03: validate_domain_name accepts normal FQDN"
+validate_domain_name "media.mediastack.testhost"
+rc=$?
+assert_eq "0" "$rc" "validate_domain_name accepts normal FQDN"
 
 for domain in "" "localhost" "bad_name.example.com" "-bad.example.com" "bad-.example.com" "example" "bad..example.com"; do
     reset_warn
-    validate_domain_name "$domain"; rc=$?
-    assert_eq "1" "$rc" "S2-03: validate_domain_name rejects '$domain'"
-    assert_eq "1" "$WARN_COUNT" "S2-03: validate_domain_name warns once for '$domain'"
+    validate_domain_name "$domain"
+    rc=$?
+    assert_eq "1" "$rc" "validate_domain_name rejects '$domain'"
+    assert_eq "1" "$WARN_COUNT" "validate_domain_name warns once for '$domain'"
 done
 
 reset_warn
-validate_wireguard_hostname "vpn.mediastack.testhost"; rc=$?
-assert_eq "0" "$rc" "S2-11: validate_wireguard_hostname accepts FQDN"
+validate_wireguard_hostname "vpn.mediastack.testhost"
+rc=$?
+assert_eq "0" "$rc" "validate_wireguard_hostname accepts FQDN"
 
 reset_warn
-validate_wireguard_hostname "203.0.113.10"; rc=$?
-assert_eq "0" "$rc" "S2-11: validate_wireguard_hostname accepts IPv4 literal"
+validate_wireguard_hostname "203.0.113.10"
+rc=$?
+assert_eq "0" "$rc" "validate_wireguard_hostname accepts IPv4 literal"
 
-assert_eq "ok" "$(stage2_dns_classify "ok.test" "203.0.113.10")" "S2-03: DNS match classifies as ok"
-assert_eq "ok" "$(stage2_dns_classify "system-only.test" "203.0.113.10")" "S2-03: system resolver success is accepted when Google DNS is unavailable"
-assert_eq "no-a" "$(stage2_dns_classify "no-a.test" "203.0.113.10")" "S2-03: missing jellyfin A record classifies as no-a"
-assert_eq "mismatch:203.0.113.99" "$(stage2_dns_classify "mismatch.test" "203.0.113.10")" "S2-03: mismatched A record includes resolved IP"
-assert_eq "cloudflare" "$(stage2_dns_classify "cloudflare.test" "203.0.113.10")" "S2-04: Cloudflare CIDR match classifies as cloudflare"
-assert_eq "apex-only" "$(stage2_dns_classify "apex-only.test" "203.0.113.10")" "S2-05: apex-only DNS classifies as apex-only"
+assert_eq "ok" "$(stage2_dns_classify "ok.test" "203.0.113.10")" "DNS match classifies as ok"
+assert_eq "ok" "$(stage2_dns_classify "system-only.test" "203.0.113.10")" "system resolver success is accepted when Google DNS is unavailable"
+assert_eq "no-a" "$(stage2_dns_classify "no-a.test" "203.0.113.10")" "missing jellyfin A record classifies as no-a"
+assert_eq "mismatch:203.0.113.99" "$(stage2_dns_classify "mismatch.test" "203.0.113.10")" "mismatched A record includes resolved IP"
+assert_eq "cloudflare" "$(stage2_dns_classify "cloudflare.test" "203.0.113.10")" "Cloudflare CIDR match classifies as cloudflare"
+assert_eq "apex-only" "$(stage2_dns_classify "apex-only.test" "203.0.113.10")" "apex-only DNS classifies as apex-only"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

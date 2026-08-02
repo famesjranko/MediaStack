@@ -20,14 +20,14 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 SCRIPT_DIR="$TMP_DIR"
 mkdir -p "$SCRIPT_DIR/scripts"
-cat > "$SCRIPT_DIR/.env" <<'ENV'
+cat >"$SCRIPT_DIR/.env" <<'ENV'
 DATA_DIR=/tmp/ms-stage1-ordering
 HOST_ADDRESS=127.0.0.1
 JELLYFIN_API_KEY=stage1-ordering-key
 STORAGE_MODE=nas
 STAGE_1_COMPLETE=
 ENV
-cat > "$SCRIPT_DIR/scripts/configure.sh" <<'CONFIGURE'
+cat >"$SCRIPT_DIR/scripts/configure.sh" <<'CONFIGURE'
 #!/usr/bin/env bash
 exit 0
 CONFIGURE
@@ -79,7 +79,7 @@ assert_eq "0" "$rc" "stage1 NAS ordering: install path exits with stubs"
 assert_contains "$order_text" "source_env storage_pause_watchdog_for_install final_nas_preflight stop_existing_stack" "stage1 NAS ordering: partial rerun pauses watchdog before final preflight and stack stop"
 assert_contains "$order_text" "pull_images start_stack storage_install_watchdog wait_all_healthy" "stage1 NAS ordering: watchdog starts only after initial stack start"
 case "$order_text" in
-    *"storage_install_watchdog"*"pull_images"*|*"storage_install_watchdog"*"start_stack"*)
+    *"storage_install_watchdog"*"pull_images"* | *"storage_install_watchdog"*"start_stack"*)
         fail "stage1 NAS ordering: watchdog is not installed before pull/start" "order: $order_text"
         ;;
     *)
@@ -87,7 +87,7 @@ case "$order_text" in
         ;;
 esac
 case "$order_text" in
-    *"final_nas_preflight"*"storage_pause_watchdog_for_install"*|*"stop_existing_stack"*"storage_pause_watchdog_for_install"*)
+    *"final_nas_preflight"*"storage_pause_watchdog_for_install"* | *"stop_existing_stack"*"storage_pause_watchdog_for_install"*)
         fail "stage1 NAS ordering: final preflight/stack stop do not run before watchdog pause" "order: $order_text"
         ;;
     *)
@@ -96,13 +96,16 @@ case "$order_text" in
 esac
 
 ORDER=()
-storage_pause_watchdog_for_install() { record storage_pause_watchdog_for_install; return 1; }
+storage_pause_watchdog_for_install() {
+    record storage_pause_watchdog_for_install
+    return 1
+}
 _stage1_install >/dev/null 2>&1
 rc=$?
 order_text="${ORDER[*]}"
 assert_eq "1" "$rc" "stage1 NAS ordering: pause failure aborts install"
 case "$order_text" in
-    *"final_nas_preflight"*|*"stop_existing_stack"*|*"start_stack"*)
+    *"final_nas_preflight"* | *"stop_existing_stack"* | *"start_stack"*)
         fail "stage1 NAS ordering: pause failure stops before preflight/stack churn" "order: $order_text"
         ;;
     *)

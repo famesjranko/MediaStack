@@ -43,15 +43,19 @@ MS_TEST_RESET_BETWEEN="${MS_TEST_RESET_BETWEEN:-0}"
 SCENARIOS=()
 for arg in "$@"; do
     case "$arg" in
-        --keep)     KEEP_ON_FAIL=1 ;;
+        --keep) KEEP_ON_FAIL=1 ;;
         --no-cache) MS_TEST_NO_CACHE=1 ;;
         --no-preload) MS_TEST_SKIP_PRELOAD=1 ;;
         --reset-between) MS_TEST_RESET_BETWEEN=1 ;;
-        -h|--help)
+        -h | --help)
             sed -n '2,/^$/p' "$0"
-            exit 0 ;;
-        --*)        echo "unknown flag: $arg" >&2; exit 2 ;;
-        *)          SCENARIOS+=("$arg") ;;
+            exit 0
+            ;;
+        --*)
+            echo "unknown flag: $arg" >&2
+            exit 2
+            ;;
+        *) SCENARIOS+=("$arg") ;;
     esac
 done
 [[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke)
@@ -64,7 +68,7 @@ if [[ -n "$MS_TEST_IMAGE_OVERRIDES" && -n "$MS_TEST_STRIP_SERVICES" ]]; then
     _strip_set=" $(echo "$MS_TEST_STRIP_SERVICES" | tr ',' ' ') "
     for _ovr in $(echo "$MS_TEST_IMAGE_OVERRIDES" | tr ',' ' '); do
         _osvc="${_ovr%%=*}"
-        [[ -z "$_osvc" ]] && continue   # malformed token — the override validator reports it
+        [[ -z "$_osvc" ]] && continue # malformed token — the override validator reports it
         if [[ "$_strip_set" == *" $_osvc "* ]]; then
             echo "service '$_osvc' is in both MS_TEST_IMAGE_OVERRIDES and MS_TEST_STRIP_SERVICES — refusing (override would be stripped)" >&2
             exit 2
@@ -80,7 +84,7 @@ done
 for s in "${SCENARIOS[@]}"; do
     found=0
     for a in "${AVAILABLE[@]}"; do [[ "$a" == "$s" ]] && found=1; done
-    if (( ! found )); then
+    if ((!found)); then
         echo "unknown scenario: $s" >&2
         echo "available: ${AVAILABLE[*]}" >&2
         exit 2
@@ -109,7 +113,7 @@ on_exit() {
     # triggering status / failures. Disable all traps FIRST so the explicit exit
     # below can't re-enter this handler (double cleanup + duplicate summary).
     local code="${1:-}"
-    [[ -z "$code" ]] && code=$(( rc != 0 ? rc : (FAIL_COUNT > 0) ))
+    [[ -z "$code" ]] && code=$((rc != 0 ? rc : (FAIL_COUNT > 0)))
     trap - EXIT INT TERM
     dind_down
     if ! runner_should_keep_dind_after_exit; then
@@ -132,9 +136,15 @@ fi
 cache_mirror_up || echo "warning: registry mirror failed to start; falling back to direct pulls" >&2
 
 # --- Spin up DinD, copy repo, strip services, sideload host images ---
-dind_up || { echo "DinD failed to start" >&2; exit 1; }
+dind_up || {
+    echo "DinD failed to start" >&2
+    exit 1
+}
 dind_copy_repo
-dind_override_images || { echo "image override failed (see [image-override] errors above)" >&2; exit 2; }
+dind_override_images || {
+    echo "image override failed (see [image-override] errors above)" >&2
+    exit 2
+}
 dind_strip_services
 if [[ "$MS_TEST_SKIP_PRELOAD" == "1" ]]; then
     echo -e "${BLUE}[cache]${NC} host image preload skipped"
@@ -150,7 +160,7 @@ _ran_one=0
 for s in "${SCENARIOS[@]}"; do
     # --reset-between: restore a pristine DinD before every scenario after the
     # first, so a scenario that doesn't reset itself can't inherit prior state.
-    if (( _ran_one )) && [[ "$MS_TEST_RESET_BETWEEN" == "1" ]]; then
+    if ((_ran_one)) && [[ "$MS_TEST_RESET_BETWEEN" == "1" ]]; then
         # A failed restore leaves /root/MediaStack missing, so every later
         # `docker exec -w /root/MediaStack` chdir-fails and the whole battery
         # cascades into noise. Retry once, then abort with one clear error
@@ -169,7 +179,7 @@ for s in "${SCENARIOS[@]}"; do
     # shellcheck disable=SC1090
     source_rc=0
     source "tests/scenarios/${s}.sh" || source_rc=$?
-    if (( source_rc != 0 )); then
+    if ((source_rc != 0)); then
         fail "scenario source failed" "${s} (source returned $source_rc)"
         scenario_end "$s"
         continue
@@ -194,13 +204,15 @@ done
 # .image-override-applied record lives inside the DinD copy, not on the host).
 if [[ "${FAIL_COUNT:-0}" -eq 0 && -n "$MS_TEST_IMAGE_OVERRIDES" ]]; then
     for _ovr in $(echo "$MS_TEST_IMAGE_OVERRIDES" | tr ',' ' '); do
-        _rsvc="${_ovr%%=*}"; _rref="${_ovr#*=}"
+        _rsvc="${_ovr%%=*}"
+        _rref="${_ovr#*=}"
         [[ -n "$_rsvc" && "$_rref" == *"@sha256:"* ]] || continue
-        _rimg="${_rref%@*}"; _rdig="${_rref##*@}"
+        _rimg="${_rref%@*}"
+        _rdig="${_rref##*@}"
         for _rscn in "${SCENARIOS[@]}"; do
             _rrow="${_rsvc}"$'\t'"${_rimg}"$'\t'"${_rdig}"$'\t'"${_rscn}"
             if [[ ! -f tests/.image-preflight-passed.tsv ]] \
-               || ! grep -qxF "$_rrow" tests/.image-preflight-passed.tsv; then
+                || ! grep -qxF "$_rrow" tests/.image-preflight-passed.tsv; then
                 printf '%s\n' "$_rrow" >>tests/.image-preflight-passed.tsv
             fi
         done

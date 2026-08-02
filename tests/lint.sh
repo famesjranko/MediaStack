@@ -36,9 +36,12 @@ files=()
 has_severity=false
 for arg in "$@"; do
     case "$arg" in
-        --severity=*) sc_flags+=("$arg"); has_severity=true ;;
+        --severity=*)
+            sc_flags+=("$arg")
+            has_severity=true
+            ;;
         -*) sc_flags+=("$arg") ;;
-        *)  files+=("$arg") ;;
+        *) files+=("$arg") ;;
     esac
 done
 [[ "$has_severity" == "false" ]] && sc_flags=("--severity=warning" "${sc_flags[@]}")
@@ -46,13 +49,29 @@ done
 # Default file set: every tracked shell file. Same discovery the CI shell-syntax
 # loop uses (git ls-files -z '*.sh' 'mediastack'), so "what is shell here" has
 # exactly one definition.
-if (( ${#files[@]} == 0 )); then
-    mapfile -d '' -t files < <(git ls-files -z '*.sh' 'mediastack')
+if ((${#files[@]} == 0)); then
+    # Via temp files, not a pipeline: command substitution eats the NUL
+    # separators, and a subshell would hide a nonzero exit behind a partial list.
+    discover_out=$(mktemp) && discover_err=$(mktemp) || exit 2
+    trap 'rm -f "$discover_out" "$discover_err"' EXIT
+    if ! git ls-files -z '*.sh' 'mediastack' >"$discover_out" 2>"$discover_err"; then
+        echo "lint: file discovery failed — git ls-files '*.sh' 'mediastack':" \
+            "$(tr '\n' ' ' <"$discover_err")" >&2
+        exit 2
+    fi
+    mapfile -d '' -t files <"$discover_out"
 fi
 
-if (( ${#files[@]} == 0 )); then
-    echo "lint: no shell files to check"
-    exit 0
+# Fail closed on an empty population: a non-git export (release tarball, docker
+# COPY without .git, git archive) would otherwise lint nothing and exit 0.
+if ((${#files[@]} == 0)); then
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        echo "lint: $REPO_ROOT is not a git repository — file discovery" \
+            "(git ls-files '*.sh' 'mediastack') found nothing; lint cannot run here" >&2
+    else
+        echo "lint: git ls-files '*.sh' 'mediastack' matched no tracked shell files" >&2
+    fi
+    exit 2
 fi
 
 # Use a native shellcheck ONLY when it is exactly the pinned version; otherwise
@@ -67,8 +86,7 @@ fi
 if [[ "$native_version" == "$SC_VERSION" ]]; then
     exec shellcheck "${sc_flags[@]}" "${files[@]}"
 elif command -v docker >/dev/null 2>&1; then
-    exec docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt "$SC_IMAGE" \
-        "${sc_flags[@]}" "${files[@]}"
+    exec docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt "$SC_IMAGE" "${sc_flags[@]}" "${files[@]}"
 else
     echo "lint: need docker, or shellcheck $SC_VERSION natively, on PATH" >&2
     exit 2

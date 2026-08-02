@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/launcher-action-result.sh
 #
-# Launcher capstone honesty (issue #4). _show_action_result is the single most
+# Launcher capstone honesty. _show_action_result is the single most
 # authoritative line a user sees after an action. Contract:
 #   token completed → "<label> completed successfully."
 #   token aborted   → "<label> aborted — no changes were made."  (wins over rc)

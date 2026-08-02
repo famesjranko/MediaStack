@@ -89,6 +89,9 @@ Managed NAS mode does not recursively `chown` the NAS root. It creates missing
 MediaStack directories and only tries to change ownership for directories it had
 to create with `sudo`, so root-squashed exports can still work.
 
+Only NFS is implemented as a managed network-storage backend. The SMB feature
+covers LAN file access to MediaStack data, not a second storage backend.
+
 ## Guards And Watchdog
 
 The watchdog is opt-out per NAS install (`STORAGE_WATCHDOG`, default on). The
@@ -180,15 +183,7 @@ on the export, rejects unmounted fallback writes, exercises wrong-mount repair,
 and verifies watchdog restart behavior.
 
 DinD does not prove vendor-specific NAS behavior such as Unraid/Synology export
-policy, root-squash variants, or long-running stale file handles.
-
-## Observations / open questions
-
-- Only NFS is implemented for managed network storage. The SMB feature is for
-  LAN file access to MediaStack data, not as a backend storage protocol.
-- There is no automatic storage migration after install. That is deliberate for
-  now because moving media and rewriting app libraries/download clients is
-  destructive if guessed wrong.
-- The watchdog proves mount identity plus sentinel availability, but it cannot
-  guarantee all NAS failure modes are recoverable. Hard NFS hangs can still
-  block kernel I/O longer than user-space timeouts.
+policy, root-squash variants, or long-running stale file handles. The watchdog
+proves mount identity plus sentinel availability; it cannot guarantee every NAS
+failure mode is recoverable, and a hard NFS hang can still block kernel I/O
+longer than a user-space timeout catches.

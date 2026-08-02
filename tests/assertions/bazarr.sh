@@ -13,7 +13,8 @@ assert_bazarr_configured() {
     fi
 
     local bazarr_key
-    if bazarr_key=$(docker exec -i -w /root/MediaStack "$DIND_NAME" python3 <<'PY'
+    if bazarr_key=$(
+        docker exec -i -w /root/MediaStack "$DIND_NAME" python3 <<'PY'
 import yaml
 
 with open("config/bazarr/config/config.yaml", encoding="utf-8") as fh:
@@ -47,7 +48,8 @@ PY
     [[ -n "$radarr_key" ]] && pass "Bazarr: Radarr source API key present" || fail "Bazarr: Radarr source API key present"
 
     local settings_check
-    settings_check=$(BAZARR_SETTINGS="$settings" SONARR_KEY="$sonarr_key" RADARR_KEY="$radarr_key" python3 <<'PY'
+    settings_check=$(
+        BAZARR_SETTINGS="$settings" SONARR_KEY="$sonarr_key" RADARR_KEY="$radarr_key" python3 <<'PY'
 import json
 import os
 
@@ -81,13 +83,14 @@ else:
 PY
     )
     case "$settings_check" in
-        OK*)   pass "Bazarr: ${settings_check#OK|}" ;;
+        OK*) pass "Bazarr: ${settings_check#OK|}" ;;
         FAIL*) fail "Bazarr: connection settings match generated keys" "${settings_check#FAIL|}" ;;
-        *)     fail "Bazarr: connection settings match generated keys" "parse error" ;;
+        *) fail "Bazarr: connection settings match generated keys" "parse error" ;;
     esac
 
     local profile_check
-    if profile_check=$(docker exec -i -w /root/MediaStack "$DIND_NAME" python3 <<'PY'
+    if profile_check=$(
+        docker exec -i -w /root/MediaStack "$DIND_NAME" python3 <<'PY'
 import json
 import sqlite3
 import yaml
@@ -170,9 +173,9 @@ else:
 PY
     ); then
         case "$profile_check" in
-            OK*)   pass "Bazarr: ${profile_check#OK|}" ;;
+            OK*) pass "Bazarr: ${profile_check#OK|}" ;;
             FAIL*) fail "Bazarr: language profile seeded from config.yml" "${profile_check#FAIL|}" ;;
-            *)     fail "Bazarr: language profile seeded from config.yml" "parse error" ;;
+            *) fail "Bazarr: language profile seeded from config.yml" "parse error" ;;
         esac
     else
         fail "Bazarr: language profile seeded from config.yml" "could not inspect Bazarr database"

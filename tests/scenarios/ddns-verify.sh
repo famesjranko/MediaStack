@@ -1,8 +1,8 @@
 # tests/scenarios/ddns-verify.sh — behaviour-contract drift detector for
-# ddns_verify_via_container (scripts/lib/network.sh, epic #234, #237).
+# ddns_verify_via_container (scripts/lib/network.sh).
 #
-# The multi-provider DDNS verify rests on an UNSTABLE behaviour contract (research
-# §9), not a public API: a throwaway ddns-updater with a blackholed record
+# The multi-provider DDNS verify rests on an UNSTABLE behaviour contract, not a
+# public API: a throwaway ddns-updater with a blackholed record
 # resolver (RESOLVER_ADDRESS=127.0.0.1:1) must fail the hostname lookup and fall
 # THROUGH to a REAL provider push at the current IP (upstream's "// update
 # anyway"), and GET /update must map the provider response to 202 / 500.
@@ -10,11 +10,11 @@
 # Hermetic: a local test-CA HTTPS stub impersonates BOTH the provider API
 # (hardcoded https://) and the public-IP endpoint, so nothing leaves DinD and no
 # real credentials are needed. The distroless image trusts the stub via
-# SSL_CERT_FILE (the front-loaded #237 spike confirmed the Go binary honours it).
+# SSL_CERT_FILE (a front-loaded spike confirmed the Go binary honours it).
 # If a future digest breaks the fall-through or the RESOLVER_ADDRESS wiring, the
 # stub stops receiving the push -> the force-verify assertion fails BEFORE the
 # image ships, which is when to adapt or switch to upstream #780 (?force=true).
-# See docs/operations/upgrades.md (ddns-updater preflight) + ADR-46.
+# See docs/operations/upgrades.md (ddns-updater preflight).
 #
 # The stub reads its response mode from /tmp/dv/mode per request, so one stub +
 # one cert generation serves every case (avoids stale-cert-on-port races). The
@@ -61,13 +61,15 @@ PY
 # ddns_verify_via_container (blackhole + ephemeral port) plus the test-only stub
 # wiring (--add-host + SSL_CERT_FILE + a stubbed single public-IP provider).
 _ddns_verify_run() {
-    local mode="$1" provider="$2" domain="$3"; shift 3
+    local mode="$1" provider="$2" domain="$3"
+    shift 3
     dind_exec "printf '%s' '$mode' > /tmp/dv/mode; : > /tmp/dv/log/requests.log; rm -rf /tmp/dv/data && mkdir -p /tmp/dv/data && chown -R 1000:1000 /tmp/dv/data" >/dev/null
 
     # Render needs bash (assoc array + source); dind_exec is sh.
     if ! docker exec -w /root/MediaStack "$DIND_NAME" bash -c \
         "source scripts/lib/ddns_providers.sh; declare -A F=([domain]=$domain $*); ddns_render_config_json $provider F > /tmp/dv/data/config.json && chmod 644 /tmp/dv/data/config.json" >/dev/null 2>&1; then
-        printf 'RENDER-FAIL 0\n'; return
+        printf 'RENDER-FAIL 0\n'
+        return
     fi
 
     dind_exec "docker rm -f dv-verify >/dev/null 2>&1 || true
@@ -81,7 +83,11 @@ _ddns_verify_run() {
 
     local eph
     eph=$(dind_exec "docker port dv-verify 8000 2>/dev/null | head -1 | sed 's/.*://'" | tr -d '\r')
-    if [[ -z "$eph" ]]; then dind_exec "docker rm -f dv-verify" >/dev/null 2>&1; printf 'NO-PORT 0\n'; return; fi
+    if [[ -z "$eph" ]]; then
+        dind_exec "docker rm -f dv-verify" >/dev/null 2>&1
+        printf 'NO-PORT 0\n'
+        return
+    fi
 
     local code="000"
     for _ in $(seq 1 20); do
@@ -150,15 +156,20 @@ _dv_teardown() {
 # Wrapper so the stub teardown runs no matter which path _dv_run_scenario exits
 # by (it has many early `return 1`s after the stub starts).
 run_scenario() {
-    _dv_run_scenario; local _rc=$?
+    _dv_run_scenario
+    local _rc=$?
     _dv_teardown
     return "$_rc"
 }
 
 _dv_run_scenario() {
-    DV_IMAGE=$(ms_test_image ddns-updater qmcgaw/ddns-updater:latest) || { fail "ddns-verify: resolve ddns-updater image"; return 1; }
+    DV_IMAGE=$(ms_test_image ddns-updater qmcgaw/ddns-updater:latest) || {
+        fail "ddns-verify: resolve ddns-updater image"
+        return 1
+    }
     if ! dind_exec 'command -v openssl >/dev/null 2>&1' 2>/dev/null; then
-        skip "ddns-verify: openssl unavailable in DinD"; return 0
+        skip "ddns-verify: openssl unavailable in DinD"
+        return 0
     fi
 
     # --- Setup: test CA + server cert (SAN covers the provider + ipify hosts),
@@ -170,7 +181,10 @@ _dv_run_scenario() {
       openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr -subj "/CN=api.dynu.com" >/dev/null 2>&1
       printf "subjectAltName=DNS:api.dynu.com,DNS:www.duckdns.org,DNS:api.ipify.org\n" > san.cnf
       openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 1 -extfile san.cnf >/dev/null 2>&1' \
-        || { fail "ddns-verify: could not build test CA / cert in DinD"; return 1; }
+        || {
+            fail "ddns-verify: could not build test CA / cert in DinD"
+            return 1
+        }
 
     _ddns_verify_stub_py | docker exec -i "$DIND_NAME" bash -c 'cat > /tmp/dv/stub.py'
     # The DinD image has no procps, so `pkill`/`ps` do not exist — a `pkill`-based
@@ -188,17 +202,25 @@ _dv_run_scenario() {
     # serve an old-generation cert and break trust — this guard catches that race).
     local ready=false
     for _ in $(seq 1 15); do
-        if dind_exec "curl -sk --max-time 3 https://${DV_GW}:443/ 2>/dev/null | grep -q 203.0.113.42"; then ready=true; break; fi
+        if dind_exec "curl -sk --max-time 3 https://${DV_GW}:443/ 2>/dev/null | grep -q 203.0.113.42"; then
+            ready=true
+            break
+        fi
         sleep 1
     done
-    if ! $ready; then fail "ddns-verify: HTTPS stub did not come up"; dind_exec "cat /tmp/dv/stub.out 2>&1 | head -5"; return 1; fi
+    if ! $ready; then
+        fail "ddns-verify: HTTPS stub did not come up"
+        dind_exec "cat /tmp/dv/stub.out 2>&1 | head -5"
+        return 1
+    fi
     local wire disk
     wire=$(dind_exec "echo | openssl s_client -connect ${DV_GW}:443 2>/dev/null | openssl x509 -noout -fingerprint -sha256 2>/dev/null" | tr -d '\r')
     disk=$(dind_exec "openssl x509 -in /tmp/dv/ca/server.crt -noout -fingerprint -sha256 2>/dev/null" | tr -d '\r')
     if [[ -n "$wire" && "$wire" == "$disk" ]]; then
         pass "HTTPS provider stub up (test-CA, wire cert matches disk — no stale stub)"
     else
-        fail "ddns-verify: stub cert mismatch (stale stub?)" "wire=$wire disk=$disk"; return 1
+        fail "ddns-verify: stub cert mismatch (stale stub?)" "wire=$wire disk=$disk"
+        return 1
     fi
 
     # --- 1. Force-verify (the drift detector): blackhole on, stub-good → the push
@@ -256,7 +278,7 @@ _dv_run_scenario() {
         fail "malformed-token fail-fast reject" "expected rc=1; got '$fr'"
     fi
 
-    # --- 6. #248: a 500 from ddns-updater's OWN infrastructure failure (a failed
+    # --- 6. A 500 from ddns-updater's OWN infrastructure failure (a failed
     #        public-IP fetch, ZERO provider contact) must map to DEGRADE (keep the
     #        creds), NOT reject (clear good creds on a blip — the flakiness root
     #        cause). ddns_verify_via_container distinguishes them by matching
@@ -288,13 +310,13 @@ _dv_run_scenario() {
     dind_exec "docker rm -f dv-infra >/dev/null 2>&1 || true"
     if [[ "$icode" == "500" ]] && printf '%s' "$ibody" \
         | grep -qiE 'obtaining ip|dial tcp|no such host|i/o timeout|connection refused|connection reset|context deadline|too many requests'; then
-        pass "#248: infra 500 (failed IP fetch) matches the transient allowlist → DEGRADE not REJECT"
+        pass "infra 500 (failed IP fetch) matches the transient allowlist → DEGRADE not REJECT"
     else
-        fail "#248: infra-500 wording drift (update the allowlist in ddns_verify_via_container)" "code=$icode body=${ibody:0:160}"
+        fail "infra-500 wording drift (update the allowlist in ddns_verify_via_container)" "code=$icode body=${ibody:0:160}"
     fi
     dind_exec "rm -rf /tmp/dvi" >/dev/null 2>&1
 
-    # --- 7. #255: drive the REAL ddns_verify_via_container through a /update 500
+    # --- 7. Drive the REAL ddns_verify_via_container through a /update 500
     #        whose body is a genuine provider AUTH error (non-infra) and assert it
     #        REJECTS (exit 1). This is the branch no prior case exercised against
     #        the real function: case 2 used _ddns_verify_run's reimplemented poll
@@ -310,12 +332,12 @@ _dv_run_scenario() {
     rhits=$(printf '%s' "$r" | sed -n 's/.* hits=\([0-9]*\).*/\1/p')
     rbody=$(printf '%s' "$r" | sed -n 's/.* body=//p')
     if [[ "$rrc" == "1" && "${rhits:-0}" -ge 1 && -n "$rbody" ]]; then
-        pass "#255: REAL ddns_verify_via_container — non-infra provider 500 pushed to the stub → exit 1 REJECT (body surfaced)"
+        pass "REAL ddns_verify_via_container — non-infra provider 500 pushed to the stub → exit 1 REJECT (body surfaced)"
     else
-        fail "#255 real reject path (non-infra /update 500 → exit 1)" "expected rc=1 hits>=1 body!=empty; got '$r'"
+        fail "real reject path (non-infra /update 500 → exit 1)" "expected rc=1 hits>=1 body!=empty; got '$r'"
     fi
 
-    # --- 8. #255 negative control: the SAME real function on an infra 500 (a
+    # --- 8. Negative control: the SAME real function on an infra 500 (a
     #        failed public-IP fetch, ZERO provider contact) must DEGRADE (exit 2),
     #        not reject — proving exit 1 above is the body classifier deciding, not
     #        a constant. Point the IP fetch at a dead port (as case 6 does) so the
@@ -331,8 +353,8 @@ _dv_run_scenario() {
     rbody=$(printf '%s' "$r" | sed -n 's/.* body=//p')
     if [[ "$rrc" == "2" && "${rhits:-1}" -eq 0 ]] \
         && printf '%s' "$rbody" | grep -qiE 'obtaining ip|dial tcp|no such host|i/o timeout|connection refused|connection reset|context deadline|too many requests'; then
-        pass "#255: REAL ddns_verify_via_container — infra 500 (failed IP fetch, 0 pushes) → exit 2 DEGRADE (body classifier, not a constant)"
+        pass "REAL ddns_verify_via_container — infra 500 (failed IP fetch, 0 pushes) → exit 2 DEGRADE (body classifier, not a constant)"
     else
-        fail "#255 real degrade path (infra /update 500 → exit 2)" "expected rc=2 hits=0 infra-body; got '$r'"
+        fail "real degrade path (infra /update 500 → exit 2)" "expected rc=2 hits=0 infra-body; got '$r'"
     fi
 }

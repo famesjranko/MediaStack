@@ -9,7 +9,7 @@
 # Modules live under tests/api-matrix/<service>.sh and are sourced + called here:
 #   - quality        Sonarr/Radarr quality profiles (resolution x size cells,
 #                    in-place PUT-rename) — the render->API contract.
-#   - quality-rename Day-2 "change quality profile" (#71): seed cell A, change to
+#   - quality-rename Day-2 "change quality profile": seed cell A, change to
 #                    cell B with QP_RENAME_FROM, assert in-place rename (same id,
 #                    new scores, no orphan) through the PRODUCT configurators.
 #   - qbittorrent Config-driven setup plus the surgical day-2 speed-limit action.
@@ -28,8 +28,7 @@
 #                 the same ordering configure.sh itself uses); library
 #                 sync/quotas/trustProxy stay covered at their default point
 #                 by fresh-install's assert_seerr_configured.
-# #164's full scope now ships; each new day-2 action that mutates a service
-# API still gets a module here.
+# Each new day-2 action that mutates a service API still gets a module here.
 #
 # Wall-time budget: ~9-13 min (Sonarr, Radarr, qBittorrent, Jackett, Jellyfin,
 # and Seerr are brought up; Jackett's FlareSolverr-config-set restart adds
@@ -37,7 +36,7 @@
 # container recreate adds ~60-90s once, and configure_seerr's own
 # auth/library-sync polling adds a few minutes on top).
 #
-# Convention (#179): every module drives one stateful, dependent sequence —
+# Convention: every module drives one stateful, dependent sequence —
 # each step's preconditions assume the previous one landed. On a precondition
 # miss, a module does `fail "...";skip "<dropped block>" "<why>";return` (or
 # `continue` inside a per-item loop) rather than falling through into
@@ -86,10 +85,13 @@ run_scenario() {
     local api_svcs="sonarr radarr qbittorrent jackett jellyfin seerr"
     local pull_ok=0 attempt
     for attempt in 1 2 3; do
-        dind_exec "docker compose pull --policy missing $api_svcs" && { pull_ok=1; break; }
-        (( attempt < 3 )) && sleep $(( attempt * 5 ))
+        dind_exec "docker compose pull --policy missing $api_svcs" && {
+            pull_ok=1
+            break
+        }
+        ((attempt < 3)) && sleep $((attempt * 5))
     done
-    if (( ! pull_ok )); then
+    if ((!pull_ok)); then
         fail "api-matrix: compose pull $api_svcs" "registry unreachable after 3 attempts"
         return 1
     fi
@@ -123,7 +125,7 @@ run_scenario() {
     [[ -n "$radarr_key" ]] && matrix_quality radarr "http://localhost:7878/api/v3" "$radarr_key"
 
     # ------------------------------------------------------------------
-    # 4. Module test-2: day-2 in-place rename (#71) through the product path
+    # 4. Module test-2: day-2 in-place rename through the product path
     # ------------------------------------------------------------------
     [[ -n "$sonarr_key" ]] && matrix_quality_rename sonarr "http://localhost:8989/api/v3" "$sonarr_key"
     [[ -n "$radarr_key" ]] && matrix_quality_rename radarr "http://localhost:7878/api/v3" "$radarr_key"

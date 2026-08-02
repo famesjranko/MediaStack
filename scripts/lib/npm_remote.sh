@@ -22,8 +22,8 @@ npm_remote_cert_material_ready() {
     [[ -z "$cert_id" || "$cert_id" == "0" ]] && return 1
 
     if npm_remote_container_running; then
-        docker exec npm test -f "/etc/letsencrypt/live/npm-$cert_id/fullchain.pem" >/dev/null 2>&1 && \
-        docker exec npm test -f "/etc/letsencrypt/live/npm-$cert_id/privkey.pem" >/dev/null 2>&1
+        docker exec npm test -f "/etc/letsencrypt/live/npm-$cert_id/fullchain.pem" >/dev/null 2>&1 \
+            && docker exec npm test -f "/etc/letsencrypt/live/npm-$cert_id/privkey.pem" >/dev/null 2>&1
         return $?
     fi
 
@@ -32,8 +32,8 @@ npm_remote_cert_material_ready() {
         return 0
     fi
     [[ $(id -u) -eq 0 ]] && return 1
-    sudo -n test -f "$live_dir/fullchain.pem" 2>/dev/null && \
-    sudo -n test -f "$live_dir/privkey.pem" 2>/dev/null
+    sudo -n test -f "$live_dir/fullchain.pem" 2>/dev/null \
+        && sudo -n test -f "$live_dir/privkey.pem" 2>/dev/null
 }
 
 npm_remote_proxy_conf_renders() {
@@ -88,14 +88,14 @@ npm_remote_usable_cert_id_by_fqdn() {
     local ids rc candidate
     ids=$(npm_remote_api_cert_ids_by_fqdn "$token" "$api" "$fqdn")
     rc=$?
-    (( rc == 2 )) && return 2
+    ((rc == 2)) && return 2
     while IFS= read -r candidate; do
         [[ -z "$candidate" || "$candidate" == "0" ]] && continue
         if npm_remote_cert_material_ready "$candidate"; then
             echo "$candidate"
             return 0
         fi
-    done <<< "$ids"
+    done <<<"$ids"
     return 0
 }
 

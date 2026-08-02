@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/stage2-wireguard.sh
 #
-# Contract tests for Stage 2 WireGuard access-tier env mapping (ADR-29).
+# Contract tests for Stage 2 WireGuard access-tier env mapping.
 # Tiers map to (a) WG_INIT_ALLOWED_IPS — what the client routes through the
 # tunnel, and (b) wg_firewall_ips_for_tier output — what wg-easy enforces
 # server-side. Per-client firewall is on for every tier.
@@ -33,51 +33,51 @@ fi
 # -----------------------------------------------------------------------------
 
 full_lan_env="$(stage2_wireguard_access_tier_env full-lan "192.168.1.0/24" "192.168.1.50")"
-assert_contains "$full_lan_env" "WG_ACCESS_TIER='full-lan'" "ADR-29: full-lan persists tier"
-assert_contains "$full_lan_env" "WG_LAN_CIDR='192.168.1.0/24'" "ADR-29: full-lan persists LAN CIDR"
-assert_contains "$full_lan_env" "WG_SERVER_LAN_IP='192.168.1.50'" "ADR-29: full-lan persists server IP"
-assert_contains "$full_lan_env" "WG_INIT_ALLOWED_IPS='192.168.1.0/24'" "ADR-29: full-lan routes LAN CIDR"
-assert_contains "$full_lan_env" "WG_PER_CLIENT_FIREWALL='true'" "ADR-29: full-lan keeps firewall on"
+assert_contains "$full_lan_env" "WG_ACCESS_TIER='full-lan'" "full-lan persists tier"
+assert_contains "$full_lan_env" "WG_LAN_CIDR='192.168.1.0/24'" "full-lan persists LAN CIDR"
+assert_contains "$full_lan_env" "WG_SERVER_LAN_IP='192.168.1.50'" "full-lan persists server IP"
+assert_contains "$full_lan_env" "WG_INIT_ALLOWED_IPS='192.168.1.0/24'" "full-lan routes LAN CIDR"
+assert_contains "$full_lan_env" "WG_PER_CLIENT_FIREWALL='true'" "full-lan keeps firewall on"
 
 server_env="$(stage2_wireguard_access_tier_env server "" "192.168.1.50")"
-assert_contains "$server_env" "WG_ACCESS_TIER='server'" "ADR-29: server persists tier"
-assert_contains "$server_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "ADR-29: server routes only server /32"
-assert_contains "$server_env" "WG_PER_CLIENT_FIREWALL='true'" "ADR-29: server keeps firewall on"
+assert_contains "$server_env" "WG_ACCESS_TIER='server'" "server persists tier"
+assert_contains "$server_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "server routes only server /32"
+assert_contains "$server_env" "WG_PER_CLIENT_FIREWALL='true'" "server keeps firewall on"
 
 containers_env="$(stage2_wireguard_access_tier_env containers "" "192.168.1.50")"
-assert_contains "$containers_env" "WG_ACCESS_TIER='containers'" "ADR-29: containers persists tier"
-assert_contains "$containers_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "ADR-29: containers routes only server /32"
-assert_contains "$containers_env" "WG_PER_CLIENT_FIREWALL='true'" "ADR-29: containers keeps firewall on"
+assert_contains "$containers_env" "WG_ACCESS_TIER='containers'" "containers persists tier"
+assert_contains "$containers_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "containers routes only server /32"
+assert_contains "$containers_env" "WG_PER_CLIENT_FIREWALL='true'" "containers keeps firewall on"
 
 streaming_env="$(stage2_wireguard_access_tier_env streaming "" "192.168.1.50")"
-assert_contains "$streaming_env" "WG_ACCESS_TIER='streaming'" "ADR-29: streaming persists tier"
-assert_contains "$streaming_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "ADR-29: streaming routes only server /32"
-assert_contains "$streaming_env" "WG_PER_CLIENT_FIREWALL='true'" "ADR-29: streaming keeps firewall on"
+assert_contains "$streaming_env" "WG_ACCESS_TIER='streaming'" "streaming persists tier"
+assert_contains "$streaming_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "streaming routes only server /32"
+assert_contains "$streaming_env" "WG_PER_CLIENT_FIREWALL='true'" "streaming keeps firewall on"
 
 streaming_req_env="$(stage2_wireguard_access_tier_env streaming-requests "" "192.168.1.50")"
-assert_contains "$streaming_req_env" "WG_ACCESS_TIER='streaming-requests'" "ADR-45: streaming-requests persists tier"
-assert_contains "$streaming_req_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "ADR-45: streaming-requests routes only server /32"
-assert_contains "$streaming_req_env" "WG_PER_CLIENT_FIREWALL='true'" "ADR-45: streaming-requests keeps firewall on"
+assert_contains "$streaming_req_env" "WG_ACCESS_TIER='streaming-requests'" "streaming-requests persists tier"
+assert_contains "$streaming_req_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "streaming-requests routes only server /32"
+assert_contains "$streaming_req_env" "WG_PER_CLIENT_FIREWALL='true'" "streaming-requests keeps firewall on"
 
 # Unknown tier rejected.
 if stage2_wireguard_access_tier_env bogus "" "" 2>/dev/null; then
-    fail "ADR-29: stage2_wireguard_access_tier_env rejects unknown tier"
+    fail "stage2_wireguard_access_tier_env rejects unknown tier"
 else
-    pass "ADR-29: stage2_wireguard_access_tier_env rejects unknown tier"
+    pass "stage2_wireguard_access_tier_env rejects unknown tier"
 fi
 
 # full-lan requires lan_cidr.
 if stage2_wireguard_access_tier_env full-lan "" "192.168.1.50" 2>/dev/null; then
-    fail "ADR-29: full-lan requires non-empty LAN CIDR"
+    fail "full-lan requires non-empty LAN CIDR"
 else
-    pass "ADR-29: full-lan requires non-empty LAN CIDR"
+    pass "full-lan requires non-empty LAN CIDR"
 fi
 
 # server tier requires server_ip.
 if stage2_wireguard_access_tier_env server "" "" 2>/dev/null; then
-    fail "ADR-29: server tier requires non-empty server IP"
+    fail "server tier requires non-empty server IP"
 else
-    pass "ADR-29: server tier requires non-empty server IP"
+    pass "server tier requires non-empty server IP"
 fi
 
 # -----------------------------------------------------------------------------
@@ -85,32 +85,32 @@ fi
 # -----------------------------------------------------------------------------
 
 fw_full_lan="$(wg_firewall_ips_for_tier full-lan "192.168.1.0/24" "192.168.1.50")"
-assert_eq "192.168.1.0/24" "$fw_full_lan" "ADR-29: full-lan firewallIps = LAN CIDR (all ports)"
+assert_eq "192.168.1.0/24" "$fw_full_lan" "full-lan firewallIps = LAN CIDR (all ports)"
 
 fw_server="$(wg_firewall_ips_for_tier server "" "192.168.1.50")"
-assert_eq "192.168.1.50/32" "$fw_server" "ADR-29: server firewallIps = server /32 (all ports incl. host services)"
+assert_eq "192.168.1.50/32" "$fw_server" "server firewallIps = server /32 (all ports incl. host services)"
 
 fw_streaming="$(wg_firewall_ips_for_tier streaming "" "192.168.1.50")"
 assert_eq "192.168.1.50:8096/tcp" "$fw_streaming" \
-    "ADR-45: streaming firewallIps = Jellyfin only (no Homepage)"
+    "streaming firewallIps = Jellyfin only (no Homepage)"
 
 fw_streaming_req="$(wg_firewall_ips_for_tier streaming-requests "" "192.168.1.50")"
 assert_eq "192.168.1.50:8096/tcp,192.168.1.50:5055/tcp" "$fw_streaming_req" \
-    "ADR-45: streaming-requests firewallIps = Jellyfin + Seerr (no Homepage)"
+    "streaming-requests firewallIps = Jellyfin + Seerr (no Homepage)"
 
 fw_containers="$(wg_firewall_ips_for_tier containers "" "192.168.1.50")"
 # containers tier exposes 17 MediaStack ports — assert key ones are present and 51821 (wg-easy admin) is excluded.
-assert_contains "$fw_containers" "192.168.1.50:8096/tcp" "ADR-29: containers exposes Jellyfin"
-assert_contains "$fw_containers" "192.168.1.50:5055/tcp" "ADR-29: containers exposes Seerr"
-assert_contains "$fw_containers" "192.168.1.50:3000/tcp" "ADR-29: containers exposes Homepage"
-assert_contains "$fw_containers" "192.168.1.50:8989/tcp" "ADR-29: containers exposes Sonarr"
-assert_contains "$fw_containers" "192.168.1.50:7878/tcp" "ADR-29: containers exposes Radarr"
-assert_contains "$fw_containers" "192.168.1.50:7359/udp" "ADR-29: containers exposes Jellyfin auto-discovery UDP"
-assert_contains "$fw_containers" "192.168.1.50:81/tcp" "ADR-29: containers exposes NPM admin"
+assert_contains "$fw_containers" "192.168.1.50:8096/tcp" "containers exposes Jellyfin"
+assert_contains "$fw_containers" "192.168.1.50:5055/tcp" "containers exposes Seerr"
+assert_contains "$fw_containers" "192.168.1.50:3000/tcp" "containers exposes Homepage"
+assert_contains "$fw_containers" "192.168.1.50:8989/tcp" "containers exposes Sonarr"
+assert_contains "$fw_containers" "192.168.1.50:7878/tcp" "containers exposes Radarr"
+assert_contains "$fw_containers" "192.168.1.50:7359/udp" "containers exposes Jellyfin auto-discovery UDP"
+assert_contains "$fw_containers" "192.168.1.50:81/tcp" "containers exposes NPM admin"
 if [[ "$fw_containers" == *":51821/"* ]]; then
-    fail "ADR-29: containers tier MUST NOT expose wg-easy admin (51821)"
+    fail "containers tier MUST NOT expose wg-easy admin (51821)"
 else
-    pass "ADR-29: containers tier excludes wg-easy admin (51821)"
+    pass "containers tier excludes wg-easy admin (51821)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -125,14 +125,20 @@ if type detect_lan_cidr >/dev/null 2>&1; then
             "-4 -o addr show "*) printf '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0\n' ;;
         esac
     }
-    detected=$(ip() { _fake_ip "$@"; }; detect_lan_cidr)
-    assert_eq "192.168.1.0/24" "$detected" "ADR-29: detect_lan_cidr normalizes host CIDR to network CIDR"
+    detected=$(
+        ip() { _fake_ip "$@"; }
+        detect_lan_cidr
+    )
+    assert_eq "192.168.1.0/24" "$detected" "detect_lan_cidr normalizes host CIDR to network CIDR"
 
     # Failure path: no default route → empty + non-zero.
-    if (ip() { return 1; }; detect_lan_cidr >/dev/null 2>&1); then
-        fail "ADR-29: detect_lan_cidr returns non-zero when no default route"
+    if (
+        ip() { return 1; }
+        detect_lan_cidr >/dev/null 2>&1
+    ); then
+        fail "detect_lan_cidr returns non-zero when no default route"
     else
-        pass "ADR-29: detect_lan_cidr returns non-zero when no default route"
+        pass "detect_lan_cidr returns non-zero when no default route"
     fi
 fi
 
@@ -166,8 +172,8 @@ for name, svc in (compose.get("services") or {}).items():
 ports.discard("51821/tcp")  # wg-easy admin — excluded by design
 print(",".join(sorted(ports)))
 ')
-    contract_ports=$(wg_firewall_ips_for_tier containers "" "192.168.1.50" | \
-        python3 -c '
+    contract_ports=$(wg_firewall_ips_for_tier containers "" "192.168.1.50" \
+        | python3 -c '
 import sys
 raw = sys.stdin.read().strip()
 out = set()

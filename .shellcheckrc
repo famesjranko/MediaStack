@@ -1,8 +1,7 @@
 # MediaStack shellcheck configuration.
 #
 # Read automatically by shellcheck (and by tests/lint.sh), so the repo-specific
-# flags live in one tracked place — nobody has to remember `-s bash -x`. See
-# issue #31 for the full rationale and the per-code assessment.
+# flags live in one tracked place — nobody has to remember `-s bash -x`.
 
 # Most shell files here are shebang-less sourced libraries and wizard stages
 # (line 1 is a banner comment), so assume bash rather than erroring SC2148 on

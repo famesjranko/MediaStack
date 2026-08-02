@@ -4,7 +4,7 @@
 # Each check surfaces a failure that Docker's per-service healthcheck and normal
 # operation do NOT reveal (a fail2ban filter that stopped matching after an image
 # bump, a cert quietly past renewal, DDNS drift, a full disk, UFW off, or Docker
-# having flushed the port-restriction chain). Design rationale: ADR-44.
+# having flushed the port-restriction chain).
 #
 # Design: one classifier, many presenters (models stage2_dns_classify). Each
 # health_<name> echoes ONE line "STATUS|message" (STATUS ∈ ok|warn|fail|skip),
@@ -114,15 +114,33 @@ _health_f2b_probe() {
 # (npm's log format is nginx/MediaStack-controlled, covered by health_fail2ban_jails).
 health_fail2ban_regex() {
     local svc="${1:-}"
-    [[ -z "$svc" ]] && { echo "skip|fail2ban regex: no service given"; return 0; }
-    _health_f2b_running || { echo "skip|fail2ban ${svc}: fail2ban not running (LAN-only install)"; return 0; }
-    _health_svc_healthy "$svc" || { echo "skip|fail2ban ${svc}: ${svc} not running/ready"; return 0; }
+    [[ -z "$svc" ]] && {
+        echo "skip|fail2ban regex: no service given"
+        return 0
+    }
+    _health_f2b_running || {
+        echo "skip|fail2ban ${svc}: fail2ban not running (LAN-only install)"
+        return 0
+    }
+    _health_svc_healthy "$svc" || {
+        echo "skip|fail2ban ${svc}: ${svc} not running/ready"
+        return 0
+    }
 
     local logpath filter
     case "$svc" in
-        jellyfin) logpath='/var/log/jellyfin/log_*.log'; filter='/data/filter.d/jellyfin.conf' ;;
-        seerr)    logpath='/var/log/seerr/*.log';         filter='/data/filter.d/seerr.conf' ;;
-        *) echo "skip|fail2ban ${svc}: no active-probe defined"; return 0 ;;
+        jellyfin)
+            logpath='/var/log/jellyfin/log_*.log'
+            filter='/data/filter.d/jellyfin.conf'
+            ;;
+        seerr)
+            logpath='/var/log/seerr/*.log'
+            filter='/data/filter.d/seerr.conf'
+            ;;
+        *)
+            echo "skip|fail2ban ${svc}: no active-probe defined"
+            return 0
+            ;;
     esac
 
     # Delta + poll — NOT a fixed sleep, NOT a bare "matched≥1". Count matches
@@ -151,7 +169,10 @@ health_fail2ban_regex() {
 # The 3 default jails are loaded. Membership, not an exact count (npm-ratelimit
 # can flip on → 4; a stripped service → fewer).
 health_fail2ban_jails() {
-    _health_f2b_running || { echo "skip|fail2ban jails: fail2ban not running (LAN-only install)"; return 0; }
+    _health_f2b_running || {
+        echo "skip|fail2ban jails: fail2ban not running (LAN-only install)"
+        return 0
+    }
     local status missing=() j
     status=$(docker exec fail2ban fail2ban-client status 2>/dev/null | tr -d '\r') || true
     for j in jellyfin npm seerr; do
@@ -179,7 +200,7 @@ _f2b_watch_stale() {
     raw=$(docker exec fail2ban fail2ban-client status "$svc" 2>/dev/null) || return 2
     files=$(tr -d '\r' <<<"$raw" | sed -n 's/.*File list:[[:space:]]*//p' | head -1)
     # Newest non-empty file modified within findtime (1800s). busybox-safe
-    # (crazymax/fail2ban is Alpine — no GNU `find -printf`); dir+glob via argv (#10).
+    # (crazymax/fail2ban is Alpine — no GNU `find -printf`); dir+glob via argv.
     newest=$(docker exec fail2ban sh -c '
         d="$1"; now=$(date +%s); best=""; best_t=0
         for f in "$d"/$2; do
@@ -197,19 +218,34 @@ _f2b_watch_stale() {
 # Prove the live jail is actually tailing the CURRENT dated log file, not a stale
 # rotated one. Complements health_fail2ban_regex (which re-globs fresh, so it
 # cannot see a jail stuck on yesterday's file after a daily rollover). The inotify
-# reload watcher (mediastack-fail2ban-reload.service, #291) keeps these aligned;
+# reload watcher (mediastack-fail2ban-reload.service) keeps these aligned;
 # this is the safety net for the watcher silently failing. svc = jellyfin (seerr's
 # on-disk filename is not yet confirmed to land in a *.log the jail watches).
 health_fail2ban_watching() {
     local svc="${1:-}"
-    [[ -z "$svc" ]] && { echo "skip|fail2ban watching: no service given"; return 0; }
-    _health_f2b_running || { echo "skip|fail2ban ${svc} watching: fail2ban not running (LAN-only install)"; return 0; }
-    _health_svc_healthy "$svc" || { echo "skip|fail2ban ${svc} watching: ${svc} not running/ready"; return 0; }
+    [[ -z "$svc" ]] && {
+        echo "skip|fail2ban watching: no service given"
+        return 0
+    }
+    _health_f2b_running || {
+        echo "skip|fail2ban ${svc} watching: fail2ban not running (LAN-only install)"
+        return 0
+    }
+    _health_svc_healthy "$svc" || {
+        echo "skip|fail2ban ${svc} watching: ${svc} not running/ready"
+        return 0
+    }
 
     local logdir pat
     case "$svc" in
-        jellyfin) logdir='/var/log/jellyfin'; pat='log_*.log' ;;
-        *) echo "skip|fail2ban ${svc} watching: no watch-probe defined"; return 0 ;;
+        jellyfin)
+            logdir='/var/log/jellyfin'
+            pat='log_*.log'
+            ;;
+        *)
+            echo "skip|fail2ban ${svc} watching: no watch-probe defined"
+            return 0
+            ;;
     esac
 
     # A mismatch right at rollover is benign — the watcher reloads within its
@@ -217,8 +253,14 @@ health_fail2ban_watching() {
     # PERSISTENT mismatch (a genuinely stuck watcher). Grace overridable for tests.
     local rc=0
     _f2b_watch_stale "$svc" "$logdir" "$pat" || rc=$?
-    [[ $rc -eq 1 ]] && { echo "ok|fail2ban ${svc} is watching the current log file"; return 0; }
-    [[ $rc -eq 2 ]] && { echo "skip|fail2ban ${svc} watching: fail2ban-client not responding (likely mid-reload)"; return 0; }
+    [[ $rc -eq 1 ]] && {
+        echo "ok|fail2ban ${svc} is watching the current log file"
+        return 0
+    }
+    [[ $rc -eq 2 ]] && {
+        echo "skip|fail2ban ${svc} watching: fail2ban-client not responding (likely mid-reload)"
+        return 0
+    }
     sleep "${F2B_HEALTH_SETTLE_GRACE:-20}"
     rc=0
     _f2b_watch_stale "$svc" "$logdir" "$pat" || rc=$?
@@ -233,9 +275,18 @@ health_fail2ban_watching() {
 # Days until the Let's Encrypt cert expires. Only certs bound to live proxy hosts
 # (a stale/superseded npm-<N> dir would false-fail). Root-owned → sudo -n.
 health_cert_expiry() {
-    [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]] || { echo "skip|cert expiry: no domain configured"; return 0; }
-    command -v openssl >/dev/null 2>&1 || { echo "skip|cert expiry: openssl not installed"; return 0; }
-    _health_sudo_ok || { echo "skip|cert expiry: needs passwordless sudo to read certs"; return 0; }
+    [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]] || {
+        echo "skip|cert expiry: no domain configured"
+        return 0
+    }
+    command -v openssl >/dev/null 2>&1 || {
+        echo "skip|cert expiry: openssl not installed"
+        return 0
+    }
+    _health_sudo_ok || {
+        echo "skip|cert expiry: needs passwordless sudo to read certs"
+        return 0
+    }
 
     local confdir="$_HEALTH_REPO_ROOT/config/npm/data/nginx/proxy_host"
     local ledir="$_HEALTH_REPO_ROOT/config/npm/letsencrypt"
@@ -244,7 +295,10 @@ health_cert_expiry() {
     # Keep the "live/" component — certs live at letsencrypt/live/npm-<N>/fullchain.pem.
     local bound
     bound=$(sudo -n grep -rho --include='*.conf' 'live/npm-[0-9][0-9]*' "$confdir" 2>/dev/null | sort -u) || true
-    [[ -z "$bound" ]] && { echo "skip|cert expiry: no proxy hosts configured yet"; return 0; }
+    [[ -z "$bound" ]] && {
+        echo "skip|cert expiry: no proxy hosts configured yet"
+        return 0
+    }
 
     local now min_days="" id
     now=$(date +%s)
@@ -254,11 +308,14 @@ health_cert_expiry() {
         end=$(sudo -n openssl x509 -enddate -noout -in "${ledir}/${id}/fullchain.pem" 2>/dev/null | cut -d= -f2) || true
         [[ -z "$end" ]] && continue
         ee=$(date -d "$end" +%s 2>/dev/null) || continue
-        days=$(( (ee - now) / 86400 ))
+        days=$(((ee - now) / 86400))
         { [[ -z "$min_days" ]] || [[ "$days" -lt "$min_days" ]]; } && min_days="$days"
     done <<<"$bound"
 
-    [[ -z "$min_days" ]] && { echo "skip|cert expiry: no readable certs"; return 0; }
+    [[ -z "$min_days" ]] && {
+        echo "skip|cert expiry: no readable certs"
+        return 0
+    }
     # ponytail: 14d warn threshold; LE renews at 30d, so <14d means renewal has stalled.
     if [[ "$min_days" -lt 0 ]]; then
         echo "fail|TLS certificate EXPIRED (${min_days}d) — remote access is down"
@@ -272,16 +329,22 @@ health_cert_expiry() {
 
 # Domain A-record vs the box's current public IP. DDNS drift silently breaks remote.
 health_dns_drift() {
-    [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]] || { echo "skip|DNS drift: no domain configured"; return 0; }
-    net_detect_public_ip 2>/dev/null || { echo "skip|DNS drift: could not detect public IP (offline?)"; return 0; }
+    [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]] || {
+        echo "skip|DNS drift: no domain configured"
+        return 0
+    }
+    net_detect_public_ip 2>/dev/null || {
+        echo "skip|DNS drift: could not detect public IP (offline?)"
+        return 0
+    }
     local pip="$_NET_PUBLIC_IP" result
     result=$(stage2_dns_classify "$DOMAIN" "$pip" 2>/dev/null) || true
     case "$result" in
-        ok)          echo "ok|DNS points at this box (${pip})" ;;
-        mismatch:*)  echo "fail|DNS drift: ${DOMAIN} resolves to ${result#mismatch:}, box is ${pip} — remote access broken (DDNS not updating?)" ;;
-        no-a|apex-only) echo "warn|DNS: jellyfin/seerr A-records missing or incomplete for ${DOMAIN}" ;;
-        cloudflare)  echo "warn|DNS points at Cloudflare, not this box's IP (${pip}) — disable proxying" ;;
-        *)           echo "skip|DNS drift: could not classify (dig unavailable or network down)" ;;
+        ok) echo "ok|DNS points at this box (${pip})" ;;
+        mismatch:*) echo "fail|DNS drift: ${DOMAIN} resolves to ${result#mismatch:}, box is ${pip} — remote access broken (DDNS not updating?)" ;;
+        no-a | apex-only) echo "warn|DNS: jellyfin/seerr A-records missing or incomplete for ${DOMAIN}" ;;
+        cloudflare) echo "warn|DNS points at Cloudflare, not this box's IP (${pip}) — disable proxying" ;;
+        *) echo "skip|DNS drift: could not classify (dig unavailable or network down)" ;;
     esac
     return 0
 }
@@ -290,9 +353,15 @@ health_dns_drift() {
 # dead NFS mount; df resolves the mount itself (no _resolve_data_partition walk).
 health_disk_pct() {
     local dir="${DATA_DIR:-/data}" out pct
-    out=$(timeout 5 df -P "$dir" 2>/dev/null) || { echo "skip|disk: ${dir} unreadable (mount unreachable?)"; return 0; }
+    out=$(timeout 5 df -P "$dir" 2>/dev/null) || {
+        echo "skip|disk: ${dir} unreadable (mount unreachable?)"
+        return 0
+    }
     pct=$(awk 'NR==2{gsub(/%/,"",$5); print $5}' <<<"$out")
-    [[ "$pct" =~ ^[0-9]+$ ]] || { echo "skip|disk: could not parse usage for ${dir}"; return 0; }
+    [[ "$pct" =~ ^[0-9]+$ ]] || {
+        echo "skip|disk: could not parse usage for ${dir}"
+        return 0
+    }
     # ponytail: 85% warn / 95% fail — calibration knobs.
     if [[ "$pct" -ge 95 ]]; then
         echo "fail|Disk ${dir} is ${pct}% full — downloads will start failing"
@@ -306,9 +375,15 @@ health_disk_pct() {
 
 # Host firewall default-deny is actually on.
 health_ufw_active() {
-    _health_sudo_ok || { echo "skip|UFW: needs passwordless sudo to read status"; return 0; }
+    _health_sudo_ok || {
+        echo "skip|UFW: needs passwordless sudo to read status"
+        return 0
+    }
     # ufw lives in /usr/sbin (often not in a non-root PATH) — check via root's PATH.
-    sudo -n sh -c 'command -v ufw' >/dev/null 2>&1 || { echo "skip|UFW: not installed"; return 0; }
+    sudo -n sh -c 'command -v ufw' >/dev/null 2>&1 || {
+        echo "skip|UFW: not installed"
+        return 0
+    }
     local status
     status=$(sudo -n ufw status 2>/dev/null) || true
     if grep -qi 'Status: active' <<<"$status"; then
@@ -323,7 +398,10 @@ health_ufw_active() {
 # hide LAN-only admin ports. Docker flushes DOCKER-USER on daemon restart; a jump
 # with an emptied chain still re-exposes everything, so check both.
 health_docker_user_restrict() {
-    _health_sudo_ok || { echo "skip|firewall chain: needs passwordless sudo to read iptables"; return 0; }
+    _health_sudo_ok || {
+        echo "skip|firewall chain: needs passwordless sudo to read iptables"
+        return 0
+    }
     if ! sudo -n iptables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT 2>/dev/null; then
         echo "fail|LAN-only port protection MISSING from DOCKER-USER — admin ports exposed to the internet"
         return 0
@@ -347,11 +425,11 @@ health_docker_user_restrict() {
 health_present() {
     local status="${1%%|*}" msg="${1#*|}"
     case "$status" in
-        ok)   log_ok   "$msg" ;;
+        ok) log_ok "$msg" ;;
         warn) log_warn "$msg" ;;
         fail) log_error "$msg" ;;
         skip) log_skip "$msg" ;;
-        *)    log_info "$1" ;;
+        *) log_info "$1" ;;
     esac
 }
 
@@ -364,7 +442,7 @@ health_present_fail2ban_updates() {
     local svc
     for svc in "$@"; do
         case "$svc" in
-            jellyfin|seerr) health_present "$(health_fail2ban_regex "$svc")" ;;
+            jellyfin | seerr) health_present "$(health_fail2ban_regex "$svc")" ;;
         esac
     done
 }
@@ -374,13 +452,13 @@ health_present_fail2ban_updates() {
 # runner (mediastack:_health_run_all_spin), so the set can't drift.
 _health_each() {
     printf '%s\t%s\t%s\n' \
-        "fail2ban jails"           health_fail2ban_jails       "" \
-        "fail2ban jellyfin filter" health_fail2ban_regex       jellyfin \
-        "fail2ban seerr filter"    health_fail2ban_regex       seerr \
-        "fail2ban jellyfin watch"  health_fail2ban_watching    jellyfin \
-        "TLS certificate"          health_cert_expiry          "" \
-        "DNS / public IP"          health_dns_drift            "" \
-        "disk space"               health_disk_pct             "" \
-        "UFW firewall"             health_ufw_active           "" \
-        "Docker port lock"         health_docker_user_restrict ""
+        "fail2ban jails" health_fail2ban_jails "" \
+        "fail2ban jellyfin filter" health_fail2ban_regex jellyfin \
+        "fail2ban seerr filter" health_fail2ban_regex seerr \
+        "fail2ban jellyfin watch" health_fail2ban_watching jellyfin \
+        "TLS certificate" health_cert_expiry "" \
+        "DNS / public IP" health_dns_drift "" \
+        "disk space" health_disk_pct "" \
+        "UFW firewall" health_ufw_active "" \
+        "Docker port lock" health_docker_user_restrict ""
 }

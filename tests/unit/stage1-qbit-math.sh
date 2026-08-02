@@ -32,7 +32,7 @@ ui_log() {
     LOG_CAPTURE+="${level}:$*\n"
 }
 
-net_is_port_locally_bound() { return 0; }   # simulate local bind conflict
+net_is_port_locally_bound() { return 0; } # simulate local bind conflict
 _stage1_collect_qbit
 
 assert_eq "7.5" "$_WIZ_DL_LIMIT" "stage1-qbit-math: 50% download default"
@@ -53,7 +53,7 @@ fi
 # Closed port = available for qBit to bind. The wizard should NOT warn about
 # router forwarding here — that check belongs after the stack starts.
 LOG_CAPTURE=""
-net_is_port_locally_bound() { return 1; }   # simulate "nothing listening" (the GOOD case)
+net_is_port_locally_bound() { return 1; } # simulate "nothing listening" (the GOOD case)
 _NET_PUBLIC_IP="203.0.113.42"
 _WIZ_TORRENT_PORT=6881
 _stage1_collect_qbit

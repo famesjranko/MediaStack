@@ -33,7 +33,7 @@ assert_unpackerr_extracted() {
     local extracted_file="$fixture_dir/fixture.txt"
     local timeout=120 waited=0
 
-    while (( waited < timeout )); do
+    while ((waited < timeout)); do
         dind_exec "test -f $extracted_file" && break
         sleep 2
         waited=$((waited + 2))

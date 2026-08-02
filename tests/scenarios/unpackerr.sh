@@ -249,7 +249,10 @@ run_scenario() {
         return 1
     fi
     unpackerr_write_radarr_stub "$radarr_key"
-    unpackerr_start_radarr_stub "$radarr_key" || { unpackerr_finish; return 1; }
+    unpackerr_start_radarr_stub "$radarr_key" || {
+        unpackerr_finish
+        return 1
+    }
 
     if dind_exec "$compose_test up -d --no-deps --force-recreate unpackerr" >/dev/null 2>&1; then
         pass "unpackerr: recreated against Radarr queue stub"

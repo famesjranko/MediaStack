@@ -44,27 +44,27 @@ _build_profile_args() {
         while IFS= read -r _line || [[ -n "$_line" ]]; do
             # Skip blanks, comments, and any line without a key=value shape.
             case "$_line" in
-                ''|'#'*) continue ;;
-                *=*)     ;;
-                *)       continue ;;
+                '' | '#'*) continue ;;
+                *=*) ;;
+                *) continue ;;
             esac
             _key=${_line%%=*}
             _val=${_line#*=}
             # Strip one layer of matching surrounding quotes so single- and
             # double-quoted values are read identically.
-            if (( ${#_val} >= 2 )); then
-                if { [[ ${_val:0:1} == "'" && ${_val: -1} == "'" ]]; } || \
-                   { [[ ${_val:0:1} == '"' && ${_val: -1} == '"' ]]; }; then
+            if ((${#_val} >= 2)); then
+                if { [[ ${_val:0:1} == "'" && ${_val: -1} == "'" ]]; } \
+                    || { [[ ${_val:0:1} == '"' && ${_val: -1} == '"' ]]; }; then
                     _val=${_val:1:${#_val}-2}
                 fi
             fi
             case "$_key" in
-                BAZARR_ENABLED)   _bazarr=$_val ;;
+                BAZARR_ENABLED) _bazarr=$_val ;;
                 AUTOHEAL_ENABLED) _autoheal=$_val ;;
-                DOMAIN)           _domain=$_val ;;
+                DOMAIN) _domain=$_val ;;
                 WG_INIT_PASSWORD) _wg=$_val ;;
             esac
-        done < "$_bpa_env"
+        done <"$_bpa_env"
     fi
 
     if [[ "$_bazarr" == "true" ]]; then

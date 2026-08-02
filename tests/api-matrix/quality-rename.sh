@@ -1,6 +1,6 @@
 # tests/api-matrix/quality-rename.sh — api-matrix test-2: day-2 in-place rename.
 #
-# Proves the PRODUCT day-2 "change quality profile" push (issue #71): seed cell A
+# Proves the PRODUCT day-2 "change quality profile" push: seed cell A
 # via the product quality configurators, then change to cell B with
 # QP_RENAME_FROM set, and assert the live profile is RENAMED IN PLACE — same id,
 # new name/enabled-set/cutoff, the NEW size's custom-format scores actually
@@ -25,7 +25,7 @@ _qr_push() {
 # Push, then verify the expected profile name actually landed; retry on miss.
 # configure_quality_profile warns-and-returns-0 on a failed PUT (by design —
 # configure.sh never hard-fails a day-2 step), so a dropped PUT from a
-# transient *arr API conflict (#171) is otherwise invisible to the caller and
+# transient *arr API conflict is otherwise invisible to the caller and
 # leaves the live profile on its PREVIOUS name when the assertions run.
 _qr_push_until() {
     local app="$1" base="$2" key="$3" res="$4" size="$5" rename_from="$6" expected="$7"

@@ -43,7 +43,7 @@ cfg_field() {
         qbittorrent.max_active_downloads) echo "3" ;;
         qbittorrent.max_active_uploads) echo "3" ;;
         qbittorrent.max_active_torrents) echo "6" ;;
-        qbittorrent.dl_speed_limit|qbittorrent.ul_speed_limit) echo "0" ;;
+        qbittorrent.dl_speed_limit | qbittorrent.ul_speed_limit) echo "0" ;;
         *) echo "" ;;
     esac
 }
@@ -60,7 +60,7 @@ api_fetch() {
     local count=0
     [[ -f "$API_FETCH_COUNT_FILE" ]] && count=$(<"$API_FETCH_COUNT_FILE")
     count=$((count + 1))
-    printf '%s' "$count" > "$API_FETCH_COUNT_FILE"
+    printf '%s' "$count" >"$API_FETCH_COUNT_FILE"
     if [[ "${QBT_VERIFY_CATEGORY_AFTER_EDIT_FAIL:-0}" == "1" && "$count" -gt 1 ]]; then
         printf '%s\n' '{"tv-sonarr":{"name":"tv-sonarr","savePath":"/data/torrents/tv&specials"},"movie=radarr":{"name":"movie=radarr","savePath":"/data/torrents/movies=all"}}'
     else
@@ -75,7 +75,7 @@ docker() {
         local count=0
         [[ -f "$DOCKER_LOG_COUNT_FILE" ]] && count=$(<"$DOCKER_LOG_COUNT_FILE")
         count=$((count + 1))
-        printf '%s' "$count" > "$DOCKER_LOG_COUNT_FILE"
+        printf '%s' "$count" >"$DOCKER_LOG_COUNT_FILE"
         printf '%s\n' 'The WebUI administrator username is: admin'
         if [[ "${QBT_DELAY_TEMP_LOGS:-0}" == "1" && "$count" -lt 3 ]]; then
             return 0
@@ -89,7 +89,7 @@ docker() {
 curl() {
     local arg prev="" endpoint="" is_login=false password="" category=""
     for arg in "$@"; do
-        printf '%s\t' "$arg" >> "$CURL_LOG"
+        printf '%s\t' "$arg" >>"$CURL_LOG"
         if [[ "$arg" == *"/api/v2/auth/login" ]]; then
             is_login=true
         fi
@@ -107,7 +107,7 @@ curl() {
         fi
         prev="$arg"
     done
-    printf '\n' >> "$CURL_LOG"
+    printf '\n' >>"$CURL_LOG"
 
     if $is_login; then
         if [[ "$password" == "temp&pass=1" ]]; then
@@ -150,7 +150,8 @@ json_encoded_count=$(awk -F'\t' '
 ' "$CURL_LOG")
 assert_eq "2" "$json_encoded_count" "qBittorrent URL-encodes both preference and password JSON payloads"
 
-managed_pref_summary=$(python3 - "$CURL_LOG" <<'PY'
+managed_pref_summary=$(
+    python3 - "$CURL_LOG" <<'PY'
 import json
 import sys
 
@@ -169,12 +170,13 @@ for raw in open(sys.argv[1], encoding="utf-8"):
 raise SystemExit(1)
 PY
 )
-mapfile -t managed_pref_lines <<< "$managed_pref_summary"
+mapfile -t managed_pref_lines <<<"$managed_pref_summary"
 assert_eq "/data/torrents/all&media" "${managed_pref_lines[0]:-}" "qBittorrent managed mode sets save path from config.yml"
 assert_eq "/data/torrents/incomplete=tmp" "${managed_pref_lines[1]:-}" "qBittorrent managed mode sets temp path from config.yml"
 assert_eq "True" "${managed_pref_lines[2]:-}" "qBittorrent managed mode enables temp path"
 
-auth_pref_summary=$(python3 - "$CURL_LOG" <<'PY'
+auth_pref_summary=$(
+    python3 - "$CURL_LOG" <<'PY'
 import json
 import sys
 
@@ -192,7 +194,7 @@ for raw in open(sys.argv[1], encoding="utf-8"):
 raise SystemExit(1)
 PY
 )
-mapfile -t auth_pref_lines <<< "$auth_pref_summary"
+mapfile -t auth_pref_lines <<<"$auth_pref_summary"
 assert_eq "mediaadmin" "${auth_pref_lines[0]:-}" "qBittorrent WebUI username is set to shared admin user"
 assert_eq "abc&% =defghi" "${auth_pref_lines[1]:-}" "qBittorrent WebUI password is set to shared admin password"
 
@@ -212,7 +214,7 @@ assert_eq "4" "$category_encoded_count" "qBittorrent URL-encodes category and sa
 assert_contains "$curl_log" $'--data-urlencode\tsavePath=/data/torrents/tv&specials' "qBittorrent managed mode writes TV category path"
 assert_contains "$curl_log" $'--data-urlencode\tsavePath=/data/torrents/movies=all' "qBittorrent managed mode writes movie category path"
 
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 rm -f "$API_FETCH_COUNT_FILE" "$DOCKER_LOG_COUNT_FILE"
@@ -224,7 +226,7 @@ warn_count=$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}" | grep -c . 2>/dev/null || 
 assert_eq "0" "$warn_count" "qBittorrent waits for delayed first-run temporary password"
 assert_eq "3" "$(<"$DOCKER_LOG_COUNT_FILE")" "qBittorrent polls logs until temporary password appears"
 
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 rm -f "$API_FETCH_COUNT_FILE" "$DOCKER_LOG_COUNT_FILE"
@@ -235,7 +237,7 @@ unset QBT_EMPTY_LOGIN_SUCCESS
 warn_count=$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}" | grep -c . 2>/dev/null || true)
 assert_eq "0" "$warn_count" "qBittorrent accepts HTTP 204 empty login success"
 
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 rm -f "$API_FETCH_COUNT_FILE" "$DOCKER_LOG_COUNT_FILE"
@@ -249,7 +251,7 @@ ok_log=$(printf '%s\n' "${LOG_OK_MESSAGES[@]}")
 assert_eq "0" "$warn_count" "qBittorrent verifies category state after editCategory false negative"
 assert_contains "$ok_log" "Category: tv-sonarr -> /data/torrents/tv&specials" "qBittorrent logs category success when follow-up fetch verifies it"
 
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 rm -f "$API_FETCH_COUNT_FILE" "$DOCKER_LOG_COUNT_FILE"
@@ -263,7 +265,7 @@ assert_contains "$warn_log" "Failed to set qBittorrent category: tv-sonarr -> /d
 failed_category_ok_count=$(printf '%s\n' "$ok_log" | grep -Fxc "Category: tv-sonarr -> /data/torrents/tv&specials" 2>/dev/null || true)
 assert_eq "0" "$failed_category_ok_count" "qBittorrent does not log category success when edit fails"
 
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 rm -f "$API_FETCH_COUNT_FILE" "$DOCKER_LOG_COUNT_FILE"
@@ -276,7 +278,7 @@ ok_log=$(printf '%s\n' "${LOG_OK_MESSAGES[@]}")
 assert_eq "0" "$warn_count" "qBittorrent ignores create-category conflicts when edit succeeds"
 assert_contains "$ok_log" "Category: tv-sonarr -> /data/torrents/tv&specials" "qBittorrent logs category success after edit succeeds"
 
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 rm -f "$API_FETCH_COUNT_FILE" "$DOCKER_LOG_COUNT_FILE"
@@ -284,7 +286,8 @@ storage_is_manual() { return 0; }
 configure_qbittorrent
 unset -f storage_is_manual
 
-manual_pref_has_managed_paths=$(python3 - "$CURL_LOG" <<'PY'
+manual_pref_has_managed_paths=$(
+    python3 - "$CURL_LOG" <<'PY'
 import json
 import sys
 
@@ -311,7 +314,7 @@ LIVE_BIN="$TMP_DIR/live-bin"
 LIVE_ENV="$TMP_DIR/live.env"
 LIVE_CONFIG="$TMP_DIR/live-config.yml"
 mkdir -p "$LIVE_BIN"
-cat > "$LIVE_BIN/curl" <<'SH'
+cat >"$LIVE_BIN/curl" <<'SH'
 #!/usr/bin/env bash
 for arg in "$@"; do
     case "$arg" in
@@ -332,14 +335,14 @@ done
 exit 22
 SH
 chmod +x "$LIVE_BIN/curl"
-cat > "$LIVE_ENV" <<'EOF'
+cat >"$LIVE_ENV" <<'EOF'
 JELLYFIN_ADMIN_USER='mediaadmin'
 JELLYFIN_ADMIN_PASSWORD='abc&% =defghi'
 QBT_DL_LIMIT=0
 QBT_UL_LIMIT=1
 STORAGE_APP_WIRING=managed
 EOF
-cat > "$LIVE_CONFIG" <<'EOF'
+cat >"$LIVE_CONFIG" <<'EOF'
 qbittorrent:
   save_path: "/data/torrents"
   temp_path: "/data/torrents/incomplete"
@@ -362,23 +365,26 @@ assert_contains "$live_out" $'PASS\tstep 1 qBittorrent: shared admin credentials
 assert_contains "$live_out" $'PASS\tstep 1 qBittorrent: category radarr save path' "qBittorrent live assertion checks managed categories"
 
 # ---------------------------------------------------------------------------
-# Day-2 qbt_set_speed_limits (#50): focused, single-setting live apply.
+# Day-2 qbt_set_speed_limits: focused, single-setting live apply.
 # Re-auths with the shared admin creds (NOT the temp password) and POSTs ONLY
-# dl_limit/up_limit — invariant #2 (no broad reconcile). A fresh curl mock that
+# dl_limit/up_limit (no broad reconcile). A fresh curl mock that
 # accepts the shared creds; the file-wide mock only blesses the temp password.
 # ---------------------------------------------------------------------------
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 curl() {
     local arg is_login=false
     for arg in "$@"; do
-        printf '%s\t' "$arg" >> "$CURL_LOG"
+        printf '%s\t' "$arg" >>"$CURL_LOG"
         [[ "$arg" == *"/api/v2/auth/login" ]] && is_login=true
     done
-    printf '\n' >> "$CURL_LOG"
-    if $is_login; then printf '%s\n%s\n' "Ok." "200"; return 0; fi
-    return 0   # setPreferences success
+    printf '\n' >>"$CURL_LOG"
+    if $is_login; then
+        printf '%s\n%s\n' "Ok." "200"
+        return 0
+    fi
+    return 0 # setPreferences success
 }
 
 qbt_set_speed_limits 5 2
@@ -392,7 +398,8 @@ assert_contains "$ok_log" "qBittorrent speed limits updated" "qbt_set_speed_limi
 
 # The setPreferences payload must carry ONLY dl_limit + up_limit (no save_path,
 # web_ui_*, max_ratio, categories) and convert MB/s -> bytes/s correctly.
-day2_payload=$(python3 - "$CURL_LOG" <<'PY'
+day2_payload=$(
+    python3 - "$CURL_LOG" <<'PY'
 import json, sys
 for raw in open(sys.argv[1], encoding="utf-8"):
     fields = raw.rstrip("\n").split("\t")
@@ -408,8 +415,8 @@ for raw in open(sys.argv[1], encoding="utf-8"):
 raise SystemExit(1)
 PY
 )
-mapfile -t day2_lines <<< "$day2_payload"
-assert_eq "dl_limit,up_limit" "${day2_lines[0]:-}" "qbt_set_speed_limits: posts ONLY dl_limit + up_limit (invariant #2)"
+mapfile -t day2_lines <<<"$day2_payload"
+assert_eq "dl_limit,up_limit" "${day2_lines[0]:-}" "qbt_set_speed_limits: posts ONLY dl_limit + up_limit (no broad reconcile)"
 assert_eq "5242880" "${day2_lines[1]:-}" "qbt_set_speed_limits: download 5 MB/s -> 5242880 bytes/s"
 assert_eq "2097152" "${day2_lines[2]:-}" "qbt_set_speed_limits: upload 2 MB/s -> 2097152 bytes/s"
 
@@ -417,10 +424,11 @@ setpref_calls=$(grep -c '/api/v2/app/setPreferences' "$CURL_LOG" 2>/dev/null || 
 assert_eq "1" "$setpref_calls" "qbt_set_speed_limits: a single setPreferences call (no broad reconcile)"
 
 # Missing shared password -> warn + non-zero, no API traffic.
-: > "$CURL_LOG"
+: >"$CURL_LOG"
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
-( JELLYFIN_ADMIN_PASSWORD="" qbt_set_speed_limits 3 1 ); noauth_rc=$?
+(JELLYFIN_ADMIN_PASSWORD="" qbt_set_speed_limits 3 1)
+noauth_rc=$?
 assert_eq "1" "$noauth_rc" "qbt_set_speed_limits: fails when shared admin password is unset"
 
 scenario_end "$CURRENT_SCENARIO"

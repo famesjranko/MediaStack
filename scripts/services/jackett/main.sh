@@ -24,7 +24,10 @@ configure_jackett() {
     # POST /UI/Dashboard with no body sets the cookie even when AdminPassword="".
     # On re-run (password already set), we must POST the password to authenticate.
     local jar
-    jar=$(mktemp) || { log_warn "Cannot create cookie jar"; return 0; }
+    jar=$(mktemp) || {
+        log_warn "Cannot create cookie jar"
+        return 0
+    }
 
     curl -sf -c "$jar" -X POST "${jackett_base}/UI/Dashboard" -d "" >/dev/null 2>&1
     # Verify session works; if not, retry with admin password. Must probe the

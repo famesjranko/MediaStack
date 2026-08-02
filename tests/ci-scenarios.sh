@@ -42,13 +42,13 @@ for f in tests/scenarios/wizard-ui-*.sh; do
     [[ -f "$f" ]] || continue
     names+=("$(basename "$f" .sh)")
 done
-if (( ${#extra_image_free[@]} > 0 )); then
+if ((${#extra_image_free[@]} > 0)); then
     for s in "${extra_image_free[@]}"; do
         [[ -f "tests/scenarios/$s.sh" ]] && names+=("$s")
     done
 fi
 
-if (( ${#names[@]} == 0 )); then
+if ((${#names[@]} == 0)); then
     echo "ci-scenarios: no image-free scenarios found under tests/scenarios/" >&2
     exit 2
 fi

@@ -22,13 +22,13 @@ docker() {
         ps)
             if [[ "${2:-}" == "--format" ]]; then
                 if [[ "${3:-}" == "{{.Names}}" ]]; then
-                    (( DOCKER_RUNNING )) && printf '%s\n' "$MS_CACHE_MIRROR_NAME"
+                    ((DOCKER_RUNNING)) && printf '%s\n' "$MS_CACHE_MIRROR_NAME"
                     return 0
                 fi
                 return 0
             fi
             if [[ "${2:-}" == "-a" && "${3:-}" == "--format" && "${4:-}" == "{{.Names}}" ]]; then
-                if (( DOCKER_EXISTS || DOCKER_RUNNING )); then
+                if ((DOCKER_EXISTS || DOCKER_RUNNING)); then
                     printf '%s\n' "$MS_CACHE_MIRROR_NAME"
                 fi
                 return 0
@@ -49,7 +49,7 @@ docker() {
             ;;
         run)
             DOCKER_RUN_COUNT=$((DOCKER_RUN_COUNT + 1))
-            (( DOCKER_RUN_FAIL )) && return 1
+            ((DOCKER_RUN_FAIL)) && return 1
             DOCKER_RUNNING=1
             DOCKER_EXISTS=1
             printf 'container-id\n'
@@ -58,7 +58,7 @@ docker() {
         rm)
             if [[ "${2:-}" == "-f" ]]; then
                 DOCKER_RM_COUNT=$((DOCKER_RM_COUNT + 1))
-                (( DOCKER_RM_FAIL )) && return 1
+                ((DOCKER_RM_FAIL)) && return 1
                 DOCKER_RUNNING=0
                 DOCKER_EXISTS=0
                 return 0

@@ -95,10 +95,10 @@ timedatectl() { echo "Etc/UTC"; }
 export -f timedatectl
 
 # Silence log_* — assertions drive output
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { printf '%s\n' "$1"; }
-log_skip()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { printf '%s\n' "$1"; }
+log_skip() { :; }
 log_error() { :; }
 
 # --- Source all modules (setup.sh guard prevents main() from running) ---
@@ -154,19 +154,23 @@ assert_eq "Balanced" "$choice" "ui_choose: invalid input uses visible default"
 # installs the documented non-interactive TERM trap must exit with the distinct
 # UI_EXIT_INPUT_EXHAUSTED (3) — not a generic SIGTERM (143) — and must NOT hang.
 # This mirrors mediastack:main / setup.sh:main without depending on either.
-eof_rc=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
-  source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+eof_rc=$(
+    timeout 10 env -u UI_DEMO -u DEMO bash -c '
+  _src=source
+  "$_src" "'"$REPO_ROOT"'/scripts/lib/ui.sh"
   trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
   choice=$(ui_choose "Pick one:" "A" "B" "C" </dev/null)
   echo "REACHED_PAST_CHOOSE=$choice"     # must NOT print — group-kill took us
-' </dev/null >/dev/null 2>&1; echo "$?")
+' </dev/null >/dev/null 2>&1
+    echo "$?"
+)
 assert_eq "3" "$eof_rc" "ui_choose: piped EOF maps to distinct exit code (input exhausted, not 143)"
 if [[ "$eof_rc" == "124" ]]; then
     fail "ui_choose: piped EOF must not hang (timeout fired)"
 fi
 
 # =========================================================================
-# Test 0c: ui_input_validated / ui_password_validated on a piped EOF (issue #93).
+# Test 0c: ui_input_validated / ui_password_validated on a piped EOF.
 # =========================================================================
 # The validated-input siblings of Test 0b. When the offered default fails its
 # validator and stdin is exhausted (non-TTY), the re-prompt loop must NOT spin
@@ -174,19 +178,24 @@ fi
 # SIGTERMs the process group, exactly like ui_choose. A parent with the documented
 # TERM trap exits UI_EXIT_INPUT_EXHAUSTED (3) — never 124 (hang) or 143 (generic
 # kill). Real validators that reject empty (validate_admin_email,
-# validate_ddns_password) drive the genuine #93 trigger end to end. (timeout runs
+# validate_ddns_password) drive the genuine trigger end to end. (timeout runs
 # the probe in its own process group, so the group-kill cannot reach this runner.)
 for _v93 in \
     "ui_input_validated|validate_admin_email" \
     "ui_password_validated|validate_ddns_password"; do
-    _fn93="${_v93%%|*}"; _val93="${_v93##*|}"
-    rc93=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
-      source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
-      source "'"$REPO_ROOT"'/scripts/lib/validators.sh"
+    _fn93="${_v93%%|*}"
+    _val93="${_v93##*|}"
+    rc93=$(
+        timeout 10 env -u UI_DEMO -u DEMO bash -c '
+      _src=source
+      "$_src" "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+      "$_src" "'"$REPO_ROOT"'/scripts/lib/validators.sh"
       trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
       out=$('"$_fn93"' "Required field" "" '"$_val93"' </dev/null)
       echo "REACHED_PAST_PROMPT=$out"     # must NOT print — group-kill took us
-    ' </dev/null >/dev/null 2>&1; echo "$?")
+    ' </dev/null >/dev/null 2>&1
+        echo "$?"
+    )
     assert_eq "3" "$rc93" "$_fn93: non-TTY input exhaustion maps to exit 3 (not looping/143)"
     if [[ "$rc93" == "124" ]]; then
         fail "$_fn93: non-TTY input exhaustion must not hang (timeout fired)"
@@ -200,8 +209,9 @@ unset _v93 _fn93 _val93 rc93
 # not fire while usable input is still queued. This locks out a regression to a
 # one-strike latch or a bare `[[ -t 0 ]]` guard (both would kill on the blank line).
 got93=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
-  source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
-  source "'"$REPO_ROOT"'/scripts/lib/validators.sh"
+  _src=source
+  "$_src" "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+  "$_src" "'"$REPO_ROOT"'/scripts/lib/validators.sh"
   trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
   printf "\na@b.co\n" | ui_input_validated "Email" "" validate_admin_email
 ' 2>/dev/null)
@@ -215,8 +225,9 @@ unset got93
 # SECOND, non-adjacent blank and never reach the valid line. This pins the exhaustion
 # detector to "default rejected twice in a row" rather than "default ever rejected".
 got93b=$(timeout 10 env -u UI_DEMO -u DEMO bash -c '
-  source "'"$REPO_ROOT"'/scripts/lib/ui.sh"
-  source "'"$REPO_ROOT"'/scripts/lib/validators.sh"
+  _src=source
+  "$_src" "'"$REPO_ROOT"'/scripts/lib/ui.sh"
+  "$_src" "'"$REPO_ROOT"'/scripts/lib/validators.sh"
   trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
   printf "\nnotanemail\n\na@b.co\n" | ui_input_validated "Email" "" validate_admin_email
 ' 2>/dev/null)
@@ -255,7 +266,7 @@ assert_eq "0" "$wizard_rc" "run_wizard: exits 0 in demo mode"
 assert_eq "1" "$RUN_STAGE2_COUNT" "run_wizard: normal interactive path routes to Stage 2"
 assert_eq "1" "$RUN_STAGE3_COUNT" "run_wizard: normal interactive path routes to hardware transcoding add-on"
 
-# #8: the stage-order orientation note is interactive-only; a non-TTY run must
+# The stage-order orientation note is interactive-only; a non-TTY run must
 # stay byte-stable so scripted/CI output is unchanged.
 if [[ "$wizard_out" == *"Core media server is ready"* ]]; then
     fail "run_wizard: stage-order note suppressed on non-TTY" "note leaked into non-TTY output"
@@ -264,7 +275,7 @@ else
 fi
 
 # =========================================================================
-# Test 2b: wizard run-path UX guards (#8 stage-order note, #9 interrupt trap)
+# Test 2b: wizard run-path UX guards (stage-order note, interrupt trap)
 # =========================================================================
 # Source-text guard so a future edit can't silently delete the orientation
 # copy (declare -f strips comments but keeps the strings + the TTY guard).
@@ -272,7 +283,7 @@ run_wizard_src=$(declare -f run_wizard)
 assert_contains "$run_wizard_src" "Core media server is ready" "run_wizard: stage-order orientation copy present"
 assert_contains "$run_wizard_src" "-t 0" "run_wizard: orientation note is TTY-gated"
 
-# #9: the interrupt handler + its install must live in setup.sh, and the install
+# The interrupt handler + its install must live in setup.sh, and the install
 # must be gated on an interactive TTY (adjacent lines) so non-TTY CI / piped /
 # post-reboot signal handling is unchanged.
 setup_src=$(cat "$REPO_ROOT/setup.sh")
@@ -282,16 +293,17 @@ assert_contains "$setup_src" "_setup_on_interrupt()" "setup.sh: interrupt handle
 setup_src_norm=$(printf '%s' "$setup_src" | tr -s '[:space:]' ' ')
 assert_contains "$setup_src_norm" "if [[ -t 0 ]]; then trap '_setup_on_interrupt' INT TERM" "setup.sh: interrupt trap gated on an interactive TTY"
 
-# #9 leak guard: sourcing setup.sh must NOT install an INT trap (the install
+# Leak guard: sourcing setup.sh must NOT install an INT trap (the install
 # lives inside main(), which the BASH_SOURCE==\$0 guard keeps from running).
-leaked_int=$(bash -c "source '$REPO_ROOT/setup.sh' >/dev/null 2>&1; trap -p INT" 2>/dev/null)
+leaked_int=$(bash -c "_src=source; \"\$_src\" '$REPO_ROOT/setup.sh' >/dev/null 2>&1; trap -p INT" 2>/dev/null)
 if [[ -z "$leaked_int" ]]; then
     pass "setup.sh: sourcing installs no INT trap (no leak into sourced shells)"
 else
     fail "setup.sh: sourcing installs no INT trap" "leaked: $leaked_int"
 fi
 
-# #9 enabler: the background ui_spin must RESTORE the caller's INT trap, not
+# Trap-preservation enabler: the background ui_spin must RESTORE the caller's
+# INT trap, not
 # reset it to default — otherwise the interrupt handler is wiped after the
 # first spinner. UI_DEMO=0 forces the real background-process branch.
 _saved_ui_demo="$UI_DEMO"
@@ -359,10 +371,10 @@ assert_eq "/data/torrents" "$(env_val UNPACKERR_TORRENT_PATHS)" ".env: managed U
 # Demo mode returns blank for domain prompt → should be example.com placeholder
 assert_eq "example.com" "$(env_val DOMAIN)" ".env: DOMAIN placeholder when blank"
 
-# Password is the UI_DEMO walk-through placeholder. #95: the admin password is NEVER
+# Password is the UI_DEMO walk-through placeholder. The admin password is NEVER
 # auto-generated — _stage1_collect_admin requires a user-set + confirmed value on a
 # real install, and uses a fixed valid placeholder only under the UI_DEMO/--demo guard.
-assert_eq "DemoAdminPassword123" "$(env_val JELLYFIN_ADMIN_PASSWORD)" ".env: admin password is the UI_DEMO placeholder (#95: user-set, never auto-generated)"
+assert_eq "DemoAdminPassword123" "$(env_val JELLYFIN_ADMIN_PASSWORD)" ".env: admin password is the UI_DEMO placeholder (user-set, never auto-generated)"
 
 # File permissions
 perms=$(stat -c '%a' "$TMP_DIR/.env")
@@ -413,7 +425,12 @@ PY
 write_env >/dev/null 2>&1
 assert_eq "/mnt/custom downloads/\$USER/torrents" "$(env_val UNPACKERR_TORRENT_PATHS)" ".env: custom Unpackerr path with spaces and dollar preserved"
 assert_eq "UNPACKERR_TORRENT_PATHS='/mnt/custom downloads/\$USER/torrents'" "$(grep '^UNPACKERR_TORRENT_PATHS=' "$TMP_DIR/.env")" ".env: custom Unpackerr path is quoted"
-if (set -a; source "$TMP_DIR/.env"; set +a; [[ "$UNPACKERR_TORRENT_PATHS" == "/mnt/custom downloads/\$USER/torrents" ]]); then
+if (
+    set -a
+    source "$TMP_DIR/.env"
+    set +a
+    [[ "$UNPACKERR_TORRENT_PATHS" == "/mnt/custom downloads/\$USER/torrents" ]]
+); then
     pass ".env: custom Unpackerr path sources correctly"
 else
     fail ".env: custom Unpackerr path sources correctly"
@@ -468,7 +485,7 @@ printf '%s\n' \
     "SONARR_API_KEY=old-sonarr-secret" \
     "STAGE_1_COMPLETE=1" \
     "JELLYFIN_ADMIN_PASSWORD='old-admin-password'" \
-    > "$TMP_DIR_ATOMIC/.env"
+    >"$TMP_DIR_ATOMIC/.env"
 cp "$TMP_DIR_ATOMIC/.env" "$TMP_DIR_ATOMIC/expected.env"
 
 SCRIPT_DIR="$TMP_DIR_ATOMIC"
@@ -522,7 +539,7 @@ path.write_text("\n".join(out) + "\n")
 PY
 
 skip_output_file="$TMP_DIR/skip-output"
-run_wizard > "$skip_output_file" 2>&1
+run_wizard >"$skip_output_file" 2>&1
 skip_rc=$?
 skip_output=$(cat "$skip_output_file")
 
@@ -554,7 +571,7 @@ path.write_text("\n".join(out) + "\n")
 PY
 
 resume_output_file="$TMP_DIR/resume-output"
-run_wizard > "$resume_output_file" 2>&1
+run_wizard >"$resume_output_file" 2>&1
 resume_rc=$?
 resume_output=$(cat "$resume_output_file")
 
@@ -577,7 +594,7 @@ with open('$TMP_DIR/config.yml', 'w') as f:
 "
 
 # Write a fake .env with custom values to simulate interrupted run
-cat > "$TMP_DIR/.env" <<'PARTIAL'
+cat >"$TMP_DIR/.env" <<'PARTIAL'
 TZ=America/New_York
 DATA_DIR=/custom/data
 IMAGE_CHANNEL=latest
@@ -645,7 +662,7 @@ RUN_STAGE3_COUNT=0
 
 detect_env
 
-cat > "$TMP_DIR_DEMO/.env" <<'PRESEEDED'
+cat >"$TMP_DIR_DEMO/.env" <<'PRESEEDED'
 DOMAIN=demo.example.test
 NPM_ADMIN_EMAIL=owner@demo.test
 JELLYFIN_ADMIN_PASSWORD='changeme'
@@ -740,7 +757,7 @@ ui_choose() {
     case "${1:-}" in
         "Use these"*) echo "Use these details" ;;
         *)
-            printf '%s\n' "${1:-}" > "$SMB_SCOPE_PROMPT_FILE"
+            printf '%s\n' "${1:-}" >"$SMB_SCOPE_PROMPT_FILE"
             echo "Full system (/) - advanced admin access to the whole server."
             ;;
     esac
@@ -774,7 +791,7 @@ cp "$REPO_ROOT/config/examples/config.yml" "$TMP_DIR_FULL/config.yml"
 cp "$REPO_ROOT/.env.example" "$TMP_DIR_FULL/.env.example"
 cp -r "$REPO_ROOT/scripts" "$TMP_DIR_FULL/scripts"
 mkdir -p "$TMP_DIR_FULL/config/ddns-updater"
-cat > "$TMP_DIR_FULL/scripts/configure.sh" <<'FULLCONFIG'
+cat >"$TMP_DIR_FULL/scripts/configure.sh" <<'FULLCONFIG'
 #!/usr/bin/env bash
 exit 0
 FULLCONFIG
@@ -803,7 +820,7 @@ prompt_sudo_cache() { record_full_order prompt_sudo_cache; }
 stash_gpu_type() {
     record_full_order stash_gpu_type
     FULL_STASH_COUNT=$((FULL_STASH_COUNT + 1))
-    if (( FULL_STASH_COUNT == 1 )); then
+    if ((FULL_STASH_COUNT == 1)); then
         GPU_TYPE=none
     else
         GPU_TYPE=nvidia
@@ -811,7 +828,10 @@ stash_gpu_type() {
 }
 detect_existing_install() { record_full_order detect_existing_install; }
 install_base_packages() { record_full_order install_base_packages; }
-install_docker() { record_full_order install_docker; FULL_DOCKER_INSTALLED=true; }
+install_docker() {
+    record_full_order install_docker
+    FULL_DOCKER_INSTALLED=true
+}
 check_docker() {
     record_full_order check_docker
     $FULL_DOCKER_INSTALLED
@@ -820,7 +840,10 @@ check_compose() {
     record_full_order check_compose
     $FULL_DOCKER_INSTALLED
 }
-detect_gpu() { record_full_order detect_gpu; GPU_TYPE=none; }
+detect_gpu() {
+    record_full_order detect_gpu
+    GPU_TYPE=none
+}
 install_nvidia_drivers() { record_full_order install_nvidia_drivers; }
 install_amd_drivers() { record_full_order install_amd_drivers; }
 install_intel_drivers() { record_full_order install_intel_drivers; }
@@ -840,7 +863,7 @@ run_wizard() {
     record_full_order run_wizard
     FULL_WIZARD_GPU_TYPE="$GPU_TYPE"
     WIZARD_RAN_INSTALL=true
-    cat > "$SCRIPT_DIR/.env" <<'FULLENV'
+    cat >"$SCRIPT_DIR/.env" <<'FULLENV'
 TZ=Etc/UTC
 PUID=1000
 PGID=1000

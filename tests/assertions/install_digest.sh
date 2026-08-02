@@ -1,4 +1,4 @@
-# Assertion: per-service install-digest recording (#208).
+# Assertion: per-service install-digest recording.
 # record_install (scripts/image-drift.py --record-install, wired into the real
 # installer at stage1.sh) writes the digest each service came up running to
 # config/state/image-install.tsv, giving day-2 "Revert to installed image" a

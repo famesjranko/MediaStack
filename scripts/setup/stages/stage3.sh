@@ -220,11 +220,11 @@ stage3_set_gpu_env() {
     local env_path="$SCRIPT_DIR/.env"
 
     case "$gpu" in
-        none|intel|amd|nvidia) ;;
+        none | intel | amd | nvidia) ;;
         *) return 1 ;;
     esac
     case "$state" in
-        ""|complete|skipped|fallback|pending) ;;
+        "" | complete | skipped | fallback | pending) ;;
         *) return 1 ;;
     esac
 
@@ -305,26 +305,26 @@ stage3_transcode_log_uses_gpu() {
     [[ -f "$log_path" ]] || return 1
 
     case "$encoder" in
-        qsv|vaapi|nvenc) ;;
+        qsv | vaapi | nvenc) ;;
         *) return 1 ;;
     esac
 
     local log_lower
-    log_lower=$(tr '[:upper:]' '[:lower:]' < "$log_path")
+    log_lower=$(tr '[:upper:]' '[:lower:]' <"$log_path")
     # Negative evidence: HW init failure or actual software-encoder ffmpeg use.
     # `\[libx26[45] @` matches ffmpeg's runtime tag like `[libx264 @ 0x55a...]`,
     # which only appears when the software encoder is actually invoked. Plain
     # `libx264|libx265` would also match Jellyfin's available-encoders startup
     # log (`Available encoders: [..., "libx264", "libx265", ...]`) and produce
     # a false fallback verdict on a fresh install where no transcode has run.
-    if grep -Eq 'no device available|device creation failed|failed to initialise|failed to initialize|hardware device setup failed|\[libx26[45] @' <<< "$log_lower"; then
+    if grep -Eq 'no device available|device creation failed|failed to initialise|failed to initialize|hardware device setup failed|\[libx26[45] @' <<<"$log_lower"; then
         return 1
     fi
 
     case "$encoder" in
-        qsv)   grep -Eq -- '->[^\n]*(h264_qsv|hevc_qsv|av1_qsv|vp9_qsv)' <<< "$log_lower" ;;
-        vaapi) grep -Eq -- '->[^\n]*(h264_vaapi|hevc_vaapi|av1_vaapi|vp9_vaapi)' <<< "$log_lower" ;;
-        nvenc) grep -Eq -- '->[^\n]*(h264_nvenc|hevc_nvenc|av1_nvenc)' <<< "$log_lower" ;;
+        qsv) grep -Eq -- '->[^\n]*(h264_qsv|hevc_qsv|av1_qsv|vp9_qsv)' <<<"$log_lower" ;;
+        vaapi) grep -Eq -- '->[^\n]*(h264_vaapi|hevc_vaapi|av1_vaapi|vp9_vaapi)' <<<"$log_lower" ;;
+        nvenc) grep -Eq -- '->[^\n]*(h264_nvenc|hevc_nvenc|av1_nvenc)' <<<"$log_lower" ;;
     esac
 }
 
@@ -343,7 +343,7 @@ stage3_capture_jellyfin_transcode_log() {
             logs_args+=(--since "$STAGE3_TRANSCODE_SINCE")
         fi
         logs_args+=(jellyfin)
-        docker "${logs_args[@]}" 2>/dev/null | grep -Ei 'ffmpeg|transcod|qsv|vaapi|nvenc|cuda' > "$output_log" || true
+        docker "${logs_args[@]}" 2>/dev/null | grep -Ei 'ffmpeg|transcod|qsv|vaapi|nvenc|cuda' >"$output_log" || true
         [[ -s "$output_log" ]] && return 0
     fi
 
@@ -365,7 +365,7 @@ stage3_resolve_render_device() {
     local vendor_id=""
     case "$vendor" in
         intel) vendor_id="0x8086" ;;
-        amd)   vendor_id="0x1002" ;;
+        amd) vendor_id="0x1002" ;;
     esac
 
     local render node sys_vendor found="" saw_vendor_file=false
@@ -403,7 +403,7 @@ stage3_render_device_vendor_matches() {
     local vendor_id=""
     case "$vendor" in
         intel) vendor_id="0x8086" ;;
-        amd)   vendor_id="0x1002" ;;
+        amd) vendor_id="0x1002" ;;
     esac
 
     [[ -n "$vendor_id" ]] || return 0
@@ -445,13 +445,13 @@ stage3_run_encoder_smoke_test() {
     case "$encoder:$codec" in
         nvenc:h264) encoder_name="h264_nvenc" ;;
         nvenc:hevc) encoder_name="hevc_nvenc" ;;
-        nvenc:av1)  encoder_name="av1_nvenc" ;;
-        qsv:h264)   encoder_name="h264_qsv" ;;
-        qsv:hevc)   encoder_name="hevc_qsv" ;;
-        qsv:av1)    encoder_name="av1_qsv" ;;
+        nvenc:av1) encoder_name="av1_nvenc" ;;
+        qsv:h264) encoder_name="h264_qsv" ;;
+        qsv:hevc) encoder_name="hevc_qsv" ;;
+        qsv:av1) encoder_name="av1_qsv" ;;
         vaapi:h264) encoder_name="h264_vaapi" ;;
         vaapi:hevc) encoder_name="hevc_vaapi" ;;
-        vaapi:av1)  encoder_name="av1_vaapi" ;;
+        vaapi:av1) encoder_name="av1_vaapi" ;;
         *) return 1 ;;
     esac
 
@@ -486,7 +486,7 @@ stage3_run_encoder_smoke_test() {
 
     cmd+=(-f null -)
 
-    if docker "${cmd[@]}" > "$smoke_log" 2>&1 \
+    if docker "${cmd[@]}" >"$smoke_log" 2>&1 \
         && grep -Eqi -- "->[^\n]*${encoder_name}" "$smoke_log" \
         && stage3_transcode_log_uses_gpu "$encoder" "$smoke_log"; then
         return 0
@@ -545,8 +545,8 @@ stage3_capture_vainfo() {
     render_device="$(stage3_resolve_render_device "${STAGE_3_GPU_VENDOR:-${GPU_TYPE:-}}")" || return 1
     export STAGE_3_GPU_RENDER_DEVICE="$render_device"
 
-    docker exec jellyfin /usr/lib/jellyfin-ffmpeg/vainfo --display drm --device "$render_device" > "$output_log" 2>&1 \
-        || docker exec jellyfin vainfo --display drm --device "$render_device" > "$output_log" 2>&1
+    docker exec jellyfin /usr/lib/jellyfin-ffmpeg/vainfo --display drm --device "$render_device" >"$output_log" 2>&1 \
+        || docker exec jellyfin vainfo --display drm --device "$render_device" >"$output_log" 2>&1
 }
 
 stage3_run_nvidia_decode_smoke_test() {
@@ -603,7 +603,7 @@ rm -f '$path'
 trap \"rm -f '$path'\" EXIT
 \$ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=320x180:rate=1 -t 1 -c:v '$source_encoder' $extra_source_opts '$path'
 \$ffmpeg -hide_banner -hwaccel cuda -c:v '$decoder' -i '$path' -f null -
-" > "$smoke_log" 2>&1
+" >"$smoke_log" 2>&1
 }
 
 stage3_probe_capabilities() {
@@ -629,7 +629,7 @@ stage3_probe_capabilities() {
     rm -f "$tmp_log"
 
     case "$encoder" in
-        qsv|vaapi)
+        qsv | vaapi)
             export STAGE_3_GPU_RENDER_DEVICE
             STAGE_3_GPU_RENDER_DEVICE="$(stage3_resolve_render_device "$vendor")" || return 1
             tmp_log=$(mktemp)
@@ -677,7 +677,10 @@ stage3_probe_capabilities() {
                     codecs+=("$codec")
                 fi
             done
-            hw_decoding_codecs=$(IFS=,; printf '%s' "${codecs[*]}")
+            hw_decoding_codecs=$(
+                IFS=,
+                printf '%s' "${codecs[*]}"
+            )
             ;;
     esac
 
@@ -738,8 +741,9 @@ stage3_verify_transcode_evidence() {
             return 0
         fi
         rm -f "$log_file"
-        (( i >= max )) && break
-        sleep 2; (( i += 2 ))
+        ((i >= max)) && break
+        sleep 2
+        ((i += 2))
     done
     ui_log warn "Automatic test transcode and Jellyfin log evidence were unavailable for ${vendor} ${encoder}."
     return 1
@@ -768,8 +772,9 @@ _stage3_apply_runtime_override() {
         local _elapsed=0 _max="${STAGE3_CONTAINER_READY_TIMEOUT:-30}"
         [[ "$_max" =~ ^[0-9]+$ ]] || _max=30
         while ! docker exec jellyfin true >/dev/null 2>&1; do
-            (( _elapsed >= _max )) && break
-            sleep 2; (( _elapsed += 2 ))
+            ((_elapsed >= _max)) && break
+            sleep 2
+            ((_elapsed += 2))
         done
         return 0
     fi
@@ -803,7 +808,7 @@ _stage3_tell_me_more() {
 
 _stage3_choose_gpu_vendor() {
     declare -p GPU_CANDIDATES >/dev/null 2>&1 || return 0
-    (( ${#GPU_CANDIDATES[@]} > 1 )) || return 0
+    ((${#GPU_CANDIDATES[@]} > 1)) || return 0
 
     ui_section "Choose GPU"
     local options=() vendors=() vendor default_index=1 choice
@@ -842,14 +847,14 @@ _stage3_verify_jellyfin_encoding() {
     current=$(curl -sf "$jf_url/System/Configuration/encoding" -H "Authorization: $auth" 2>/dev/null) || return 1
 
     STAGE3_EXPECTED_ENCODER="$encoder" \
-    STAGE3_HW_DECODING_CODECS="${STAGE_3_GPU_HW_DECODING_CODECS:-h264}" \
-    STAGE3_DECODE_HEVC_10BIT="${STAGE_3_GPU_DECODE_HEVC_10BIT:-false}" \
-    STAGE3_DECODE_VP9_10BIT="${STAGE_3_GPU_DECODE_VP9_10BIT:-false}" \
-    STAGE3_ALLOW_HEVC_ENCODING="${STAGE_3_GPU_ALLOW_HEVC_ENCODING:-false}" \
-    STAGE3_ALLOW_AV1_ENCODING="${STAGE_3_GPU_ALLOW_AV1_ENCODING:-false}" \
-    STAGE3_RENDER_DEVICE="${STAGE_3_GPU_RENDER_DEVICE:-/dev/dri/renderD128}" \
-    STAGE3_CURRENT_CONFIG="$current" \
-    python3 - <<'PY'
+        STAGE3_HW_DECODING_CODECS="${STAGE_3_GPU_HW_DECODING_CODECS:-h264}" \
+        STAGE3_DECODE_HEVC_10BIT="${STAGE_3_GPU_DECODE_HEVC_10BIT:-false}" \
+        STAGE3_DECODE_VP9_10BIT="${STAGE_3_GPU_DECODE_VP9_10BIT:-false}" \
+        STAGE3_ALLOW_HEVC_ENCODING="${STAGE_3_GPU_ALLOW_HEVC_ENCODING:-false}" \
+        STAGE3_ALLOW_AV1_ENCODING="${STAGE_3_GPU_ALLOW_AV1_ENCODING:-false}" \
+        STAGE3_RENDER_DEVICE="${STAGE_3_GPU_RENDER_DEVICE:-/dev/dri/renderD128}" \
+        STAGE3_CURRENT_CONFIG="$current" \
+        python3 - <<'PY'
 import json
 import os
 import sys
@@ -897,7 +902,7 @@ _stage3_wait_for_jellyfin_encoding() {
         if _stage3_verify_jellyfin_encoding "$encoder"; then
             return 0
         fi
-        if (( elapsed >= max_wait )); then
+        if ((elapsed >= max_wait)); then
             return 1
         fi
         sleep "$interval" || true
@@ -965,7 +970,7 @@ _stage3_encoder_disabled() {
     current=$(curl -sf "$jf_url/System/Configuration/encoding" -H "Authorization: $auth" 2>/dev/null) || return 1
     # Fallback is safe only when Jellyfin reports full software mode.
     STAGE3_CURRENT_CONFIG="$current" \
-    python3 - <<'PY'
+        python3 - <<'PY'
 import json
 import os
 import sys
@@ -1006,7 +1011,7 @@ _stage3_skip_to_software_mode() {
     stage3_remove_nvidia_marker
 
     case "$prior_gpu" in
-        intel|amd|nvidia) warn_if_disable_fails=true ;;
+        intel | amd | nvidia) warn_if_disable_fails=true ;;
     esac
 
     if ! _stage3_disable_jellyfin_hardware; then
@@ -1044,7 +1049,7 @@ _stage3_configure_and_verify() {
     local driver_mode="${5:-}"
     local proof_since attempt=1 max_attempts=3
 
-    while (( attempt <= max_attempts )); do
+    while ((attempt <= max_attempts)); do
         stage3_set_gpu_env "$vendor" "pending" "$vendor" "$encoder"
         proof_since=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         if _stage3_apply_runtime_override "$vendor" \
@@ -1060,7 +1065,7 @@ _stage3_configure_and_verify() {
             return 0
         fi
 
-        if (( attempt >= max_attempts )) || [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]]; then
+        if ((attempt >= max_attempts)) || [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]]; then
             if [[ "$fallback_mode" == "try-next" ]]; then
                 ui_log warn "${vendor} ${encoder} did not verify; trying the next hardware transcoding method."
                 # 2 means the caller may try another hardware encoder; 1 means a terminal fallback/skip already ran.
@@ -1136,7 +1141,7 @@ stage3_prompt_nvidia_reboot() {
     reboot_action=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "Reboot now?" "Reboot now" "Reboot manually later")
     case "$reboot_action" in
         "Reboot now")
-            # The menu above is the single reboot gate (#100): the user chose
+            # The menu above is the single reboot gate: the user chose
             # "Reboot now", so arm the resume hooks and reboot — no redundant
             # second confirm. Resume is scheduled/bannered/announced BEFORE the
             # reboot, so even an interrupted or manual boot finalizes GPU setup.
@@ -1179,8 +1184,9 @@ _stage3_wait_for_nvidia_smi() {
         if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
             return 0
         fi
-        (( elapsed >= max )) && return 1
-        sleep 2; (( elapsed += 2 ))
+        ((elapsed >= max)) && return 1
+        sleep 2
+        ((elapsed += 2))
     done
 }
 
@@ -1381,20 +1387,32 @@ _stage3_choose_nvidia_action() {
     { ui_section "NVIDIA driver"; } >&2
     while true; do
         case "$source:$health" in
-            none:*) _stage3_choose_nvidia_mode; return ;;
+            none:*)
+                _stage3_choose_nvidia_mode
+                return
+                ;;
             debian:healthy)
                 choice=$(UI_CHOOSE_DEFAULT_INDEX=1 ui_choose "How should MediaStack use the NVIDIA driver?" \
                     "Use installed driver $(nvidia_driver_version 2>/dev/null || echo '(version unknown)') (recommended)" \
                     "Replace with Unlock NVENC (advanced)" \
                     "Tell me more")
                 case "$choice" in
-                    "Use installed"*) printf use; return ;;
+                    "Use installed"*)
+                        printf use
+                        return
+                        ;;
                     "Replace with Unlock"*)
-                        if _stage3_confirm_unlock >&2; then printf unlock; return; fi
+                        if _stage3_confirm_unlock >&2; then
+                            printf unlock
+                            return
+                        fi
                         { ui_log skip "Unlock replacement cancelled; the installed Debian driver was not changed."; } >&2
                         ;;
                     "Tell me more"*) { _stage3_nvidia_mode_more_copy; } >&2 ;;
-                    *) printf use; return ;;
+                    *)
+                        printf use
+                        return
+                        ;;
                 esac
                 ;;
             debian:unhealthy)
@@ -1404,14 +1422,26 @@ _stage3_choose_nvidia_action() {
                     "Use software transcoding" \
                     "Tell me more")
                 case "$choice" in
-                    "Repair/reinstall"*) printf repair; return ;;
+                    "Repair/reinstall"*)
+                        printf repair
+                        return
+                        ;;
                     "Replace with Unlock"*)
-                        if _stage3_confirm_unlock >&2; then printf unlock; return; fi
+                        if _stage3_confirm_unlock >&2; then
+                            printf unlock
+                            return
+                        fi
                         { ui_log skip "Unlock replacement cancelled; the Debian driver was not changed."; } >&2
                         ;;
-                    "Use software"*) printf software; return ;;
+                    "Use software"*)
+                        printf software
+                        return
+                        ;;
                     "Tell me more"*) { _stage3_nvidia_mode_more_copy; } >&2 ;;
-                    *) printf repair; return ;;
+                    *)
+                        printf repair
+                        return
+                        ;;
                 esac
                 ;;
             foreign:healthy)
@@ -1420,10 +1450,22 @@ _stage3_choose_nvidia_action() {
                     "Reinstall (remove existing, choose driver mode)" \
                     "Use software transcoding")
                 case "$choice" in
-                    "Use existing"*) printf use-existing; return ;;
-                    "Reinstall"*)    printf reinstall; return ;;
-                    "Use software"*) printf software; return ;;
-                    *) printf use-existing; return ;;
+                    "Use existing"*)
+                        printf use-existing
+                        return
+                        ;;
+                    "Reinstall"*)
+                        printf reinstall
+                        return
+                        ;;
+                    "Use software"*)
+                        printf software
+                        return
+                        ;;
+                    *)
+                        printf use-existing
+                        return
+                        ;;
                 esac
                 ;;
             foreign:unhealthy)
@@ -1431,11 +1473,20 @@ _stage3_choose_nvidia_action() {
                     "Reinstall (remove existing, choose driver mode)" \
                     "Use software transcoding")
                 case "$choice" in
-                    "Reinstall"*) printf reinstall; return ;;
-                    *)            printf software; return ;;
+                    "Reinstall"*)
+                        printf reinstall
+                        return
+                        ;;
+                    *)
+                        printf software
+                        return
+                        ;;
                 esac
                 ;;
-            *) printf software; return ;;
+            *)
+                printf software
+                return
+                ;;
         esac
     done
 }

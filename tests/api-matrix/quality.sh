@@ -7,12 +7,12 @@
 #
 # Expected values come from the product's compose_cell too (not hardcoded), so
 # this proves "composed cell -> render -> live API" round-trips faithfully and
-# in place — the contract the day-2 change-quality action (#71) wraps.
+# in place — the contract the day-2 change-quality action wraps.
 #
 #   matrix_quality APP BASE_URL API_KEY
 
 API_MATRIX_CELLS=(
-    "720p compact"  "720p balanced"  "720p large"
+    "720p compact" "720p balanced" "720p large"
     "1080p compact" "1080p balanced" "1080p large"
 )
 
@@ -66,10 +66,11 @@ matrix_quality() {
     local exp_name exp_ids exp_cut exp_pref lv_name lv_ids lv_cut
 
     for cell in "${API_MATRIX_CELLS[@]}"; do
-        res="${cell%% *}"; size="${cell##* }"
+        res="${cell%% *}"
+        size="${cell##* }"
 
         # Apply the cell via the product renderers: POST the first, PUT the rest
-        # to the SAME id (in-place rename + repush — the #71 mechanism).
+        # to the SAME id (in-place rename + repush — the day-2 mechanism).
         if [[ -z "$pid" ]]; then
             pid=$(dind_exec "python3 tests/api-matrix/apply_cell.py $app $base $key $res $size")
             if [[ -z "$pid" ]]; then
@@ -80,7 +81,7 @@ matrix_quality() {
         else
             # Exit status matters here: a failed PUT (e.g. an unretried 409)
             # must not fall through to assertions that would silently compare
-            # against the PREVIOUS cell's still-live state (#171).
+            # against the PREVIOUS cell's still-live state.
             if ! dind_exec "python3 tests/api-matrix/apply_cell.py $app $base $key $res $size $pid" >/dev/null; then
                 fail "$label api-matrix: $res $size apply_cell failed (HTTP error after retries)"
                 skip "$label api-matrix: $res $size cell assertions" "apply_cell failed"
@@ -89,17 +90,22 @@ matrix_quality() {
         fi
 
         exp=$(_qm_expected "$app" "$res" "$size")
-        exp_name="${exp%%|*}"; exp="${exp#*|}"
-        exp_ids="${exp%%|*}";  exp="${exp#*|}"
-        exp_cut="${exp%%|*}";  exp_pref="${exp##*|}"
+        exp_name="${exp%%|*}"
+        exp="${exp#*|}"
+        exp_ids="${exp%%|*}"
+        exp="${exp#*|}"
+        exp_cut="${exp%%|*}"
+        exp_pref="${exp##*|}"
 
         live=$(_qm_live_profile "$base" "$key" "$pid")
-        lv_name="${live%%|*}"; live="${live#*|}"
-        lv_ids="${live%%|*}";  lv_cut="${live##*|}"
+        lv_name="${live%%|*}"
+        live="${live#*|}"
+        lv_ids="${live%%|*}"
+        lv_cut="${live##*|}"
 
         assert_eq "$exp_name" "$lv_name" "$label api-matrix: $res $size profile name (in-place id=$pid)"
-        assert_eq "$exp_ids"  "$lv_ids"  "$label api-matrix: $res $size enabled set landed via API"
-        assert_eq "$exp_cut"  "$lv_cut"  "$label api-matrix: $res $size cutoff landed via API"
+        assert_eq "$exp_ids" "$lv_ids" "$label api-matrix: $res $size enabled set landed via API"
+        assert_eq "$exp_cut" "$lv_cut" "$label api-matrix: $res $size cutoff landed via API"
         assert_eq "$exp_pref" "$(_qm_live_pref "$base" "$key")" \
             "$label api-matrix: $res $size WEBDL-720p preferred bound landed (global def)"
     done

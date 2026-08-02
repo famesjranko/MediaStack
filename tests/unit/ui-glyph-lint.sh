@@ -27,12 +27,33 @@ scenario_begin "$CURRENT_SCENARIO"
 
 # Byte-exact glyph match (grep -F), so this is locale-independent.
 GLYPHS=(─ ═ │ ║ ╔ ╗ ╚ ╝ ╭ ╮ ╰ ╯ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ █ ░ ✓ ✗ ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-GREP_ARGS=(); for g in "${GLYPHS[@]}"; do GREP_ARGS+=(-e "$g"); done
+GREP_ARGS=()
+for g in "${GLYPHS[@]}"; do GREP_ARGS+=(-e "$g"); done
 
 ALLOW=" scripts/lib/term_caps.sh "
 
 cd "$REPO_ROOT" || exit 1
-mapfile -t files < <( { git ls-files scripts | grep -E '\.sh$'; echo mediastack; echo setup.sh; } | sort -u )
+# Via a temp file, not a pipeline: a subshell would hide a nonzero git exit
+# behind a partial list, and the two literals below would keep the population
+# looking non-empty.
+discover_out=$(mktemp) || exit 1
+trap 'rm -f "$discover_out"' EXIT
+if git ls-files scripts >"$discover_out" 2>/dev/null; then
+    pass "tracked script discovery ran"
+else
+    fail "tracked script discovery ran" "git ls-files scripts exited nonzero"
+fi
+mapfile -t script_files < <(grep -E '\.sh$' "$discover_out")
+
+# Fail closed: with an empty scripts/ population this lints two files and
+# reports success over the whole product surface.
+if ((${#script_files[@]} > 0)); then
+    pass "scripts/ shell population is non-empty (${#script_files[@]} files)"
+else
+    fail "scripts/ shell population is non-empty" "git ls-files scripts matched no .sh files"
+fi
+
+mapfile -t files < <(printf '%s\n' "${script_files[@]+"${script_files[@]}"}" mediastack setup.sh | sort -u)
 
 violations=()
 for f in "${files[@]}"; do
@@ -44,7 +65,7 @@ for f in "${files[@]}"; do
     done < <(grep -nF "${GREP_ARGS[@]}" "$f" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#')
 done
 
-if (( ${#violations[@]} == 0 )); then
+if ((${#violations[@]} == 0)); then
     pass "no raw structural glyph literals in product output (all routed via _G_*)"
 else
     fail "raw structural glyph literals bypass the ASCII fallback" "${#violations[@]} line(s)"

@@ -33,7 +33,7 @@ sudo() {
                     ;;
             esac
             ;;
-        chmod|rm|systemctl)
+        chmod | rm | systemctl)
             return 0
             ;;
         *)
@@ -91,7 +91,7 @@ else
     pass "reboot banner: profile script does not hardcode home checkout"
 fi
 
-printf '%s\n' "post reboot result from custom checkout" > "$expected_result"
+printf '%s\n' "post reboot result from custom checkout" >"$expected_result"
 profile_output="$(HOME="$TMP_ROOT/home" bash -c 'sudo() { return 0; }; source "$1"' _ "$BANNER_CAPTURE" 2>&1)"
 assert_contains "$profile_output" "post reboot result from custom checkout" "reboot banner: login reads result from actual checkout"
 if [[ -f "$expected_result" ]]; then
@@ -121,9 +121,13 @@ fi
 # clear_setup_result_banner removes the stale result note only — never the
 # profile.d display script (which it must not touch, or a later
 # write_setup_result "ok" in the same boot would have nothing to render it).
-: > "$expected_result"
-clear_sudo_calls="$TMP_ROOT/clear-sudo-calls"; : > "$clear_sudo_calls"
-sudo() { printf '%s\n' "$*" >> "$clear_sudo_calls"; return 0; }
+: >"$expected_result"
+clear_sudo_calls="$TMP_ROOT/clear-sudo-calls"
+: >"$clear_sudo_calls"
+sudo() {
+    printf '%s\n' "$*" >>"$clear_sudo_calls"
+    return 0
+}
 clear_setup_result_banner
 assert_eq "absent" "$([[ -e "$expected_result" ]] && echo present || echo absent)" \
     "clear_setup_result_banner: removes the stale result note"

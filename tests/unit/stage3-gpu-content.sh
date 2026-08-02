@@ -32,9 +32,9 @@ source "$REPO_ROOT/setup.sh"
 set +e
 set +u
 
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
 
 TMPDIR_WORK=$(mktemp -d)

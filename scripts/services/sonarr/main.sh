@@ -8,7 +8,10 @@ configure_sonarr() {
 
     local sonarr_key
     sonarr_key=$(get_api_key "$SCRIPT_DIR/config/sonarr/config.xml")
-    if [[ -z "$sonarr_key" ]]; then log_error "Cannot read Sonarr API key"; return 1; fi
+    if [[ -z "$sonarr_key" ]]; then
+        log_error "Cannot read Sonarr API key"
+        return 1
+    fi
     log_ok "Sonarr API key: ${sonarr_key:0:8}..."
     local base
     base="$(service_local_url sonarr)/api/v3"
@@ -22,7 +25,8 @@ configure_sonarr() {
     fi
 
     # Quality Profile + per-tier size bounds
-    local quality_ids; quality_ids=$(cfg_quality_ids "sonarr")
+    local quality_ids
+    quality_ids=$(cfg_quality_ids "sonarr")
     configure_quality_profile "sonarr" "$base" "$sonarr_key" "$quality_ids"
     configure_quality_definitions "sonarr" "$base" "$sonarr_key"
 

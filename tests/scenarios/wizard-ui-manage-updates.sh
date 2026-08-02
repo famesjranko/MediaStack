@@ -33,7 +33,7 @@ sed '/if \[\[ \$EUID -eq 0 \]\]; then/,/^fi$/d' mediastack > .ms-launcher-test.s
 source ./.ms-launcher-test.sh
 
 _docker_reachable() { return 0; }
-# Rows exercise both status colours, the manual-override footnote, and a #208
+# Rows exercise both status colours, the manual-override footnote, and a
 # digest-pinned (reverted) service — POLICY token 'pinned' → 'Pinned (install)'.
 _update_status_scan() {
   printf 'jellyfin\tstable\tdefault\tUp to date\tfalse\nsonarr\tlatest\tmanual\tUpdate available\ttrue\nradarr\tpinned\tmanual\tUpdate available\ttrue\n'
@@ -68,13 +68,13 @@ JSON'
 
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
-    assert_contains "$transcript" "Manage updates:"     "wizard-ui manage updates: menu shown"
-    assert_contains "$transcript" "Install channel"     "wizard-ui manage updates: banner uses install-channel framing"
-    assert_contains "$transcript" "Pinned"              "wizard-ui manage updates: Pinned policy label rendered"
-    assert_contains "$transcript" "Tracking tag"        "wizard-ui manage updates: Tracking-tag policy label rendered"
-    assert_contains "$transcript" "Update available"    "wizard-ui manage updates: 2-state status rendered"
+    assert_contains "$transcript" "Manage updates:" "wizard-ui manage updates: menu shown"
+    assert_contains "$transcript" "Install channel" "wizard-ui manage updates: banner uses install-channel framing"
+    assert_contains "$transcript" "Pinned" "wizard-ui manage updates: Pinned policy label rendered"
+    assert_contains "$transcript" "Tracking tag" "wizard-ui manage updates: Tracking-tag policy label rendered"
+    assert_contains "$transcript" "Update available" "wizard-ui manage updates: 2-state status rendered"
     assert_contains "$transcript" "Revert a service to its installed image" "wizard-ui manage updates: revert item present"
-    assert_contains "$transcript" "Pinned (install)"    "wizard-ui manage updates: a reverted (pinned) service reads 'Pinned (install)'"
+    assert_contains "$transcript" "Pinned (install)" "wizard-ui manage updates: a reverted (pinned) service reads 'Pinned (install)'"
     if grep -q "Switch default channel\|Pull tested Stable" <<<"$transcript"; then
         fail "wizard-ui manage updates: removed channel/pull-tested items absent"
     else

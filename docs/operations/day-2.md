@@ -28,12 +28,14 @@ Flow (`scripts/update.sh`):
 - No rollback — `docker compose up -d` with the prior image hash isn't automated. The default path retains dangling images; `--prune` removes them host-wide after the update.
 - Stable-channel installs are runtime-pinned to `docs/operations/image-digests.lock`; Latest-channel installs intentionally follow upstream tags.
 - No config migration — it assumes images accept existing `config/<svc>/` state. Major-version bumps may need manual `configure.sh` re-runs.
+- No stop-first ordering — `pull` then `up -d` recreates containers in dependency order, so there is a brief window where a freshly-recreated service talks to a not-yet-recreated one (e.g. a new Sonarr against an old qBittorrent). Fine for minor bumps; worth watching for API-breaking ones.
 
 ## `./mediastack` → Manage updates (per-service)
 
 The launcher's post-install **"Manage updates"** screen is the day-2 update surface for
-non-technical users — per-image visibility and selective control, without SSH or Portainer
-(ADR-30). `stable`/`latest` is an **install-time** choice only (which image versions the installer
+non-technical users — per-image visibility and selective control, without SSH or Portainer.
+
+`stable`/`latest` is an **install-time** choice only (which image versions the installer
 was tested against); post-install every update is a uniform, manual opt-in, so detection and apply
 are fully channel-agnostic — an update is an update.
 
@@ -78,7 +80,7 @@ image pulled and staged but is **not started** — the change applies the next t
 
 Every apply regenerates `docker-compose.override.yml` (preserving GPU/mem/NAS settings), runs the
 storage guard, and recreates only the touched service (no `--remove-orphans`). "latest" follows the
-**compose tag**, so ADR-24 pins hold: `npm:2`/`uptime-kuma:2`/`wireguard:15` stay within their
+**compose tag**, so the compose tag pins hold (see [pin policy](upgrades.md#pin-policy--recovery-model)): `npm:2`/`uptime-kuma:2`/`wireguard:15` stay within their
 pinned major — updating WireGuard pulls the newest 15.x but never v14 or a future v16. The lock
 file is never edited by this path.
 
@@ -180,7 +182,7 @@ effect after switching providers.
 
 ## `./mediastack` → Features & settings → Firewall (UFW) / System hardening
 
-Two ON/OFF toggles mirror the Stage 1 wizard's Security prompts (ADR-40), backed by `UFW_ENABLED`
+Two ON/OFF toggles mirror the Stage 1 wizard's Security prompts, backed by `UFW_ENABLED`
 and `HARDENING_ENABLED` in `.env`:
 
 - **Firewall (UFW)** — ON runs `setup_ufw` (default-deny inbound, LAN/SSH/web allowed, plus the
@@ -234,7 +236,7 @@ No `docker compose` restart is involved — it is a host systemd unit, not a Com
 
 ## `scripts/nvidia-repatch.sh`
 
-Repatch wrapper for after NVIDIA driver updates — relevant **only in Unlock NVENC mode** (`NVIDIA_DRIVER_MODE=unlock`). Standard (Debian-managed) and `existing` installs are not patched and are maintained by apt, so the script is a no-op there with guidance (override with `--force`). See ADR-31.
+Repatch wrapper for after NVIDIA driver updates — relevant **only in Unlock NVENC mode** (`NVIDIA_DRIVER_MODE=unlock`). Standard (Debian-managed) and `existing` installs are not patched and are maintained by apt, so the script is a no-op there with guidance (override with `--force`). See [Phase 9 — hardware transcoding](../setup/setup-flow.md) for how the driver mode is chosen.
 
 Flow:
 
@@ -242,7 +244,7 @@ Flow:
 1. Refuse if `nvidia-smi` is missing — no drivers loaded.
 2. Read current driver version.
 3. Verify `keylase/nvidia-patch` in `$SCRIPT_DIR/.nvidia-patch` (gitignored) at the reviewed commit pinned in `scripts/lib/nvidia_patch.sh`. Dirty local trees and unexpected origins are rejected.
-4. Export that pinned commit to a temporary execution directory; root never executes files from a moving branch checkout.
+4. Export that pinned commit to a temporary execution directory; root never executes files from a moving branch checkout. The `.nvidia-patch` clone itself lives in the repo working tree (gitignored, so it never gets committed) rather than a cache directory like `~/.cache/` — it shows up in a plain `ls` of the checkout, which is expected.
 5. **Compatibility check** — runs exported `patch.sh -c $DRIVER_VER` to confirm the reviewed commit supports this driver version. Exits cleanly with guidance if MediaStack needs a newer reviewed nvidia-patch commit.
 6. `sudo bash patch.sh` from the exported tree — removes NVENC encoding session limits on consumer GPUs.
 7. `sudo bash patch-fbc.sh` from the exported tree if present — enables NvFBC framebuffer capture.
@@ -359,12 +361,3 @@ If `scripts/services/npm/main.sh` logs `NPM password rotation FAILED`:
 - Stop the stack.
 - `docker compose run --rm --entrypoint sh npm` → `cd /data && sqlite3 database.sqlite` → `DELETE FROM user;` → exit.
 - Restart. NPM rebuilds as empty-user state, next configure.sh will seed correctly with `JELLYFIN_ADMIN_PASSWORD` + `NPM_ADMIN_EMAIL`.
-
-## Observations / open questions
-
-- **No rollback in update.sh.** Pull + recreate is one-way. The default path now leaves dangling images in place, but there is still no scripted rollback to a prior image hash. Stable-channel digest pins make installs more reproducible, but rollback to a prior accepted digest is not automated.
-- **Update script doesn't stop services first.** `docker compose up -d` after `pull` recreates in dependency order, but there's a brief window where a new Sonarr is talking to an old qBittorrent (or vice versa). For minor updates this is fine; for API-breaking bumps, not.
-- **Backups are out of scope.** MediaStack does not ship backup or restore tooling. Users should use their NAS, filesystem snapshots, or another backup system for long-term data protection.
-- **`.nvidia-patch` clone is in the repo working tree.** `.gitignore` excludes it, but it's still in `ls`. Arguably better under `~/.cache/` or `/var/lib/`.
-- **nvidia-patch compatibility now requires explicit MediaStack updates.** This reduces the root-executed upstream-code risk, but a brand-new NVIDIA driver may remain unsupported until `NVIDIA_PATCH_REPO_COMMIT` is reviewed and bumped.
-- **Re-run of configure.sh after indexer removal leaves stale state.** No reconciliation. Users who edit `config.yml` to *remove* things are not served. Documented explicitly here but likely to surprise.

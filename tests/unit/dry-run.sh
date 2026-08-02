@@ -34,7 +34,7 @@ lib="scripts/lib/dry_run.sh"
 run_line="$(grep -E 'docker run ' "$lib" | head -1)"
 
 assert_contains "$run_line" "--network none" "safety: container runs with --network none (no egress on a missed stub)"
-assert_contains "$run_line" "--rm"           "safety: container is --rm (auto-removed)"
+assert_contains "$run_line" "--rm" "safety: container is --rm (auto-removed)"
 
 # NEVER a bind mount — the repo is copied in, so the host tree cannot be written.
 # Match only volume/mount flags on a docker run/exec (not `command -v`/`printf -v`).
@@ -65,7 +65,7 @@ for entry in mediastack setup.sh; do
     fi
 done
 
-source scripts/lib/dry_run.sh   # inert — installs no stubs (asserted below)
+source scripts/lib/dry_run.sh # inert — installs no stubs (asserted below)
 
 # Gate-misfire: sourcing the library must install NO stubs (inert until dry_run_begin).
 gate_out=$(bash -c '
@@ -83,10 +83,11 @@ if dry_run_in_sandbox; then
     skip "safety: refuse-outside-sandbox" "this runner has the sandbox marker"
 else
     pass "safety: dry_run_in_sandbox is false on a normal host (no sentinel present)"
-    refuse_tmp="$(mktemp -d)"; refuse_rc=0
-    ( cd "$refuse_tmp" && bash -c "ui_banner() { :; }; source '$REPO_ROOT/scripts/lib/dry_run.sh'; dry_run_begin launcher" ) >/dev/null 2>&1 || refuse_rc=$?
+    refuse_tmp="$(mktemp -d)"
+    refuse_rc=0
+    (cd "$refuse_tmp" && bash -c "ui_banner() { :; }; source '$REPO_ROOT/scripts/lib/dry_run.sh'; dry_run_begin launcher") >/dev/null 2>&1 || refuse_rc=$?
     rm -rf "$refuse_tmp"
-    if (( refuse_rc != 0 )); then
+    if ((refuse_rc != 0)); then
         pass "safety: dry_run_begin refuses to run outside the sandbox container (exit $refuse_rc)"
     else
         fail "safety: dry_run_begin refuses outside the sandbox" "it ran without the sandbox marker — would write a real repo"
@@ -104,16 +105,19 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
 fi
 
 before_containers="$(docker ps -aq --filter name=ms-dry-run | wc -l)"
-host_env_before="absent"; [[ -f .env ]] && host_env_before="present"
+host_env_before="absent"
+[[ -f .env ]] && host_env_before="present"
 
-steps="$(mktemp)"; raw="$(mktemp)"; plain="$(mktemp)"
+steps="$(mktemp)"
+raw="$(mktemp)"
+plain="$(mktemp)"
 # "12" = Quit in the non-NAS post-install menu when gum is absent (the case in
 # this dry-run container): "Manage fail2ban" is inserted after "Health & security",
 # and "Get enhanced menus (install GUM)" + "Refresh status" are appended before
 # Uninstall, so the order is ... Health & security(5), Manage fail2ban(6), Manage
 # hardware(7), Diagnostics(8), Refresh(9), GUM(10), Uninstall(11), Quit(12). Keep
 # in sync with menu_post ordering.
-printf '%s\n' '[{"expect":"What would you like to do"},{"send":"12\n"}]' > "$steps"
+printf '%s\n' '[{"expect":"What would you like to do"},{"send":"12\n"}]' >"$steps"
 
 walk_rc=0
 timeout 200 python3 tests/lib/wizard_pty.py \
@@ -124,7 +128,7 @@ timeout 200 python3 tests/lib/wizard_pty.py \
 
 transcript="$(sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$plain" 2>/dev/null || true)"
 
-if (( walk_rc == 0 )); then
+if ((walk_rc == 0)); then
     pass "container walk: ./mediastack --dry-run renders the launcher and exits 0"
 else
     # A build/pull failure (offline CI) is a SKIP, not a FAIL; a real crash fails.
@@ -143,7 +147,8 @@ fi
 # Host-safety after the walk: no leftover container, no host .env created.
 after_containers="$(docker ps -aq --filter name=ms-dry-run | wc -l)"
 assert_eq "$before_containers" "$after_containers" "host-safety: no leftover dry-run container"
-host_env_after="absent"; [[ -f .env ]] && host_env_after="present"
+host_env_after="absent"
+[[ -f .env ]] && host_env_after="present"
 assert_eq "$host_env_before" "$host_env_after" "host-safety: the walk created/changed no host .env"
 
 rm -f "$steps" "$raw" "$plain" 2>/dev/null || true

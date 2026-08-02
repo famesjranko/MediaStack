@@ -14,6 +14,7 @@
 # No pairs => []. Args are controlled literal tokens in the scenario source (prompt names +
 # shell-safe sends, no spaces), so word-splitting them into the builder is intended.
 wizard_build_steps() {
-    local steps_path="$1"; shift
+    local steps_path="$1"
+    shift
     dind_exec "python3 tests/lib/wizard_steps_build.py $* > $steps_path"
 }

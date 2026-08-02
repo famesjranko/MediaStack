@@ -138,7 +138,7 @@ findmnt() {
     esac
 }
 sudo() {
-    printf '%s\n' "sudo $*" >> "$MOUNT_REPAIR_CALLS"
+    printf '%s\n' "sudo $*" >>"$MOUNT_REPAIR_CALLS"
     case "${1:-}" in
         umount)
             MOUNT_REPAIR_SOURCE=""
@@ -196,7 +196,7 @@ else
     pass "storage_mount_nfs: declined mismatched mount repair aborts"
 fi
 case "$(cat "$MOUNT_REPAIR_CALLS")" in
-    *"sudo umount"*|*"sudo mount"*)
+    *"sudo umount"* | *"sudo mount"*)
         fail "storage_mount_nfs: declined repair leaves existing mount untouched" "$(cat "$MOUNT_REPAIR_CALLS")"
         ;;
     *)
@@ -210,14 +210,20 @@ unset MOUNT_REPAIR_CALLS MOUNT_REPAIR_CONFIRM_PROMPTS MOUNT_REPAIR_SOURCE MOUNT_
 
 # --- storage_probe_nas: non-destructive verification (never mounts the real
 #     mountpoint; temp-mounts, checks, classifies, unmounts) ---
-ui_spin() { shift; "$@"; }          # run the wrapped command, drop the label
-log_ok() { :; }; log_info() { :; }; log_error() { :; }; log_warn() { :; }
+ui_spin() {
+    shift
+    "$@"
+} # run the wrapped command, drop the label
+log_ok() { :; }
+log_info() { :; }
+log_error() { :; }
+log_warn() { :; }
 STORAGE_NFS_HOST=192.0.2.10
 STORAGE_NFS_EXPORT=/exports/mediastack
 STORAGE_NFS_OPTS="vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec"
 PROBE_NC_RC=0 PROBE_MOUNT_RC=0
 nc() { return "$PROBE_NC_RC"; }
-sudo() { case "$1" in mount) return "$PROBE_MOUNT_RC" ;; *) return 0 ;; esac; }
+sudo() { case "$1" in mount) return "$PROBE_MOUNT_RC" ;; *) return 0 ;; esac }
 
 # probe_opts must fail-fast: no hard, forced soft + short timeo/retrans.
 probe_opts_out="$(storage_probe_opts "$STORAGE_NFS_OPTS")"
@@ -257,7 +263,7 @@ printf '%s\n' \
     "SONARR_API_KEY=old-sonarr-secret" \
     "STAGE_1_COMPLETE=1" \
     "JELLYFIN_ADMIN_PASSWORD='old-admin-password'" \
-    > "$SCRIPT_DIR/.env"
+    >"$SCRIPT_DIR/.env"
 cp "$SCRIPT_DIR/.env" "$SCRIPT_DIR/expected.env"
 
 # storage_env_set delegates to common.sh's _env_write_kv (the one blessed
@@ -294,7 +300,7 @@ log_info() { :; }
 log_ok() { :; }
 log_warn() { :; }
 sudo() {
-    printf '%s\n' "$*" >> "$SUDO_CALLS"
+    printf '%s\n' "$*" >>"$SUDO_CALLS"
     "$@"
 }
 create_data_dirs
@@ -313,7 +319,7 @@ log_info() { :; }
 log_ok() { :; }
 log_warn() { :; }
 sudo() {
-    printf '%s\n' "$*" >> "$SUDO_CALLS"
+    printf '%s\n' "$*" >>"$SUDO_CALLS"
     "$@"
 }
 create_data_dirs
@@ -326,7 +332,7 @@ BAZARR_ENABLED=false
 services_without_bazarr="$(storage_data_services)"
 case "$services_without_bazarr" in
     *bazarr*) fail "storage services: excludes Bazarr when subtitles are disabled" ;;
-    *)        pass "storage services: excludes Bazarr when subtitles are disabled" ;;
+    *) pass "storage services: excludes Bazarr when subtitles are disabled" ;;
 esac
 BAZARR_ENABLED=true
 assert_contains "$(storage_data_services)" "bazarr" "storage services: includes Bazarr when subtitles are enabled"
@@ -334,7 +340,7 @@ unset BAZARR_ENABLED
 
 SCRIPT_DIR="$TMP_DIR/preflight-root"
 mkdir -p "$SCRIPT_DIR"
-cat > "$SCRIPT_DIR/.env" <<'ENV'
+cat >"$SCRIPT_DIR/.env" <<'ENV'
 STORAGE_MODE=nas
 ENV
 DATA_DIR="$TMP_DIR/preflight-nas"
@@ -346,7 +352,10 @@ STORAGE_NFS_OPTS=vers=4.2
 STORAGE_SENTINEL="$DATA_DIR/.mediastack-storage-ready"
 SUDO_CALLS="$TMP_DIR/preflight-sudo-calls"
 storage_ensure_nfs_common() { return 0; }
-storage_mount_nfs() { mkdir -p "$DATA_DIR"; return 0; }
+storage_mount_nfs() {
+    mkdir -p "$DATA_DIR"
+    return 0
+}
 findmnt() {
     case "$*" in
         *"-o SOURCE"*) echo "127.0.0.1:/exports/media" ;;
@@ -355,7 +364,7 @@ findmnt() {
     esac
 }
 sudo() {
-    printf '%s\n' "$*" >> "$SUDO_CALLS"
+    printf '%s\n' "$*" >>"$SUDO_CALLS"
     "$@"
 }
 # storage_configure_expected writes the expected source/fstype via common.sh's
@@ -377,7 +386,7 @@ sudoers_content="$(storage_watchdog_sudoers_content mediaadmin /usr/local/libexe
 assert_contains "$sudoers_content" "NOPASSWD: /usr/local/libexec/mediastack/storage-mount-helper repair" "watchdog sudoers: only permits the root-owned mount helper"
 helper_content="$(storage_mount_helper_content)"
 case "$helper_content" in
-    *'source "$SCRIPT_DIR/.env"'*|*'docker compose'*)
+    *'source "$SCRIPT_DIR/.env"'* | *'docker compose'*)
         fail "watchdog helper: does not source repo files or run Docker as root"
         ;;
     *)
@@ -386,7 +395,7 @@ case "$helper_content" in
 esac
 assert_contains "$helper_content" 'CONFIG_FILE="/etc/mediastack/storage.env"' "watchdog helper: reads root-owned storage config"
 case "$helper_content" in
-    *'touch "$sentinel"'*|*'mkdir -p "$(dirname "$sentinel")"'*)
+    *'touch "$sentinel"'* | *'mkdir -p "$(dirname "$sentinel")"'*)
         fail "watchdog helper: does not root-write sentinel on NAS export"
         ;;
     *)
@@ -396,7 +405,10 @@ esac
 
 # --- Disabled watchdog: install is a no-op that tears down any prior unit ---
 WATCHDOG_INSTALL_PAUSED=false
-storage_pause_watchdog_for_install() { WATCHDOG_INSTALL_PAUSED=true; return 0; }
+storage_pause_watchdog_for_install() {
+    WATCHDOG_INSTALL_PAUSED=true
+    return 0
+}
 STORAGE_MODE=nas STORAGE_WATCHDOG=false
 if storage_install_watchdog >/dev/null 2>&1 && $WATCHDOG_INSTALL_PAUSED; then
     pass "storage_install_watchdog: disabled flag skips install and tears down stale unit"
@@ -411,15 +423,15 @@ WATCHDOG_SYSTEMCTL_LOG="$TMP_DIR/watchdog-systemctl.log"
 WATCHDOG_SYSTEMCTL_STATE=inactive
 WATCHDOG_SYSTEMCTL_QUERY_FAIL=false
 systemctl() {
-    printf '%s\n' "$*" >> "$WATCHDOG_SYSTEMCTL_LOG"
+    printf '%s\n' "$*" >>"$WATCHDOG_SYSTEMCTL_LOG"
     if [[ "$*" == "is-active mediastack-storage-watchdog.service" ]]; then
         if $WATCHDOG_SYSTEMCTL_QUERY_FAIL; then
             return 1
         fi
         printf '%s\n' "$WATCHDOG_SYSTEMCTL_STATE"
         case "$WATCHDOG_SYSTEMCTL_STATE" in
-            active|activating|reloading|deactivating) return 0 ;;
-            inactive|failed|unknown) return 3 ;;
+            active | activating | reloading | deactivating) return 0 ;;
+            inactive | failed | unknown) return 3 ;;
             *) return 1 ;;
         esac
     fi
@@ -464,7 +476,7 @@ unset STORAGE_MODE STORAGE_APP_WIRING WATCHDOG_SYSTEMCTL_LOG WATCHDOG_SYSTEMCTL_
 WATCHDOG_DOCKER_LOG="$TMP_DIR/watchdog-docker.log"
 WATCHDOG_FAKEBIN="$TMP_DIR/watchdog-fakebin"
 mkdir -p "$WATCHDOG_FAKEBIN"
-cat > "$WATCHDOG_FAKEBIN/docker" <<EOF
+cat >"$WATCHDOG_FAKEBIN/docker" <<EOF
 #!/usr/bin/env bash
 printf 'docker %s\n' "\$*" >> "$WATCHDOG_DOCKER_LOG"
 exit 0
@@ -489,7 +501,7 @@ findmnt() {
 }
 watchdog_sentinel_probe() {
     local end=$((SECONDS + 10))
-    while (( SECONDS < end )); do
+    while ((SECONDS < end)); do
         :
     done
 }
@@ -499,8 +511,8 @@ watchdog_probe_started="$(date +%s)"
 if watchdog_storage_nas_ok; then
     fail "watchdog sentinel: stale probe is treated as unavailable"
 else
-    watchdog_probe_elapsed=$(( $(date +%s) - watchdog_probe_started ))
-    if (( watchdog_probe_elapsed <= 2 )); then
+    watchdog_probe_elapsed=$(($(date +%s) - watchdog_probe_started))
+    if ((watchdog_probe_elapsed <= 2)); then
         pass "watchdog sentinel: stale probe times out without blocking main loop"
     else
         fail "watchdog sentinel: stale probe times out without blocking main loop" "elapsed=${watchdog_probe_elapsed}s"
@@ -519,7 +531,7 @@ assert_contains "$(cat "$WATCHDOG_DOCKER_LOG")" "docker compose up -d jellyfin" 
 assert_contains "$(cat "$WATCHDOG_DOCKER_LOG")" "docker compose up -d qbittorrent" "watchdog recovery: starts qBittorrent from known NAS service set"
 case "$(cat "$WATCHDOG_DOCKER_LOG")" in
     *"docker compose up -d bazarr"*) fail "watchdog recovery: does not start disabled Bazarr" ;;
-    *)                               pass "watchdog recovery: does not start disabled Bazarr" ;;
+    *) pass "watchdog recovery: does not start disabled Bazarr" ;;
 esac
 PATH="${PATH#"$WATCHDOG_FAKEBIN:"}"
 unset -f log compose_running service_is_running protected_running_count stop_managed_services start_managed_services repair_mount_if_needed watchdog_main
@@ -640,7 +652,10 @@ storage_ensure_nfs_common() {
     NFS_COMMON_ATTEMPTS=$((NFS_COMMON_ATTEMPTS + 1))
     [[ "$NFS_COMMON_ATTEMPTS" -ge 2 ]]
 }
-storage_probe_nas() { _STORAGE_PROBE_CLASS=empty; return 0; }
+storage_probe_nas() {
+    _STORAGE_PROBE_CLASS=empty
+    return 0
+}
 findmnt() { return 1; }
 NFS_COMMON_ATTEMPTS=0
 mkdir -p "$TMP_DIR/nfs-common-retry"
@@ -665,7 +680,10 @@ ui_choose() {
     printf '%s\n' "Use a new mediastack/ subfolder on this NAS (recommended)"
 }
 storage_ensure_nfs_common() { return 0; }
-storage_probe_nas() { _STORAGE_PROBE_CLASS="conflict:media"; return 0; }
+storage_probe_nas() {
+    _STORAGE_PROBE_CLASS="conflict:media"
+    return 0
+}
 storage_classify_data_root() { printf '%s\n' "conflict:media"; }
 findmnt() { return 1; }
 RESOLVE_PROMPTS=0
@@ -706,7 +724,7 @@ findmnt() {
     esac
 }
 sudo() {
-    printf '%s\n' "sudo $*" >> "$STAGE1_REPAIR_SUDO_LOG"
+    printf '%s\n' "sudo $*" >>"$STAGE1_REPAIR_SUDO_LOG"
     case "${1:-}" in
         umount)
             STAGE1_REPAIR_SOURCE=""
@@ -830,7 +848,7 @@ seed_stage1_env_vars "final-preflight-local"
 {
     printf '%s\n' "STORAGE_EXPECTED_SOURCE='127.0.0.1:/exports/media'"
     printf '%s\n' "STORAGE_EXPECTED_FSTYPE='nfs4'"
-} >> "$SCRIPT_DIR/.env"
+} >>"$SCRIPT_DIR/.env"
 _stage1_source_env
 _stage1_final_nas_preflight
 assert_eq "local" "$(env_val_from "$SCRIPT_DIR/.env" STORAGE_MODE)" "wizard final NAS preflight: local fallback rewrites storage mode"
@@ -866,7 +884,10 @@ storage_ensure_nfs_common() { return 0; }
 # The "Edit" action runs _stage1_preflight_nas_choice, which calls storage_probe_nas
 # (the real one was re-armed by the mid-file re-source); stub it so the re-verify
 # passes without a real network probe.
-storage_probe_nas() { _STORAGE_PROBE_CLASS=empty; return 0; }
+storage_probe_nas() {
+    _STORAGE_PROBE_CLASS=empty
+    return 0
+}
 findmnt() { return 1; }
 FINAL_PREFLIGHT_ATTEMPTS=0
 mkdir -p "$TMP_DIR/final-edited-nas"
@@ -895,7 +916,10 @@ storage_preflight_nas() {
 storage_ensure_nfs_common() { return 0; }
 # ui_confirm=yes routes through _stage1_collect_manual_storage ->
 # _stage1_preflight_nas_choice, which calls storage_probe_nas; stub it.
-storage_probe_nas() { _STORAGE_PROBE_CLASS=empty; return 0; }
+storage_probe_nas() {
+    _STORAGE_PROBE_CLASS=empty
+    return 0
+}
 storage_classify_data_root() { printf '%s\n' "empty"; }
 findmnt() { return 1; }
 FINAL_PREFLIGHT_ATTEMPTS=0
@@ -909,16 +933,16 @@ unset -f ui_log ui_choose ui_confirm storage_preflight_nas storage_ensure_nfs_co
 unset FINAL_PREFLIGHT_ATTEMPTS
 
 ui_log() {
-    printf '%s %s\n' "${1:-}" "${*:2}" >> "$NAS_EXPORT_INFO_LOG"
+    printf '%s %s\n' "${1:-}" "${*:2}" >>"$NAS_EXPORT_INFO_LOG"
 }
 # The export-path explanation moved from a ui_log line into the intro ui_box.
-ui_box() { printf '%s\n' "$@" >> "$NAS_EXPORT_INFO_LOG"; }
+ui_box() { printf '%s\n' "$@" >>"$NAS_EXPORT_INFO_LOG"; }
 ui_input_validated() {
     case "${1:-}" in
         "Local mountpoint for NAS storage") printf '%s\n' "$TMP_DIR/nas-export-default" ;;
         "NAS host/IP (e.g. 192.168.1.50 or nas.local)") printf '%s\n' "192.0.2.10" ;;
         "NFS export path (the remote path your NAS exports, e.g. /exports/mediastack)")
-            printf '%s:%s\n' "$NAS_EXPORT_DEFAULT_LABEL" "${2:-}" >> "$NAS_EXPORT_DEFAULT_LOG"
+            printf '%s:%s\n' "$NAS_EXPORT_DEFAULT_LABEL" "${2:-}" >>"$NAS_EXPORT_DEFAULT_LOG"
             printf '%s\n' "/exports/entered"
             ;;
         "NFS mount options") printf '%s\n' "${2:-vers=4.2}" ;;

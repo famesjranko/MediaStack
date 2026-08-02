@@ -17,6 +17,7 @@ Category classification:
   for indexers like thepiratebay and limetorrents whose browse results use
   native IDs.
 """
+
 import json
 import re
 import sys
@@ -41,27 +42,25 @@ def main() -> int:
                 all_cats[int(sid)] = sub.get("name", "")
 
     filtered = set()
-    for cid, name in all_cats.items():
+    for code, name in all_cats.items():
         # Standard Torznab ranges — split by app
-        if 2000 <= cid < 3000:
+        if 2000 <= code < 3000:
             if app == "radarr":
-                filtered.add(cid)
+                filtered.add(code)
             continue
-        if 5000 <= cid < 6000:
+        if 5000 <= code < 6000:
             if app == "sonarr":
-                filtered.add(cid)
+                filtered.add(code)
             continue
-        if 8000 <= cid < 9000:
-            filtered.add(cid)  # Other: both apps
+        if 8000 <= code < 9000:
+            filtered.add(code)  # Other: both apps
             continue
-        if cid < 100000:
+        if code < 100000:
             continue
         # Native 100xxx: classify by category name, then filter by app.
         nl = name.lower()
         primary = re.split(r"[\s/\-]", nl)[0]
-        is_movie = primary in ("movies", "movie", "film") or (
-            "movie" in nl and "tv" not in nl
-        )
+        is_movie = primary in ("movies", "movie", "film") or ("movie" in nl and "tv" not in nl)
         is_tv = primary == "tv" or "tv show" in nl
         is_doc = primary in ("documentary", "documentaries")
         is_anime = False
@@ -71,10 +70,10 @@ def main() -> int:
                 skip = True
             is_anime = not skip
         is_video = primary == "video"
-        if app == "radarr" and (is_movie or is_doc or is_anime or is_video):
-            filtered.add(cid)
-        elif app == "sonarr" and (is_tv or is_doc or is_anime):
-            filtered.add(cid)
+        if (app == "radarr" and (is_movie or is_doc or is_anime or is_video)) or (
+            app == "sonarr" and (is_tv or is_doc or is_anime)
+        ):
+            filtered.add(code)
 
     print(json.dumps(sorted(filtered)))
     return 0

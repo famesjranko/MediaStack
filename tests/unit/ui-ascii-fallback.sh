@@ -41,9 +41,10 @@ printf "tok:%s|%s|%s|%s|%s\n" "$(_ui_status_token ok)" "$(_ui_status_token warn)
 
 # Render SNIP in a clean non-TTY subprocess (so colour is off -> output is plain
 # text and easy to match) with the given forcing env applied.
-_render() {  # $1 = space-separated env assignments; $2 = snippet
+_render() { # $1 = space-separated env assignments; $2 = snippet
     local -a base=(-u UI_FORCE_GLYPHS -u UI_ASCII -u UI_FORCE_COLOR -u FORCE_COLOR -u NO_COLOR TERM=xterm)
-    local -a extra; read -ra extra <<<"$1"
+    local -a extra
+    read -ra extra <<<"$1"
     env "${base[@]}" "${extra[@]}" bash -c "source '$UI'; source '$COMMON'; $2" 2>&1
 }
 
@@ -54,7 +55,7 @@ _has_non_ascii() { LC_ALL=C grep -qP '[^\x00-\x7F]' <<<"$1"; }
 ascii_out=$(_render "UI_ASCII=1" "$SNIP")
 if _has_non_ascii "$ascii_out"; then
     fail "ASCII mode: every primitive renders pure ASCII (no byte >0x7F)" \
-         "non-ASCII byte leaked: $(LC_ALL=C grep -aoP '[^\x00-\x7F]' <<<"$ascii_out" | sort -u | tr -d '\n')"
+        "non-ASCII byte leaked: $(LC_ALL=C grep -aoP '[^\x00-\x7F]' <<<"$ascii_out" | sort -u | tr -d '\n')"
 else
     pass "ASCII mode: every primitive renders pure ASCII (no byte >0x7F)"
 fi

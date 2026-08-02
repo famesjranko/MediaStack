@@ -21,10 +21,10 @@ run_scenario() {
 
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
-    # F-003 (fixed): _stage2_offer now wraps its ui_section/ui_box in { ... } >&2
+    # _stage2_offer wraps its ui_section/ui_box in { ... } >&2
     # (mirroring _stage3_offer), so the explanatory box reaches the user instead of
     # being swallowed by offer_action=$(_stage2_offer). Assert it is visible.
-    assert_contains "$transcript" "Remote access is not configured yet" "wizard-ui stage2 offer skip: F-003 offer box now visible (fixed)"
+    assert_contains "$transcript" "Remote access is not configured yet" "wizard-ui stage2 offer skip: offer box is visible"
     assert_contains "$transcript" "Enable remote access" "wizard-ui stage2 offer skip: enable option shown (menu via stderr)"
     assert_contains "$transcript" "HTTPS skipped" "wizard-ui stage2 offer skip: skip summary shown"
     assert_eq "skipped" "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 offer skip: REMOTE_WEB_STATE=skipped"

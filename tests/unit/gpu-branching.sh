@@ -34,22 +34,26 @@ set +e
 set +u
 
 # Silence log_* output from the helpers — the test drives its own assertions.
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
 
 # ui_spin normally runs its command in a background subshell (the spinner owns
 # the TTY), which discards mock side-effects (e.g. an array a stubbed sudo fills).
 # Run the wrapped command in-process so call-capturing mocks observe the calls.
-ui_spin() { shift; "$@"; }
+ui_spin() {
+    shift
+    "$@"
+}
 
 # ---------------------------------------------------------------------------
 # detect_gpu
 # ---------------------------------------------------------------------------
 
 lspci() { printf '01:00.0 VGA compatible controller: NVIDIA Corporation GA104\n'; }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "nvidia" "$GPU_TYPE" "detect_gpu: nvidia via VGA line"
 unset -f lspci
 
@@ -62,50 +66,57 @@ lspci() {
         '03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 14'
 }
 JELLYFIN_GPU=amd
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "nvidia amd intel" "${GPU_CANDIDATES[*]}" "detect_gpu: mixed vendors are deduplicated in priority order"
 assert_eq "amd" "$GPU_TYPE" "detect_gpu: configured available vendor becomes the default"
 unset JELLYFIN_GPU
 unset -f lspci
 
 lspci() { printf '06:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 14\n'; }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "amd" "$GPU_TYPE" "detect_gpu: amd via VGA line"
 unset -f lspci
 
 lspci() { printf '06:00.0 VGA compatible controller: Radeon RX 580 Series\n'; }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "amd" "$GPU_TYPE" "detect_gpu: amd via Radeon branding"
 unset -f lspci
 
 lspci() { printf '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics\n'; }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "intel" "$GPU_TYPE" "detect_gpu: intel via VGA line"
 unset -f lspci
 
 # Headless Intel iGPU shows as "Display controller", not "VGA"
 lspci() { printf '00:02.0 Display controller: Intel Corporation UHD Graphics 630\n'; }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "intel" "$GPU_TYPE" "detect_gpu: intel via Display controller (headless)"
 unset -f lspci
 
 # Non-GPU AMD device (chipset/bridge) should NOT match — display-class filter
 lspci() { printf '00:00.0 Host bridge: Advanced Micro Devices, Inc. [AMD] Starship/Matisse Root Complex\n00:01.0 SATA controller: AMD FCH SATA Controller\n'; }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "none" "$GPU_TYPE" "detect_gpu: AMD chipset without VGA line → none"
 unset -f lspci
 
 # Empty lspci → none (no renderD128 fallback)
 lspci() { :; }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "none" "$GPU_TYPE" "detect_gpu: empty lspci → none"
 unset -f lspci
 
 (
     set -euo pipefail
-    log_ok()    { :; }
-    log_info()  { :; }
-    log_warn()  { :; }
+    log_ok() { :; }
+    log_info() { :; }
+    log_warn() { :; }
     log_error() { :; }
     lspci() { :; }
     GPU_TYPE=""
@@ -122,7 +133,8 @@ command() {
     fi
     builtin command "$@"
 }
-GPU_TYPE=""; detect_gpu
+GPU_TYPE=""
+detect_gpu
 assert_eq "none" "$GPU_TYPE" "detect_gpu: lspci missing → none"
 unset -f command
 
@@ -156,7 +168,7 @@ unset -f command
 # verify_gpu_usable
 # ---------------------------------------------------------------------------
 
-# NVIDIA runtime verification (F-004 regression coverage).
+# NVIDIA runtime verification (regression coverage).
 #
 # Safety: verify_gpu_usable self-heals a CONFIRMED-unregistered runtime by calling
 # `sudo nvidia-ctk runtime configure` + `sudo systemctl restart docker`. These MUST
@@ -165,36 +177,60 @@ unset -f command
 # nvidia-ctk() flips it (models a successful reconfigure); systemctl()/service()
 # count restarts so we can assert the daemon is bounced ONLY on confirmed-absent
 # and NEVER on a registered runtime or an inconclusive 'unknown' probe.
-command() {   # resolve nvidia-smi + nvidia-container-runtime regardless of host
+command() { # resolve nvidia-smi + nvidia-container-runtime regardless of host
     case "${1:-}:${2:-}" in
-        -v:nvidia-smi|-v:nvidia-container-runtime) return 0 ;;
+        -v:nvidia-smi | -v:nvidia-container-runtime) return 0 ;;
     esac
     builtin command "$@"
 }
-nvidia-smi() { [[ "${1:-}" == "-L" ]] && echo "GPU 0: NVIDIA Shim"; return 0; }
+nvidia-smi() {
+    [[ "${1:-}" == "-L" ]] && echo "GPU 0: NVIDIA Shim"
+    return 0
+}
 _SYSCTL_CALLS=0
-systemctl()  { _SYSCTL_CALLS=$((_SYSCTL_CALLS+1)); return 0; }   # count; never touch host
-service()    { _SYSCTL_CALLS=$((_SYSCTL_CALLS+1)); return 0; }
-sleep()      { :; }                  # skip the retry backoff in tests
-sudo()       { "$@"; }               # run the (stubbed) privileged target
+systemctl() {
+    _SYSCTL_CALLS=$((_SYSCTL_CALLS + 1))
+    return 0
+} # count; never touch host
+service() {
+    _SYSCTL_CALLS=$((_SYSCTL_CALLS + 1))
+    return 0
+}
+sleep() { :; }   # skip the retry backoff in tests
+sudo() { "$@"; } # run the (stubbed) privileged target
 _RT_REGISTERED=1
-nvidia-ctk() { _RT_REGISTERED=1; }   # a successful reconfigure registers nvidia
-_dk_info()   { (( _RT_REGISTERED )) && printf 'io.containerd.runc.v2 nvidia runc \n' || printf 'io.containerd.runc.v2 runc \n'; }
+nvidia-ctk() { _RT_REGISTERED=1; } # a successful reconfigure registers nvidia
+_dk_info() { ((_RT_REGISTERED)) && printf 'io.containerd.runc.v2 nvidia runc \n' || printf 'io.containerd.runc.v2 runc \n'; }
 
 # (1) happy path: runtime already registered → no Docker restart
-docker() { [[ "${1:-}" == "info" ]] && { _dk_info; return 0; }; return 0; }
-_RT_REGISTERED=1; _SYSCTL_CALLS=0
-GPU_TYPE="nvidia"; verify_gpu_usable
+docker() {
+    [[ "${1:-}" == "info" ]] && {
+        _dk_info
+        return 0
+    }
+    return 0
+}
+_RT_REGISTERED=1
+_SYSCTL_CALLS=0
+GPU_TYPE="nvidia"
+verify_gpu_usable
 assert_eq "nvidia" "$GPU_TYPE" "verify_gpu_usable: nvidia + runtime registered"
 assert_eq "0" "$_SYSCTL_CALLS" "verify_gpu_usable: registered runtime does NOT restart Docker"
 
 # (2) nvidia-smi missing → downgrade
-command() { [[ "${1:-}" == "-v" && "${2:-}" == "nvidia-smi" ]] && return 1; builtin command "$@"; }
-GPU_TYPE="nvidia"; verify_gpu_usable
+command() {
+    [[ "${1:-}" == "-v" && "${2:-}" == "nvidia-smi" ]] && return 1
+    builtin command "$@"
+}
+GPU_TYPE="nvidia"
+verify_gpu_usable
 assert_eq "none" "$GPU_TYPE" "verify_gpu_usable: nvidia-smi missing → downgrade"
-command() { case "${1:-}:${2:-}" in -v:nvidia-smi|-v:nvidia-container-runtime) return 0 ;; esac; builtin command "$@"; }
+command() {
+    case "${1:-}:${2:-}" in -v:nvidia-smi | -v:nvidia-container-runtime) return 0 ;; esac
+    builtin command "$@"
+}
 
-# (3) F-004 regression: docker info transiently FAILS under load then succeeds.
+# (3) Regression: docker info transiently FAILS under load then succeeds.
 #     The old single un-retried `docker info | grep -q` fell back to software
 #     here; the retry must ride it out and keep the GPU. A flag file marks the
 #     first call (state persists across the command-substitution subshells the
@@ -202,35 +238,54 @@ command() { case "${1:-}:${2:-}" in -v:nvidia-smi|-v:nvidia-container-runtime) r
 _dk_flag="$(mktemp -u)"
 docker() {
     if [[ "${1:-}" == "info" ]]; then
-        if [[ ! -e "$_dk_flag" ]]; then : > "$_dk_flag"; return 1; fi   # first call: busy daemon
-        _dk_info; return 0
+        if [[ ! -e "$_dk_flag" ]]; then
+            : >"$_dk_flag"
+            return 1
+        fi # first call: busy daemon
+        _dk_info
+        return 0
     fi
     return 0
 }
 _RT_REGISTERED=1
-GPU_TYPE="nvidia"; verify_gpu_usable
-assert_eq "nvidia" "$GPU_TYPE" "verify_gpu_usable: transient docker-info failure retried, not downgraded (F-004)"
+GPU_TYPE="nvidia"
+verify_gpu_usable
+assert_eq "nvidia" "$GPU_TYPE" "verify_gpu_usable: transient docker-info failure retried, not downgraded"
 rm -f "$_dk_flag"
 
 # (4) runtime genuinely unregistered but self-heal reconfigures it → stays nvidia
-docker() { [[ "${1:-}" == "info" ]] && { _dk_info; return 0; }; return 0; }
+docker() {
+    [[ "${1:-}" == "info" ]] && {
+        _dk_info
+        return 0
+    }
+    return 0
+}
 _RT_REGISTERED=0
-GPU_TYPE="nvidia"; verify_gpu_usable
+GPU_TYPE="nvidia"
+verify_gpu_usable
 assert_eq "nvidia" "$GPU_TYPE" "verify_gpu_usable: unregistered runtime self-healed via nvidia-ctk → stays nvidia"
 
 # (5) runtime unregistered AND reconfigure cannot fix it → downgrade, after a real restart attempt
-_RT_REGISTERED=0; _SYSCTL_CALLS=0
-nvidia-ctk() { :; }                  # broken host: reconfigure does not register
-GPU_TYPE="nvidia"; verify_gpu_usable
+_RT_REGISTERED=0
+_SYSCTL_CALLS=0
+nvidia-ctk() { :; } # broken host: reconfigure does not register
+GPU_TYPE="nvidia"
+verify_gpu_usable
 assert_eq "none" "$GPU_TYPE" "verify_gpu_usable: runtime unregisterable → downgrade to software"
 assert_eq "1" "$_SYSCTL_CALLS" "verify_gpu_usable: confirmed-absent runtime triggers exactly one Docker restart"
-nvidia-ctk() { _RT_REGISTERED=1; }   # restore
+nvidia-ctk() { _RT_REGISTERED=1; } # restore
 
 # (6) docker info unreadable after retries → 'unknown': keep nvidia (no false
-#     downgrade — the F-004 trap) and do NOT bounce a possibly-healthy daemon.
-docker() { [[ "${1:-}" == "info" ]] && return 1; return 0; }   # daemon never answers info
-_RT_REGISTERED=1; _SYSCTL_CALLS=0
-GPU_TYPE="nvidia"; verify_gpu_usable
+#     downgrade) and do NOT bounce a possibly-healthy daemon.
+docker() {
+    [[ "${1:-}" == "info" ]] && return 1
+    return 0
+} # daemon never answers info
+_RT_REGISTERED=1
+_SYSCTL_CALLS=0
+GPU_TYPE="nvidia"
+verify_gpu_usable
 assert_eq "nvidia" "$GPU_TYPE" "verify_gpu_usable: unknown runtime state keeps nvidia (no false downgrade)"
 assert_eq "0" "$_SYSCTL_CALLS" "verify_gpu_usable: unknown state does NOT restart Docker (no stack bounce)"
 
@@ -256,21 +311,24 @@ for render_vendor in intel amd; do
     TEST_RENDER_DEVICE_AVAILABLE=1
     TEST_RENDER_DEVICE_VENDOR="$render_vendor"
     unset STAGE_3_GPU_RENDER_DEVICE
-    GPU_TYPE="$render_vendor"; verify_gpu_usable
+    GPU_TYPE="$render_vendor"
+    verify_gpu_usable
     assert_eq "$render_vendor" "$GPU_TYPE" "verify_gpu_usable: $render_vendor + vendor render device present"
     assert_eq "/dev/dri/renderD128" "$STAGE_3_GPU_RENDER_DEVICE" "verify_gpu_usable: $render_vendor records vendor render device"
 
     TEST_RENDER_DEVICE_AVAILABLE=0
     TEST_RENDER_DEVICE_VENDOR="$render_vendor"
     unset STAGE_3_GPU_RENDER_DEVICE
-    GPU_TYPE="$render_vendor"; verify_gpu_usable
+    GPU_TYPE="$render_vendor"
+    verify_gpu_usable
     assert_eq "none" "$GPU_TYPE" "verify_gpu_usable: $render_vendor + no vendor render device → downgrade"
 done
 
 TEST_RENDER_DEVICE_AVAILABLE=1
 TEST_RENDER_DEVICE_VENDOR=intel
 unset STAGE_3_GPU_RENDER_DEVICE
-GPU_TYPE="amd"; verify_gpu_usable
+GPU_TYPE="amd"
+verify_gpu_usable
 assert_eq "none" "$GPU_TYPE" "verify_gpu_usable: amd + non-AMD render device → downgrade"
 unset TEST_RENDER_DEVICE_AVAILABLE TEST_RENDER_DEVICE_VENDOR
 
@@ -318,7 +376,8 @@ gpu_render_device_for_vendor() { return 1; }
 unset STAGE_3_GPU_RENDER_DEVICE
 
 # none: no-op
-GPU_TYPE="none"; verify_gpu_usable
+GPU_TYPE="none"
+verify_gpu_usable
 assert_eq "none" "$GPU_TYPE" "verify_gpu_usable: none → none"
 
 # ---------------------------------------------------------------------------
@@ -327,9 +386,9 @@ assert_eq "none" "$GPU_TYPE" "verify_gpu_usable: none → none"
 
 INSTALL_LOG_MESSAGES=()
 INSTALL_ERROR_MESSAGES=()
-log_ok()    { INSTALL_LOG_MESSAGES+=("$1"); }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { INSTALL_LOG_MESSAGES+=("$1"); }
+log_info() { :; }
+log_warn() { :; }
 log_error() { INSTALL_ERROR_MESSAGES+=("$1"); }
 sudo() { :; }
 
@@ -510,7 +569,7 @@ curl() {
 }
 sudo() {
     case "${1:-}" in
-        gpg|tee)
+        gpg | tee)
             cat >/dev/null
             return 0
             ;;
@@ -551,7 +610,7 @@ curl() {
 }
 sudo() {
     case "${1:-}" in
-        gpg|tee)
+        gpg | tee)
             cat >/dev/null
             return 0
             ;;
@@ -613,7 +672,7 @@ curl() {
 }
 sudo() {
     case "${1:-}" in
-        gpg|tee)
+        gpg | tee)
             cat >/dev/null
             return 0
             ;;
@@ -646,18 +705,18 @@ unset GPU_TYPE
 # ---------------------------------------------------------------------------
 # NVIDIA driver-management modes: Standard (Debian apt) vs Unlock (.run + patch)
 # ---------------------------------------------------------------------------
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
 
 # --- nvidia_driver_source: none / debian / foreign ---
-command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac; }
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac }
 dpkg-query() { return 1; }
 assert_eq "none" "$(nvidia_driver_source)" "nvidia_driver_source: no nvidia-smi → none"
 unset -f command dpkg-query
 
-command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac; }
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac }
 nvidia-smi() { return 0; }
 dpkg-query() { printf 'install ok installed'; }
 assert_eq "debian" "$(nvidia_driver_source)" "nvidia_driver_source: nvidia-driver package present → debian"
@@ -688,18 +747,26 @@ unset -f dpkg-query nvidia-smi command
 # --- apply_nvidia_patch: normalized multi-GPU version and strict failure status ---
 PATCH_TEST_DIR=$(mktemp -d)
 nvidia_patch_prepare_repo() { return 0; }
-nvidia_patch_export_run_tree() { mkdir -p "$PATCH_TEST_DIR/run"; printf '%s' "$PATCH_TEST_DIR/run"; }
-command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac; }
+nvidia_patch_export_run_tree() {
+    mkdir -p "$PATCH_TEST_DIR/run"
+    printf '%s' "$PATCH_TEST_DIR/run"
+}
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac }
 nvidia-smi() { printf '550.90\n550.90\n'; }
-bash() { PATCH_COMPAT_ARG="${3:-}"; return 0; }
+bash() {
+    PATCH_COMPAT_ARG="${3:-}"
+    return 0
+}
 sudo() { return 0; }
 SCRIPT_DIR="$PATCH_TEST_DIR/root"
 mkdir -p "$SCRIPT_DIR"
-rc=0; apply_nvidia_patch || rc=$?
+rc=0
+apply_nvidia_patch || rc=$?
 assert_eq "0" "$rc" "apply_nvidia_patch: successful NVENC patch returns success"
 assert_eq "550.90" "$PATCH_COMPAT_ARG" "apply_nvidia_patch: duplicate GPU versions normalize before compatibility check"
 sudo() { return 1; }
-rc=0; apply_nvidia_patch || rc=$?
+rc=0
+apply_nvidia_patch || rc=$?
 assert_eq "1" "$rc" "apply_nvidia_patch: failed NVENC patch returns failure"
 rm -rf "$PATCH_TEST_DIR"
 unset -f nvidia_patch_prepare_repo nvidia_patch_export_run_tree command nvidia-smi bash sudo
@@ -727,31 +794,33 @@ apt-cache() {
     printf ' nvidia-driver | 550.100-1~bpo12+1 | http://deb.debian.org/debian bookworm-backports/non-free amd64 Packages\n'
 }
 # Stable does not list the GPU; backports does.
-_check_nvidia_compat() { case "${1:-}" in 550.100) printf 'current' ;; *) return 1 ;; esac; }
+_check_nvidia_compat() { case "${1:-}" in 550.100) printf 'current' ;; *) return 1 ;; esac }
 assert_eq "-t bookworm-backports nvidia-driver firmware-misc-nonfree" "$(_resolve_debian_nvidia_driver)" \
     "_resolve_debian_nvidia_driver: card too new for stable + backports newer & supported → backports"
 unset -f apt-cache _check_nvidia_compat lspci
 
 # --- install_nvidia_drivers_apt: pre-existing non-Debian driver → returns 2 ---
-command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac; }
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac }
 nvidia-smi() { return 0; }
 dpkg-query() { return 1; }
 GPU_TYPE=nvidia
 NVIDIA_DRIVER_MODE=""
-rc=0; install_nvidia_drivers_apt || rc=$?
+rc=0
+install_nvidia_drivers_apt || rc=$?
 assert_eq "2" "$rc" "install_nvidia_drivers_apt: pre-existing non-Debian driver → returns 2 (caller prompts)"
 unset -f dpkg-query nvidia-smi command
 
 # --- install_nvidia_drivers_apt: Debian-managed driver present → standard, no patch ---
-command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac; }
-nvidia-smi() { case "$*" in *--query-gpu*) printf '535.100\n' ;; *) return 0 ;; esac; }
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac }
+nvidia-smi() { case "$*" in *--query-gpu*) printf '535.100\n' ;; *) return 0 ;; esac }
 dpkg-query() { printf 'install ok installed'; }
 _install_nvidia_container_toolkit() { return 0; }
 PATCH_CALLED=0
 apply_nvidia_patch() { PATCH_CALLED=1; }
 GPU_TYPE=nvidia
 NVIDIA_DRIVER_MODE=""
-rc=0; install_nvidia_drivers_apt || rc=$?
+rc=0
+install_nvidia_drivers_apt || rc=$?
 assert_eq "0" "$rc" "install_nvidia_drivers_apt: Debian-managed driver → success"
 assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt: Debian-managed driver → mode standard"
 assert_eq "0" "$PATCH_CALLED" "install_nvidia_drivers_apt: Standard route never applies the patch"
@@ -759,20 +828,21 @@ unset -f dpkg-query nvidia-smi command _install_nvidia_container_toolkit apply_n
 unset PATCH_CALLED rc
 
 # --- install_nvidia_drivers_apt: fresh install → standard + reboot, no patch ---
-command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac; }
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac }
 dpkg-query() { return 1; }
 check_secure_boot() { printf 'disabled'; }
 ensure_debian_nonfree() { return 0; }
 _resolve_debian_nvidia_driver() { printf 'nvidia-driver firmware-misc-nonfree'; }
 _install_nvidia_container_toolkit() { return 0; }
-nouveau_is_active() { return 0; }   # forces a reboot
+nouveau_is_active() { return 0; } # forces a reboot
 PATCH_CALLED=0
 apply_nvidia_patch() { PATCH_CALLED=1; }
 sudo() { return 0; }
 GPU_TYPE=nvidia
 NEEDS_REBOOT=false
 NVIDIA_DRIVER_MODE=""
-rc=0; install_nvidia_drivers_apt || rc=$?
+rc=0
+install_nvidia_drivers_apt || rc=$?
 assert_eq "0" "$rc" "install_nvidia_drivers_apt: fresh apt install → success"
 assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt: fresh apt install → mode standard"
 assert_eq "true" "$NEEDS_REBOOT" "install_nvidia_drivers_apt: fresh install with nouveau active → reboot required"
@@ -788,12 +858,19 @@ ensure_debian_nonfree() { return 0; }
 _nvidia_debian_repair_packages() { printf '%s\n' nvidia-driver libnvidia-encode1:amd64; }
 _nvidia_toolkit_healthy() { return 0; }
 TOOLKIT_CONFIGURES=0
-_configure_nvidia_container_toolkit() { TOOLKIT_CONFIGURES=$((TOOLKIT_CONFIGURES + 1)); return 0; }
+_configure_nvidia_container_toolkit() {
+    TOOLKIT_CONFIGURES=$((TOOLKIT_CONFIGURES + 1))
+    return 0
+}
 REPAIR_CALLS=()
-sudo() { REPAIR_CALLS+=("$*"); return 0; }
+sudo() {
+    REPAIR_CALLS+=("$*")
+    return 0
+}
 GPU_TYPE=nvidia
 NVIDIA_DRIVER_MODE=""
-rc=0; install_nvidia_drivers_apt repair || rc=$?
+rc=0
+install_nvidia_drivers_apt repair || rc=$?
 assert_eq "0" "$rc" "install_nvidia_drivers_apt repair: succeeds"
 assert_contains "${REPAIR_CALLS[*]}" "apt-get update -qq" "install_nvidia_drivers_apt repair: refreshes apt metadata"
 assert_contains "${REPAIR_CALLS[*]}" "apt-get install -y -qq --reinstall nvidia-driver libnvidia-encode1:amd64" "install_nvidia_drivers_apt repair: reinstalls existing driver/userspace packages once"
@@ -829,7 +906,7 @@ assert_contains "$_pkg_list" "libcuda1:amd64" "_nvidia_debian_driver_packages: i
 assert_contains "$_pkg_list" "glx-diversions" "_nvidia_debian_driver_packages: includes NVIDIA GLX framework package"
 assert_contains "$_pkg_list" "glx-alternative-nvidia" "_nvidia_debian_driver_packages: includes NVIDIA GLX alternative package"
 case "$_pkg_list" in
-    *nvidia-container-toolkit*|*libnvidia-container1*|*glx-alternative-mesa*)
+    *nvidia-container-toolkit* | *libnvidia-container1* | *glx-alternative-mesa*)
         fail "_nvidia_debian_driver_packages: excludes toolkit and mesa alternatives"
         ;;
     *)
@@ -840,7 +917,7 @@ _repair_pkg_list=$(_nvidia_debian_repair_packages | tr '\n' ' ')
 assert_contains "$_repair_pkg_list" "libcuda1:amd64" "_nvidia_debian_repair_packages: includes Debian CUDA runtime"
 assert_contains "$_repair_pkg_list" "glx-alternative-nvidia" "_nvidia_debian_repair_packages: includes Debian GLX userspace"
 case "$_repair_pkg_list" in
-    *cuda-toolkit*|*nvidia-container-toolkit*|*libnvidia-container*)
+    *cuda-toolkit* | *nvidia-container-toolkit* | *libnvidia-container*)
         fail "_nvidia_debian_repair_packages: excludes CUDA SDK and container toolkit packages"
         ;;
     *) pass "_nvidia_debian_repair_packages: excludes CUDA SDK and container toolkit packages" ;;
@@ -874,18 +951,28 @@ sudo() {
     local args=("$@")
     [[ "${args[0]:-}" == DEBIAN_FRONTEND=* ]] && args=("${args[@]:1}")
     case "${args[0]:-}:${args[1]:-}" in
-        apt-mark:manual) APT_MARK_CALLED=1; return 0 ;;
-        apt-get:purge) PURGE_ARGS="${args[*]}"; return 0 ;;
+        apt-mark:manual)
+            APT_MARK_CALLED=1
+            return 0
+            ;;
+        apt-get:purge)
+            PURGE_ARGS="${args[*]}"
+            return 0
+            ;;
         *) return 0 ;;
     esac
 }
 _nvidia_unload_loaded_modules() { return 0; }
-_nvidia_blacklist_nouveau() { BLACKLIST_CALLED=1; return 0; }
+_nvidia_blacklist_nouveau() {
+    BLACKLIST_CALLED=1
+    return 0
+}
 NEEDS_REBOOT=false
 APT_MARK_CALLED=0
 PURGE_ARGS=""
 BLACKLIST_CALLED=0
-rc=0; prepare_nvidia_debian_to_unlock || rc=$?
+rc=0
+prepare_nvidia_debian_to_unlock || rc=$?
 assert_eq "0" "$rc" "prepare_nvidia_debian_to_unlock: exact purge succeeds"
 assert_eq "1" "$APT_MARK_CALLED" "prepare_nvidia_debian_to_unlock: marks toolkit packages manual"
 assert_contains "$PURGE_ARGS" "nvidia-driver" "prepare_nvidia_debian_to_unlock: purges nvidia-driver"
@@ -903,15 +990,19 @@ sudo() {
     local args=("$@")
     [[ "${args[0]:-}" == DEBIAN_FRONTEND=* ]] && args=("${args[@]:1}")
     case "${args[0]:-}:${args[1]:-}" in
-        apt-get:purge|apt-mark:manual) return 0 ;;
+        apt-get:purge | apt-mark:manual) return 0 ;;
         *) return 0 ;;
     esac
 }
 _nvidia_unload_loaded_modules() { return 1; }
-_nvidia_blacklist_nouveau() { BLACKLIST_CALLED=1; return 0; }
+_nvidia_blacklist_nouveau() {
+    BLACKLIST_CALLED=1
+    return 0
+}
 NEEDS_REBOOT=false
 BLACKLIST_CALLED=0
-rc=0; prepare_nvidia_debian_to_unlock || rc=$?
+rc=0
+prepare_nvidia_debian_to_unlock || rc=$?
 assert_eq "0" "$rc" "prepare_nvidia_debian_to_unlock: still succeeds when reboot is needed"
 assert_eq "true" "$NEEDS_REBOOT" "prepare_nvidia_debian_to_unlock: queues reboot when modules stay loaded"
 assert_eq "1" "$BLACKLIST_CALLED" "prepare_nvidia_debian_to_unlock: blacklists nouveau before conversion reboot"
@@ -920,7 +1011,7 @@ unset NEEDS_REBOOT BLACKLIST_CALLED rc
 
 # --- nvidia-container-toolkit health: binary presence is not enough ---
 command() {
-    if [[ "${1:-}" == "-v" && ( "${2:-}" == "nvidia-container-runtime" || "${2:-}" == "nvidia-container-cli" ) ]]; then
+    if [[ "${1:-}" == "-v" && ("${2:-}" == "nvidia-container-runtime" || "${2:-}" == "nvidia-container-cli") ]]; then
         return 0
     fi
     builtin command "$@"
@@ -934,13 +1025,16 @@ fi
 unset -f command ldd
 
 command() {
-    if [[ "${1:-}" == "-v" && ( "${2:-}" == "nvidia-container-runtime" || "${2:-}" == "nvidia-container-cli" ) ]]; then
+    if [[ "${1:-}" == "-v" && ("${2:-}" == "nvidia-container-runtime" || "${2:-}" == "nvidia-container-cli") ]]; then
         return 0
     fi
     builtin command "$@"
 }
 ldd() { printf 'libnvidia-container.so.1 => /usr/lib/libnvidia-container.so.1\n'; }
-assert_eq "0" "$(_nvidia_toolkit_healthy; echo $?)" "_nvidia_toolkit_healthy: linked toolkit is healthy"
+assert_eq "0" "$(
+    _nvidia_toolkit_healthy
+    echo $?
+)" "_nvidia_toolkit_healthy: linked toolkit is healthy"
 unset -f command ldd
 
 # The mocked install tests above unset the real gpu.sh helpers (mock + real share
@@ -958,31 +1052,47 @@ _nf_cap=$(mktemp)
 # state is deterministic instead of depending on the host's real sources.list.
 _nf_src=$(mktemp)
 export MEDIASTACK_APT_SOURCES="$_nf_src"
-sudo() { if [[ "${1:-}" == "tee" ]]; then cat > "$_nf_cap"; else cat >/dev/null 2>&1 || true; fi; return 0; }
-: > "$_nf_src"   # no components visible → managed file is written
-_debian_codename() { printf 'bookworm'; }; _debian_version_id() { printf '12'; }
-: > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
+sudo() {
+    if [[ "${1:-}" == "tee" ]]; then cat >"$_nf_cap"; else cat >/dev/null 2>&1 || true; fi
+    return 0
+}
+: >"$_nf_src" # no components visible → managed file is written
+_debian_codename() { printf 'bookworm'; }
+_debian_version_id() { printf '12'; }
+: >"$_nf_cap"
+ensure_debian_nonfree
+_nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "contrib" "ensure_debian_nonfree: Debian 12 includes contrib"
 assert_contains "$_nf_line" "non-free-firmware" "ensure_debian_nonfree: Debian 12 includes non-free-firmware"
-_debian_codename() { printf 'bullseye'; }; _debian_version_id() { printf '11'; }
-: > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
+_debian_codename() { printf 'bullseye'; }
+_debian_version_id() { printf '11'; }
+: >"$_nf_cap"
+ensure_debian_nonfree
+_nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "contrib" "ensure_debian_nonfree: Debian 11 includes contrib"
 case "$_nf_line" in
     *non-free-firmware*) fail "ensure_debian_nonfree: Debian 11 must NOT use non-free-firmware" ;;
     *non-free*) pass "ensure_debian_nonfree: Debian 11 uses non-free without non-free-firmware" ;;
     *) fail "ensure_debian_nonfree: Debian 11 missing non-free component" ;;
 esac
-_debian_codename() { printf 'trixie'; }; _debian_version_id() { printf '13'; }
-: > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
+_debian_codename() { printf 'trixie'; }
+_debian_version_id() { printf '13'; }
+: >"$_nf_cap"
+ensure_debian_nonfree
+_nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "non-free-firmware" "ensure_debian_nonfree: Debian 13 includes non-free-firmware"
 # Partial setup: non-free visible but contrib/non-free-firmware missing → still writes.
-printf 'deb http://deb.debian.org/debian trixie main non-free\n' > "$_nf_src"
-: > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
+printf 'deb http://deb.debian.org/debian trixie main non-free\n' >"$_nf_src"
+: >"$_nf_cap"
+ensure_debian_nonfree
+_nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "contrib" "ensure_debian_nonfree: partial setup (non-free only) still enables contrib"
 assert_contains "$_nf_line" "non-free-firmware" "ensure_debian_nonfree: partial setup still enables non-free-firmware"
 # Idempotent: when ALL required components are already visible, do not rewrite.
-printf 'deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware\n' > "$_nf_src"
-: > "$_nf_cap"; ensure_debian_nonfree; _nf_line=$(cat "$_nf_cap")
+printf 'deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware\n' >"$_nf_src"
+: >"$_nf_cap"
+ensure_debian_nonfree
+_nf_line=$(cat "$_nf_cap")
 assert_eq "" "$_nf_line" "ensure_debian_nonfree: idempotent — skips when all components visible"
 rm -f "$_nf_cap" "$_nf_src"
 unset MEDIASTACK_APT_SOURCES
@@ -991,15 +1101,23 @@ unset _nf_cap _nf_src _nf_line
 
 # --- ensure_debian_backports: managed source, idempotent, codename-aware ---
 _bp_cap=$(mktemp)
-sudo() { if [[ "${1:-}" == "tee" ]]; then cat > "$_bp_cap"; else cat >/dev/null 2>&1 || true; fi; return 0; }
-_debian_codename() { printf 'bookworm'; }; _debian_version_id() { printf '12'; }
-apt-cache() { return 0; }   # backports not visible → written
-: > "$_bp_cap"; ensure_debian_backports; _bp_line=$(cat "$_bp_cap")
+sudo() {
+    if [[ "${1:-}" == "tee" ]]; then cat >"$_bp_cap"; else cat >/dev/null 2>&1 || true; fi
+    return 0
+}
+_debian_codename() { printf 'bookworm'; }
+_debian_version_id() { printf '12'; }
+apt-cache() { return 0; } # backports not visible → written
+: >"$_bp_cap"
+ensure_debian_backports
+_bp_line=$(cat "$_bp_cap")
 assert_contains "$_bp_line" "bookworm-backports" "ensure_debian_backports: writes a <codename>-backports source"
 assert_contains "$_bp_line" "non-free-firmware" "ensure_debian_backports: Debian 12 backports includes non-free-firmware"
 # Idempotent: skip when backports is already visible to apt.
 apt-cache() { printf ' 100 http://deb.debian.org/debian bookworm-backports/main amd64 Packages\n'; }
-: > "$_bp_cap"; ensure_debian_backports; _bp_line=$(cat "$_bp_cap")
+: >"$_bp_cap"
+ensure_debian_backports
+_bp_line=$(cat "$_bp_cap")
 assert_eq "" "$_bp_line" "ensure_debian_backports: idempotent — skips when backports already visible"
 rm -f "$_bp_cap"
 unset -f apt-cache sudo _debian_codename _debian_version_id
@@ -1014,12 +1132,12 @@ assert_eq "standard" "$mode_default" "_stage3_choose_nvidia_mode: non-interactiv
 unset UI_DEMO mode_default
 
 # --- write_env driver-mode migration (_nvidia_resolve_driver_mode) ---
-assert_eq "unlock"   "$(_nvidia_resolve_driver_mode "" "true")"        "_nvidia_resolve_driver_mode: legacy NVIDIA_PATCH_ENABLED=true → unlock"
-assert_eq "standard" "$(_nvidia_resolve_driver_mode "standard" "")"    "_nvidia_resolve_driver_mode: explicit standard preserved"
-assert_eq "unlock"   "$(_nvidia_resolve_driver_mode "unlock" "")"      "_nvidia_resolve_driver_mode: explicit unlock preserved"
-assert_eq "existing" "$(_nvidia_resolve_driver_mode "existing" "")"    "_nvidia_resolve_driver_mode: existing preserved"
-assert_eq ""         "$(_nvidia_resolve_driver_mode "" "")"            "_nvidia_resolve_driver_mode: fresh install → empty (wizard sets standard on install)"
-assert_eq ""         "$(_nvidia_resolve_driver_mode "bogus" "")"       "_nvidia_resolve_driver_mode: invalid value rejected"
+assert_eq "unlock" "$(_nvidia_resolve_driver_mode "" "true")" "_nvidia_resolve_driver_mode: legacy NVIDIA_PATCH_ENABLED=true → unlock"
+assert_eq "standard" "$(_nvidia_resolve_driver_mode "standard" "")" "_nvidia_resolve_driver_mode: explicit standard preserved"
+assert_eq "unlock" "$(_nvidia_resolve_driver_mode "unlock" "")" "_nvidia_resolve_driver_mode: explicit unlock preserved"
+assert_eq "existing" "$(_nvidia_resolve_driver_mode "existing" "")" "_nvidia_resolve_driver_mode: existing preserved"
+assert_eq "" "$(_nvidia_resolve_driver_mode "" "")" "_nvidia_resolve_driver_mode: fresh install → empty (wizard sets standard on install)"
+assert_eq "" "$(_nvidia_resolve_driver_mode "bogus" "")" "_nvidia_resolve_driver_mode: invalid value rejected"
 
 # --- nvidia-repatch.sh: only patches in Unlock mode ---
 # Black-box run in a temp tree with a fake (always-failing) nvidia-smi so the
@@ -1028,9 +1146,11 @@ _rp=$(mktemp -d)
 mkdir -p "$_rp/scripts/lib" "$_rp/bin"
 cp "$REPO_ROOT/scripts/nvidia-repatch.sh" "$_rp/scripts/"
 cp "$REPO_ROOT/scripts/lib/nvidia_patch.sh" "$_rp/scripts/lib/"
-printf '#!/usr/bin/env bash\nexit 1\n' > "$_rp/bin/nvidia-smi"; chmod +x "$_rp/bin/nvidia-smi"
-printf 'NVIDIA_DRIVER_MODE=standard\n' > "$_rp/.env"
-_rp_out=$(PATH="$_rp/bin:$PATH" bash "$_rp/scripts/nvidia-repatch.sh" 2>&1); _rp_rc=$?
+printf '#!/usr/bin/env bash\nexit 1\n' >"$_rp/bin/nvidia-smi"
+chmod +x "$_rp/bin/nvidia-smi"
+printf 'NVIDIA_DRIVER_MODE=standard\n' >"$_rp/.env"
+_rp_out=$(PATH="$_rp/bin:$PATH" bash "$_rp/scripts/nvidia-repatch.sh" 2>&1)
+_rp_rc=$?
 assert_eq "0" "$_rp_rc" "nvidia-repatch.sh: Standard mode exits 0 (no-op)"
 assert_contains "$_rp_out" "nothing to repatch" "nvidia-repatch.sh: Standard mode reports nothing to repatch"
 _rp_out2=$(PATH="$_rp/bin:$PATH" bash "$_rp/scripts/nvidia-repatch.sh" --force 2>&1) || true
@@ -1042,9 +1162,9 @@ rm -rf "$_rp"
 unset _rp _rp_out _rp_out2 _rp_rc
 
 unset -f sudo
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
 
 echo -e "${CYAN}◀ gpu-branching done${NC}"

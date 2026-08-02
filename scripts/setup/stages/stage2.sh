@@ -60,7 +60,7 @@ _stage2_seed_wizard_defaults() {
     _WIZ_ADMIN_USER="${_WIZ_ADMIN_USER:-${_WIZ_PREV_USER:-${JELLYFIN_ADMIN_USER:-admin}}}"
     _WIZ_ADMIN_EMAIL="${_WIZ_ADMIN_EMAIL:-${_WIZ_PREV_EMAIL:-${NPM_ADMIN_EMAIL:-}}}"
     case "${_WIZ_ADMIN_EMAIL,,}" in
-        admin@mediastack.local|*@example.com|*@example.net|*@example.org) _WIZ_ADMIN_EMAIL="" ;;
+        admin@mediastack.local | *@example.com | *@example.net | *@example.org) _WIZ_ADMIN_EMAIL="" ;;
     esac
     _WIZ_ADMIN_PW="${_WIZ_ADMIN_PW:-${_WIZ_PREV_PW:-${JELLYFIN_ADMIN_PASSWORD:-}}}"
     # Stage 2 explicitly invokes remote-access setup, so the LAN-only sentinel
@@ -246,14 +246,17 @@ stage2_le_classify() {
             failed+=("$fqdn")
         fi
     done
-    STAGE2_LE_FAILED_HOSTS="$(IFS=', '; echo "${failed[*]}")"
+    STAGE2_LE_FAILED_HOSTS="$(
+        IFS=', '
+        echo "${failed[*]}"
+    )"
 
-    if (( ready_count == 2 )); then
+    if ((ready_count == 2)); then
         STAGE2_LE_CLASSIFICATION="ready"
         printf '%s\n' "$STAGE2_LE_CLASSIFICATION"
         return 0
     fi
-    if (( ready_count == 1 )); then
+    if ((ready_count == 1)); then
         STAGE2_LE_CLASSIFICATION="partial"
         printf '%s\n' "$STAGE2_LE_CLASSIFICATION"
         return 1
@@ -320,7 +323,7 @@ stage2_le_failure_copy() {
         npm-unhealthy)
             printf "Nginx Proxy Manager's cert/proxy state is unhealthy. Choose Features & settings -> Add remote access again from the menu; it will heal NPM first, then attempt HTTPS again."
             ;;
-        unknown|*)
+        unknown | *)
             printf "HTTPS setup did not complete and the cause could not be classified. Check %s and NPM logs, then choose Features & settings -> Add remote access from the menu." "$(stage2_le_status_path)"
             ;;
     esac
@@ -365,14 +368,14 @@ stage2_le_gate() {
             log_skip "$(stage2_skip_summary_copy)"
             return 0
             ;;
-        "Exit so I can fix and retry"|"Abort setup"|*)
+        "Exit so I can fix and retry" | "Abort setup" | *)
             return 1
             ;;
     esac
 }
 
 run_stage2() {
-    seed_root_config   # ensure live config.yml exists before the bitrate write (env_gen.sh)
+    seed_root_config # ensure live config.yml exists before the bitrate write (env_gen.sh)
     if [[ "${DEMO:-0}" == "1" ]]; then
         return 0
     fi
@@ -439,13 +442,13 @@ _stage2_trim_ws() {
 # raw key for an unknown provider.
 _stage2_ddns_provider_label() {
     case "$1" in
-        dynu)       printf 'Dynu' ;;
-        duckdns)    printf 'DuckDNS' ;;
-        desec)      printf 'deSEC' ;;
-        dynv6)      printf 'dynv6' ;;
+        dynu) printf 'Dynu' ;;
+        duckdns) printf 'DuckDNS' ;;
+        desec) printf 'deSEC' ;;
+        dynv6) printf 'dynv6' ;;
         cloudflare) printf 'Cloudflare' ;;
-        porkbun)    printf 'Porkbun' ;;
-        *)          printf '%s' "$1" ;;
+        porkbun) printf 'Porkbun' ;;
+        *) printf '%s' "$1" ;;
     esac
 }
 
@@ -455,9 +458,12 @@ _stage2_ddns_field_prompt() {
     local provider="$1" name="$2" label
     if [[ "$provider" == "dynu" ]]; then
         case "$name" in
-            # Dynu no longer collects a username (#248: Dynu ignores it; the
+            # Dynu no longer collects a username (Dynu ignores it; the
             # placeholder is auto-filled in ddns_providers.sh). Password only.
-            password) printf 'Dynu account password (or IP Update Password if you set one)'; return ;;
+            password)
+                printf 'Dynu account password (or IP Update Password if you set one)'
+                return
+                ;;
         esac
     fi
     label=$(_stage2_ddns_provider_label "$provider")
@@ -472,12 +478,12 @@ _stage2_ddns_field_prompt() {
                 printf '%s API token' "$label"
             fi
             ;;
-        api_key)        printf '%s API key' "$label" ;;
+        api_key) printf '%s API key' "$label" ;;
         secret_api_key) printf '%s secret API key' "$label" ;;
         zone_identifier) printf '%s Zone ID (32 hex chars, from the domain Overview page)' "$label" ;;
-        username)       printf '%s account username' "$label" ;;
-        password)       printf '%s account password' "$label" ;;
-        *)              printf '%s %s' "$label" "$name" ;;
+        username) printf '%s account username' "$label" ;;
+        password) printf '%s account password' "$label" ;;
+        *) printf '%s %s' "$label" "$name" ;;
     esac
 }
 
@@ -489,9 +495,9 @@ _stage2_ddns_field_prompt() {
 # ACCEPT for ANY provider sets PREFLIGHT_OK=true (and a real push already
 # happened), so this is false and the caller proceeds to the DNS loop + LE gate.
 _stage2_ddns_unverified() {
-    [[ "${_WIZ_USES_DDNS:-false}" == "true" \
-        && -n "${_WIZ_DDNS_PROVIDER:-}" \
-        && "${_WIZ_DDNS_PREFLIGHT_OK:-false}" != "true" ]]
+    [[ "${_WIZ_USES_DDNS:-false}" == "true" &&
+        -n "${_WIZ_DDNS_PROVIDER:-}" &&
+        "${_WIZ_DDNS_PREFLIGHT_OK:-false}" != "true" ]]
 }
 
 # Repopulate _WIZ_DDNS_FIELDS from the persisted config.json on a re-run so the
@@ -554,7 +560,7 @@ _stage2_offer() {
 }
 
 # Comma-join the display names for a registry category (free | byo) so copy can
-# name the provider sets from the registry, not a second hardcoded list (#247).
+# name the provider sets from the registry, not a second hardcoded list.
 _stage2_provider_list() {
     local out="" n
     while IFS= read -r n; do out+="${out:+, }$n"; done < <(ddns_category_names "$1")
@@ -632,10 +638,11 @@ _stage2_collect_domain() {
         "Your domain or hostname (e.g. media.yourdomain.com)" \
         "${_WIZ_DOMAIN:-${_WIZ_PREV_DOMAIN:-}}" \
         validate_domain_name \
-        "Skip remote access for now"); _dom_rc=$?
-    if (( _dom_rc == 130 )); then
+        "Skip remote access for now")
+    _dom_rc=$?
+    if ((_dom_rc == 130)); then
         return 130
-    elif (( _dom_rc != 0 )); then
+    elif ((_dom_rc != 0)); then
         ui_log info "No domain entered — skipping remote access for now. Your LAN stack still works; add it later from Features & settings -> Add remote access."
         _stage2_skip_https
         return 1
@@ -703,7 +710,7 @@ _stage2_collect_domain() {
         # only fall through to the manual menu after 2 minutes.
         if [[ "$ddns_pushed" == "true" && $retry_count -lt "$STAGE2_DNS_PROPAGATION_MAX_ATTEMPTS" ]]; then
             retry_count=$((retry_count + 1))
-            if (( retry_count == 1 )); then
+            if ((retry_count == 1)); then
                 ui_log info "This is normal - public DNS can take 1-2 min to update. Setup is waiting, not stuck."
             fi
             ui_log info "Waiting ${STAGE2_DNS_PROPAGATION_SLEEP_SECONDS}s for DNS propagation (attempt ${retry_count}/${STAGE2_DNS_PROPAGATION_MAX_ATTEMPTS})..."
@@ -739,7 +746,7 @@ _stage2_collect_domain() {
         fi
         case "$action" in
             "Retry DNS check") continue ;;
-            "Re-enter credentials"|"Change provider"|"Change domain")
+            "Re-enter credentials" | "Change provider" | "Change domain")
                 # "Change provider" re-runs the picker; "Change domain" re-collects
                 # the hostname (e.g. a DuckDNS user who typed a non-duckdns.org
                 # domain, which the verify rejects — or a static-IP user who typo'd
@@ -758,11 +765,12 @@ _stage2_collect_domain() {
                         "Your domain or hostname (e.g. media.yourdomain.com)" \
                         "${_WIZ_DOMAIN:-}" \
                         validate_domain_name \
-                        "Go back"); _newdom_rc=$?
-                    if (( _newdom_rc == 130 )); then
+                        "Go back")
+                    _newdom_rc=$?
+                    if ((_newdom_rc == 130)); then
                         return 130
-                    elif (( _newdom_rc != 0 )); then
-                        continue   # backed out of the change -> back to the retry menu
+                    elif ((_newdom_rc != 0)); then
+                        continue # backed out of the change -> back to the retry menu
                     fi
                     _WIZ_DOMAIN="$_newdom"
                     # A static-IP / self-managed-DNS user has no creds to re-verify;
@@ -808,13 +816,15 @@ _stage2_escapable_input() {
     # escape menu (an empty submission there is a deliberate "get me out").
     if ! _stage2_is_interactive || [[ "${UI_DEMO:-0}" == "1" ]]; then
         local v rc
-        v=$(ui_input_validated "$prompt" "$def" "$validator"); rc=$?
-        (( rc == 0 )) && printf '%s' "$(_stage2_trim_ws "$v")"
-        return $rc
+        v=$(ui_input_validated "$prompt" "$def" "$validator")
+        rc=$?
+        ((rc == 0)) && printf '%s' "$(_stage2_trim_ws "$v")"
+        return "$rc"
     fi
     local val rejects=0
     while true; do
-        val=$(ui_input "$prompt" "$def"); (( $? == 130 )) && return 130
+        val=$(ui_input "$prompt" "$def")
+        (($? == 130)) && return 130
         # Trim first so a stray leading/trailing space from a paste is auto-fixed
         # (a trailing space silently fails auth on every provider) rather than
         # rejected — the validator still catches internal spaces and empties.
@@ -831,9 +841,9 @@ _stage2_escapable_input() {
         fi
         # Validator rejected (it warned). After a few tries — a recalled or
         # hand-edited value that can't pass — offer the escape and drop the bad
-        # default, so the loop is never a Ctrl-C-only trap (finding 5).
+        # default, so the loop is never a Ctrl-C-only trap.
         rejects=$((rejects + 1))
-        if (( rejects >= 3 )); then
+        if ((rejects >= 3)); then
             [[ "$(ui_choose "That value still isn't valid — what would you like to do?" "Try again" "$skip_label")" == "$skip_label" ]] && return 2
             rejects=0
             def=""
@@ -880,7 +890,7 @@ _stage2_offer_ddns() {
             fi
             return 1
         fi
-        pick_mode="pick"   # the dynamic-IP path always chooses a provider
+        pick_mode="pick" # the dynamic-IP path always chooses a provider
     fi
     _WIZ_USES_DDNS="true"
 
@@ -940,10 +950,11 @@ _stage2_offer_ddns() {
         validator="${spec#*:}"
         def=""
         [[ "$carry" == "true" ]] && def="${_prev[$name]:-}"
-        val=$(_stage2_escapable_input "$(_stage2_ddns_field_prompt "$_WIZ_DDNS_PROVIDER" "$name")" "$def" "$validator" "Skip DDNS for now"); rc=$?
-        if (( rc == 130 )); then
-            return 130   # Ctrl-C: let the pending SIGINT trap abort cleanly
-        elif (( rc != 0 )); then
+        val=$(_stage2_escapable_input "$(_stage2_ddns_field_prompt "$_WIZ_DDNS_PROVIDER" "$name")" "$def" "$validator" "Skip DDNS for now")
+        rc=$?
+        if ((rc == 130)); then
+            return 130 # Ctrl-C: let the pending SIGINT trap abort cleanly
+        elif ((rc != 0)); then
             # The user backed out of DDNS mid-collection. Neutralize all state
             # (same as the static-IP / picker skip) so a re-run doesn't resurrect it.
             _WIZ_USES_DDNS="false"
@@ -1058,14 +1069,14 @@ _stage2_port_gate() {
         for attempt in $(seq 1 "$STAGE2_PORT_PROBE_MAX_ATTEMPTS"); do
             port_state=$(stage2_check_http_ports)
             if [[ "$port_state" == "ok" ]]; then
-                if (( attempt == 1 )); then
+                if ((attempt == 1)); then
                     ui_log ok "TCP ports 80 and 443 appear reachable from this host."
                 else
                     ui_log ok "TCP ports 80 and 443 appear reachable (took ${attempt} attempts - first was likely transient)."
                 fi
                 return 0
             fi
-            if (( attempt < STAGE2_PORT_PROBE_MAX_ATTEMPTS )); then
+            if ((attempt < STAGE2_PORT_PROBE_MAX_ATTEMPTS)); then
                 ui_log info "Port probe ${attempt}/${STAGE2_PORT_PROBE_MAX_ATTEMPTS} returned ${port_state} - retrying in ${STAGE2_PORT_PROBE_RETRY_SLEEP_SECONDS}s..."
                 sleep "$STAGE2_PORT_PROBE_RETRY_SLEEP_SECONDS"
             fi
@@ -1206,7 +1217,7 @@ print(ipaddress.IPv4Network(sys.argv[1], strict=False))
             WG_INIT_ALLOWED_IPS) _WIZ_WG_INIT_ALLOWED_IPS="$raw" ;;
             WG_PER_CLIENT_FIREWALL) _WIZ_WG_PER_CLIENT_FIREWALL="$raw" ;;
         esac
-    done <<< "$env_lines"
+    done <<<"$env_lines"
 
     ui_log info "WireGuard admin login: ${_WIZ_ADMIN_USER} / your admin password (the same one you set earlier)."
     case "$tier" in
@@ -1264,7 +1275,8 @@ _stage2_collect_jellyfin_remote_bitrate() {
     # wizard under `set -e`, exactly as before. Capture first, then split with a
     # here-string: `mapfile < <(python3 ...)` would swallow the python exit status
     # AND could leave an empty array for the `[-1]` deref below (unbound abort).
-    _cap_out=$(UPLOAD="$upload_mbps" python3 <<'PY'
+    _cap_out=$(
+        UPLOAD="$upload_mbps" python3 <<'PY'
 import math, os, sys
 
 def compute_cell(upload, viewers):
@@ -1310,8 +1322,8 @@ else:
     default_cell = default_cell.split()[0]
 print(default_cell)
 PY
-)
-    mapfile -t _cap_rows <<< "$_cap_out"
+    )
+    mapfile -t _cap_rows <<<"$_cap_out"
     suggested_default="${_cap_rows[-1]}"
     unset '_cap_rows[-1]'
 
@@ -1355,8 +1367,8 @@ _stage2_confirm() {
         "$(ui_kv 'Domain' "$_WIZ_DOMAIN")" \
         "$(ui_kv 'DDNS' "$ddns_summary")" \
         "$(ui_kv 'HTTPS' "jellyfin.${_WIZ_DOMAIN}, seerr.${_WIZ_DOMAIN}")" \
-        "$(ui_kv 'WireGuard' "$( [[ "${_WIZ_WG_ENABLED:-true}" == "true" ]] && echo "${_WIZ_WG_HOST}:${_WIZ_WG_PORT}" || echo 'disabled' )")" \
-        "$(ui_kv 'Remote streaming cap' "$( [[ "${_WIZ_JELLYFIN_BITRATE:-0}" == "0" ]] && echo 'unlimited' || echo "${_WIZ_JELLYFIN_BITRATE} Mbps/viewer" )")" \
+        "$(ui_kv 'WireGuard' "$([[ "${_WIZ_WG_ENABLED:-true}" == "true" ]] && echo "${_WIZ_WG_HOST}:${_WIZ_WG_PORT}" || echo 'disabled')")" \
+        "$(ui_kv 'Remote streaming cap' "$([[ "${_WIZ_JELLYFIN_BITRATE:-0}" == "0" ]] && echo 'unlimited' || echo "${_WIZ_JELLYFIN_BITRATE} Mbps/viewer")")" \
         "$(ui_kv 'Access' 'LAN remains available if HTTPS fails')"
 
     _STAGE2_CONFIRM_ACTION=$(ui_choose "Proceed with remote access installation?" \
@@ -1400,7 +1412,7 @@ _stage2_install() {
     # (e.g. wizard not run interactively, or user kept the default 0).
     if [[ -n "${_WIZ_JELLYFIN_BITRATE:-}" ]]; then
         sed -i "s/^  remote_bitrate_limit:.*/  remote_bitrate_limit: ${_WIZ_JELLYFIN_BITRATE}    # Mbps per remote viewer (0 = unlimited). Set by Stage 2 wizard./" "$SCRIPT_DIR/config.yml"
-        log_info "Jellyfin remote streaming cap: $( [[ "$_WIZ_JELLYFIN_BITRATE" == "0" ]] && echo unlimited || echo "${_WIZ_JELLYFIN_BITRATE} Mbps per viewer" )"
+        log_info "Jellyfin remote streaming cap: $([[ "$_WIZ_JELLYFIN_BITRATE" == "0" ]] && echo unlimited || echo "${_WIZ_JELLYFIN_BITRATE} Mbps per viewer")"
     fi
 
     echo ""
@@ -1445,7 +1457,7 @@ _stage2_install() {
     else
         (cd "$SCRIPT_DIR" && MEDIASTACK_NPM_ATTEMPT_REMOTE=$attempt_remote ./scripts/configure.sh --only npm,ddns-updater,wireguard) || remote_config_rc=$?
     fi
-    if (( remote_config_rc != 0 )); then
+    if ((remote_config_rc != 0)); then
         log_warn "Remote-access auto-configuration returned a warning or error; checking HTTPS postconditions anyway."
     fi
 

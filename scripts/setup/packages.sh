@@ -45,9 +45,9 @@ configure_docker_apt_repo() {
     sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
     echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
 }
 
 refresh_docker_group_membership() {
@@ -89,7 +89,7 @@ install_docker() {
     # credential cache in the foreground here (see scripts/lib/ui.sh).
     sudo -v 2>/dev/null || true
     ui_spin "Adding Docker apt repository..." configure_docker_apt_repo
-    ui_spin "Updating package lists..."       sudo apt-get update -qq
+    ui_spin "Updating package lists..." sudo apt-get update -qq
 
     if $docker_present; then
         ui_spin "Installing Docker Compose plugin..." \

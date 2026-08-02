@@ -12,7 +12,7 @@
 # MS_TEST_IMAGE_OVERRIDES, which patches the compose for the whole DinD and would
 # poison every other scenario. It runs TWICE with --reset-between (fast,
 # --no-preload) so the 2nd run also guards that dind_reset re-applies the
-# override after landing a pristine compose (#286/#288).
+# override after landing a pristine compose.
 #
 # Usage:
 #   ./tests/battery.sh          # run the whole battery
@@ -31,22 +31,36 @@ LIST_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --list) LIST_ONLY=1 ;;
-        -h|--help) sed -n '2,/^$/p' "$0"; exit 0 ;;
-        *) echo "unknown flag: $arg" >&2; exit 2 ;;
+        -h | --help)
+            sed -n '2,/^$/p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "unknown flag: $arg" >&2
+            exit 2
+            ;;
     esac
 done
 
 if [[ -t 1 ]]; then
-    RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; BLUE=$'\033[0;34m'; BOLD=$'\033[1m'; NC=$'\033[0m'
+    RED=$'\033[0;31m'
+    GREEN=$'\033[0;32m'
+    BLUE=$'\033[0;34m'
+    BOLD=$'\033[1m'
+    NC=$'\033[0m'
 else
-    RED=''; GREEN=''; BLUE=''; BOLD=''; NC=''
+    RED=''
+    GREEN=''
+    BLUE=''
+    BOLD=''
+    NC=''
 fi
 
 # Every scenario present in this tree (adapts per branch — e.g. main has no
 # api-matrix). Nothing is hand-listed, so a new scenario is picked up
 # automatically and can never be silently skipped.
 mapfile -t ALL_SCENARIOS < <(cd tests/scenarios && ls -1 ./*.sh 2>/dev/null | sed -e 's#^\./##' -e 's#\.sh$##')
-if (( ${#ALL_SCENARIOS[@]} == 0 )); then
+if ((${#ALL_SCENARIOS[@]} == 0)); then
     echo "battery: no scenarios found under tests/scenarios/" >&2
     exit 2
 fi
@@ -65,8 +79,8 @@ done
 
 echo -e "${BOLD}battery: ${#ALL_SCENARIOS[@]} scenarios${NC}"
 echo -e "  main (one DinD, --reset-between, ${#MAIN[@]} scenarios): ${MAIN[*]}"
-(( HAVE_IMAGE_OVERRIDE )) && echo -e "  isolated: image-override ×2 (own DinD, --reset-between, MS_TEST_IMAGE_OVERRIDES)"
-if (( LIST_ONLY )); then
+((HAVE_IMAGE_OVERRIDE)) && echo -e "  isolated: image-override ×2 (own DinD, --reset-between, MS_TEST_IMAGE_OVERRIDES)"
+if ((LIST_ONLY)); then
     echo -e "${GREEN}battery: --list only; nothing run.${NC}"
     exit 0
 fi
@@ -84,12 +98,12 @@ else
     FAILED=1
 fi
 
-if (( HAVE_IMAGE_OVERRIDE )); then
+if ((HAVE_IMAGE_OVERRIDE)); then
     echo ""
     echo -e "${BLUE}${BOLD}━━ battery: image-override (isolated DinD, ×2 --reset-between) ━━${NC}"
     # Run image-override TWICE with --reset-between: the 2nd run happens AFTER
     # dind_reset lands a pristine compose, so it passes only if dind_reset
-    # re-applied the override (regression guard for the #286 fix, per #288).
+    # re-applied the override (the regression this pair of runs guards).
     # Without that re-apply the post-reset compose has the un-overridden image
     # and run #2's assert_eq fails → run.sh exits non-zero → this block FAILs.
     if MS_TEST_IMAGE_OVERRIDES="wireguard=example.invalid/wg:0" bash tests/run.sh --no-preload --reset-between image-override image-override; then
@@ -105,7 +119,7 @@ echo ""
 echo -e "${BOLD}════════════════ battery summary ════════════════${NC}"
 for r in "${RESULTS[@]}"; do echo -e "  $r"; done
 echo -e "${BOLD}══════════════════════════════════════════════════${NC}"
-if (( FAILED )); then
+if ((FAILED)); then
     echo -e "${RED}${BOLD}battery: FAILED${NC}"
     exit 1
 fi

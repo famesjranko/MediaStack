@@ -69,7 +69,10 @@ run_scenario() {
             ok=false
         fi
     done
-    $ok || { dind_exec "docker compose ps"; return 1; }
+    $ok || {
+        dind_exec "docker compose ps"
+        return 1
+    }
 
     # ------------------------------------------------------------------
     # 2. Unchecked: infra runs, but no HTTPS publication.

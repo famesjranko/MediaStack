@@ -63,7 +63,7 @@ dind_up() {
         "${dockerd_args[@]}" >/dev/null
 
     local waited=0
-    while (( waited < DIND_TIMEOUT )); do
+    while ((waited < DIND_TIMEOUT)); do
         if docker exec "$DIND_NAME" docker info >/dev/null 2>&1; then
             echo -e "${BLUE}[dind]${NC} dockerd ready (${waited}s)"
             # Pre-create the workdir so `dind_exec` works from this point on,
@@ -73,7 +73,8 @@ dind_up() {
             docker exec "$DIND_NAME" mkdir -p /root/MediaStack >/dev/null 2>&1
             return 0
         fi
-        sleep 1; waited=$((waited + 1))
+        sleep 1
+        waited=$((waited + 1))
     done
     echo -e "${RED}[dind]${NC} dockerd did not come up in ${DIND_TIMEOUT}s"
     docker logs "$DIND_NAME" 2>&1 | tail -30
@@ -234,7 +235,10 @@ ms_test_image() {
         seen+="$osvc "
         [[ "$osvc" == "$svc" ]] && match="${pair#*=}"
     done
-    [[ -n "$match" ]] && { echo "$match"; return 0; }
+    [[ -n "$match" ]] && {
+        echo "$match"
+        return 0
+    }
     echo "$default"
 }
 
@@ -373,7 +377,7 @@ dind_logs() {
 # Teardown. KEEP_ALWAYS=1 keeps regardless of pass/fail (for diagnostic runs).
 # KEEP_ON_FAIL=1 keeps only when at least one FAIL was recorded.
 dind_down() {
-    if [[ "${KEEP_ALWAYS:-0}" == "1" || ( "${KEEP_ON_FAIL:-0}" == "1" && "${FAIL_COUNT:-0}" -gt 0 ) ]]; then
+    if [[ "${KEEP_ALWAYS:-0}" == "1" || ("${KEEP_ON_FAIL:-0}" == "1" && "${FAIL_COUNT:-0}" -gt 0) ]]; then
         echo ""
         echo -e "${YELLOW}[dind]${NC} --keep + failures → leaving $DIND_NAME running"
         echo -e "${YELLOW}[dind]${NC} inspect with: docker exec -it $DIND_NAME sh"

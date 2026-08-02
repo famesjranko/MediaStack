@@ -30,12 +30,12 @@ if [[ "$(stat -f -c '%T' /sys/fs/cgroup 2>/dev/null || echo '')" == "cgroup2fs" 
     for _ in $(seq 1 50); do
         # Move every process in the root cgroup into /init so the root can
         # switch to domain-invalid mode cleanly.
-        xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || :
+        xargs -rn1 </sys/fs/cgroup/cgroup.procs >/sys/fs/cgroup/init/cgroup.procs 2>/dev/null || :
         # Enable controllers in subtree_control so child cgroups (dockerd's
         # containers) can use cpu/memory/io/pids etc.
         if sed -e 's/ / +/g' -e 's/^/+/' \
-            < /sys/fs/cgroup/cgroup.controllers \
-            > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null; then
+            </sys/fs/cgroup/cgroup.controllers \
+            >/sys/fs/cgroup/cgroup.subtree_control 2>/dev/null; then
             ok=1
             break
         fi
@@ -43,7 +43,7 @@ if [[ "$(stat -f -c '%T' /sys/fs/cgroup 2>/dev/null || echo '')" == "cgroup2fs" 
     done
     if [[ -z "$ok" ]] || ! grep -qw memory /sys/fs/cgroup/cgroup.subtree_control; then
         echo "dind-entrypoint: failed to delegate cgroup v2 controllers" \
-             "(subtree_control=[$(cat /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null)])" >&2
+            "(subtree_control=[$(cat /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null)])" >&2
         exit 1
     fi
 fi

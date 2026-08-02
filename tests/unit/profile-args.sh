@@ -31,7 +31,7 @@ set +u
 mkenv() {
     local f
     f=$(mktemp "$TMP_ROOT/env.XXXXXX")
-    printf '%s\n' "$@" > "$f"
+    printf '%s\n' "$@" >"$f"
     printf '%s' "$f"
 }
 
@@ -72,12 +72,12 @@ f=$(mkenv "WG_INIT_PASSWORD=''")
 assert_eq "--profile autoheal" "$(profiles_for "$f")" "empty WG_INIT_PASSWORD leaves remote inactive"
 
 # 8-11. WG password present in every quoting style -> remote. Case 9 is the
-# P0 bug repro: the old stack.sh grep matched ONLY single-quoted values, so a
+# Bug repro: the old stack.sh grep matched ONLY single-quoted values, so a
 # double-quoted WG password silently dropped --profile remote.
 f=$(mkenv "WG_INIT_PASSWORD='secret'")
 assert_eq "--profile autoheal --profile remote" "$(profiles_for "$f")" "single-quoted WG password adds remote"
 f=$(mkenv 'WG_INIT_PASSWORD="secret"')
-assert_eq "--profile autoheal --profile remote" "$(profiles_for "$f")" "double-quoted WG password adds remote (P0 grep-drift repro)"
+assert_eq "--profile autoheal --profile remote" "$(profiles_for "$f")" "double-quoted WG password adds remote (grep-drift repro)"
 f=$(mkenv "WG_INIT_PASSWORD=plain")
 assert_eq "--profile autoheal --profile remote" "$(profiles_for "$f")" "unquoted WG password adds remote"
 f=$(mkenv "WG_INIT_PASSWORD='p@ss=w0rd=x'")
@@ -101,10 +101,14 @@ assert_eq "--profile autoheal" "$(profiles_for "$f")" "non-exact key names do no
 # set -e safety: the installer sources and calls this under `set -euo pipefail`.
 # Force a full re-source (unset the include guard) inside a strict subshell so
 # both the file-scope guard line and the function run under set -e.
-strict_out=$( set -euo pipefail
-              unset _MS_PROFILES_SH_LOADED
-              source "$REPO_ROOT/scripts/lib/profiles.sh"
-              a=(); _build_profile_args a "$allon"; echo "${a[*]}" )
+strict_out=$(
+    set -euo pipefail
+    unset _MS_PROFILES_SH_LOADED
+    source "$REPO_ROOT/scripts/lib/profiles.sh"
+    a=()
+    _build_profile_args a "$allon"
+    echo "${a[*]}"
+)
 strict_rc=$?
 assert_eq "0" "$strict_rc" "builder runs cleanly under set -euo pipefail (rc 0)"
 assert_eq "--profile subtitles --profile autoheal --profile proxy --profile remote" "$strict_out" "builder output is correct under strict mode"

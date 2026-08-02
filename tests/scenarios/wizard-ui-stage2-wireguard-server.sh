@@ -31,11 +31,11 @@ run_scenario() {
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "Access level: Server" "wizard-ui stage2 wg server: server access-level message shown"
-    assert_eq "server"  "$(env_get WG_ACCESS_TIER)"  "wizard-ui stage2 wg server: WG_ACCESS_TIER=server"
+    assert_eq "server" "$(env_get WG_ACCESS_TIER)" "wizard-ui stage2 wg server: WG_ACCESS_TIER=server"
     assert_eq "skipped" "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 wg server: Skip Stage 2 -> REMOTE_WEB_STATE=skipped"
-    # F2 regression guard: configuring WireGuard then choosing "Skip remote access"
+    # Regression guard: configuring WireGuard then choosing "Skip remote access"
     # at the confirm must NOT leave WG_INIT_PASSWORD set (which would silently
     # activate the wg-easy profile). The password is committed only on the install
     # path, so a skip leaves it empty.
-    assert_eq "" "$(env_get WG_INIT_PASSWORD)" "wizard-ui stage2 wg server: skip leaves WG init password empty (F2)"
+    assert_eq "" "$(env_get WG_INIT_PASSWORD)" "wizard-ui stage2 wg server: skip leaves WG init password empty"
 }

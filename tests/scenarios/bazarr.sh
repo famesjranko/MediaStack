@@ -9,7 +9,7 @@ source tests/assertions/bazarr.sh
 
 bazarr_wait_path() {
     local path="$1" label="$2" timeout="${3:-120}" waited=0
-    while (( waited < timeout )); do
+    while ((waited < timeout)); do
         if dind_exec "test -e $path"; then
             pass "$label"
             return 0
@@ -62,7 +62,10 @@ run_scenario() {
             ok=false
         fi
     done
-    $ok || { dind_exec "docker compose ps"; return 1; }
+    $ok || {
+        dind_exec "docker compose ps"
+        return 1
+    }
 
     bazarr_wait_path "config/bazarr/config/config.yaml" "bazarr: config.yaml generated" 120 || return 1
     bazarr_wait_path "config/bazarr/db/bazarr.db" "bazarr: database generated" 120 || return 1

@@ -82,25 +82,25 @@ watchdog_sentinel_ok() {
     probe_timeout="${STORAGE_SENTINEL_PROBE_TIMEOUT:-5}"
     probe_interval="${STORAGE_SENTINEL_PROBE_INTERVAL:-0.2}"
     max_abandoned="${STORAGE_SENTINEL_MAX_ABANDONED:-3}"
-    if [[ ! "$probe_timeout" =~ ^[0-9]+$ ]] || (( probe_timeout < 1 )); then
+    if [[ ! "$probe_timeout" =~ ^[0-9]+$ ]] || ((probe_timeout < 1)); then
         probe_timeout=5
     fi
-    if [[ ! "$max_abandoned" =~ ^[0-9]+$ ]] || (( max_abandoned < 1 )); then
+    if [[ ! "$max_abandoned" =~ ^[0-9]+$ ]] || ((max_abandoned < 1)); then
         max_abandoned=3
     fi
     case "$probe_interval" in
-        ''|.|*[!0-9.]*|*.*.*) probe_interval=0.2 ;;
+        '' | . | *[!0-9.]* | *.*.*) probe_interval=0.2 ;;
     esac
-    if (( ${#WATCHDOG_ABANDONED_SENTINEL_PIDS[@]} >= max_abandoned )); then
+    if ((${#WATCHDOG_ABANDONED_SENTINEL_PIDS[@]} >= max_abandoned)); then
         log "sentinel probe backlog reached ${max_abandoned}; treating NAS storage as unavailable"
         return 1
     fi
 
-    ( watchdog_sentinel_probe "$sentinel" ) &
+    (watchdog_sentinel_probe "$sentinel") &
     pid=$!
-    deadline=$(( $(date +%s) + probe_timeout ))
+    deadline=$(($(date +%s) + probe_timeout))
     while watchdog_job_running "$pid"; do
-        if (( $(date +%s) >= deadline )); then
+        if (($(date +%s) >= deadline)); then
             kill "$pid" >/dev/null 2>&1 || true
             WATCHDOG_ABANDONED_SENTINEL_PIDS+=("$pid")
             log "sentinel probe timed out after ${probe_timeout}s; treating NAS storage as unavailable"
@@ -154,7 +154,7 @@ stop_managed_services() {
     done
 
     if $stopped || [[ ! -f "$STATE_FILE" ]]; then
-        date -Is > "$STATE_FILE"
+        date -Is >"$STATE_FILE"
     fi
 }
 
@@ -202,9 +202,9 @@ watchdog_main() {
 
         if watchdog_storage_nas_ok; then
             fail_since=0
-            (( ok_since == 0 )) && ok_since=$now
-            ok_for=$(( now - ok_since ))
-            if (( ok_for >= OK_STABLE )); then
+            ((ok_since == 0)) && ok_since=$now
+            ok_for=$((now - ok_since))
+            if ((ok_for >= OK_STABLE)); then
                 if $stopped_for_failure; then
                     start_managed_services
                     stopped_for_failure=false
@@ -220,7 +220,7 @@ watchdog_main() {
                     # and the old all-or-nothing guard skipped recovery forever
                     # whenever even one service was up. start_managed_services is
                     # idempotent — it starts only the members that are not running.
-                    if (( $(protected_running_count) < $(managed_service_count) )); then
+                    if (($(protected_running_count) < $(managed_service_count))); then
                         log "reconciling NAS-dependent services after boot; starting any that are not running"
                         start_managed_services
                     fi
@@ -231,11 +231,11 @@ watchdog_main() {
         else
             ok_since=0
             boot_recovery_done=false
-            (( fail_since == 0 )) && fail_since=$now
-            bad_for=$(( now - fail_since ))
+            ((fail_since == 0)) && fail_since=$now
+            bad_for=$((now - fail_since))
             log "NAS check failed (${bad_for}s/${FAIL_GRACE}s)"
 
-            if (( bad_for >= FAIL_GRACE )); then
+            if ((bad_for >= FAIL_GRACE)); then
                 if ! $stopped_for_failure; then
                     stop_managed_services
                     stopped_for_failure=true

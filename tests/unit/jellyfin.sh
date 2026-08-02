@@ -156,7 +156,7 @@ case " ${OK_MESSAGES[*]:-} " in
 esac
 
 SCRIPT_DIR="$TMP_DIR"
-printf 'JELLYFIN_PUBLISHED_URL=http://192.168.1.50:8096\n' > "$TMP_DIR/.env"
+printf 'JELLYFIN_PUBLISHED_URL=http://192.168.1.50:8096\n' >"$TMP_DIR/.env"
 
 reset_logs
 MOCK_NETWORK_JSON='{"AutoDiscovery":true,"KnownProxies":["npm","192.168.1.10"],"PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096"]}'
@@ -168,7 +168,7 @@ cleaned_proxies=$(echo "$MOCK_POST_BODY" | python3 -c 'import json,sys; print("|
 assert_eq "192.168.1.10" "$cleaned_proxies" "Jellyfin networking cleanup removes managed proxy entries and preserves user proxies"
 
 reset_logs
-printf 'JELLYFIN_PUBLISHED_URL=https://jellyfin.fresh.test\n' > "$TMP_DIR/.env"
+printf 'JELLYFIN_PUBLISHED_URL=https://jellyfin.fresh.test\n' >"$TMP_DIR/.env"
 MOCK_NETWORK_JSON='{"AutoDiscovery":true,"KnownProxies":["172.28.0.10","192.168.1.10"],"PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096","external=https://jellyfin.fresh.test"]}'
 REMOTE_WEB_STATE=ready DOMAIN=fresh.test HOST_ADDRESS=192.168.1.50 MEDIASTACK_NPM_IP=172.29.0.10 \
     configure_jellyfin_networking "http://localhost:8096" "token"

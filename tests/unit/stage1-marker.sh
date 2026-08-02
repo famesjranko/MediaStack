@@ -63,15 +63,16 @@ log_skip() { SKIP_CAPTURE+="$*"$'\n'; }
 WIZARD_RAN_INSTALL=false
 STAGE_1_COMPLETE=1
 EXISTING_INSTALL_DETECTED=false
-run_stage1; rc=$?
+run_stage1
+rc=$?
 assert_eq "0" "$rc" "stage1-marker: run_stage1 skips when marker is set"
 assert_contains "$SKIP_CAPTURE" "Stage 1 already complete" "stage1-marker: skip message"
 
-# BL-03: skip path must mark WIZARD_RAN_INSTALL=true so setup.sh::main()'s
+# Skip path must mark WIZARD_RAN_INSTALL=true so setup.sh::main()'s
 # late install block does not tear down the running stack on a benign
 # './setup.sh' re-run.
-assert_eq "true" "$WIZARD_RAN_INSTALL" "stage1-marker (BL-03): skip path sets WIZARD_RAN_INSTALL=true"
-assert_contains "$SKIP_CAPTURE" "rebuild from scratch" "stage1-marker (BL-03): skip path documents rebuild flow"
+assert_eq "true" "$WIZARD_RAN_INSTALL" "stage1-marker: skip path sets WIZARD_RAN_INSTALL=true"
+assert_contains "$SKIP_CAPTURE" "rebuild from scratch" "stage1-marker: skip path documents rebuild flow"
 
 # Interrupted Stage 1 must not skip solely because earlier preflight detected
 # existing container/config evidence. The completion marker is the only Stage 1
@@ -95,8 +96,12 @@ _stage1_collect_image_channel() { :; }
 _stage1_collect_qbit() { :; }
 _stage1_collect_security() { :; }
 _stage1_confirm() { _STAGE1_CONFIRM_ACTION=Install; }
-_stage1_install() { INSTALL_CALLED=true; WIZARD_RAN_INSTALL=true; }
-run_stage1; rc=$?
+_stage1_install() {
+    INSTALL_CALLED=true
+    WIZARD_RAN_INSTALL=true
+}
+run_stage1
+rc=$?
 assert_eq "0" "$rc" "stage1-marker: existing-install evidence with empty marker runs Stage 1"
 assert_eq "true" "$INSTALL_CALLED" "stage1-marker: existing-install flag alone does not skip Stage 1"
 assert_eq "" "$SKIP_CAPTURE" "stage1-marker: existing-install flag alone does not emit skip message"
@@ -118,13 +123,19 @@ write_env
 beszel_line=$(grep '^BESZEL_AGENT_KEY=' "$TMP_DIR_BSZL/.env")
 case "$beszel_line" in
     "BESZEL_AGENT_KEY='ssh-ed25519 AAAAC3"*"beszel-agent@host'")
-        pass "stage1-marker (BESZEL): multi-word ed25519 key written as single-quoted literal" ;;
+        pass "stage1-marker (BESZEL): multi-word ed25519 key written as single-quoted literal"
+        ;;
     *)
-        fail "stage1-marker (BESZEL): multi-word ed25519 key written as single-quoted literal" "got: $beszel_line" ;;
+        fail "stage1-marker (BESZEL): multi-word ed25519 key written as single-quoted literal" "got: $beszel_line"
+        ;;
 esac
 
 # Production failure-mode assertion: sourcing .env under `set -a` must succeed.
-( set -a; source "$TMP_DIR_BSZL/.env"; set +a ) 2>/dev/null
+(
+    set -a
+    source "$TMP_DIR_BSZL/.env"
+    set +a
+) 2>/dev/null
 src_rc=$?
 assert_eq "0" "$src_rc" "stage1-marker (BESZEL): set -a; source .env succeeds with multi-word key"
 

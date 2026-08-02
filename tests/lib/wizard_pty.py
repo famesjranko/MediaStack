@@ -9,6 +9,7 @@ before sending input, which keeps prompt tests deterministic and catches hangs.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import pty
@@ -19,7 +20,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-
 
 ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -56,7 +56,7 @@ def wait_for_pattern(
     timeout: float,
     raw_parts: list[str],
     optional: bool = False,
-) -> "str | None":
+) -> str | None:
     # An optional step models a prompt that only appears under some runtime conditions —
     # e.g. the Stage 3 "Reboot now?" prompt is shown only when a reboot is actually needed
     # (stage3_reboot_prompt_needed); when the NVIDIA driver loads + verifies live, Stage 3
@@ -90,8 +90,7 @@ def wait_for_pattern(
         return None
     plain = strip_ansi("".join(raw_parts))
     raise TimeoutError(
-        f"timed out waiting for pattern: {pattern!r}\n"
-        f"--- transcript tail ---\n{tail_lines(plain)}"
+        f"timed out waiting for pattern: {pattern!r}\n--- transcript tail ---\n{tail_lines(plain)}"
     )
 
 
@@ -103,10 +102,8 @@ def kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     try:
         proc.wait(timeout=2)
     except subprocess.TimeoutExpired:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
 
 
 def run(args: argparse.Namespace) -> int:
@@ -127,7 +124,7 @@ def run(args: argparse.Namespace) -> int:
 
     exit_code: int | None = None
     try:
-        for idx, step in enumerate(steps, start=1):
+        for step in steps:
             timeout = float(step.get("timeout", args.step_timeout))
             expect = step.get("expect")
             optional = bool(step.get("optional", False))
@@ -169,10 +166,8 @@ def run(args: argparse.Namespace) -> int:
         print(tail_lines(plain_text), file=sys.stderr)
         return 124
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.close(master_fd)
-        except OSError:
-            pass
 
     raw_text = "".join(raw_parts)
     plain_text = strip_ansi(raw_text)

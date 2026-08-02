@@ -12,25 +12,25 @@ scenario_begin "$CURRENT_SCENARIO"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-cat > "$TMP_DIR/previous.tsv" <<'EOF'
+cat >"$TMP_DIR/previous.tsv" <<'EOF'
 # MediaStack tested image digest record v1
 # Update only after the matching local DinD preflight has passed.
 service	image	digest	tested_at_utc	preflight
 jellyfin	jellyfin/jellyfin:latest	sha256:1111111111111111111111111111111111111111111111111111111111111111	2026-01-01T00:00:00Z	scenario:fresh-install
 EOF
 
-cat > "$TMP_DIR/current.tsv" <<'EOF'
+cat >"$TMP_DIR/current.tsv" <<'EOF'
 # MediaStack tested image digest record v1
 # Update only after the matching local DinD preflight has passed.
 service	image	digest	tested_at_utc	preflight
 jellyfin	jellyfin/jellyfin:latest	sha256:2222222222222222222222222222222222222222222222222222222222222222		scenario:fresh-install
 EOF
 
-cat > "$TMP_DIR/upgrades.md" <<'EOF'
+cat >"$TMP_DIR/upgrades.md" <<'EOF'
 <!-- upgrades-manifest:start -->
-| Service | Pin policy | API stability | Preflight | Touchpoint | ADR |
-|---|---|---|---|---|---|
-| jellyfin | latest | stable | scenario:fresh-install | test | ADR-24 |
+| Service | Pin policy | API stability | Preflight | Touchpoint |
+|---|---|---|---|---|
+| jellyfin | latest | stable | scenario:fresh-install | test |
 <!-- upgrades-manifest:end -->
 EOF
 
@@ -48,7 +48,7 @@ else
     fail "image-drift README badge block contains one generated badge" "expected=1"
 fi
 
-cat > "$TMP_DIR/README.md" <<'EOF'
+cat >"$TMP_DIR/README.md" <<'EOF'
 # Example
 
 <!-- stable-image-badges:start -->
@@ -131,45 +131,45 @@ assert_contains "$output" "--accept-current requires --current-file" "image-drif
 # Fixture: a baseline with DISTINCT old timestamps (so preservation is provable),
 # plus three candidate snapshots — a matched-set digest drift, an added service,
 # and a removed service. printf keeps the literal tabs honest.
-SHA_A="sha256:$(printf 'a%.0s' {1..64})"   # sonarr previous
-SHA_B="sha256:$(printf 'b%.0s' {1..64})"   # radarr previous
-SHA_C="sha256:$(printf 'c%.0s' {1..64})"   # sonarr current (drifted)
-SHA_D="sha256:$(printf 'd%.0s' {1..64})"   # radarr current (drifted)
-SHA_E="sha256:$(printf 'e%.0s' {1..64})"   # jackett (unchanged)
-SHA_G="sha256:$(printf 'g%.0s' {1..64})"   # homepage (added)
+SHA_A="sha256:$(printf 'a%.0s' {1..64})" # sonarr previous
+SHA_B="sha256:$(printf 'b%.0s' {1..64})" # radarr previous
+SHA_C="sha256:$(printf 'c%.0s' {1..64})" # sonarr current (drifted)
+SHA_D="sha256:$(printf 'd%.0s' {1..64})" # radarr current (drifted)
+SHA_E="sha256:$(printf 'e%.0s' {1..64})" # jackett (unchanged)
+SHA_G="sha256:$(printf 'g%.0s' {1..64})" # homepage (added)
 
 {
     printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n'
     printf 'sonarr\tlinuxserver/sonarr:latest\t%s\t2020-01-01T00:00:00Z\tscenario:fresh-install\n' "$SHA_A"
     printf 'radarr\tlinuxserver/radarr:latest\t%s\t2020-02-02T00:00:00Z\tscenario:fresh-install\n' "$SHA_B"
     printf 'jackett\tlinuxserver/jackett:latest\t%s\t2020-03-03T00:00:00Z\tscenario:fresh-install\n' "$SHA_E"
-} > "$TMP_DIR/sel-previous.tsv"
+} >"$TMP_DIR/sel-previous.tsv"
 
 {
     printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n'
     printf 'sonarr\tlinuxserver/sonarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_C"
     printf 'radarr\tlinuxserver/radarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_D"
     printf 'jackett\tlinuxserver/jackett:latest\t%s\t\tscenario:fresh-install\n' "$SHA_E"
-} > "$TMP_DIR/sel-matched.tsv"
+} >"$TMP_DIR/sel-matched.tsv"
 
 {
     cat "$TMP_DIR/sel-matched.tsv"
     printf 'homepage\tghcr.io/gethomepage/homepage:latest\t%s\t\tscenario:fresh-install\n' "$SHA_G"
-} > "$TMP_DIR/sel-added.tsv"
+} >"$TMP_DIR/sel-added.tsv"
 
 {
     printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n'
     printf 'sonarr\tlinuxserver/sonarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_C"
     printf 'radarr\tlinuxserver/radarr:latest\t%s\t\tscenario:fresh-install\n' "$SHA_D"
-} > "$TMP_DIR/sel-removed.tsv"
+} >"$TMP_DIR/sel-removed.tsv"
 
-cat > "$TMP_DIR/sel-upgrades.md" <<'EOF'
+cat >"$TMP_DIR/sel-upgrades.md" <<'EOF'
 <!-- upgrades-manifest:start -->
-| Service | Pin policy | API stability | Preflight | Touchpoint | ADR |
-|---|---|---|---|---|---|
-| sonarr | latest | stable | scenario:fresh-install | x | ADR-24 |
-| radarr | latest | stable | scenario:fresh-install | x | ADR-24 |
-| jackett | latest | stable | scenario:fresh-install | x | ADR-24 |
+| Service | Pin policy | API stability | Preflight | Touchpoint |
+|---|---|---|---|---|
+| sonarr | latest | stable | scenario:fresh-install | x |
+| radarr | latest | stable | scenario:fresh-install | x |
+| jackett | latest | stable | scenario:fresh-install | x |
 <!-- upgrades-manifest:end -->
 EOF
 
@@ -313,11 +313,12 @@ else
     pass "image-drift summary omits the badge regen step when nothing drifted"
 fi
 
-# #208: --record-install writes the local install-digest set, and read_policy tolerates
+# --record-install writes the local install-digest set, and read_policy tolerates
 # a digest-pin value (normalized to the 'pinned' token by the status formatters). Run
 # in-process with the docker readers monkeypatched - the real docker path is exercised
 # end-to-end by the DinD fresh-install scenario.
-rec_out=$(python3 - "$REPO_ROOT" "$TMP_DIR" <<'PY' 2>&1
+rec_out=$(
+    python3 - "$REPO_ROOT" "$TMP_DIR" <<'PY' 2>&1
 import sys, pathlib, importlib.util
 repo, tmp = sys.argv[1], pathlib.Path(sys.argv[2])
 spec = importlib.util.spec_from_file_location("idrift", f"{repo}/scripts/image-drift.py")
@@ -375,7 +376,7 @@ else
 fi
 
 # (b) A matching receipt (image, digest, scenario) unblocks the accept.
-printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tfresh-install\n' "$SHA_C" > "$gate_receipt"
+printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tfresh-install\n' "$SHA_C" >"$gate_receipt"
 output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-ok.tsv" \
     --preflight-receipt "$gate_receipt" \
@@ -385,7 +386,7 @@ assert_eq "0" "$rc" "image-drift accept gate passes with a matching receipt"
 assert_contains "$output" "Selectively accepted drifted services: sonarr" "image-drift accept gate writes the accepted row when vouched"
 
 # (c) A receipt for the right digest but the wrong scenario does not vouch.
-printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tsmoke\n' "$SHA_C" > "$gate_receipt"
+printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tsmoke\n' "$SHA_C" >"$gate_receipt"
 output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-x2.tsv" \
     --preflight-receipt "$gate_receipt" \
@@ -420,7 +421,7 @@ fi
 {
     printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tfresh-install\n' "$SHA_C"
     printf 'radarr\tlinuxserver/radarr:latest\t%s\tfresh-install\n' "$SHA_D"
-} > "$gate_receipt"
+} >"$gate_receipt"
 output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-ac-ok.tsv" \
     --preflight-receipt "$gate_receipt" \
@@ -431,19 +432,19 @@ assert_contains "$output" "Image drift accepted" "image-drift accept-current gat
 
 # (f) A non-scenario preflight tier (compose-only/manual) has no automated receipt,
 # so the gate warns but does not block.
-cat > "$TMP_DIR/nonscn-previous.tsv" <<EOF
+cat >"$TMP_DIR/nonscn-previous.tsv" <<EOF
 service	image	digest	tested_at_utc	preflight
 demo	example/demo:latest	$SHA_A	2020-01-01T00:00:00Z	compose-only
 EOF
-cat > "$TMP_DIR/nonscn-current.tsv" <<EOF
+cat >"$TMP_DIR/nonscn-current.tsv" <<EOF
 service	image	digest	tested_at_utc	preflight
 demo	example/demo:latest	$SHA_C		compose-only
 EOF
-cat > "$TMP_DIR/nonscn-upgrades.md" <<'EOF'
+cat >"$TMP_DIR/nonscn-upgrades.md" <<'EOF'
 <!-- upgrades-manifest:start -->
-| Service | Pin policy | API stability | Preflight | Touchpoint | ADR |
-|---|---|---|---|---|---|
-| demo | latest | stable | compose-only | x | ADR-24 |
+| Service | Pin policy | API stability | Preflight | Touchpoint |
+|---|---|---|---|---|
+| demo | latest | stable | compose-only | x |
 <!-- upgrades-manifest:end -->
 EOF
 output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
@@ -459,20 +460,20 @@ assert_contains "$output" "no automated" "image-drift accept gate warns that a n
 # manifest) is NOT a recognized non-scenario tier, so the gate blocks fail-closed
 # instead of warning it through — an unmanifested service cannot slip an untested
 # digest into the lock via --accept-current.
-cat > "$TMP_DIR/orphan-previous.tsv" <<EOF
+cat >"$TMP_DIR/orphan-previous.tsv" <<EOF
 service	image	digest	tested_at_utc	preflight
 sonarr	linuxserver/sonarr:latest	$SHA_A	2020-01-01T00:00:00Z	scenario:fresh-install
 EOF
-cat > "$TMP_DIR/orphan-current.tsv" <<EOF
+cat >"$TMP_DIR/orphan-current.tsv" <<EOF
 service	image	digest	tested_at_utc	preflight
 sonarr	linuxserver/sonarr:latest	$SHA_A	2020-01-01T00:00:00Z	scenario:fresh-install
 orphan	example/orphan:latest	$SHA_C
 EOF
-cat > "$TMP_DIR/orphan-upgrades.md" <<'EOF'
+cat >"$TMP_DIR/orphan-upgrades.md" <<'EOF'
 <!-- upgrades-manifest:start -->
-| Service | Pin policy | API stability | Preflight | Touchpoint | ADR |
-|---|---|---|---|---|---|
-| sonarr | latest | stable | scenario:fresh-install | x | ADR-24 |
+| Service | Pin policy | API stability | Preflight | Touchpoint |
+|---|---|---|---|---|
+| sonarr | latest | stable | scenario:fresh-install | x |
 <!-- upgrades-manifest:end -->
 EOF
 output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
@@ -492,7 +493,7 @@ fi
 # (h) With no previous baseline there is nothing to gate against; recording the
 # fresh baseline warns that the digests are unverified unless --no-verify-preflight
 # vouches for them by hand.
-printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n' > "$TMP_DIR/empty-previous.tsv"
+printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n' >"$TMP_DIR/empty-previous.tsv"
 output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
     --previous "$TMP_DIR/empty-previous.tsv" --upgrades "$TMP_DIR/orphan-upgrades.md" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/bootstrap.tsv" \

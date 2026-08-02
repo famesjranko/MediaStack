@@ -20,7 +20,7 @@ source "$_COMMON_TC_DIR/term_caps.sh"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;94m'   # bright blue: [INFO] is the highest-volume level, and 0;34 is unreadably dark on dark terminals
+BLUE='\033[0;94m' # bright blue: [INFO] is the highest-volume level, and 0;34 is unreadably dark on dark terminals
 CYAN='\033[0;36m'
 GRAY='\033[0;90m'
 BOLD='\033[1m'
@@ -44,7 +44,7 @@ _LOG_COUNTS_ERROR=0
 _log_emit() {
     local line="$1"
     if [[ -n "$_LOG_CAPTURE" ]]; then
-        echo -e "$line" >> "$_LOG_CAPTURE"
+        echo -e "$line" >>"$_LOG_CAPTURE"
     else
         # Write to stderr so log output stays visible when the caller is
         # inside a command substitution (e.g. validators run inside
@@ -58,11 +58,23 @@ _log_emit() {
 # when glyphs are unavailable (byte-identical to the historical output), or the
 # matching icon (•/✓/!/✗/→) when the terminal can render it — same vocabulary as
 # the wizard's ui_log, so a single run never mixes bracket and glyph "languages".
-log_info()  { _log_emit "${BLUE}$(_ui_status_token info)${NC} $1"; }
-log_ok()    { ((_LOG_COUNTS_OK++)) || true;    _log_emit "${GREEN}$(_ui_status_token ok)${NC} $1"; }
-log_warn()  { ((_LOG_COUNTS_WARN++)) || true;  _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"; }
-log_error() { ((_LOG_COUNTS_ERROR++)) || true; _log_emit "${RED}$(_ui_status_token error)${NC} $1"; }
-log_skip()  { ((_LOG_COUNTS_SKIP++)) || true;  _log_emit "${GRAY}$(_ui_status_token skip)${NC} $1"; }
+log_info() { _log_emit "${BLUE}$(_ui_status_token info)${NC} $1"; }
+log_ok() {
+    ((_LOG_COUNTS_OK++)) || true
+    _log_emit "${GREEN}$(_ui_status_token ok)${NC} $1"
+}
+log_warn() {
+    ((_LOG_COUNTS_WARN++)) || true
+    _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"
+}
+log_error() {
+    ((_LOG_COUNTS_ERROR++)) || true
+    _log_emit "${RED}$(_ui_status_token error)${NC} $1"
+}
+log_skip() {
+    ((_LOG_COUNTS_SKIP++)) || true
+    _log_emit "${GRAY}$(_ui_status_token skip)${NC} $1"
+}
 # Advisory drift notice (invariant: re-runs warn on drift, never auto-reconcile).
 # Renders identically to log_warn but does not bump _LOG_COUNTS_WARN, so a
 # drift notice on a healthy service never flips its configure-summary badge
@@ -84,9 +96,9 @@ log_capture_stop() {
 
 log_capture_summary() {
     local parts=()
-    [[ "$_LOG_COUNTS_OK" -gt 0 ]]    && parts+=("${_LOG_COUNTS_OK} ok")
-    [[ "$_LOG_COUNTS_SKIP" -gt 0 ]]  && parts+=("${_LOG_COUNTS_SKIP} skipped")
-    [[ "$_LOG_COUNTS_WARN" -gt 0 ]]  && parts+=("${_LOG_COUNTS_WARN} warnings")
+    [[ "$_LOG_COUNTS_OK" -gt 0 ]] && parts+=("${_LOG_COUNTS_OK} ok")
+    [[ "$_LOG_COUNTS_SKIP" -gt 0 ]] && parts+=("${_LOG_COUNTS_SKIP} skipped")
+    [[ "$_LOG_COUNTS_WARN" -gt 0 ]] && parts+=("${_LOG_COUNTS_WARN} warnings")
     [[ "$_LOG_COUNTS_ERROR" -gt 0 ]] && parts+=("${_LOG_COUNTS_ERROR} errors")
     local IFS=", "
     echo "${parts[*]:-done}"
@@ -172,21 +184,21 @@ PY
 
 # Adapters — each pins the mode + key/default so call sites stay unchanged.
 # Scalar/leaf read (auto-iterates a list value, e.g. bazarr languages).
-cfg_field()                { cfg_read value "$1"; }
+cfg_field() { cfg_read value "$1"; }
 # Indexer list as id:type pairs (type defaults to "general").
-cfg_indexers()             { cfg_read indexers ""; }
+cfg_indexers() { cfg_read indexers ""; }
 # quality_profile.<app>_qualities as a JSON array; empty + non-zero rc if absent.
-cfg_quality_ids()          { cfg_read json "quality_profile.${1}_qualities"; }
+cfg_quality_ids() { cfg_read json "quality_profile.${1}_qualities"; }
 # quality_definitions.<app> as a JSON object; {} when the section is absent.
-cfg_quality_definitions()  { cfg_read json "quality_definitions.$1" '{}'; }
+cfg_quality_definitions() { cfg_read json "quality_definitions.$1" '{}'; }
 # custom_formats (name→score) as a JSON object; {} when absent.
 cfg_custom_format_scores() { cfg_read json custom_formats '{}'; }
 # qBittorrent categories as name:path pairs.
-cfg_qbt_categories()       { cfg_read pairs qbittorrent.categories; }
+cfg_qbt_categories() { cfg_read pairs qbittorrent.categories; }
 # Bazarr languages, one per line; empty + rc 0 when the key is absent.
-cfg_bazarr_languages()     { cfg_read value bazarr.languages ""; }
+cfg_bazarr_languages() { cfg_read value bazarr.languages ""; }
 # Jellyfin libraries as name:type:path.
-cfg_jf_libraries()         { cfg_read jf_libraries ""; }
+cfg_jf_libraries() { cfg_read jf_libraries ""; }
 
 # =============================================================================
 # API key helpers
@@ -211,7 +223,10 @@ _api_request() {
     _args+=(-w "\n%{http_code}")
     local _out _code
     _out=$(curl "${_args[@]}" "$_url" 2>/dev/null) \
-        || { echo "$_caller $_url: connection failed" >&2; return 1; }
+        || {
+            echo "$_caller $_url: connection failed" >&2
+            return 1
+        }
     _code="${_out##*$'\n'}"
     _out="${_out%$'\n'*}"
     if [[ "$_code" =~ ^2 ]]; then
@@ -221,9 +236,9 @@ _api_request() {
         return 1
     fi
 }
-api_get()  { _api_request api_get  GET  "$1" "$2"; }
+api_get() { _api_request api_get GET "$1" "$2"; }
 api_post() { _api_request api_post POST "$1" "$2" "$3"; }
-api_put()  { _api_request api_put  PUT  "$1" "$2" "$3"; }
+api_put() { _api_request api_put PUT "$1" "$2" "$3"; }
 
 get_api_key() {
     [[ -f "$1" ]] && grep -oP '<ApiKey>\K[^<]+' "$1" 2>/dev/null || echo ""
@@ -376,7 +391,7 @@ _env_write_kv_warn() {
         invalid-quote)
             log_warn "Refusing to save ${key_name} to .env: value contains a single quote"
             ;;
-        read-error:*|write-error:*)
+        read-error:* | write-error:*)
             log_warn "Failed to save ${key_name} to .env (${status#*:})"
             ;;
         *)

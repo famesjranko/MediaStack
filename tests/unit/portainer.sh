@@ -40,7 +40,7 @@ docker() { return 0; }
 save_api_key() { SAVED_KEYS+=("$1=$2"); }
 
 reset_fixture() {
-    : > "$CURL_LOG"
+    : >"$CURL_LOG"
     OK_MESSAGES=()
     WARN_MESSAGES=()
     SKIP_MESSAGES=()
@@ -56,7 +56,7 @@ reset_fixture() {
 curl() {
     local arg all_args is_check=false is_auth=false is_token=false is_endpoints=false is_endpoint_create=false is_user_update=false
     all_args="$*"
-    printf '%s\n' "$*" >> "$CURL_LOG"
+    printf '%s\n' "$*" >>"$CURL_LOG"
     for arg in "$@"; do
         [[ "$arg" == *"/api/users/admin/check"* ]] && is_check=true
         [[ "$arg" == *"/api/auth"* ]] && is_auth=true

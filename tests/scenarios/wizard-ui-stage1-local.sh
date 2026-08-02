@@ -87,6 +87,6 @@ run_scenario() {
     # Visible-by-design proof — the typed value is shown in the prompt transcript.
     case "$transcript" in
         *MaskMe-Secret-Pw123*) pass "wizard-ui stage1 local: admin password shown (visible by design)" ;;
-        *)                     fail "wizard-ui stage1 local: admin password shown (visible by design)" "expected typed password visible in transcript" ;;
+        *) fail "wizard-ui stage1 local: admin password shown (visible by design)" "expected typed password visible in transcript" ;;
     esac
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/ui-color-leak.sh
 #
-# Regression for #7. The UI palette (scripts/lib/ui_render_fallback.sh) and the
+# Regression guard. The UI palette (scripts/lib/ui_render_fallback.sh) and the
 # configure-time log_* helpers (scripts/lib/common.sh) used to hardcode ANSI
 # colour with no gating, so anyone who piped the installer to `tee setup.log`,
 # redirected it for a bug report, or ran in a non-TTY captured escape-code soup
@@ -24,21 +24,22 @@ CURRENT_SCENARIO="ui-color-leak"
 scenario_begin "$CURRENT_SCENARIO"
 
 ESC=$'\033'
-UI="$REPO_ROOT/scripts/lib/ui.sh"          # sources ui_render_fallback.sh (-> term_caps.sh)
-COMMON="$REPO_ROOT/scripts/lib/common.sh"  # sources term_caps.sh
+UI="$REPO_ROOT/scripts/lib/ui.sh"         # sources ui_render_fallback.sh (-> term_caps.sh)
+COMMON="$REPO_ROOT/scripts/lib/common.sh" # sources term_caps.sh
 
 # Render a snippet with ui.sh + common.sh sourced, in a clean subprocess whose
 # stdout/stderr are the command-substitution pipe (i.e. NOT a TTY) — the exact
 # shape of `./setup.sh | tee setup.log`. Forcing vars are scrubbed unless the
 # caller re-sets them. ui_log / log_* both write to stderr, so capture 2>&1.
-_render() {  # $1 = extra env assignment (e.g. "UI_FORCE_COLOR=1" or ""); rest = snippet
-    local assign="$1"; shift
+_render() { # $1 = extra env assignment (e.g. "UI_FORCE_COLOR=1" or ""); rest = snippet
+    local assign="$1"
+    shift
     local -a env_args=(-u UI_FORCE_COLOR -u FORCE_COLOR -u NO_COLOR TERM=xterm)
     [[ -n "$assign" ]] && env_args+=("$assign")
     env "${env_args[@]}" bash -c "source '$UI'; source '$COMMON'; $*" 2>&1
 }
 
-assert_no_esc() {  # $1 = text, $2 = name
+assert_no_esc() { # $1 = text, $2 = name
     if [[ "$1" == *"$ESC"* ]]; then
         fail "$2" "ESC byte present in captured output"
     else

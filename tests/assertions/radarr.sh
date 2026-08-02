@@ -54,9 +54,9 @@ else:
     bad = [str(r.get('id')) for r in results if not r.get('isValid')]
     print('ok' if not bad else 'invalid:' + ','.join(bad))" 2>/dev/null)
     case "$radarr_dc_test" in
-        ok)     pass "step 4 Radarr: download client reachable (testall connects to qBittorrent)" ;;
-        empty)  fail "step 4 Radarr: download client test-connection" "testall returned no results" ;;
-        *)      fail "step 4 Radarr: download client test-connection" "$radarr_dc_test" ;;
+        ok) pass "step 4 Radarr: download client reachable (testall connects to qBittorrent)" ;;
+        empty) fail "step 4 Radarr: download client test-connection" "testall returned no results" ;;
+        *) fail "step 4 Radarr: download client test-connection" "$radarr_dc_test" ;;
     esac
     local radarr_qp_id radarr_qp_check
     radarr_qp_id=$(echo "$radarr_qp" | python3 -c "
@@ -108,9 +108,9 @@ else:
     print('OK|%d formats scored correctly' % len(expected))
 " 2>/dev/null)
         case "$radarr_score_check" in
-            OK*)  pass "step 4 Radarr: format scores match config.yml (${radarr_score_check#OK|})" ;;
+            OK*) pass "step 4 Radarr: format scores match config.yml (${radarr_score_check#OK|})" ;;
             FAIL*) fail "step 4 Radarr: format scores match config.yml" "${radarr_score_check#FAIL|}" ;;
-            *)    fail "step 4 Radarr: format scores match config.yml" "parse error" ;;
+            *) fail "step 4 Radarr: format scores match config.yml" "parse error" ;;
         esac
     fi
 
@@ -127,8 +127,8 @@ with open('config.yml') as f:
 n = sum(1 for i in (c.get('indexers') or []) if i.get('type') in ('general','movies'))
 print(n)
 " 2>/dev/null)
-    radarr_ix_floor=$(( radarr_ix_total - radarr_ix_warned ))
-    if (( radarr_ix_count >= radarr_ix_floor )); then
+    radarr_ix_floor=$((radarr_ix_total - radarr_ix_warned))
+    if ((radarr_ix_count >= radarr_ix_floor)); then
         pass "step 4 Radarr: $radarr_ix_count/${radarr_ix_total} indexers configured${radarr_ix_warned:+ ($radarr_ix_warned upstream-blocked, floor=$radarr_ix_floor)}"
     else
         fail "step 4 Radarr: $radarr_ix_floor indexers expected (floor)" "got '$radarr_ix_count' (warned=$radarr_ix_warned, total=$radarr_ix_total)"
@@ -158,14 +158,14 @@ else:
     print('OK|%d indexers checked' % len(indexers))
 " 2>/dev/null)
     case "$radarr_seed_check" in
-        OK*)   pass "step 4 Radarr: indexer seed criteria (ratio=1.0, time=24h) (${radarr_seed_check#OK|})" ;;
+        OK*) pass "step 4 Radarr: indexer seed criteria (ratio=1.0, time=24h) (${radarr_seed_check#OK|})" ;;
         SKIP*) skip "step 4 Radarr: indexer seed criteria" "${radarr_seed_check#SKIP|}" ;;
         FAIL*) fail "step 4 Radarr: indexer seed criteria" "${radarr_seed_check#FAIL|}" ;;
-        *)     fail "step 4 Radarr: indexer seed criteria" "parse error" ;;
+        *) fail "step 4 Radarr: indexer seed criteria" "parse error" ;;
     esac
 
-    # ADR-25 dropped Remux-1080p from config.yml entirely (real 1080p WEB-DL
-    # sizes, no Remux anywhere in the stack). Use Bluray-1080p as the
+    # config.yml carries no Remux-1080p at all (real 1080p WEB-DL sizes, no
+    # Remux anywhere in the stack). Use Bluray-1080p as the
     # representative tightened-from-stock check: shipped preferred=65.0 vs
     # Radarr's stock default of ~95 MB/min.
     local radarr_qd_pref
@@ -204,9 +204,9 @@ else:
         print('misconfigured: updateLibrary=%s onDownload=%s' % (update, on_download))
 " 2>/dev/null)
     case "$radarr_jf_conn" in
-        ok)      pass "step 4 Radarr: Jellyfin connection (library update on download)" ;;
-        absent)  fail "step 4 Radarr: Jellyfin connection" "not configured" ;;
-        *)       fail "step 4 Radarr: Jellyfin connection" "$radarr_jf_conn" ;;
+        ok) pass "step 4 Radarr: Jellyfin connection (library update on download)" ;;
+        absent) fail "step 4 Radarr: Jellyfin connection" "not configured" ;;
+        *) fail "step 4 Radarr: Jellyfin connection" "$radarr_jf_conn" ;;
     esac
 
     # Forms authentication

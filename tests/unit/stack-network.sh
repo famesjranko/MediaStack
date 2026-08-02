@@ -36,7 +36,7 @@ MEDIASTACK_JSON=""
 ip() {
     case "$*" in
         "-o -4 route show") printf '%s\n' "$ROUTES_TEXT" ;;
-        "-o -4 addr show")  printf '%s\n' "$ADDRS_TEXT" ;;
+        "-o -4 addr show") printf '%s\n' "$ADDRS_TEXT" ;;
         *) return 1 ;;
     esac
 }
@@ -80,7 +80,7 @@ setup_env() {
             printf 'MEDIASTACK_GATEWAY=%s.1\n' "$prefix"
             printf 'MEDIASTACK_NPM_IP=%s.10\n' "$prefix"
         fi
-    } > "$dir/.env"
+    } >"$dir/.env"
     unset MEDIASTACK_NETWORK_PREFIX MEDIASTACK_SUBNET MEDIASTACK_GATEWAY MEDIASTACK_NPM_IP STAGE_1_COMPLETE
 }
 
@@ -98,10 +98,10 @@ run_selector() {
     local dir
     dir=$(mktemp -d)
     _tmpdirs+=("$dir")
-    printf '%s' "$routes" > "$dir/routes.txt"
-    printf '%s' "$addrs" > "$dir/addrs.txt"
-    printf '%s' "$docker_json" > "$dir/docker.json"
-    printf '%s' "$mediastack_json" > "$dir/mediastack.json"
+    printf '%s' "$routes" >"$dir/routes.txt"
+    printf '%s' "$addrs" >"$dir/addrs.txt"
+    printf '%s' "$docker_json" >"$dir/docker.json"
+    printf '%s' "$mediastack_json" >"$dir/mediastack.json"
     env "$@" python3 "$NETWORK_SELECTOR" "$dir/routes.txt" "$dir/addrs.txt" "$dir/docker.json" "$dir/mediastack.json"
 }
 
@@ -285,7 +285,7 @@ ADDRS_TEXT='2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0'
 DOCKER_JSON='[]'
 MEDIASTACK_JSON=''
 setup_env "1" "172.28.0"
-cat > "$SCRIPT_DIR/.env" <<'EOF'
+cat >"$SCRIPT_DIR/.env" <<'EOF'
 STAGE_1_COMPLETE=1
 MEDIASTACK_NETWORK_PREFIX=172.28.0
 MEDIASTACK_SUBNET=172.28.0.0/16

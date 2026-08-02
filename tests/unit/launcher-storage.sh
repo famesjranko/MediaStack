@@ -49,7 +49,7 @@ local_menu=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 case "$local_menu" in
     *"View storage"*) fail "launcher: local install hides the storage item" ;;
-    *)                pass "launcher: local install hides the storage item" ;;
+    *) pass "launcher: local install hides the storage item" ;;
 esac
 
 # 3. Storage submenu offers "Re-check NAS now" and a Back path.

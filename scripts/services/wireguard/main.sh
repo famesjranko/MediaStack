@@ -27,7 +27,7 @@ configure_wireguard() {
 
     case "${per_client_fw_raw,,}" in
         false) per_client_fw="false" ;;
-        true|"") per_client_fw="true" ;;
+        true | "") per_client_fw="true" ;;
         *)
             log_warn "WG_PER_CLIENT_FIREWALL='$per_client_fw_raw' is not valid; defaulting to true so access tiers stay enforced."
             per_client_fw="true"
@@ -47,7 +47,7 @@ configure_wireguard() {
     # Auth. 200 = initialized + creds correct. 401 = initialized but UI password
     # was changed (do not auto-reconcile). Anything else = not ready yet.
     local probe_code attempts=0 max_attempts=30
-    while (( attempts < max_attempts )); do
+    while ((attempts < max_attempts)); do
         probe_code=$(curl -s -o /dev/null -w "%{http_code}" \
             -u "$wg_user:$wg_pw" "$wg_url/api/client" 2>/dev/null || echo "000")
         case "$probe_code" in
@@ -58,12 +58,12 @@ configure_wireguard() {
                 ;;
             *)
                 sleep 2
-                attempts=$(( attempts + 1 ))
+                attempts=$((attempts + 1))
                 ;;
         esac
     done
     if [[ "$probe_code" != "200" ]]; then
-        log_warn "wg-easy did not become ready within $(( max_attempts * 2 ))s - skipping configurator"
+        log_warn "wg-easy did not become ready within $((max_attempts * 2))s - skipping configurator"
         return 0
     fi
 
@@ -136,7 +136,7 @@ try:
 except Exception:
     d = {}
 d["firewallEnabled"] = True
-print(json.dumps(d))' <<< "$current")
+print(json.dumps(d))' <<<"$current")
     http=$(curl -s -o /dev/null -w "%{http_code}" \
         -u "$user:$pw" -X POST "$url/api/admin/interface" \
         -H "Content-Type: application/json" -d "$body" 2>/dev/null || echo "000")
@@ -154,9 +154,11 @@ except: print("unknown")
 
     case "$http:$already" in
         2*:yes) log_ok "wg-easy per-client firewall enabled" ;;
-        *:yes)  log_warn "wg-easy per-client firewall enable returned HTTP $http but state persisted as enabled" ;;
-        *)      log_warn "wg-easy per-client firewall enable failed (HTTP $http, state=$already)"
-                return 1 ;;
+        *:yes) log_warn "wg-easy per-client firewall enable returned HTTP $http but state persisted as enabled" ;;
+        *)
+            log_warn "wg-easy per-client firewall enable failed (HTTP $http, state=$already)"
+            return 1
+            ;;
     esac
 }
 
@@ -173,7 +175,7 @@ print(json.dumps({"name": os.environ["WG_PEER"], "expiresAt": None}))')
         -H "Content-Type: application/json" -d "$body" 2>/dev/null || echo "000")
 
     case "$http" in
-        200|201)
+        200 | 201)
             peer_id=$(RESP_FILE="$resp_file" python3 -c '
 import os
 import json, sys
@@ -244,7 +246,7 @@ try:
 except Exception:
     sys.exit("bad json from peer GET")
 d["firewallIps"] = json.loads(os.environ["IPS_JSON"])
-print(json.dumps(d))' <<< "$current")
+print(json.dumps(d))' <<<"$current")
 
     http=$(curl -s -o /dev/null -w "%{http_code}" \
         -u "$user:$pw" -X POST "$url/api/client/$peer_id" \
@@ -264,12 +266,14 @@ got = d.get("firewallIps") or []
 # Exact set equality, not subset — a stray broader entry (0.0.0.0/0, race with
 # UI edit, future API merge semantics) would silently neutralize the tier.
 print("yes" if set(got) == set(want) else "no")
-' <<< "$current" 2>/dev/null || echo "unknown")
+' <<<"$current" 2>/dev/null || echo "unknown")
 
     case "$http:$persisted" in
         2*:yes) log_ok "Initial peer firewallIps set to '$firewall_ips'" ;;
-        *:yes)  log_warn "Setting initial peer firewallIps returned HTTP $http but state persisted" ;;
-        *)      log_warn "Setting initial peer firewallIps failed (HTTP $http, state=$persisted)"
-                return 1 ;;
+        *:yes) log_warn "Setting initial peer firewallIps returned HTTP $http but state persisted" ;;
+        *)
+            log_warn "Setting initial peer firewallIps failed (HTTP $http, state=$persisted)"
+            return 1
+            ;;
     esac
 }

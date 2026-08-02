@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/launcher-features.sh
 #
-# Launcher coverage for the day-2 "Features" submenu (#12): the three optional,
+# Launcher coverage for the day-2 "Features" submenu: the three optional,
 # reversible toggles — Bazarr subtitles, the host SMB share, and public search
 # indexers. Verifies:
 #   1. submenu_features renders ON/OFF state from .env; remote/GPU adds self-hide.
@@ -40,25 +40,25 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   submenu_features >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$render_out" "Subtitles (Bazarr): ON"  "features: bazarr state ON read from .env"
+assert_contains "$render_out" "Subtitles (Bazarr): ON" "features: bazarr state ON read from .env"
 assert_contains "$render_out" "File sharing (SMB): OFF" "features: smb state OFF read from .env"
-assert_contains "$render_out" "Search indexers: OFF"    "features: indexers state OFF read from .env"
-assert_contains "$render_out" "Firewall (UFW): OFF"     "features: ufw state OFF read from .env"
-assert_contains "$render_out" "System hardening: ON"    "features: hardening state ON read from .env"
+assert_contains "$render_out" "Search indexers: OFF" "features: indexers state OFF read from .env"
+assert_contains "$render_out" "Firewall (UFW): OFF" "features: ufw state OFF read from .env"
+assert_contains "$render_out" "System hardening: ON" "features: hardening state ON read from .env"
 if grep -q "NAS storage watchdog" <<<"$render_out"; then
-  fail "features: NAS watchdog hidden on non-NAS install"
+    fail "features: NAS watchdog hidden on non-NAS install"
 else
-  pass "features: NAS watchdog hidden on non-NAS install"
+    pass "features: NAS watchdog hidden on non-NAS install"
 fi
 if grep -q "Add remote access" <<<"$render_out"; then
-  fail "features: remote add hidden when already configured"
+    fail "features: remote add hidden when already configured"
 else
-  pass "features: remote add hidden when already configured"
+    pass "features: remote add hidden when already configured"
 fi
 if grep -q "Add hardware transcoding" <<<"$render_out"; then
-  fail "features: GPU add never offered here — single home is top-level 'Manage hardware transcoding (GPU)'"
+    fail "features: GPU add never offered here — single home is top-level 'Manage hardware transcoding (GPU)'"
 else
-  pass "features: GPU add never offered here — single home is top-level 'Manage hardware transcoding (GPU)'"
+    pass "features: GPU add never offered here — single home is top-level 'Manage hardware transcoding (GPU)'"
 fi
 
 # The remote add appears only when its recovery predicate allows it. The GPU add
@@ -74,11 +74,11 @@ adds_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   submenu_features >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$adds_out" "Add remote access"        "features: remote add shown when available"
+assert_contains "$adds_out" "Add remote access" "features: remote add shown when available"
 if grep -q "Add hardware transcoding" <<<"$adds_out"; then
-  fail "features: GPU add NOT offered here even when transcoding predicate is true (single top-level home)"
+    fail "features: GPU add NOT offered here even when transcoding predicate is true (single top-level home)"
 else
-  pass "features: GPU add NOT offered here even when transcoding predicate is true (single top-level home)"
+    pass "features: GPU add NOT offered here even when transcoding predicate is true (single top-level home)"
 fi
 
 # The NAS storage watchdog toggle appears only on NAS installs (STORAGE_MODE=nas).
@@ -109,11 +109,11 @@ menu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
 assert_contains "$menu_out" "Features & settings (quality, bandwidth, subtitles, sharing, indexers)" \
-  "menu_post: Features item always shown"
+    "menu_post: Features item always shown"
 if grep -q "Add a feature" <<<"$menu_out"; then
-  fail "menu_post: legacy 'Add a feature' label removed"
+    fail "menu_post: legacy 'Add a feature' label removed"
 else
-  pass "menu_post: legacy 'Add a feature' label removed"
+    pass "menu_post: legacy 'Add a feature' label removed"
 fi
 
 route_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -132,7 +132,7 @@ assert_contains "$route_out" "DISPATCH_FEATURES" "menu_post: Features routes to 
 # 3. submenu_features dispatches each toggle label to the right handler.
 # ---------------------------------------------------------------------------
 dispatch() {
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" CHOICE="$1" bash -c '
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" CHOICE="$1" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     render_banner(){ :; }
     recovery_menu_remote_available(){ return 1; }
@@ -147,11 +147,11 @@ dispatch() {
     submenu_features 2>&1
   ' 2>&1
 }
-assert_contains "$(dispatch 'Subtitles (Bazarr): ON')"  "DISPATCH_BAZARR"   "dispatch: subtitles -> bazarr toggle"
-assert_contains "$(dispatch 'File sharing (SMB): OFF')"  "DISPATCH_SMB"      "dispatch: file sharing -> smb toggle"
-assert_contains "$(dispatch 'Search indexers: OFF')"     "DISPATCH_INDEXERS" "dispatch: indexers -> indexers toggle"
-assert_contains "$(dispatch 'Firewall (UFW): OFF')"      "DISPATCH_UFW"       "dispatch: firewall -> ufw toggle"
-assert_contains "$(dispatch 'System hardening: ON')"     "DISPATCH_HARDENING" "dispatch: hardening -> hardening toggle"
+assert_contains "$(dispatch 'Subtitles (Bazarr): ON')" "DISPATCH_BAZARR" "dispatch: subtitles -> bazarr toggle"
+assert_contains "$(dispatch 'File sharing (SMB): OFF')" "DISPATCH_SMB" "dispatch: file sharing -> smb toggle"
+assert_contains "$(dispatch 'Search indexers: OFF')" "DISPATCH_INDEXERS" "dispatch: indexers -> indexers toggle"
+assert_contains "$(dispatch 'Firewall (UFW): OFF')" "DISPATCH_UFW" "dispatch: firewall -> ufw toggle"
+assert_contains "$(dispatch 'System hardening: ON')" "DISPATCH_HARDENING" "dispatch: hardening -> hardening toggle"
 
 # Watchdog dispatch needs STORAGE_MODE=nas for the option to be built.
 watchdog_dispatch=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -172,7 +172,7 @@ assert_contains "$watchdog_dispatch" "DISPATCH_WATCHDOG" "dispatch: NAS watchdog
 # run_toggle <handler> <init-env-lines>  -> prints "=== ENV ===" .env then
 # "=== CAP ===" the captured external commands.
 run_toggle() {
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" bash -c '
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     mkdir -p "$tmp/scripts/setup"
@@ -217,43 +217,43 @@ EOF
 
 # --- Bazarr ON: enable profile, start container, configure it ---------------
 b_on=$(run_toggle action_toggle_bazarr "BAZARR_ENABLED=false")
-assert_contains "$b_on" "up -d bazarr"            "bazarr ON: starts the bazarr container"
+assert_contains "$b_on" "up -d bazarr" "bazarr ON: starts the bazarr container"
 assert_contains "$b_on" "CONFIGURE --only bazarr" "bazarr ON: configures bazarr"
-assert_contains "$b_on" "BAZARR_ENABLED='true'"   "bazarr ON: .env flag set true (single-quoted)"
+assert_contains "$b_on" "BAZARR_ENABLED='true'" "bazarr ON: .env flag set true (single-quoted)"
 
 # --- Bazarr OFF: stop+remove only the container; data-safe (no down -v) -----
 b_off=$(run_toggle action_toggle_bazarr "BAZARR_ENABLED=true")
-assert_contains "$b_off" "rm -sf bazarr"          "bazarr OFF: removes only the container"
+assert_contains "$b_off" "rm -sf bazarr" "bazarr OFF: removes only the container"
 assert_contains "$b_off" "BAZARR_ENABLED='false'" "bazarr OFF: .env flag set false (single-quoted)"
 if grep -Eq "down|[[:space:]]-v([[:space:]]|$)" <<<"$b_off"; then
-  fail "bazarr OFF: add-only — never 'down' or '-v' (would drop volumes)"
+    fail "bazarr OFF: add-only — never 'down' or '-v' (would drop volumes)"
 else
-  pass "bazarr OFF: add-only — never 'down' or '-v' (would drop volumes)"
+    pass "bazarr OFF: add-only — never 'down' or '-v' (would drop volumes)"
 fi
 
 # --- Indexers ON: wire into Jackett AND Sonarr/Radarr (regression guard) -----
 i_on=$(run_toggle action_toggle_indexers "PUBLIC_INDEXERS_ENABLED=false")
-assert_contains "$i_on" "WIZARD"                            "indexers ON: regenerates config.yml indexer list"
-assert_contains "$i_on" "--indexers-only true"              "indexers ON: surgical indexers-only apply"
+assert_contains "$i_on" "WIZARD" "indexers ON: regenerates config.yml indexer list"
+assert_contains "$i_on" "--indexers-only true" "indexers ON: surgical indexers-only apply"
 assert_contains "$i_on" "CONFIGURE --only jackett,sonarr,radarr" \
-  "indexers ON: wires indexers into Jackett AND Sonarr/Radarr (not Jackett alone)"
-assert_contains "$i_on" "PUBLIC_INDEXERS_ENABLED='true'"   "indexers ON: .env flag set true (single-quoted)"
+    "indexers ON: wires indexers into Jackett AND Sonarr/Radarr (not Jackett alone)"
+assert_contains "$i_on" "PUBLIC_INDEXERS_ENABLED='true'" "indexers ON: .env flag set true (single-quoted)"
 
 # --- Indexers OFF: clear config.yml list; never re-run configure (add-only) --
 i_off=$(run_toggle action_toggle_indexers "PUBLIC_INDEXERS_ENABLED=true")
-assert_contains "$i_off" "--indexers-only false"           "indexers OFF: clears config.yml indexer list"
+assert_contains "$i_off" "--indexers-only false" "indexers OFF: clears config.yml indexer list"
 assert_contains "$i_off" "PUBLIC_INDEXERS_ENABLED='false'" "indexers OFF: .env flag set false (single-quoted)"
 if grep -q "CONFIGURE" <<<"$i_off"; then
-  fail "indexers OFF: does not re-run configure (existing indexers persist, never deleted)"
+    fail "indexers OFF: does not re-run configure (existing indexers persist, never deleted)"
 else
-  pass "indexers OFF: does not re-run configure (existing indexers persist, never deleted)"
+    pass "indexers OFF: does not re-run configure (existing indexers persist, never deleted)"
 fi
 
 # --- SMB ON / OFF: idempotent setup_samba both directions -------------------
 s_on=$(run_toggle action_toggle_smb "SMB_ENABLED=false")
 assert_contains "$s_on" "SAMBA enabled=true scope=data" "smb ON: runs setup_samba with chosen scope"
-assert_contains "$s_on" "SMB_ENABLED='true'"            "smb ON: .env flag set true (single-quoted)"
-assert_contains "$s_on" "SMB_SHARE_SCOPE='data'"        "smb ON: .env scope recorded (single-quoted)"
+assert_contains "$s_on" "SMB_ENABLED='true'" "smb ON: .env flag set true (single-quoted)"
+assert_contains "$s_on" "SMB_SHARE_SCOPE='data'" "smb ON: .env scope recorded (single-quoted)"
 
 s_off=$(run_toggle action_toggle_smb "SMB_ENABLED=true")
 assert_contains "$s_off" "SAMBA enabled=false" "smb OFF: runs setup_samba cleanup path"
@@ -261,38 +261,38 @@ assert_contains "$s_off" "SMB_ENABLED='false'" "smb OFF: .env flag set false (si
 
 # --- UFW ON / OFF: configure via setup_ufw; revert via _uninstall_ufw + latch reset
 u_on=$(run_toggle action_toggle_ufw "UFW_ENABLED=false")
-assert_contains "$u_on" "UFW_SETUP"        "ufw ON: runs setup_ufw"
+assert_contains "$u_on" "UFW_SETUP" "ufw ON: runs setup_ufw"
 assert_contains "$u_on" "UFW_ENABLED='true'" "ufw ON: .env flag set true (single-quoted)"
 
 u_off=$(run_toggle action_toggle_ufw "UFW_ENABLED=true")
-assert_contains "$u_off" "UFW_UNINSTALL"   "ufw OFF: runs _uninstall_ufw (ledger-aware revert)"
+assert_contains "$u_off" "UFW_UNINSTALL" "ufw OFF: runs _uninstall_ufw (ledger-aware revert)"
 assert_contains "$u_off" "STATE_SET UFW_DEFAULTS_APPLIED false" "ufw OFF: resets latch so re-enable reconfigures"
-assert_contains "$u_off" "STATE_SET UFW_RULE_COUNT 0"           "ufw OFF: resets recorded rule count"
+assert_contains "$u_off" "STATE_SET UFW_RULE_COUNT 0" "ufw OFF: resets recorded rule count"
 assert_contains "$u_off" "UFW_ENABLED='false'" "ufw OFF: .env flag set false (single-quoted)"
 
 # --- Hardening ON / OFF: apply/revert sysctl + unattended-upgrades ----------
 h_on=$(run_toggle action_toggle_hardening "HARDENING_ENABLED=false")
-assert_contains "$h_on" "APT_HARDEN"    "hardening ON: enables unattended-upgrades"
+assert_contains "$h_on" "APT_HARDEN" "hardening ON: enables unattended-upgrades"
 assert_contains "$h_on" "SYSCTL_HARDEN" "hardening ON: applies kernel sysctl hardening"
 assert_contains "$h_on" "HARDENING_ENABLED='true'" "hardening ON: .env flag set true (single-quoted)"
 
 h_off=$(run_toggle action_toggle_hardening "HARDENING_ENABLED=true")
 assert_contains "$h_off" "SYSCTL_UNINSTALL" "hardening OFF: reverts kernel sysctl"
-assert_contains "$h_off" "APT_UNINSTALL"    "hardening OFF: removes unattended-upgrades policy"
+assert_contains "$h_off" "APT_UNINSTALL" "hardening OFF: removes unattended-upgrades policy"
 assert_contains "$h_off" "HARDENING_ENABLED='false'" "hardening OFF: .env flag set false (single-quoted)"
 
 # --- NAS watchdog ON / OFF: install unit vs stop+disable; flip .env flag ------
 w_on=$(run_toggle action_toggle_watchdog $'STORAGE_MODE=nas\nSTORAGE_WATCHDOG=false')
-assert_contains "$w_on" "WATCHDOG_INSTALL"        "watchdog ON: installs the systemd unit"
+assert_contains "$w_on" "WATCHDOG_INSTALL" "watchdog ON: installs the systemd unit"
 assert_contains "$w_on" "STORAGE_WATCHDOG='true'" "watchdog ON: .env flag set true (single-quoted)"
 
 w_off=$(run_toggle action_toggle_watchdog $'STORAGE_MODE=nas\nSTORAGE_WATCHDOG=true')
-assert_contains "$w_off" "WATCHDOG_PAUSE"          "watchdog OFF: stops+disables the unit"
+assert_contains "$w_off" "WATCHDOG_PAUSE" "watchdog OFF: stops+disables the unit"
 assert_contains "$w_off" "STORAGE_WATCHDOG='false'" "watchdog OFF: .env flag set false (single-quoted)"
 if grep -Eq "down|[[:space:]]-v([[:space:]]|$)" <<<"$w_off"; then
-  fail "watchdog OFF: host unit only — never touches docker compose volumes"
+    fail "watchdog OFF: host unit only — never touches docker compose volumes"
 else
-  pass "watchdog OFF: host unit only — never touches docker compose volumes"
+    pass "watchdog OFF: host unit only — never touches docker compose volumes"
 fi
 
 # ---------------------------------------------------------------------------
@@ -307,12 +307,12 @@ fi
 # group on EOF, so it is deliberately exercised only via stubs above, never
 # here.)
 run_real_confirm() {
-  local out trc
-  # The bash -c body is single-quoted on purpose: $REPO_ROOT/$INIT/$HANDLER are
-  # passed via the env-var prefix and expand in the INNER shell, not here.
-  # shellcheck disable=SC2016
-  out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" \
-    timeout 20 bash -c '
+    local out trc
+    # The bash -c body is single-quoted on purpose: $REPO_ROOT/$INIT/$HANDLER are
+    # passed via the env-var prefix and expand in the INNER shell, not here.
+    # shellcheck disable=SC2016
+    out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" \
+        timeout 20 bash -c '
       source "$REPO_ROOT/mediastack" </dev/null
       tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
       mkdir -p "$tmp/scripts/setup"
@@ -334,28 +334,28 @@ EOF
       cat "$CAPTURE"
       rm -rf "$tmp"
     ' 2>&1)
-  trc=$?
-  printf "TIMEOUT_RC=%s\n%s\n" "$trc" "$out"
+    trc=$?
+    printf "TIMEOUT_RC=%s\n%s\n" "$trc" "$out"
 }
 
 # OFF: real ui_confirm default "no" -> EOF returns no -> "No change", clean
 # return, no container touched.
 rc_off=$(run_real_confirm action_toggle_bazarr "BAZARR_ENABLED=true")
 assert_contains "$rc_off" "TIMEOUT_RC=0" \
-  "non-TTY: real ui_confirm on closed stdin terminates the toggle (no re-prompt hang)"
+    "non-TTY: real ui_confirm on closed stdin terminates the toggle (no re-prompt hang)"
 if grep -q "DOCKER" <<<"$rc_off"; then
-  fail "non-TTY: EOF -> default 'no' = No change, container untouched"
+    fail "non-TTY: EOF -> default 'no' = No change, container untouched"
 else
-  pass "non-TTY: EOF -> default 'no' = No change, container untouched"
+    pass "non-TTY: EOF -> default 'no' = No change, container untouched"
 fi
 
 # ON: real ui_confirm default "yes" -> EOF returns yes -> proceeds, still
 # terminates (no hang).
 rc_on=$(run_real_confirm action_toggle_bazarr "BAZARR_ENABLED=false")
 assert_contains "$rc_on" "TIMEOUT_RC=0" \
-  "non-TTY: real ui_confirm 'yes' default toggle terminates (no re-prompt hang)"
+    "non-TTY: real ui_confirm 'yes' default toggle terminates (no re-prompt hang)"
 assert_contains "$rc_on" "up -d bazarr" \
-  "non-TTY: EOF -> default 'yes' proceeds deterministically"
+    "non-TTY: EOF -> default 'yes' proceeds deterministically"
 
 # 5b. Enabling indexers warns FIRST that it rewrites config.yml's indexer list
 #     (the bundled example preset overwrites any hand-added entries).
@@ -371,7 +371,7 @@ warn_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$warn_out" "will be overwritten" \
-  "indexers ON: warns the config.yml indexer list is rewritten before enabling"
+    "indexers ON: warns the config.yml indexer list is rewritten before enabling"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

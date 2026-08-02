@@ -82,7 +82,7 @@ A cell uses the rows for its resolution's tiers only — `720p Balanced` applies
 
 ## Custom format scores
 
-Scores **steer** release selection within a quality tier — higher = preferred, negative = penalised. They do **not** gate file size (the bounds above do), and by default **nothing is hard-blocked**. Scores are the **same across all three sizes** — release quality is size-independent; the size axis is the bounds envelope only (see ADR-43).
+Scores **steer** release selection within a quality tier — higher = preferred, negative = penalised. They do **not** gate file size (the bounds above do), and by default **nothing is hard-blocked**. Scores are the **same across all three sizes** — release quality is size-independent; the size axis is the bounds envelope only.
 
 | Format | Score | Effect |
 |---|---:|---|
@@ -102,7 +102,7 @@ Format definitions (the regex conditions that match each format) are developer-m
 
 ## Why these bounds and not TRaSH defaults
 
-TRaSH Guides values target maximum-quality grabs. Their typical 1080p WEB-DL preferred is ~137 MB/min — at a 110-min movie that's a 15 GB file — and TRaSH leaves **preferred/max effectively unlimited** (≈1000 for Sonarr, ≈2000 for Radarr, both meaning "no cap") for **every** tier, SD floor included. Real Netflix/Amazon/Disney 1080p WEB-DL releases are 4-7 GB; setting preferred at the TRaSH default biases the system to over-bloated releases. MediaStack's bounds put the preferred peak in the middle of what real sources actually produce, with max as a sane ceiling. TRaSH **is** authoritative for the **mins** (the source floor, e.g. ~5 MB/min for SD); MediaStack's contribution is the per-band preferred/max envelope. (Custom-format *scores* were also once TRaSH-derived but were retuned to a neutral, non-blocking baseline — see [Custom format scores](#custom-format-scores) and ADR-43.)
+TRaSH Guides values target maximum-quality grabs. Their typical 1080p WEB-DL preferred is ~137 MB/min — at a 110-min movie that's a 15 GB file — and TRaSH leaves **preferred/max effectively unlimited** (≈1000 for Sonarr, ≈2000 for Radarr, both meaning "no cap") for **every** tier, SD floor included. Real Netflix/Amazon/Disney 1080p WEB-DL releases are 4-7 GB; setting preferred at the TRaSH default biases the system to over-bloated releases. MediaStack's bounds put the preferred peak in the middle of what real sources actually produce, with max as a sane ceiling. TRaSH **is** authoritative for the **mins** (the source floor, e.g. ~5 MB/min for SD); MediaStack's contribution is the per-band preferred/max envelope. (Custom-format *scores* were also once TRaSH-derived but were retuned to a neutral, non-blocking baseline — see [Custom format scores](#custom-format-scores).)
 
 Reference table for sanity-checking:
 

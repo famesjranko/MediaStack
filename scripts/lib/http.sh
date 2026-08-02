@@ -58,10 +58,14 @@ print(json.dumps(out))
 # Unlike _api_request (X-Api-Key-based *arr APIs) this helper is agnostic —
 # pass any curl args including -X, -H, -d after the label.
 _http_request() {
-    local _log_fn="$1" label="$2"; shift 2
+    local _log_fn="$1" label="$2"
+    shift 2
     local out code
     out=$(curl -sS -w "\n%{http_code}" "$@" 2>/dev/null) \
-        || { "$_log_fn" "$label: connection failed"; return 1; }
+        || {
+            "$_log_fn" "$label: connection failed"
+            return 1
+        }
     code="${out##*$'\n'}"
     out="${out%$'\n'*}"
     if [[ "$code" =~ ^2 ]]; then
@@ -74,18 +78,20 @@ _http_request() {
 # http_check: log_error on failure (strict — aborts the step).
 # api_fetch:  log_warn on failure (advisory — fetch-and-compare calls).
 http_check() { _http_request log_error "$@"; }
-api_fetch()  { _http_request log_warn  "$@"; }
+api_fetch() { _http_request log_warn "$@"; }
 
 # Poll $url until it returns 2xx/3xx or ~90s elapses.
 wait_for_service() {
     local name="$1" url="$2" max=90 i=0
     echo -ne "  Waiting for ${name}..."
-    while (( i < max )); do
+    while ((i < max)); do
         if curl -sf "$url" >/dev/null 2>&1; then
             echo -e " ${GREEN}ready${NC}"
             return 0
         fi
-        sleep 2; (( i += 2 )); echo -ne "."
+        sleep 2
+        ((i += 2))
+        echo -ne "."
     done
     echo -e " ${RED}timeout${NC}"
     return 1
@@ -103,14 +109,22 @@ wait_for_healthy() {
         return $?
     fi
     echo -ne "  Waiting for ${name}..."
-    while (( i < max )); do
+    while ((i < max)); do
         local status
         status=$(docker inspect --format '{{.State.Health.Status}}' "$container" 2>/dev/null || echo "")
         case "$status" in
-            healthy)   echo -e " ${GREEN}ready${NC}"; return 0 ;;
-            unhealthy) echo -e " ${RED}unhealthy${NC}"; return 1 ;;
+            healthy)
+                echo -e " ${GREEN}ready${NC}"
+                return 0
+                ;;
+            unhealthy)
+                echo -e " ${RED}unhealthy${NC}"
+                return 1
+                ;;
         esac
-        sleep 3; (( i += 3 )); echo -ne "."
+        sleep 3
+        ((i += 3))
+        echo -ne "."
     done
     echo -e " ${RED}timeout${NC}"
     return 1
@@ -120,10 +134,10 @@ wait_for_healthy() {
 # does not log: callers own the operation-specific warning and keep/abort choice.
 post_restart_wait() {
     local url="$1" max="${2:-60}" interval="${3:-2}" elapsed=0
-    while (( elapsed < max )); do
+    while ((elapsed < max)); do
         curl -sf --max-time 5 "$url" >/dev/null 2>&1 && return 0
         sleep "$interval"
-        (( elapsed += interval ))
+        ((elapsed += interval))
     done
     curl -sf --max-time 5 "$url" >/dev/null 2>&1
 }
@@ -140,15 +154,23 @@ wait_for_jellyfin_auth() {
     local url="$1" hdr="$2" body="$3" max="${4:-30}" i=0
     local code resp_file
     resp_file=$(mktemp)
-    while (( i < max )); do
+    while ((i < max)); do
         code=$(curl -s -o "$resp_file" -w '%{http_code}' -X POST "$url/Users/AuthenticateByName" \
             -H "Authorization: $hdr" -H "Content-Type: application/json" -d "$body" 2>/dev/null)
         case "$code" in
-            200) cat "$resp_file"; rm -f "$resp_file"; return 0 ;;
-            401) rm -f "$resp_file"; return 2 ;;
-            *)   ;;
+            200)
+                cat "$resp_file"
+                rm -f "$resp_file"
+                return 0
+                ;;
+            401)
+                rm -f "$resp_file"
+                return 2
+                ;;
+            *) ;;
         esac
-        sleep 2; (( i += 2 ))
+        sleep 2
+        ((i += 2))
     done
     rm -f "$resp_file"
     return 1
@@ -170,15 +192,17 @@ js_post() {
         -c "$cookiejar" -b "$cookiejar" \
         -d "$payload" 2>/dev/null || echo "000")
     case "$http_code" in
-        200|201)
+        200 | 201)
             log_ok "$label connected"
             rm -f "$resp_file"
-            return 0 ;;
+            return 0
+            ;;
         *)
             local body
             body=$(head -c 300 "$resp_file")
             log_warn "Could not connect $label (HTTP $http_code): $body"
             rm -f "$resp_file"
-            return 1 ;;
+            return 1
+            ;;
     esac
 }

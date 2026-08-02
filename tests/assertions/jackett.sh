@@ -11,9 +11,9 @@ assert_jackett_configured() {
     indexers_raw=$(dind_exec "python3 -c \"import yaml; c=yaml.safe_load(open('config.yml')); print(' '.join(i['id'] for i in (c.get('indexers') or [])))\"" 2>/dev/null)
     local indexers=()
     if [[ -n "$indexers_raw" ]]; then
-        read -r -a indexers <<< "$indexers_raw"
+        read -r -a indexers <<<"$indexers_raw"
     fi
-    if (( ${#indexers[@]} == 0 )); then
+    if ((${#indexers[@]} == 0)); then
         skip "step 2 Jackett: indexer caps checks" "no indexers configured"
         return 0
     fi
@@ -23,9 +23,9 @@ assert_jackett_configured() {
         local caps_resp
         caps_resp=$(dind_exec "curl -sf --max-time 15 'http://localhost:9117/api/v2.0/indexers/${idx}/results/torznab/?apikey=${jackett_key}&t=caps'" 2>/dev/null)
         if echo "$caps_resp" | grep -q '<caps>'; then
-            (( caps_ok++ ))
+            ((caps_ok++))
         else
-            (( caps_fail++ ))
+            ((caps_fail++))
             caps_fail_names="${caps_fail_names:+$caps_fail_names, }$idx"
         fi
     done

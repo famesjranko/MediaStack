@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Unit test - per-service image policy + update-status detection (ADR-30).
+# Unit test - per-service image policy + update-status detection.
 #
 # Covers the load-bearing pieces of the "Manage updates" feature without
 # DinD/Docker/network:
 #   1. override.sh per-service policy: floating one service drops only its digest
 #      pin (compose tag preserved) while the rest stay pinned; mem/header intact.
-#   2. image-drift.py status: the channel-agnostic 2-state truth table (#206) and
+#   2. image-drift.py status: the channel-agnostic 2-state truth table and
 #      the hardened running-digest extraction (image-object RepoDigests, repo-matched).
 #   3. mediastack launcher: apply floats a pinned service to its compose tag
 #      (decided by effective channel, not status text), the flip/reset helpers, and
@@ -59,18 +59,19 @@ ov_out=$(REPO_ROOT="$REPO_ROOT" bash -c '
   echo "LATEST_PINS=$(grep -c "image: .*@sha256:" "$ov")"
   rm -rf "$tmp"
 ')
-assert_contains "$ov_out" "MIXED_PINS=18"  "override: floating jellyfin leaves 18 of 19 pinned"
-assert_contains "$ov_out" "JF=floats"      "override: floated service drops its digest pin"
-assert_contains "$ov_out" "SONARR=pinned"  "override: other services stay pinned to the lock"
-assert_contains "$ov_out" "MEMLINES=19"    "override: mem_limit preserved for every service"
-assert_contains "$ov_out" "NOTE=ok"        "override: header records the per-service override"
+assert_contains "$ov_out" "MIXED_PINS=18" "override: floating jellyfin leaves 18 of 19 pinned"
+assert_contains "$ov_out" "JF=floats" "override: floated service drops its digest pin"
+assert_contains "$ov_out" "SONARR=pinned" "override: other services stay pinned to the lock"
+assert_contains "$ov_out" "MEMLINES=19" "override: mem_limit preserved for every service"
+assert_contains "$ov_out" "NOTE=ok" "override: header records the per-service override"
 assert_contains "$ov_out" "STABLE_PINS=19" "override: clearing the override re-pins all services"
-assert_contains "$ov_out" "LATEST_PINS=0"  "override: global latest pins nothing"
+assert_contains "$ov_out" "LATEST_PINS=0" "override: global latest pins nothing"
 
 # ---------------------------------------------------------------------------
 # 2. image-drift.py status: truth table + hardened running-digest extraction
 # ---------------------------------------------------------------------------
-status_out=$(REPO_ROOT="$REPO_ROOT" python3 - <<'PY' 2>&1
+status_out=$(
+    REPO_ROOT="$REPO_ROOT" python3 - <<'PY' 2>&1
 import importlib.util, os, sys, json
 path = os.path.join(os.environ["REPO_ROOT"], "scripts/image-drift.py")
 spec = importlib.util.spec_from_file_location("idrift", path)
@@ -80,7 +81,7 @@ LOCK = "sha256:" + "a"*64
 UP   = "sha256:" + "b"*64
 OLD  = "sha256:" + "c"*64
 
-# Channel-agnostic 2-state truth table (#206): present flag separates absence from
+# Channel-agnostic 2-state truth table: present flag separates absence from
 # unknown digest; policy/lock are ignored — a pinned Stable service and an
 # upstream-tag service both read "Update available" when they trail their tag.
 assert m.derive_status("stable", False, None, UP, LOCK)        == ("Not installed", False)
@@ -158,7 +159,7 @@ wg_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   _menu_update_all "$tsv"
   echo "APPLIED=[$APPLIED]"
 ' 2>&1)
-assert_contains "$wg_out" "jellyfin"          "update-all: applies updatable services"
+assert_contains "$wg_out" "jellyfin" "update-all: applies updatable services"
 if grep -q "wireguard" <<<"$wg_out"; then
     fail "update-all: WireGuard excluded from bulk update"
 else
@@ -194,7 +195,7 @@ apply_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   echo "AFTER_TRACKING=[$(pol)]"
   rm -rf "$tmp"
 ' 2>&1)
-assert_contains "$apply_out" "AFTER_PINNED=[sonarr latest"   "apply: a pinned service floats to its tag (writes latest)"
+assert_contains "$apply_out" "AFTER_PINNED=[sonarr latest" "apply: a pinned service floats to its tag (writes latest)"
 assert_contains "$apply_out" "AFTER_TRACKING=[radarr latest" "apply: an already-tracking service keeps its single latest row (plain pull)"
 
 # Safety gate: floating a pinned service MUST confirm first. Decline (ui_confirm
@@ -221,7 +222,7 @@ decline_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   echo "SKIP_POLICY=[$(pol)]"
   rm -rf "$tmp"
 ' 2>&1)
-assert_contains "$decline_out" "DECLINE_RC=0"      "apply: declined float returns success (no error)"
+assert_contains "$decline_out" "DECLINE_RC=0" "apply: declined float returns success (no error)"
 assert_contains "$decline_out" "DECLINE_POLICY=[]" "apply: declined float writes no policy row"
 assert_contains "$decline_out" "SKIP_POLICY=[radarr" "apply: skip_confirm bypasses the prompt and floats anyway"
 
@@ -247,11 +248,11 @@ wg_float_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   echo "WG_POLICY=[$(pol)]"
   rm -rf "$tmp"
 ' 2>&1)
-assert_contains "$wg_float_out" "WG_CONFIRMS=1"      "apply: single-service WireGuard float prompts once (no double-confirm)"
+assert_contains "$wg_float_out" "WG_CONFIRMS=1" "apply: single-service WireGuard float prompts once (no double-confirm)"
 assert_contains "$wg_float_out" "WG_POLICY=[wireguard" "apply: accepted WireGuard float still floats to its tag"
 
 # Reset-to-default lists only services with an *explicit* manual override, and
-# never a Not-installed one (Finding 1: must not start uninstalled services).
+# never a Not-installed one (must not start uninstalled services).
 reset_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   LABELS=$(mktemp)
@@ -360,10 +361,10 @@ gate_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$gate_out" "RUN=[sonarr]" "flip gate: running + fresh pull records the update"
-assert_contains "$gate_out" "STAGED=[]"    "flip gate: staged (stopped) service is not flipped green"
-assert_contains "$gate_out" "PULLFAIL=[]"  "flip gate: pull-failure-cached recreate is not flipped green"
+assert_contains "$gate_out" "STAGED=[]" "flip gate: staged (stopped) service is not flipped green"
+assert_contains "$gate_out" "PULLFAIL=[]" "flip gate: pull-failure-cached recreate is not flipped green"
 
-# #208: an update marks a service a manual 'latest' override on ANY channel - so on
+# An update marks a service a manual 'latest' override on ANY channel - so on
 # a Latest install (where an update otherwise writes no policy row) the service still
 # becomes revertable to its installed image.
 mark_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -385,7 +386,7 @@ mark_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$mark_out" "AFTER_LATEST=[sonarr latest" \
     "apply: a Latest-install update marks the service manual (revertable on any channel)"
 
-# #208: updating a *pinned* (reverted) service floats it back to its tag - the pin is
+# Updating a *pinned* (reverted) service floats it back to its tag - the pin is
 # overwritten with a latest row, never left to silently no-op the update.
 unpin_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -407,7 +408,7 @@ unpin_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$unpin_out" "AFTER_UNPIN=[sonarr latest" \
     "apply: updating a pinned service clears the pin and floats to its tag"
 
-# #208: revert re-pins a service to its recorded install digest on ANY channel, and
+# Revert re-pins a service to its recorded install digest on ANY channel, and
 # the regenerated compose line emits that pinned image@digest.
 revert_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -433,7 +434,7 @@ assert_contains "$revert_out" "PINROW=[radarr|lscr.io/linuxserver/radarr:latest@
 assert_contains "$revert_out" "COMPOSE=[    image: lscr.io/linuxserver/radarr:latest@sha256:bbbb" \
     "revert: the regenerated compose line emits the install-digest pin"
 
-# #208: a revert whose recreate fails (e.g. install digest GC'd upstream) restores the
+# A revert whose recreate fails (e.g. install digest GC'd upstream) restores the
 # prior policy row - never leaving a dead pin - and returns non-zero.
 revfail_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -453,11 +454,11 @@ revfail_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   echo "RESTORED=[$(grep ^radarr "$tmp/config/state/image-policy.tsv" | tr "\t" "|")]"
   rm -rf "$tmp"
 ' 2>&1)
-assert_contains "$revfail_out" "RC=1"                 "revert-fail: returns non-zero"
+assert_contains "$revfail_out" "RC=1" "revert-fail: returns non-zero"
 assert_contains "$revfail_out" "RESTORED=[radarr|latest]" \
     "revert-fail: restores the prior policy row (no dead digest pin left behind)"
 
-# #208 backward-compat: reverting a service with NO recorded install digest (an
+# Backward-compat: reverting a service with NO recorded install digest (an
 # install that predates this feature - no image-install.tsv) falls back to clearing
 # the override, never writing a pin it can't resolve.
 compat_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -477,11 +478,11 @@ compat_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   echo "AFTER=[$(grep -c "^radarr" "$tmp/config/state/image-policy.tsv")]"   # 0 = row cleared
   rm -rf "$tmp"
 ' 2>&1)
-assert_contains "$compat_out" "RC=0"     "revert-compat: no install digest recorded -> succeeds"
+assert_contains "$compat_out" "RC=0" "revert-compat: no install digest recorded -> succeeds"
 assert_contains "$compat_out" "AFTER=[0]" \
     "revert-compat: falls back to clearing the override (no unresolvable pin written)"
 
-# #208: the status table renders a digest-pinned service as 'Pinned (install)' with no
+# The status table renders a digest-pinned service as 'Pinned (install)' with no
 # '*' (a pin is the opposite of "tracking its upstream tag"), while a floated row keeps
 # its star. The POLICY column arrives already normalized to the 'pinned' token.
 table_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -489,13 +490,13 @@ table_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   tsv=$(printf "sonarr\tpinned\tmanual\tUpdate available\ttrue\nradarr\tlatest\tmanual\tUp to date\tfalse\n")
   _render_update_table "$tsv"
 ' 2>&1)
-assert_contains "$table_out" "Pinned (install)"  "table: a digest-pinned service reads 'Pinned (install)'"
+assert_contains "$table_out" "Pinned (install)" "table: a digest-pinned service reads 'Pinned (install)'"
 if grep -q "Pinned (install) \*" <<<"$table_out"; then
     fail "table: a pinned row must not carry the manual-override star"
 else
     pass "table: a pinned row must not carry the manual-override star"
 fi
-assert_contains "$table_out" "Tracking tag *"    "table: a floated row still carries its star"
+assert_contains "$table_out" "Tracking tag *" "table: a floated row still carries its star"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

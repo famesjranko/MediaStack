@@ -116,13 +116,13 @@ assert_homepage_configured() {
         bookmarks=$(dind_exec "cat config/homepage/bookmarks.yaml 2>/dev/null" | tr -d '\r\n[:space:]')
         if [[ "$bookmarks" == "[]" ]]; then
             stable=$((stable + 1))
-            (( stable >= 3 )) && break
+            ((stable >= 3)) && break
         else
             stable=0
         fi
         sleep 1
     done
-    if (( stable >= 3 )); then
+    if ((stable >= 3)); then
         pass "step 8 Homepage: bookmarks.yaml converged to [] (no default links)"
     else
         fail "step 8 Homepage: bookmarks.yaml did not converge to []" "last value: ${bookmarks:-<empty>}"
