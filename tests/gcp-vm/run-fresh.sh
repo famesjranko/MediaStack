@@ -7,13 +7,34 @@
 #   - real GCP firewall (admin-port LAN/VPN-only contract)
 #   - real public HTTPS through the proxy
 #
-# Sources tests/.env.gcp (gitignored). See tests/gcp-vm/README.md.
+# Loads tests/.env.gcp (gitignored). See tests/gcp-vm/README.md.
+# `--preflight` validates the local bundle and target approval without calling
+# gcloud, ssh, rsync, or any live endpoint.
 
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
-ENV_FILE="$REPO_ROOT/tests/.env.gcp"
+PREFLIGHT=0
+case "${1:-}" in
+    --preflight) PREFLIGHT=1 ;;
+    -h | --help)
+        echo "usage: run-fresh.sh [--preflight]"
+        exit 0
+        ;;
+    "") ;;
+    *)
+        echo "✗ unknown arg: $1" >&2
+        exit 2
+        ;;
+esac
+
+ENV_FILE="${GCP_ENV_FILE:-$REPO_ROOT/tests/.env.gcp}"
+USING_EXAMPLE=0
+if ((PREFLIGHT)) && [[ -z "${GCP_ENV_FILE:-}" && ! -f "$ENV_FILE" ]]; then
+    ENV_FILE="$REPO_ROOT/tests/.env.gcp.example"
+    USING_EXAMPLE=1
+fi
 STARTUP="$HERE/startup.sh"
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -28,9 +49,53 @@ fi
 set -a
 source "$ENV_FILE"
 set +a
+required=(PROJECT_ID ZONE INSTANCE MACHINE_TYPE BOOT_DISK_SIZE DOMAIN NPM_ADMIN_EMAIL DDNS_PASSWORD GCP_EXPECT_TARGET)
+missing=()
+for name in "${required[@]}"; do
+    [[ -n "${!name:-}" ]] || missing+=("$name")
+done
+if ((${#missing[@]})); then
+    echo "✗ missing required value(s) in $ENV_FILE: ${missing[*]}" >&2
+    exit 2
+fi
+GCP_TARGET="$PROJECT_ID/$ZONE/$INSTANCE"
+if [[ "$GCP_EXPECT_TARGET" != "$GCP_TARGET" ]]; then
+    echo "✗ refusing destructive GCP run: GCP_EXPECT_TARGET '$GCP_EXPECT_TARGET' != '$GCP_TARGET'" >&2
+    exit 2
+fi
+if ((!PREFLIGHT)) && { [[ "$PROJECT_ID" == "your-gcp-project-id" ]] || [[ "$DOMAIN" == "mediastack.example.org" ]] || [[ "$DDNS_PASSWORD" == "your-dynu-password" ]]; }; then
+    echo "✗ refusing live GCP run: replace every placeholder in $ENV_FILE first" >&2
+    exit 2
+fi
 if [[ -z "${NPM_LE_SERVER+x}" ]]; then
     NPM_LE_SERVER="https://acme-staging-v02.api.letsencrypt.org/directory"
 fi
+
+if ((PREFLIGHT)); then
+    local_files=(
+        "$HERE/run-fresh.sh"
+        "$HERE/run-launcher-uat.sh"
+        "$STARTUP"
+        "$REPO_ROOT/tests/assertions/npm.sh"
+        "$REPO_ROOT/tests/unit/gcp-wan-ports.sh"
+    )
+    for path in "${local_files[@]}"; do
+        [[ -s "$path" ]] || {
+            echo "✗ missing/empty dependency: $path" >&2
+            exit 2
+        }
+    done
+    bash -n "$HERE/run-fresh.sh" "$HERE/run-launcher-uat.sh" "$STARTUP"
+    if ((USING_EXAMPLE)); then
+        echo "✓ GCP harness placeholder-bundle preflight passed"
+        echo "  copy tests/.env.gcp.example to tests/.env.gcp and replace every placeholder before a live run"
+    else
+        echo "✓ GCP harness preflight passed for approved target $GCP_TARGET"
+    fi
+    echo "  no cloud, network, SSH, or destructive action was attempted"
+    exit 0
+fi
+
 SSH_HOST="$INSTANCE.$ZONE.$PROJECT_ID"
 JF_FQDN="jellyfin.${DOMAIN}"
 SEERR_FQDN="seerr.${DOMAIN}"
@@ -66,16 +131,16 @@ shq() { printf '%q' "$1"; }
 FAILS=()
 
 step "0. Delete existing VM (if any)"
-gcloud compute instances delete "$INSTANCE" --zone="$ZONE" --quiet 2>&1 | tail -1
+gcloud --project="$PROJECT_ID" compute instances delete "$INSTANCE" --zone="$ZONE" --quiet 2>&1 | tail -1
 
 step "1. Create VM with mediastack-public tag"
-gcloud compute instances create "$INSTANCE" --zone="$ZONE" --machine-type="$MACHINE_TYPE" \
+gcloud --project="$PROJECT_ID" compute instances create "$INSTANCE" --zone="$ZONE" --machine-type="$MACHINE_TYPE" \
     --image-family=debian-12 --image-project=debian-cloud --boot-disk-type=pd-standard \
     --boot-disk-size="$BOOT_DISK_SIZE" --tags=mediastack-public \
     --metadata-from-file=startup-script="$STARTUP" 2>&1 | tail -3
 
 step "2. Refresh SSH config"
-gcloud compute config-ssh 2>&1 | tail -1
+gcloud --project="$PROJECT_ID" compute config-ssh 2>&1 | tail -1
 
 step "3. Wait for SSH ready"
 for i in $(seq 1 30); do
@@ -116,7 +181,6 @@ rsync -az \
     --exclude=config/qbittorrent/qBittorrent/lockfile \
     --exclude=config/qbittorrent/qBittorrent/config/ \
     --exclude=backups/ \
-    --exclude=docs/private/ \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$REPO_ROOT/" "$SSH_HOST:/tmp/MediaStack/" 2>&1 | tail -2
 ssh -o StrictHostKeyChecking=no "$SSH_HOST" 'sudo mv /tmp/MediaStack /opt/MediaStack && sudo chown -R $(id -un):$(id -gn) /opt/MediaStack' >/dev/null
@@ -125,9 +189,6 @@ ssh -o StrictHostKeyChecking=no "$SSH_HOST" 'wc -l /opt/MediaStack/scripts/servi
 DOMAIN_Q=$(shq "$DOMAIN")
 NPM_ADMIN_EMAIL_Q=$(shq "$NPM_ADMIN_EMAIL")
 NPM_LE_SERVER_Q=$(shq "$NPM_LE_SERVER")
-# Fixture consumed by the sourced product code under test.
-# shellcheck disable=SC2034
-DDNS_PASSWORD_Q=$(shq "$DDNS_PASSWORD")
 
 step "5. Pre-seed Stage 2 inputs into .env (no ddns config yet)"
 # IMPORTANT: do NOT write config/ddns-updater/config.json here. The
@@ -200,7 +261,7 @@ path.chmod(0o600)
 PY
 " >/dev/null
 
-EXT_IP=$(gcloud compute instances describe "$INSTANCE" --zone="$ZONE" --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+EXT_IP=$(gcloud --project="$PROJECT_ID" compute instances describe "$INSTANCE" --zone="$ZONE" --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
 ok "Stage 2 .env updated (DDNS will be collected by the wizard in step 8)"
 
 step "8. Stage 2 remote proof: ./setup.sh --remote"

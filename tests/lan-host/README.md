@@ -14,8 +14,8 @@ Two principles shape this harness:
    NVIDIA driver removal) it sources the product module and calls the real function (see
    [Clean wipe](#clean-wipe--the-destructive-guard)), so the test can't drift from the product.
 
-This harness is **maintainer-private** — not mirrored to the public repo. It targets a real box you
-own and needs real provider creds for the remote path.
+This is an operator-run harness for a disposable box you own. Local connection values live only in
+gitignored `tests/.env.lan-host`; remote/provider credentials belong in the GCP harness instead.
 
 ## At a glance — the choice matrix
 
@@ -35,7 +35,7 @@ Personas (`LANHOST_PERSONA`, expand to a toggle preset; individual toggles overr
 | `nvidia-existing` | Stage 3 → use the already-installed NVIDIA driver | S3.N3 |
 | `nvidia-standard` | Stage 3 → fresh apt NVIDIA driver, **2 reboots + finalize** | S3.N1 |
 | `nvidia-unlock` | Stage 3 → Unlock-NVENC patched driver, **2 reboots + finalize** | S3.N1/N2 |
-| `remote-nas` | remote + indexers + latest + bazarr — **GCP territory** | S2.* |
+| `remote-nas` | refused before a wipe; redirects the operator to the GCP harness | S2.* |
 
 Personas set a baseline; **individual toggles compose on top** — e.g. `--persona lan-minimal --smb`
 or `LANHOST_BAZARR=1 LANHOST_INDEXERS=1`. Any non-default toggle drives the real wizard.
@@ -54,6 +54,7 @@ cp tests/.env.lan-host.example tests/.env.lan-host
 $EDITOR tests/.env.lan-host     # TARGET_HOST / TARGET_USER / LANHOST_EXPECT, then a persona/toggles
 
 # 3. Run
+bash tests/lan-host/run-fresh.sh --preflight                         # local checks only; no SSH
 bash tests/lan-host/run-fresh.sh --yes                              # DEMO baseline
 bash tests/lan-host/run-fresh.sh --persona lan-minimal --yes        # real wizard, LAN baseline
 bash tests/lan-host/run-fresh.sh --persona lan-minimal --smb --yes  # + host SMB file share
@@ -62,6 +63,8 @@ bash tests/lan-host/run-fresh.sh --persona nvidia-standard --yes    # GPU: fresh
 ```
 
 `--persona NAME` / `--gpu MODE` on the command line override `tests/.env.lan-host` for that run.
+With no local env file, `--preflight` validates the placeholder example and exits before SSH,
+rsync, or any destructive action.
 
 ## The scripts
 
@@ -90,7 +93,6 @@ Each helper runs standalone, e.g. `bash tests/lan-host/probe-services.sh --servi
 | `LANHOST_INDEXERS` / `LANHOST_CHANNEL` / `LANHOST_QUALITY` / `LANHOST_BAZARR` | Stage 1 wizard choices (blank → persona/default). |
 | `LANHOST_SMB` | `1` enables the host SMB file share (Stage 1, data scope → `\\<ip>\Media` → `/data`). `0`/blank → off. |
 | `LANHOST_REMOTE` | `1` is refused on the LAN drive (remote = GCP). |
-| `DOMAIN`, `NPM_ADMIN_EMAIL`, `NPM_LE_SERVER`, `DDNS_*` | Reserved for the remote path (GCP territory). |
 
 Leave toggles **blank** to inherit the persona (or the DEMO baseline). A blank persona + blank
 toggles = DEMO. Explicit toggles override the persona.

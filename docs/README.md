@@ -32,7 +32,7 @@ installation, runtime, test, and maintenance surface.
 
 | Doc | One-line hook |
 |-----|---------------|
-| [../tests/README.md](../tests/README.md) | DinD, unit, and scenario test surfaces (live-host proof is maintainer-only). |
+| [../tests/README.md](../tests/README.md) | DinD, unit, GCP VM, and LAN hardware test surfaces. |
 | [reference/quality-bounds.md](reference/quality-bounds.md) | Quality profile bounds and tuning reference. |
 
 ## Project

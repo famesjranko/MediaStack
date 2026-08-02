@@ -4,7 +4,7 @@ End-to-end tests that run inside a Docker-in-Docker container so your host stays
 
 DinD is a **Debian-based** image (`ms-dind:debian`, built from `tests/Dockerfile.dind`), matching the production distro. First `./tests/run.sh` invocation builds it (~40s); subsequent runs use the docker layer cache.
 
-> **Two surfaces, complementary scope.** This README covers DinD — fast (~16 min full battery), runs everything that happens *inside* the VM. Real Let's Encrypt HTTP-01, real public DNS via Dynu, and the WAN-firewall proof for every Docker LAN-only TCP port are validated on **maintainer-private live-host harnesses** (cloud VM + bare metal — they need real infra/creds, so they're maintainer-only and not published here). The surfaces are complementary: DinD cannot prove DDNS pushes / public DNS resolution / firewall behavior, and the live-host runs don't exercise every in-VM scenario (npm-heal, wireguard-{server,containers,streaming}, wizard-presets are DinD-only). Pick by what's being validated.
+> **Three complementary surfaces.** DinD runs everything that happens inside the VM. The operator-run [`gcp-vm/`](gcp-vm/) harness proves real public DNS, DDNS, Let's Encrypt HTTP-01, HTTPS, and WAN firewall behavior on a disposable cloud VM. The [`lan-host/`](lan-host/) harness proves real Debian hardware, UFW/systemd, and GPU passthrough on a dedicated test box. Credentials and target values stay in gitignored local env files; neither live-host harness runs in CI.
 
 GitHub Actions runs a deliberately small PR gate: committed-secret checks, shell/Python
 syntax checks, compose rendering, focused host unit tests, and the `wizard-ui-*` PTY
@@ -20,6 +20,31 @@ installs intentionally follow upstream tags.
 - Docker on the host (Compose v2 not required inside DinD; it's pre-baked in the image).
 - Free disk: ~6 GB for `fresh-install` (image pulls inside DinD) + ~500 MB for the DinD image itself.
 - Network: first run downloads base images (debian:bookworm-slim + Docker CE apt repo); subsequent runs can go fully offline if the host already has the MediaStack images (see image cache below).
+
+## Live-host acceptance harnesses
+
+These are explicit operator actions, not automated gates. Read the co-located
+README before using either one, review the ignored env file, and never target a
+production host.
+
+```bash
+# Safe structural/config checks: no cloud, SSH, rsync, or destructive action.
+bash tests/gcp-vm/run-fresh.sh --preflight
+bash tests/lan-host/run-fresh.sh --preflight
+
+# Live runs only after reviewing target, credentials, cost, and cleanup.
+bash tests/gcp-vm/run-fresh.sh
+bash tests/lan-host/run-fresh.sh --yes
+```
+
+The GCP runner deletes and recreates one VM. It requires
+`GCP_EXPECT_TARGET=PROJECT_ID/ZONE/INSTANCE`, passes the project explicitly to
+every `gcloud` command, and incurs charges until the VM is deleted. The LAN
+runner can remove containers, volumes, generated configuration, drivers, and
+optionally `/data` on its SSH target. Interactive wipes require retyping the
+target hostname; `--yes` is refused unless `TARGET_HOST == LANHOST_EXPECT`.
+See [`gcp-vm/README.md`](gcp-vm/README.md) and
+[`lan-host/README.md`](lan-host/README.md) for prerequisites and cleanup.
 
 ## Running
 
@@ -272,7 +297,7 @@ Run the focused remote-access DinD gate with:
 ./tests/run.sh smoke remote-gating npm-heal ddns-seed wireguard wireguard-server wireguard-containers wireguard-streaming stage2-skip stage2-ready
 ```
 
-This gate is intentionally not a real public WAN proof. Real public DNS, DDNS provider pushes, firewall behavior, and real Let's Encrypt HTTP-01 remain covered on the maintainer-private live-host harnesses.
+This gate is intentionally not a real public WAN proof. Real public DNS, DDNS provider pushes, firewall behavior, and real Let's Encrypt HTTP-01 are covered by the operator-run `tests/gcp-vm/` harness.
 
 ### `nas-storage` — managed NAS/NFS fixture
 
@@ -476,6 +501,7 @@ Current units:
 - **seerr** — checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
 - **json-helpers** — exercises `json_get`, `json_path`, `json_has_name`, `json_array_nonempty` from `scripts/lib/json.sh` with representative inputs (missing keys, nested paths, case-insensitive matching, empty/invalid JSON).
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
+- **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening.sh`.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
 - **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
 - **launcher-hardware / nvidia-maintenance** — cover the day-2 hardware surface, Unlock-only visibility/dispatch guards, default-No cancellation, resolve-before-stop ordering, unload failure cleanup, one installer/toolkit execution, and expected-version marker persistence. Pure bash; no Docker/network.
@@ -740,7 +766,7 @@ requirement is covered outside this suite, not that a scenario is missing.
 | `existing-install-nuke` | TEST-07 | Existing-install wipe menu plus exact `DESTROY`; all-profile compose down is used; data bind-mount sentinel survives reinstall. |
 | `fail2ban-drift` | TEST-09 | Focused regex drift checks for `jellyfin`, `seerr`, `npm`, and `npm-ratelimit`. |
 
-Boundary: these are DinD proofs. `stage2-ready`, `remote-after-skip`, and `remote-ready-idempotent` use fixture DNS and Pebble, not public WAN. Real public DNS, DDNS updates, WAN firewall behavior, and real Let's Encrypt HTTP-01 are proven on maintainer-run live-host harnesses, kept out of version control and out of this test suite.
+Boundary: these are DinD proofs. `stage2-ready`, `remote-after-skip`, and `remote-ready-idempotent` use fixture DNS and Pebble, not public WAN. Real public DNS, DDNS updates, WAN firewall behavior, and real Let's Encrypt HTTP-01 are proven by the separately invoked `tests/gcp-vm/` harness.
 
 ## Debugging with `--keep`
 

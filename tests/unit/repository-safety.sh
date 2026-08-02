@@ -478,13 +478,14 @@ done
 allow_dir="$FIXTURE_ROOT/allow-path"
 make_clean_fixture "$allow_dir"
 printf 'GCP_PROJECT=example\n' >"$allow_dir/tests/.env.gcp.example"
-git -C "$allow_dir" add -f tests/.env.gcp.example >/dev/null 2>&1
+printf 'TARGET_HOST=example.invalid\n' >"$allow_dir/tests/.env.lan-host.example"
+git -C "$allow_dir" add -f tests/.env.gcp.example tests/.env.lan-host.example >/dev/null 2>&1
 allow_out=$(run_guard "$allow_dir")
 allow_rc=$?
 if ((allow_rc == 0)) && [[ -z "$allow_out" ]]; then
-    pass "ported path allowlist keeps tests/.env.gcp.example"
+    pass "ported path allowlist keeps live-host env examples"
 else
-    fail "ported path allowlist keeps tests/.env.gcp.example" "rc=$allow_rc :: $allow_out"
+    fail "ported path allowlist keeps live-host env examples" "rc=$allow_rc :: $allow_out"
 fi
 
 content_dir="$FIXTURE_ROOT/allow-content"

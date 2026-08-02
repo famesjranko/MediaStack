@@ -9,7 +9,7 @@
 # Resolve repo root from this lib's location: tests/lan-host/_lib.sh -> repo root.
 LANHOST_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$LANHOST_LIB_DIR/../.." && pwd)"
-ENV_FILE="$REPO_ROOT/tests/.env.lan-host"
+ENV_FILE="${LANHOST_ENV_FILE:-$REPO_ROOT/tests/.env.lan-host}"
 
 FAILS=()
 step() {
@@ -38,6 +38,7 @@ require() {
 
 # Load tests/.env.lan-host into the environment and derive connection vars.
 load_env() {
+    local mode="${1:-live}"
     [[ -f "$ENV_FILE" ]] \
         || die "$ENV_FILE not found — copy tests/.env.lan-host.example to tests/.env.lan-host and fill it in"
     # LANHOST_* already set in the environment (run-fresh.sh's --persona/--gpu flags, or
@@ -53,8 +54,10 @@ load_env() {
     source "$ENV_FILE"
     set +a
     for _k in "${!_ov[@]}"; do printf -v "$_k" '%s' "${_ov[$_k]}"; done
-    : "${NPM_LE_SERVER:=https://acme-staging-v02.api.letsencrypt.org/directory}"
     require TARGET_HOST TARGET_USER
+    if [[ "$TARGET_HOST" == *.example.invalid && "$mode" != preflight ]]; then
+        die "refusing live LAN-host action: replace the placeholder TARGET_HOST in $ENV_FILE first"
+    fi
     : "${TARGET_PATH:=/home/$TARGET_USER/MediaStack}"
     # rsync --delete (rsync-push.sh) and `sudo rm -rf $RP/...` (clean-wipe.sh) operate
     # under TARGET_PATH. Refuse root-ish / bare-home values so a misconfigured

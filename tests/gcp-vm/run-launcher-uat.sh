@@ -10,8 +10,8 @@
 #     "Add a feature → Add remote access" path is testable from a clean state
 #   - Designed for a tester to SSH in and explore interactively
 #
-# Wall-time: ~6-8 min. Cost: ~$0.05 (e2-medium for ~30 min including tester
-# exploration). Don't forget to delete the VM when done.
+# Wall-time: ~6-8 min plus exploration. The VM incurs GCP charges while it is
+# running; don't forget to delete it when done.
 #
 # See tests/gcp-vm/README.md for prerequisites (gcloud auth, .env.gcp,
 # firewall tags). This harness reuses that setup.
@@ -20,7 +20,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
-ENV_FILE="$REPO_ROOT/tests/.env.gcp"
+ENV_FILE="${GCP_ENV_FILE:-$REPO_ROOT/tests/.env.gcp}"
 STARTUP="$HERE/startup.sh"
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -35,6 +35,21 @@ fi
 set -a
 source "$ENV_FILE"
 set +a
+for name in PROJECT_ID ZONE INSTANCE MACHINE_TYPE BOOT_DISK_SIZE GCP_EXPECT_TARGET; do
+    if [[ -z "${!name:-}" ]]; then
+        echo "✗ missing required value in $ENV_FILE: $name" >&2
+        exit 2
+    fi
+done
+GCP_TARGET="$PROJECT_ID/$ZONE/$INSTANCE"
+if [[ "$GCP_EXPECT_TARGET" != "$GCP_TARGET" ]]; then
+    echo "✗ refusing destructive GCP run: GCP_EXPECT_TARGET '$GCP_EXPECT_TARGET' != '$GCP_TARGET'" >&2
+    exit 2
+fi
+if [[ "$PROJECT_ID" == "your-gcp-project-id" ]]; then
+    echo "✗ refusing live GCP run: replace every placeholder in $ENV_FILE first" >&2
+    exit 2
+fi
 SSH_HOST="$INSTANCE.$ZONE.$PROJECT_ID"
 
 step() {
@@ -45,16 +60,16 @@ ok() { echo "  ✓ $*"; }
 bad() { echo "  ✗ $*"; }
 
 step "0. Delete existing VM (if any)"
-gcloud compute instances delete "$INSTANCE" --zone="$ZONE" --quiet 2>&1 | tail -1
+gcloud --project="$PROJECT_ID" compute instances delete "$INSTANCE" --zone="$ZONE" --quiet 2>&1 | tail -1
 
 step "1. Create VM with mediastack-public tag"
-gcloud compute instances create "$INSTANCE" --zone="$ZONE" --machine-type="$MACHINE_TYPE" \
+gcloud --project="$PROJECT_ID" compute instances create "$INSTANCE" --zone="$ZONE" --machine-type="$MACHINE_TYPE" \
     --image-family=debian-12 --image-project=debian-cloud --boot-disk-type=pd-standard \
     --boot-disk-size="$BOOT_DISK_SIZE" --tags=mediastack-public \
     --metadata-from-file=startup-script="$STARTUP" 2>&1 | tail -3
 
 step "2. Refresh SSH config"
-gcloud compute config-ssh 2>&1 | tail -1
+gcloud --project="$PROJECT_ID" compute config-ssh 2>&1 | tail -1
 
 step "3. Wait for SSH ready"
 for i in $(seq 1 30); do
@@ -96,7 +111,6 @@ rsync -az \
     --exclude=config/qbittorrent/qBittorrent/lockfile \
     --exclude=config/qbittorrent/qBittorrent/config/ \
     --exclude=backups/ \
-    --exclude=docs/private/ \
     -e "ssh -o StrictHostKeyChecking=no" \
     "$REPO_ROOT/" "$SSH_HOST:/tmp/MediaStack/" 2>&1 | tail -2
 ssh -o StrictHostKeyChecking=no "$SSH_HOST" 'sudo mv /tmp/MediaStack /opt/MediaStack && sudo chown -R $(id -un):$(id -gn) /opt/MediaStack' >/dev/null
@@ -117,7 +131,7 @@ if ((RC == 0)); then ok "Stage 1 install rc=0"; else
 fi
 grep -q 'MediaStack is running!' "$SETUP_LOG" && ok "completion banner present" || bad "completion banner missing"
 
-EXT_IP=$(gcloud compute instances describe "$INSTANCE" --zone="$ZONE" --format='get(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null)
+EXT_IP=$(gcloud --project="$PROJECT_ID" compute instances describe "$INSTANCE" --zone="$ZONE" --format='get(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null)
 
 cat <<HANDOFF
 
@@ -157,10 +171,10 @@ Helpful diagnostics (read-only):
   ssh $SSH_HOST 'cd /opt/MediaStack && tail -200 /tmp/gcp-fresh-*.log'
 
 To reset to fresh-installed state:
-  bash tests/gcp-vm/run-launcher-uat.sh   (~6 min, ~$0.05)
+  bash tests/gcp-vm/run-launcher-uat.sh   (~6-8 min plus GCP charges)
 
-To delete the VM (DO THIS WHEN DONE — \$0.03/hr running):
-  gcloud compute instances delete "$INSTANCE" --zone="$ZONE" --quiet
+To delete the VM (DO THIS WHEN DONE — it incurs charges while running):
+  gcloud --project="$PROJECT_ID" compute instances delete "$INSTANCE" --zone="$ZONE" --quiet
 
 ================================================================
 HANDOFF

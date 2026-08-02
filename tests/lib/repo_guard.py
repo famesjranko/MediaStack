@@ -50,8 +50,10 @@ CI_FORBIDDEN_TRACKED = (
     r"(^|/)(\.env($|\.)|\.envrc|tests/\.env\.gcp|private(/|$)|docs/plans(/|$)"
     r"|\.planning(/|$)|\.tmp(/|$)|CONTEXT\.md$|tests/.*-plan\.md$)"
 )
-CI_PATH_ALLOWLIST = r"(^|/)(\.env\.example|\.env\.gcp\.example)$"
-CI_CONTENT_ALLOWLIST = r"^(\.env\.example|tests/\.env\.gcp\.example)$"
+CI_PATH_ALLOWLIST = r"(^|/)(\.env\.example|\.env\.gcp\.example|\.env\.lan-host\.example)$"
+CI_CONTENT_ALLOWLIST = (
+    r"^(\.env\.example|tests/\.env\.gcp\.example|tests/\.env\.lan-host\.example)$"
+)
 
 # Generated host artifacts that must never be tracked. Mirrors .gitignore; a
 # tracked hit means an ignore rule was lost or a file was force-added.

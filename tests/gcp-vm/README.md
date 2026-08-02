@@ -20,7 +20,7 @@ re-pulled every default-profile image; see `scripts/setup/stack.sh:pull_images`.
 | 2 | Refresh SSH config                  | `gcloud compute config-ssh` works                          |
 | 3 | Wait for SSH                        | startup-script completed (rsync/git/curl present)          |
 | 4 | Rsync repo to `/opt/MediaStack`     | repo lands intact                                          |
-| 5 | Pre-seed Stage 1 `.env` + DDNS config | `tests/.env.gcp` inputs stay local/untracked; DDNS config is ready for Stage 2 |
+| 5 | Pre-seed Stage 2 inputs in `.env` | `tests/.env.gcp` values stay local/untracked; no provider config exists yet |
 | 6 | `DEMO=1 ./setup.sh --full`          | Stage 1 LAN-safe non-interactive baseline + completion banner |
 | 7 | Restore remote inputs + DDNS push   | real domain, `NPM_LE_SERVER`, and DDNS provider publish the VM IP |
 | 8 | `./setup.sh --remote`               | real Stage 2 route, WireGuard/NPM/DDNS setup, HTTP-01 readiness |
@@ -39,7 +39,6 @@ re-pulled every default-profile image; see `scripts/setup/stack.sh:pull_images`.
 ```bash
 gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
-gcloud compute config-ssh
 ```
 
 ### 2. GCP firewall rules
@@ -74,11 +73,10 @@ gcloud compute firewall-rules create mediastack-ssh \
 
 ### 3. DDNS provider
 
-The harness pre-seeds `config/ddns-updater/config.json` with your DDNS
-credentials so the `ddns-updater` container can push the new VM's IP to
-the DNS provider. This harness uses **Dynu** (`run-fresh.sh` selects it in the
-picker; the wizard's default is now **DuckDNS**, a token provider whose login is
-verified during setup — #248).
+The harness feeds your Dynu password to the real Stage 2 wizard. The wizard
+renders `config/ddns-updater/config.json`, starts the provider container, and
+waits for public DNS to converge. `run-fresh.sh` selects Dynu explicitly because
+the product wizard defaults to DuckDNS.
 
 In your DDNS panel:
 - Register your domain (e.g. `yourname.mywire.org`)
@@ -97,10 +95,21 @@ cp tests/.env.gcp.example tests/.env.gcp
 $EDITOR tests/.env.gcp
 ```
 
-`tests/.env.gcp` is gitignored. The path is referenced by `run-fresh.sh`
-as a sibling of the script. `DOMAIN`, `NPM_ADMIN_EMAIL`, `NPM_LE_SERVER`, and
-the DDNS credentials in that file are used for the real Stage 2
-`setup.sh --remote` proof; they are not committed.
+`tests/.env.gcp` is gitignored. `DOMAIN`, `NPM_ADMIN_EMAIL`, `NPM_LE_SERVER`,
+and `DDNS_PASSWORD` are used for the real Stage 2 `setup.sh --remote` proof;
+they are not committed. Set `GCP_EXPECT_TARGET` to the exact
+`PROJECT_ID/ZONE/INSTANCE` string: both destructive GCP runners refuse to start
+when it does not match.
+
+Before any live run, validate the local bundle and configuration without
+contacting GCP or SSH:
+
+```bash
+bash tests/gcp-vm/run-fresh.sh --preflight
+```
+
+With no local env file, preflight validates the placeholder example. A live run
+always requires `tests/.env.gcp` and the exact target approval.
 
 ## Running the test
 
@@ -134,7 +143,7 @@ If you only want to delete (not rebuild), or to delete after debugging:
 ```bash
 # Source the env so $INSTANCE / $ZONE are set
 set -a; source tests/.env.gcp; set +a
-gcloud compute instances delete "$INSTANCE" --zone="$ZONE" --quiet
+gcloud --project="$PROJECT_ID" compute instances delete "$INSTANCE" --zone="$ZONE" --quiet
 ```
 
 To rebuild without re-running the full setup + verify (e.g. you want to
@@ -145,19 +154,19 @@ seed `.env`. You can then SSH in and run the remote proof explicitly with
 
 ```bash
 set -a; source tests/.env.gcp; set +a
-gcloud compute instances delete "$INSTANCE" --zone="$ZONE" --quiet
-gcloud compute instances create "$INSTANCE" --zone="$ZONE" \
+gcloud --project="$PROJECT_ID" compute instances delete "$INSTANCE" --zone="$ZONE" --quiet
+gcloud --project="$PROJECT_ID" compute instances create "$INSTANCE" --zone="$ZONE" \
   --machine-type="$MACHINE_TYPE" --image-family=debian-12 \
   --image-project=debian-cloud --boot-disk-size="$BOOT_DISK_SIZE" \
   --tags=mediastack-public \
   --metadata-from-file=startup-script=tests/gcp-vm/startup.sh
-gcloud compute config-ssh
+gcloud --project="$PROJECT_ID" compute config-ssh
 ssh "$INSTANCE.$ZONE.$PROJECT_ID"   # then setup manually
 ```
 
-VMs are billed per-second while running. **Don't forget to delete** when
-you're done debugging — an e2-medium left up overnight is ~$0.30, an
-e2-medium left up for a week is ~$5.
+The VM incurs GCP compute and network charges while it is running. **Delete it
+when you finish**, and check current GCP pricing rather than relying on a cost
+figure embedded in this repository.
 
 ## Staging vs production Let's Encrypt
 
@@ -201,8 +210,8 @@ the harness is ready to run.
   skip (e.g. "Seerr already initialized"). A fresh test always starts
   from a brand-new VM so this is moot, but it explains why a manual
   re-run on the same VM looks different from the first.
-- **Cost.** An e2-medium runs ~$0.03/hr on-demand. A test run + leaving the
-  VM up for an hour of investigation is < $0.10. Don't forget to delete.
+- **Cost.** The VM incurs charges until deleted. Check current GCP pricing and
+  do not leave the test instance running after the investigation.
 - **GCP-internal LE secondary co-location.** Let's Encrypt's multi-perspective
   validation picks a random subset of secondary validators per challenge.
   Occasionally one of those secondaries is hosted in GCP us-central1 (the

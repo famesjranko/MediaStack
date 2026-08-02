@@ -16,16 +16,17 @@
 # behind residential NAT has no clean public-IP vantage. This surface proves what only
 # real silicon can (GPU passthrough/transcoding, UFW, systemd, autoheal).
 #
-# usage: run-fresh.sh [--persona NAME] [--gpu MODE] [--smb] [--no-wipe] [--nvidia] [--yes]
+# usage: run-fresh.sh [--preflight] [--persona NAME] [--gpu MODE] [--smb] [--no-wipe] [--nvidia] [--yes]
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/_lib.sh"
 
-NO_WIPE=0 NVIDIA=0 ASSUME_YES=0
+PREFLIGHT=0 NO_WIPE=0 NVIDIA=0 ASSUME_YES=0
 # --persona/--gpu are applied as env overrides BEFORE load_env so they win over .env
 # (load_env snapshots/restores env-set LANHOST_* across the source).
 while (($#)); do
     case "$1" in
+        --preflight) PREFLIGHT=1 ;;
         --persona)
             export LANHOST_PERSONA="${2:-}"
             shift
@@ -41,7 +42,7 @@ while (($#)); do
         --nvidia) NVIDIA=1 ;;
         --yes) ASSUME_YES=1 ;;
         -h | --help)
-            echo "usage: run-fresh.sh [--persona NAME] [--gpu MODE] [--smb] [--no-wipe] [--nvidia] [--yes]"
+            echo "usage: run-fresh.sh [--preflight] [--persona NAME] [--gpu MODE] [--smb] [--no-wipe] [--nvidia] [--yes]"
             exit 0
             ;;
         *) die "unknown arg: $1" ;;
@@ -49,7 +50,22 @@ while (($#)); do
     shift
 done
 
-load_env
+USING_EXAMPLE=0
+if ((PREFLIGHT)) && [[ -z "${LANHOST_ENV_FILE:-}" && ! -f "$ENV_FILE" ]]; then
+    ENV_FILE="$REPO_ROOT/tests/.env.lan-host.example"
+    USING_EXAMPLE=1
+fi
+if ((PREFLIGHT)); then
+    load_env preflight
+else
+    load_env
+fi
+if ((!PREFLIGHT && ASSUME_YES)); then
+    [[ -n "${LANHOST_EXPECT:-}" ]] \
+        || die "refusing --yes before sync: set LANHOST_EXPECT to the intended test host"
+    [[ "$TARGET_HOST" == "$LANHOST_EXPECT" ]] \
+        || die "refusing --yes before sync: TARGET_HOST ($TARGET_HOST) != LANHOST_EXPECT ($LANHOST_EXPECT)"
+fi
 RP=$(shq "$TARGET_PATH")
 TMP="${TMPDIR:-/tmp}"
 
@@ -76,6 +92,40 @@ if ((MATRIX_USE_WIZARD)); then
     python3 "$HERE/wizard-steps.py" >"$STEPS_JSON" \
         || die "matrix cell not supported by the LAN live-drive (see message above) — refusing BEFORE any destructive action"
     ok "matrix cell validated; steps written ($STEPS_JSON)"
+fi
+
+if ((PREFLIGHT)); then
+    local_files=(
+        "$HERE/_lib.sh"
+        "$HERE/clean-wipe.sh"
+        "$HERE/probe-services.sh"
+        "$HERE/rsync-push.sh"
+        "$HERE/run-fresh.sh"
+        "$HERE/wizard-steps.py"
+        "$REPO_ROOT/tests/lib/wizard_pty.py"
+        "$REPO_ROOT/tests/lib/wizard_prompts.json"
+    )
+    for path in "${local_files[@]}"; do
+        [[ -s "$path" ]] || die "missing/empty dependency: $path"
+    done
+    bash -n "$HERE/_lib.sh" "$HERE/clean-wipe.sh" "$HERE/probe-services.sh" \
+        "$HERE/rsync-push.sh" "$HERE/run-fresh.sh"
+    python3 "$HERE/wizard-steps.py" >/dev/null
+    if ((USING_EXAMPLE)); then
+        echo "✓ LAN-host placeholder-bundle preflight passed"
+        echo "  copy tests/.env.lan-host.example to tests/.env.lan-host and replace every placeholder before a live run"
+    else
+        echo "✓ LAN-host harness preflight passed for $SSH_DEST:$TARGET_PATH"
+    fi
+    if ((USING_EXAMPLE)); then
+        echo "  placeholder target identity is internally consistent; it is not a live approval"
+    elif [[ -n "${LANHOST_EXPECT:-}" && "$LANHOST_EXPECT" == "$TARGET_HOST" ]]; then
+        echo "  non-interactive wipe approval matches the target"
+    else
+        echo "  non-interactive wipe remains disabled; an interactive run requires typed hostname confirmation"
+    fi
+    echo "  no SSH, rsync, target, or destructive action was attempted"
+    exit 0
 fi
 
 # 1. Push code FIRST — so a subsequent --nvidia wipe runs the CURRENT product gpu.sh

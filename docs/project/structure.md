@@ -92,6 +92,8 @@ config/                             Live service configs (all gitignored — run
 
 tests/
   README.md                         Canonical test, scenario, cache, and debugging guide
+  .env.gcp.example                  Placeholder-only GCP live-test configuration
+  .env.lan-host.example             Placeholder-only LAN-host configuration
   check.sh                          Gate wrapper: tiers and single-stage selectors, the entry point CI runs
   run.sh                            Scenario runner: ./tests/run.sh [scenario] [--keep] [--no-cache]
   battery.sh                        Sequential full-scenario battery
@@ -107,6 +109,8 @@ tests/
   api-matrix/                       Per-service direct-API modules for the api-matrix layer
   scenarios/                        One file per scenario; tests/README.md documents each
   unit/                             Host unit suites, discovered by glob
+  gcp-vm/                            Disposable GCP VM remote/WAN acceptance harness
+  lan-host/                          Dedicated Debian hardware/GPU acceptance harness
 
 docs/                               Product and project docs (human-facing)
   README.md                         Docs index and reviewer reading order

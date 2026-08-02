@@ -35,8 +35,6 @@ rsync_args=(
     --exclude=.git
     --exclude=.env           # never ship the box's generated runtime .env
     --exclude='tests/.env.*' # never ship local test secrets/templates
-    --exclude=docs/private/  # setup.sh reads docs/operations/image-digests.lock (stable channel),
-    # so push docs/ — only carve out docs/private/ (mirrors the gcp harness)
     --exclude=docker-compose.override.yml
     # config/portainer/ is container-created and root-owned on a live target but is NOT
     # in .gitignore, so the gitignore filter won't skip it. Exclude it explicitly so the

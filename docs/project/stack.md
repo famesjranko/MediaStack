@@ -64,7 +64,8 @@ re-read them when a service changes.
   - Smoke: `./tests/run.sh smoke`
   - Full: `./tests/run.sh fresh-install`
   - Staged setup/recovery: pass the scenario names to `./tests/run.sh`; `tests/README.md` documents each
-  - Real public WAN/DNS/DDNS/LE proof: maintainer-run live-host harnesses, kept out of version control
+  - Real public WAN/DNS/DDNS/LE proof: operator-run `tests/gcp-vm/` harness
+  - Real Debian/GPU/UFW/systemd proof: operator-run `tests/lan-host/` harness
   - Keep DinD after a failed run: `./tests/run.sh smoke --keep`
   - Cold cache: `./tests/run.sh --no-cache smoke`
   - Candidate-image preflight: `MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.sh wireguard` — test a new image tag in the DinD compose copy before editing compose (see `docs/operations/upgrades.md`)
