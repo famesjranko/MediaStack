@@ -23,7 +23,7 @@ pyproject.toml                      Python lint/type configuration (ruff rule se
 .shellcheckrc                       Repository-wide shellcheck configuration
 README.md, LICENSE, CONTRIBUTING.md Front door, licence, and contribution guidance
 AGENTS.md                           Agent router
-.github/                            Issue templates, security policy, CI workflows
+.github/                            Issue templates, security policy, CI and image-drift workflows
 
 scripts/
   configure.sh                      Configuration entrypoint — sources lib/ + services/

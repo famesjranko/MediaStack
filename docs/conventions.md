@@ -129,6 +129,9 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
   selector is run by some job, that a job declares `timeout-minutes`, or that
   branch protection's required contexts still match the job names in
   `.github/workflows/ci.yml`. Read the workflow when you change a gate.
+- **README menu screenshot freshness.** The PNGs under `docs/assets/` are
+  manually refreshed snapshots. This repository has no capture generator or
+  freshness gate, so review them when launcher menus change.
 - **The admin-port list in `scripts/setup/hardening.sh`.** Nothing checks that
   the `MEDIASTACK-DOCKER-RESTRICT` multiport rules still cover every admin port
   published by `docker-compose.yml`. A new admin service whose port is not added

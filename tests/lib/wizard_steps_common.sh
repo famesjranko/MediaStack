@@ -3,7 +3,7 @@
 # Builds a wizard_pty.py steps-JSON on the DinD box from NAMED prompts in the shared SSOT
 # (tests/lib/wizard_prompts.json) via tests/lib/wizard_steps_build.py, so every wizard prompt
 # regex lives in ONE place — shared across the stage1/stage2/stage3 scenarios and the
-# maintainer-private bare-metal harness. A prompt change is made once and all surfaces track it.
+# live-host harness. A prompt change is made once and all surfaces track it.
 #
 #   wizard_build_steps <steps_path> [<prompt_name> <send> ...]
 #

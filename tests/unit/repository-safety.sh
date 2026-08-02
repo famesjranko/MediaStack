@@ -371,9 +371,8 @@ done
 
 worktree_probes=(
     "PRIVATE-DOC-DIR|docs/private/a.md" "PRIVATE-DOC-DIR|.planning/a.md"
-    "PRIVATE-DOC-DIR|public-overlay/a.md" "PRIVATE-DOC-DIR|docs/plans/a.md"
+    "PRIVATE-DOC-DIR|docs/plans/a.md"
     "PRIVATE-DOC-DIR|nested/docs/private/a.md"
-    "PRIVATE-DOC-DIR|nested/public-overlay/a.md"
     "PRIVATE-DOC-DIR|nested/docs/plans/a.md"
     "ANALYZER-CACHE|.ua/a.json" "ANALYZER-CACHE|.understand-anything/a.json"
     "KNOWLEDGE-GRAPH|docs/knowledge-graph.txt" "KNOWLEDGE-GRAPH|docs/knowledge_graph.txt"
@@ -639,7 +638,6 @@ KNOWLEDGE-GRAPH (^|/)repo-map\.json$
 KNOWLEDGE-GRAPH (^|/)code-?graph\.(json|db|sqlite3?)$
 PRIVATE-DOC-DIR (^|/)docs/private/
 PRIVATE-DOC-DIR (^|/)\.planning/
-PRIVATE-DOC-DIR (^|/)public-overlay/
 PRIVATE-DOC-DIR (^|/)docs/plans/
 REAL-LOG \.log$
 REAL-LOG \.log\.[0-9]+$

@@ -130,7 +130,6 @@ WORKTREE_RULE_PATTERNS = {
     "PRIVATE-DOC-DIR": [
         r"(^|/)docs/private/",
         r"(^|/)\.planning/",
-        r"(^|/)public-overlay/",
         r"(^|/)docs/plans/",
     ],
     # Both slash-suffixed (directory) and bare (file/symlink-to-file) shapes:

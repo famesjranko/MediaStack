@@ -68,7 +68,6 @@ CONTROL_FILES = [
     ".github/SECURITY.md",
 ]
 CONTROL_DIRS = [".github/ISSUE_TEMPLATE"]
-FORBIDDEN = ["public-overlay"]
 
 # A markdown control file's relative links are checked; LICENSE is not markdown.
 # The routers are the reason this matters most: a route is worthless if it
@@ -113,12 +112,6 @@ for rel in CONTROL_DIRS:
         report("PASS", f"control directory exists: {rel}")
     else:
         report("FAIL", f"control directory exists: {rel}", "missing or not a directory")
-
-for rel in FORBIDDEN:
-    if (root / rel).exists():
-        report("FAIL", f"{rel}/ is absent", "present in the tree")
-    else:
-        report("PASS", f"{rel}/ is absent")
 
 # --- issue templates parse ---------------------------------------------------
 

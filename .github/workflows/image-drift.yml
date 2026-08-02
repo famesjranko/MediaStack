@@ -1,0 +1,84 @@
+name: Image Drift Alert
+
+# Weekly maintainer tripwire. It compares compose image tags with the accepted
+# baseline in docs/operations/image-digests.lock and keeps one issue in this
+# repository current until the baseline matches upstream again. Accept changed
+# digests only after the preflight documented in docs/operations/upgrades.md.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  image-drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-yaml
+
+      - name: Check remote image digests
+        id: check
+        run: |
+          rc=0
+          python3 scripts/image-drift.py --require-previous >drift.md 2>drift.err || rc=$?
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+          echo "image-drift exit code: $rc"
+          cat drift.md || true
+          cat drift.err || true
+
+      - name: Open or update drift issue
+        if: steps.check.outputs.rc == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create image-drift --color FBCA04 \
+            --description "Upstream image moved past the tested baseline" 2>/dev/null || true
+          title="Image drift: upstream images moved past the tested baseline"
+          {
+            cat drift.md
+            printf '\n---\n_Filed by [Image Drift Alert](%s) on %s. You do not need to accept every drifted row at once — see the selective `--accept-services` flow in `docs/operations/upgrades.md`. This issue auto-closes once the lock matches upstream._\n' \
+              "$RUN_URL" "$(date -u '+%Y-%m-%d %H:%M UTC')"
+          } >body.md
+          existing=$(gh issue list --label image-drift --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file body.md
+            gh issue comment "$existing" \
+              --body "Drift re-detected $(date -u '+%Y-%m-%d %H:%M UTC') — body refreshed. [Run]($RUN_URL)"
+            echo "Updated existing drift issue #$existing"
+          else
+            url=$(gh issue create --title "$title" --body-file body.md --label image-drift)
+            echo "Opened drift issue: $url"
+          fi
+
+      - name: Close resolved drift issue
+        if: steps.check.outputs.rc == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          nums=$(gh issue list --label image-drift --state open --json number --jq '.[].number')
+          for n in $nums; do
+            gh issue comment "$n" \
+              --body "Baseline matches upstream as of $(date -u '+%Y-%m-%d %H:%M UTC'). Closing."
+            gh issue close "$n"
+            echo "Closed resolved drift issue #$n"
+          done
+
+      - name: Fail on check error
+        if: steps.check.outputs.rc != '0' && steps.check.outputs.rc != '2'
+        run: |
+          echo "::error::image-drift check errored (rc=${{ steps.check.outputs.rc }}); see the check step log."
+          exit 1

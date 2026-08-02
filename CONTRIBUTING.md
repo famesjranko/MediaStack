@@ -13,6 +13,10 @@ requests each have a template, so pick whichever fits when you open the issue.
 Small things like typos and one-line corrections can go straight to a pull
 request.
 
+Create a short-lived feature branch and open a pull request into `main` for
+every change. `main` is the protected integration and release branch as well as
+the repository's only long-lived branch.
+
 ## Running the checks
 
 The whole host test tier runs in one shot, and is the exact gate CI runs on
@@ -32,7 +36,7 @@ unit tests directly:
 
 `tests/README.md` documents the full test surface. The DinD end-to-end battery
 is optional for most changes, and the live-host proofs (real DNS, Let's Encrypt,
-WAN firewall) are maintainer-only.
+WAN firewall) are explicit operator-run checks and never run in CI.
 
 ## Pull request checklist
 

@@ -58,6 +58,9 @@ The installer detects the GPU, creates the storage layout (local, NAS/NFS, or ma
 
 <img src="docs/assets/mediastack-day2-menu.png" alt="The ./mediastack day-2 management menu: a status header (running containers, domain, host, IPs) over the management options" width="680">
 
+These PNGs are manually refreshed snapshots. The capture tooling is not part of
+the repository, so the screenshots may briefly lag menu changes.
+
 This is the main tool once the stack is running. Each item is documented in depth in [`docs/operations/day-2.md`](docs/operations/day-2.md).
 
 | Menu item | What it does |

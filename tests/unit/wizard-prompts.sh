@@ -2,8 +2,8 @@
 # =============================================================================
 # Unit test — shared wizard prompt SSOT (tests/lib/wizard_prompts.json)
 # =============================================================================
-# The DinD wizard-ui-* scenarios and the maintainer-private bare-metal harness build their
-# PTY steps from ONE prompt definition file via tests/lib/wizard_steps_build.py. This guards
+# The wizard-ui-* scenarios build their PTY steps from ONE prompt definition
+# file via tests/lib/wizard_steps_build.py. This guards
 # that single source of truth:
 #   - the JSON is well-formed and every regex compiles (the flavor wizard_pty.py uses)
 #   - the builder renders SSOT names, @timeout, ENTER and NONE correctly, and rejects bad names

@@ -12,8 +12,6 @@
 #   4. python types    — pinned mypy (tools.toml [mypy]) over every tracked *.py
 #   5. compose render  — docker compose config across the profile combinations
 #   6. host unit tests — every tests/unit/*.sh, each under a 300s timeout
-#   7. publish guards  — scripts/dev/sync-public-selftest.sh (skipped only where
-#                        scripts/dev/ is absent; fails if it is present and rg is not)
 #
 # Tiers 2 and 4 duplicate a stage a caller may already have run as its own gate
 # (e.g. CI's lint-shellcheck / type-mypy jobs). Set MS_UNIT_SKIP_SHELLCHECK=1 /
@@ -253,30 +251,5 @@ else
         fi
     done
 fi
-
-# --- 7. sync-public publish guards -------------------------------------------
-# Absence is the legitimate skip: the public mirror strips scripts/dev/ but runs this same unit.sh.
-group "sync-public guards"
-if [[ ! -e scripts/dev/sync-public-selftest.sh ]]; then
-    echo "SKIP: sync-public selftest (scripts/dev/sync-public-selftest.sh absent — public mirror)"
-elif [[ ! -x scripts/dev/sync-public-selftest.sh ]]; then
-    err "sync-public selftest is not executable" "chmod +x scripts/dev/sync-public-selftest.sh"
-    fail=1
-elif ! command -v rg >/dev/null 2>&1; then
-    err "sync-public selftest cannot run" "install ripgrep (rg) — the publish guards need it"
-    fail=1
-else
-    timeout 300 scripts/dev/sync-public-selftest.sh
-    rc=$?
-    if ((rc != 0)); then
-        if ((rc == 124)); then
-            err "sync-public selftest timed out" "exceeded 300s — likely a hang"
-        else
-            err "sync-public selftest failed" "scripts/dev/sync-public-selftest.sh"
-        fi
-        fail=1
-    fi
-fi
-endgroup
 
 exit "$fail"
