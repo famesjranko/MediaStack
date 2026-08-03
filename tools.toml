@@ -27,6 +27,23 @@ tree = "./tests/secret-scan.sh tree <path>"
 history = "./tests/secret-scan.sh history <repo> [<git-log-opts>]"
 doc = "https://github.com/gitleaks/gitleaks/blob/v8.30.1/README.md"
 
+[shellcheck]
+# Shell lint engine. The pin is the whole point: shellcheck versions disagree
+# on which warnings fire, so the runner accepts a native binary only at this
+# exact version and otherwise uses the cached pin below or the pinned docker
+# image koalaman/shellcheck:v<version> — same engine, different delivery.
+version = "0.11.0"
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+# koalaman/shellcheck publishes no checksum file; both computed locally from
+# the release artifact.
+sha256 = "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+# The extracted binary, re-verified on every lint run. A version string is
+# self-reported: a shell script that echoes one passes a version check.
+binary_sha256 = "4da528ddb3a4d1b7b24a59d4e16eb2f5fd960f4bd9a3708a15baddbdf1d5a55b"
+install = "./tests/lint.sh install"
+invoke = "./tests/lint.sh"
+doc = "https://github.com/koalaman/shellcheck/tree/v0.11.0"
+
 [shfmt]
 # Shell code formatter, applied to every tracked shell file - production,
 # runtime and tests alike. Enforces consistent indentation and layout.

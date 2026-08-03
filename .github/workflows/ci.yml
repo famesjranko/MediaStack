@@ -37,6 +37,17 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      # tests/lint.sh fetches and sha256-verifies the binary itself on a cold
+      # cache, so this cache is a speed optimization, never a trust shortcut.
+      # Without it the runner's older native shellcheck fails the version gate
+      # and the sweep pays a docker pull instead.
+      - name: Cache the shellcheck pin
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/mediastack-tools
+          key: shellcheck-${{ hashFiles('tools.toml') }}
+      - name: Install the shellcheck pin
+        run: ./tests/lint.sh install
       - name: ShellCheck sweep
         run: ./tests/check.sh lint
 

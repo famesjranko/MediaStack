@@ -31,8 +31,14 @@ done
 git -C "$FIXTURE_ROOT" add bad1.sh ok2.sh ok3.sh
 cp "$REPO_ROOT/tests/lint.sh" "$FIXTURE_ROOT/tests/lint.sh"
 chmod +x "$FIXTURE_ROOT/tests/lint.sh"
+# The runner reads its pin from tools.toml at its own repo root, so the
+# fixture carries a copy; the stub below must report exactly that version.
+cp "$REPO_ROOT/tools.toml" "$FIXTURE_ROOT/tools.toml"
 
-sc_version="$(sed -n 's/^SC_VERSION="\(.*\)"$/\1/p' "$REPO_ROOT/tests/lint.sh")"
+sc_version="$(awk -F' *= *' '
+    /^\[/ { in_section = ($0 == "[shellcheck]"); next }
+    in_section && $1 == "version" { gsub(/"/, "", $2); print $2; exit }
+' "$REPO_ROOT/tools.toml")"
 SWEEP_LOG="$FIXTURE_ROOT/sweep.log"
 export SWEEP_LOG
 : >"$SWEEP_LOG"
@@ -49,7 +55,9 @@ chmod +x "$FIXTURE_ROOT/bin/shellcheck"
 
 # The stub shellcheck shadows the real one via PATH order; every other tool
 # (git, bash itself, coreutils) still resolves from the real PATH behind it.
-fixture_out=$(cd "$FIXTURE_ROOT" && PATH="$FIXTURE_ROOT/bin:$PATH" SWEEP_LOG="$SWEEP_LOG" bash tests/lint.sh --severity=warning 2>&1)
+# MS_TOOL_CACHE points at an empty fixture dir so a developer's real cached
+# pin (rung 2) can never shadow the stub, which wins on rung 1 regardless.
+fixture_out=$(cd "$FIXTURE_ROOT" && PATH="$FIXTURE_ROOT/bin:$PATH" SWEEP_LOG="$SWEEP_LOG" MS_TOOL_CACHE="$TMP_DIR/tool-cache" bash tests/lint.sh --severity=warning 2>&1)
 fixture_rc=$?
 if ((fixture_rc != 0)); then
     pass "a failing sweep propagates non-zero"

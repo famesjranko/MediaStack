@@ -19,22 +19,27 @@
 #                             # single stage: pinned gitleaks over all history.
 #   ./tests/check.sh unit     # single stage: tests/unit.sh only.
 #   ./tests/check.sh wizard   # single stage: image-free wizard scenarios only.
+#   ./tests/check.sh install  # fetch + verify every pinned dev tool from
+#                              # tools.toml (shellcheck, shfmt, gitleaks) into
+#                              # the local tool cache. One-time per machine;
+#                              # lets the fast tier run without Docker.
 #   ./tests/check.sh -h       # this help
 #
 # Tiers are cumulative and run in the fixed order below:
 #   fast    - lint (tests/lint.sh), shell formatting (tests/format.sh), python
 #             lint + format (ruff), python types (mypy) and the secret scan
 #             over the working tree (tests/secret-scan.sh). It starts no DinD
-#             or service containers; ShellCheck uses Docker unless the pinned
-#             native version is installed. History is a separate selector.
+#             or service containers; ShellCheck runs from a native or cached
+#             pinned binary (`./tests/check.sh install`) and falls back to
+#             Docker otherwise. History is a separate selector.
 #   default - fast + tests/unit.sh (adds compose render, host unit tests,
 #             shell syntax and Python bytecode) + the image-free
 #             wizard-ui scenarios (tests/ci-scenarios.sh via tests/run.sh).
 #             This is the PR gate's local equivalent.
 #   full    - default + tests/battery.sh (the complete DinD scenario battery).
 #
-# lint/shfmt/ruff/mypy/secrets/secrets-history/unit/wizard are single-stage
-# selectors, not tiers: each
+# lint/shfmt/ruff/mypy/secrets/secrets-history/unit/wizard/install are
+# single-stage selectors, not tiers: each
 # runs exactly one stage and nothing else, so a caller (CI) can spread the
 # pipeline across parallel jobs without a stage running twice. tests/unit.sh
 # reruns the shellcheck sweep and the mypy check internally as its own tiers
@@ -57,7 +62,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.." || exit 2
 
 if (($# > 1)); then
-    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard]" >&2
+    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|install]" >&2
     exit 2
 fi
 
@@ -69,9 +74,9 @@ case "$arg" in
         exit 0
         ;;
     fast | default | full) TIER="$arg" ;;
-    lint | shfmt | ruff | mypy | secrets | secrets-history | unit | wizard) STAGE="$arg" ;;
+    lint | shfmt | ruff | mypy | secrets | secrets-history | unit | wizard | install) STAGE="$arg" ;;
     *)
-        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard]" >&2
+        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|install]" >&2
         exit 2
         ;;
 esac
@@ -275,6 +280,14 @@ if [[ -n "$STAGE" ]]; then
             stage wizard "wizard: image-free scenarios" \
                 'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $(bash tests/ci-scenarios.sh)' \
                 wizard_scenarios
+            ;;
+        install)
+            stage install "install: shellcheck" "./tests/lint.sh install" \
+                ./tests/lint.sh install
+            stage install "install: shfmt" "./tests/format.sh install" \
+                ./tests/format.sh install
+            stage install "install: gitleaks" "./tests/secret-scan.sh install" \
+                ./tests/secret-scan.sh install
             ;;
     esac
     exit 0

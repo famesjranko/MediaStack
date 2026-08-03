@@ -42,6 +42,7 @@ and low maintenance.
 
 | You changed | Run | Why |
 |---|---|---|
+| Nothing yet (first run on this machine) | `./tests/check.sh install` | Fetches the pinned dev tools (ShellCheck, shfmt, gitleaks) into the local cache — the fast tier then needs no Docker |
 | Any shell | `./tests/check.sh fast` | ShellCheck, shfmt, ruff, mypy, secrets — no containers |
 | Any Python | `./tests/check.sh ruff && ./tests/check.sh mypy` | Lint/format and types, isolated stages |
 | Compose / config templates | `./tests/check.sh` | Adds compose render + unit + wizard scenarios |

@@ -121,9 +121,10 @@ needs no special flags — and neither do you.
 ./tests/lint.sh --severity=error         # stricter: only fail on errors
 ```
 
-It prefers a native `shellcheck` at the pinned version and falls back to the pinned
-`koalaman/shellcheck:v0.11.0` docker image, so the analysing engine is identical
-everywhere.
+It prefers a native `shellcheck` at the pinned version, then the sha256-verified
+cached pin (`./tests/lint.sh install`, fetched per `tools.toml [shellcheck]`), and
+falls back to the pinned `koalaman/shellcheck:v0.11.0` docker image — the analysing
+engine is identical on every rung.
 The default severity is `--severity=warning` — the same gate CI's
 `lint-shellcheck` job uses via `./tests/check.sh lint`.
 A bare `./tests/lint.sh` therefore gives the same pass/fail result as CI; no flag needed.
@@ -496,7 +497,7 @@ and cumulative `default`/`full` checks call this runner with the ShellCheck and
 mypy tiers visibly skipped because those same gates have already passed.
 Unlike the individual units, the complete direct tier needs the Docker CLI
 (compose render and the pinned ShellCheck image unless version 0.11.0 is
-installed natively) and `uv` for mypy.
+installed natively or cached via `./tests/lint.sh install`) and `uv` for mypy.
 
 ```bash
 ./tests/unit.sh        # static validation + every host unit
@@ -727,6 +728,8 @@ command by hand:
 ./tests/check.sh          # default: fast + tests/unit.sh + image-free wizard scenarios
 ./tests/check.sh fast     # static tier: shellcheck, shfmt, ruff, mypy, secrets.
 ./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
+./tests/check.sh install  # one-time per machine: fetch + verify every pinned dev
+                          # tool (shellcheck, shfmt, gitleaks) into the local cache
 ```
 
 Stages run in the documented order and stop at the first failure, naming the tier and
@@ -736,8 +739,9 @@ below; it does not reimplement their file discovery or logic:
 - **fast** — `./tests/lint.sh --severity=warning` (shellcheck), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
   pinned gitleaks over this repository's tree — all five from `tools.toml`. It starts
-  no DinD or service containers; ShellCheck uses Docker unless version 0.11.0 is
-  installed natively, but its whole-tree sweep can still take several minutes. Use
+  no DinD or service containers; ShellCheck runs from a native or cached pinned
+  binary (`./tests/check.sh install`) and only falls back to Docker when neither
+  is present, but its whole-tree sweep can still take several minutes. Use
   the touched-file lint/format commands above for quick feedback. The pinned tools
   need network on a cold tool cache. History is the separate
   `./tests/check.sh secrets-history` pre-push selector.

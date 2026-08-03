@@ -19,8 +19,10 @@ read [`../tests/check.sh`](../tests/check.sh) rather than a list copied here.
 ./tests/check.sh <selector> # exactly one stage
 ```
 
-The fast tier uses Docker for pinned ShellCheck unless ShellCheck `0.11.0` is
-installed natively. It does not start DinD or product service containers, but
+The fast tier runs pinned ShellCheck from a native install at the exact pinned
+version or from the verified local cache (`./tests/check.sh install`, one-time
+per machine), falling back to Docker when neither is present. It does not
+start DinD or product service containers, but
 the whole-tree ShellCheck sweep can still take several minutes. Use a
 single-stage or touched-file command from `tests/README.md` for quick feedback.
 
@@ -79,8 +81,9 @@ rather than a pass.
 
 Keep repo-wide ShellCheck suppressions in `.shellcheckrc`, not scattered inline
 through individual files. The file explains each currently suppressed code;
-the runner accepts a native ShellCheck only when it matches the pinned version
-and otherwise uses the pinned container.
+the runner accepts a native ShellCheck only when it matches the pinned version,
+then a sha256-verified cached pin (`./tests/lint.sh install`), and otherwise
+uses the pinned container — the same engine version on every rung.
 
 ## Contributing
 
