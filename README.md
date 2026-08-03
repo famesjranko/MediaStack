@@ -412,6 +412,6 @@ Bug reports, feature ideas, and pull requests are welcome. Start with
 
 MediaStack is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE)
 
-Non-commercial use is permitted. Commercial use requires prior written permission from Andrew Mcdonald.
+Non-commercial use is permitted. Commercial use requires prior written permission from the licensor.
 
 SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0

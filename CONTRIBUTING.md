@@ -65,7 +65,7 @@ or third-party material that would prevent MediaStack from being distributed
 under the PolyForm Noncommercial License 1.0.0.
 
 MediaStack is source-available for non-commercial use. Commercial use requires
-prior written permission from Andrew Mcdonald.
+prior written permission from the licensor.
 
 If your contribution includes third-party material, clearly identify it in the
 pull request and include its licence and source.
