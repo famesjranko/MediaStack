@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./tests/check.sh          # default tier
-#   ./tests/check.sh fast     # edit-loop checks: shellcheck, shfmt, ruff, mypy,
+#   ./tests/check.sh fast     # static checks: shellcheck, shfmt, ruff, mypy,
 #                              # secrets. No DinD or service containers.
 #   ./tests/check.sh full     # everything, including the complete DinD battery.
 #   ./tests/check.sh lint     # single stage: shellcheck sweep only.
@@ -39,8 +39,9 @@
 # reruns the shellcheck sweep and the mypy check internally as its own tiers
 # 2 and 4; a caller that already ran `lint`/`mypy` as separate jobs sets
 # MS_UNIT_SKIP_SHELLCHECK=1 / MS_UNIT_SKIP_MYPY=1 before `./tests/check.sh
-# unit` to avoid paying for them twice. tests/unit.sh reports a skipped tier
-# as SKIP, never as OK — an unselected stage must stay visibly not-run.
+# unit` to avoid paying for them twice. The cumulative default/full path does
+# this after its fast stages pass. tests/unit.sh reports a skipped tier as
+# SKIP, never as OK — an unselected stage must stay visibly not-run.
 #
 # Stages run cheapest-first and stop at the FIRST failure (fail-fast): a
 # failing lint stage means the DinD battery never starts. Every failure names
@@ -234,8 +235,9 @@ stage fast "secrets: gitleaks tree" \
     secret_scan_gate
 [[ "$TIER" == "fast" ]] && exit 0
 
-stage default "unit: tests/unit.sh (compose, host units, syntax, bytecode, types)" \
-    "bash tests/unit.sh" bash tests/unit.sh
+stage default "unit: tests/unit.sh (compose, host units, syntax, bytecode)" \
+    "MS_UNIT_SKIP_SHELLCHECK=1 MS_UNIT_SKIP_MYPY=1 bash tests/unit.sh" \
+    env MS_UNIT_SKIP_SHELLCHECK=1 MS_UNIT_SKIP_MYPY=1 bash tests/unit.sh
 stage default "wizard: image-free scenarios" \
     'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $(bash tests/ci-scenarios.sh)' \
     wizard_scenarios

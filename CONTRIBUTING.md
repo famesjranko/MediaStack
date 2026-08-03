@@ -19,15 +19,16 @@ the repository's only long-lived branch.
 
 ## Running the checks
 
-The default check is the local equivalent of the full pull-request gate:
+The default check runs the same coverage as the full pull-request gate:
 
 ```
 ./tests/check.sh
 ```
 
 It includes formatting, lint, type, secret, compose, host-unit, and image-free
-wizard checks. It needs Docker. Without Docker, you can still run relevant
-individual pure-bash units directly, but that is not the complete PR gate:
+wizard checks serially; CI spreads that coverage across parallel jobs. It needs
+Docker. Without Docker, you can still run relevant individual pure-bash units
+directly, but that is not the complete PR gate:
 
 ```
 ./tests/unit/gpu-branching.sh

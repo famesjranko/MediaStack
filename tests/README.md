@@ -488,11 +488,11 @@ Not every test needs DinD. Pure-bash units — function-level checks that can ru
 (shell syntax, ShellCheck, `py_compile`, mypy, compose render) **plus** every
 `tests/unit/*.sh` below. It is one stage of the PR gate, whose full local
 equivalent is `./tests/check.sh`. A direct local invocation runs every tier. CI
-calls `./tests/check.sh unit` with the ShellCheck and mypy tiers visibly skipped
-because separate required jobs already run those same gates. Unlike the
-individual units, the complete local tier needs the Docker CLI (compose render
-and the pinned ShellCheck image unless version 0.11.0 is installed natively)
-and `uv` for mypy.
+and cumulative `default`/`full` checks call this runner with the ShellCheck and
+mypy tiers visibly skipped because those same gates have already passed.
+Unlike the individual units, the complete direct tier needs the Docker CLI
+(compose render and the pinned ShellCheck image unless version 0.11.0 is
+installed natively) and `uv` for mypy.
 
 ```bash
 ./tests/unit.sh        # static validation + every host unit
@@ -721,7 +721,7 @@ command by hand:
 
 ```bash
 ./tests/check.sh          # default: fast + tests/unit.sh + image-free wizard scenarios
-./tests/check.sh fast     # edit-loop tier: shellcheck, shfmt, ruff, mypy, secrets.
+./tests/check.sh fast     # static tier: shellcheck, shfmt, ruff, mypy, secrets.
 ./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
 ```
 
@@ -733,14 +733,17 @@ does not reimplement their file discovery or logic:
   (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
   pinned gitleaks over this repository's tree — all five from `tools.toml`. It starts
   no DinD or service containers; ShellCheck uses Docker unless version 0.11.0 is
-  installed natively. The pinned tools need network on a cold tool cache. History is
-  the separate `./tests/check.sh secrets-history` pre-push selector.
+  installed natively, but its whole-tree sweep can still take several minutes. Use
+  the touched-file lint/format commands above for quick feedback. The pinned tools
+  need network on a cold tool cache. History is the separate
+  `./tests/check.sh secrets-history` pre-push selector.
 - **default** (`fast` plus) — the coverage GitHub Actions runs on push to `main`
   and on every pull request (`.github/workflows/ci.yml`): the host-unit stages
   (shell syntax, `py_compile`, compose render, every host unit) and the
   image-free wizard scenarios in DinD. CI runs ShellCheck and mypy in separate
   required jobs, then skips their duplicate `tests/unit.sh` tiers. Locally,
-  `./tests/check.sh` runs the same coverage serially without skips.
+  `./tests/check.sh` runs the same coverage serially and likewise skips those
+  duplicate tiers after `fast` has passed.
 - **full** (`default` plus) — the complete local/on-demand gate, adding
   `./tests/battery.sh`. `battery.sh` alone is not the default tier's superset — it
   never invokes `unit.sh`, and it runs every scenario under `tests/scenarios/`,

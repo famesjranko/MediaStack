@@ -2,8 +2,8 @@
 # tests/unit.sh — MediaStack host unit + static-validation runner.
 #
 # Canonical runner for the host-side "static validation + unit test" tier.
-# Direct local runs execute every tier. CI may visibly skip ShellCheck and mypy
-# here only after separate required jobs have run those same gates.
+# Direct local runs execute every tier. CI and the cumulative check wrapper may
+# visibly skip ShellCheck and mypy here only after running those same gates.
 #
 # Runs the following, aggregating failures (it never aborts on the first one, so
 # one run reports every problem):

@@ -36,8 +36,8 @@ Compose. Every design choice serves zero-friction setup and low maintenance.
 ## Before you claim you are done
 
 ```
-./tests/check.sh fast     # edit loop; ShellCheck may use Docker
-./tests/check.sh          # default tier — the local equivalent of the CI gate
+./tests/check.sh fast     # static tier; ShellCheck may take several minutes
+./tests/check.sh          # default tier — the same coverage as the CI gate
 ```
 
 Both are described, with their single-stage selectors, in the usage header of
