@@ -18,6 +18,7 @@ installs intentionally follow upstream tags.
 ## Prerequisites
 
 - Docker on the host (Compose v2 not required inside DinD; it's pre-baked in the image).
+- `uv` on the host (runs the pinned Ruff and mypy versions without a project virtualenv).
 - Free disk: ~6 GB for `fresh-install` (image pulls inside DinD) + ~500 MB for the DinD image itself.
 - Network: first run downloads base images (debian:bookworm-slim + Docker CE apt repo); subsequent runs can go fully offline if the host already has the MediaStack images (see image cache below).
 

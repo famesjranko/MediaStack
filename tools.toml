@@ -62,6 +62,6 @@ invoke = "uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 m
 # and rejected.
 version = "0.15.22"
 source = "pypi"
-invoke = "ruff check . && ruff format --check ."
+invoke = "uv tool run ruff@0.15.22 check . && uv tool run ruff@0.15.22 format --check ."
 # Ruff writes .ruff_cache/ and self-ignores it, so git status can't see it -
 # set RUFF_CACHE_DIR outside the tree for every invocation.

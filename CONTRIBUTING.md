@@ -27,8 +27,8 @@ The default check runs the same coverage as the full pull-request gate:
 
 It includes formatting, lint, type, secret, compose, host-unit, and image-free
 wizard checks serially; CI spreads that coverage across parallel jobs. It needs
-Docker. Without Docker, you can still run relevant individual pure-bash units
-directly, but that is not the complete PR gate:
+Docker and `uv`. Without Docker, you can still run relevant individual
+pure-bash units directly, but that is not the complete PR gate:
 
 ```
 ./tests/unit/gpu-branching.sh

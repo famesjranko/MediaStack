@@ -69,11 +69,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Cache uv tool downloads
-        uses: actions/cache@v4
+      - name: Install uv and cache tools
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          path: ~/.cache/uv
-          key: uv-ruff-${{ hashFiles('tools.toml') }}
+          version: "0.11.31"
+          enable-cache: true
+          cache-dependency-glob: tools.toml
+          cache-suffix: ruff
       - name: ruff (tools.toml [ruff] pin)
         run: |
           for attempt in 1 2 3; do
@@ -116,15 +118,17 @@ jobs:
           persist-credentials: false
       # `uv tool run --from mypy==... mypy .` otherwise fetches mypy +
       # types-PyYAML from PyPI on every run with no cache and no retry, so a
-      # transient PyPI failure reads as an unexplained red gate. Cache is
-      # keyed on tools.toml, the pin's single source of truth; a pin bump
-      # invalidates it automatically. This never substitutes a fallback
-      # mypy — the pinned version is still what runs, cached or not.
-      - name: Cache uv tool downloads
-        uses: actions/cache@v4
+      # transient PyPI failure reads as an unexplained red gate. setup-uv is
+      # commit-pinned and installs an exact uv version; its cache is keyed on
+      # tools.toml, so a tool pin bump invalidates it automatically. This never
+      # substitutes a fallback mypy — the pinned version still runs.
+      - name: Install uv and cache tools
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          path: ~/.cache/uv
-          key: uv-mypy-${{ hashFiles('tools.toml') }}
+          version: "0.11.31"
+          enable-cache: true
+          cache-dependency-glob: tools.toml
+          cache-suffix: mypy
       - name: mypy (tools.toml [mypy] pin)
         run: |
           for attempt in 1 2 3; do
