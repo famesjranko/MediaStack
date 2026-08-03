@@ -3,9 +3,9 @@
 # may fetch them into developer caches.
 #
 # Every entry pins an exact version plus whatever integrity material the
-# distribution publishes. A floating install is not a pin. Shell runners
-# repeat executable version arguments for portability; keep them aligned with
-# this reviewable manifest when changing a pin.
+# distribution publishes. A floating install is not a pin. The shell runners
+# read their pins from this manifest at run time, so changing a version here
+# is the whole bump (the CI tool caches key on this file's hash).
 
 [gitleaks]
 # Formal secret scanner. Two modes, both proven against synthetic canaries:

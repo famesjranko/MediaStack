@@ -39,6 +39,13 @@ make_fixture() {
             ;;
     esac
 
+    printf '%s\n' \
+        '[mypy]' \
+        'version = "1.20.2"' \
+        'types_pyyaml_version = "6.0.12.20260724"' \
+        '[ruff]' \
+        'version = "0.15.22"' >"$FIXTURE_ROOT/tools.toml"
+
     UV_LOG="$FIXTURE_ROOT/uv.log"
     : >"$UV_LOG"
     export UV_LOG
@@ -48,7 +55,7 @@ printf '%s\n' "$*" >>"$UV_LOG"
 exit 0
 STUB
     chmod +x "$FIXTURE_ROOT/bin/uv"
-    git -C "$FIXTURE_ROOT" add tests/check.sh pyproject.toml
+    git -C "$FIXTURE_ROOT" add tests/check.sh pyproject.toml tools.toml
 }
 
 add_python_file() {
@@ -110,6 +117,18 @@ else
 fi
 assert_contains "$SELECTOR_OUT" "config missing check_untyped_defs" "mypy explains the config-contract failure"
 assert_eq "" "$(cat "$UV_LOG")" "mypy rejects weakened config before invoking uv"
+
+make_fixture missing-pin
+add_python_file
+printf '%s\n' '[mypy]' 'version = "1.20.2"' >"$FIXTURE_ROOT/tools.toml"
+run_selector ruff
+if ((SELECTOR_RC != 0)); then
+    pass "ruff fails closed when tools.toml lacks its pin"
+else
+    fail "ruff fails closed when tools.toml lacks its pin" "exit 0: $SELECTOR_OUT"
+fi
+assert_contains "$SELECTOR_OUT" "pin 'version' missing from tools.toml [ruff]" "the missing pin is named"
+assert_eq "" "$(cat "$UV_LOG")" "a missing pin never reaches uv"
 
 make_fixture failed-discovery
 add_python_file

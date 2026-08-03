@@ -132,12 +132,30 @@ discover_tracked_python() {
     fi
 }
 
-# tools.toml [mypy] records this pin; MYPY_CACHE_DIR is set outside the tree
-# since mypy self-ignores .mypy_cache/ (invisible to git status). The accepted
-# config guarantee is asserted rather than trusting mypy's permissive default.
+# Single source for the python tool pins: tools.toml. The CI uv caches key on
+# its hash, so a version bump there rotates them. Empty result fails the stage.
+tool_pin() {
+    local value
+    value=$(awk -v section="[$1]" -v key="$2" '
+        $0 == section { in_section = 1; next }
+        /^\[/ { in_section = 0 }
+        in_section && $1 == key { gsub(/"/, "", $3); print $3; exit }
+    ' tools.toml)
+    if [[ -z $value ]]; then
+        echo "check: pin '$2' missing from tools.toml [$1]" >&2
+        return 1
+    fi
+    printf '%s\n' "$value"
+}
+
+# MYPY_CACHE_DIR is set outside the tree since mypy self-ignores .mypy_cache/
+# (invisible to git status). The accepted config guarantee is asserted rather
+# than trusting mypy's permissive default.
 mypy_type_check() {
-    local cache_dir rc
+    local cache_dir rc mypy_pin stubs_pin
     discover_tracked_python || return $?
+    mypy_pin=$(tool_pin mypy version) || return 1
+    stubs_pin=$(tool_pin mypy types_pyyaml_version) || return 1
     if ! awk '
         /^\[/{ in_section = ($0 == "[tool.mypy]") }
         in_section && /^check_untyped_defs[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { found = 1 }
@@ -147,25 +165,25 @@ mypy_type_check() {
         return 1
     fi
     cache_dir=$(mktemp -d) || return 1
-    MYPY_CACHE_DIR="$cache_dir" uv tool run --from mypy==1.20.2 \
-        --with types-PyYAML==6.0.12.20260724 mypy --python-version 3.9 \
+    MYPY_CACHE_DIR="$cache_dir" uv tool run --from "mypy==$mypy_pin" \
+        --with "types-PyYAML==$stubs_pin" mypy --python-version 3.9 \
         "${PYTHON_FILES[@]}"
     rc=$?
     rm -rf "$cache_dir"
     return "$rc"
 }
 
-# tools.toml [ruff] records this pin; RUFF_CACHE_DIR is set outside the tree
-# since ruff self-ignores .ruff_cache/.
+# RUFF_CACHE_DIR is set outside the tree since ruff self-ignores .ruff_cache/.
 # The lint pass runs first because its findings explain a format diff.
 ruff_python_check() {
-    local cache_dir rc
+    local cache_dir rc ruff_pin
     discover_tracked_python || return $?
+    ruff_pin=$(tool_pin ruff version) || return 1
     cache_dir=$(mktemp -d) || return 1
-    RUFF_CACHE_DIR="$cache_dir" uv tool run ruff@0.15.22 check "${PYTHON_FILES[@]}"
+    RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" check "${PYTHON_FILES[@]}"
     rc=$?
     if ((rc == 0)); then
-        RUFF_CACHE_DIR="$cache_dir" uv tool run ruff@0.15.22 format --check "${PYTHON_FILES[@]}"
+        RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" format --check "${PYTHON_FILES[@]}"
         rc=$?
     fi
     rm -rf "$cache_dir"
