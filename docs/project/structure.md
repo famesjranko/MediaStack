@@ -71,7 +71,7 @@ scripts/
     arr/                            Shared Sonarr/Radarr helpers
       main.sh                       Quality profiles, definitions, custom formats, indexer wiring
       custom_formats.yml            Curated TRaSH Guides format definitions (developer-managed)
-      render/*.py                   JSON/XML transforms (Python stdlib only)
+      render/*.py                   JSON/XML transforms (stdlib; PyYAML where needed)
   services/<svc>/                   Per-service configurators (14 services; Seerr is services/seerr/)
     main.sh                         configure_<svc>() — required
     templates/*.json                Static API payloads (no variable substitution)

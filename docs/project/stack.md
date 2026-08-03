@@ -17,7 +17,7 @@ re-read them when a service changes.
 
 ## Language & Runtime
 - Primary: Bash 5.x (Debian default)
-- Secondary: Python 3.9+ (small render/config helpers for JSON/XML/network transforms — stdlib only, no pip)
+- Secondary: Python 3.9+ (small render/config helpers using the stdlib plus distro `python3-yaml`; no pip)
 - Runtime: Debian 11 (Bullseye), 12 (Bookworm), or 13 (Trixie), headless. 11 is the floor (Python 3.9+, bash 5.x); 13 is the newest verified on real hardware
 - Package manager: apt (system packages only; no pip/npm/cargo)
 - Shell: bash with `set -euo pipefail` throughout
@@ -76,7 +76,7 @@ re-read them when a service changes.
 ## Lint / Format / Type Checking
 - CI runs shell syntax checks, Python bytecode checks, compose rendering, focused unit tests, the upgrades manifest guard, public secret/private-file guards, and wizard PTY scenarios.
 - Every tracked shell file is shellcheck- and shfmt-clean; both are gated in CI (`lint-shellcheck`, `format-shfmt`) and reproducible locally via `./tests/check.sh lint` / `./tests/check.sh shfmt` (pins in `tools.toml`).
-- Python helpers are stdlib-only but are ruff- and mypy-checked in CI (`lint-ruff`, `type-mypy`); run locally with `./tests/check.sh ruff` / `./tests/check.sh mypy`.
+- Python helpers use the stdlib plus distro PyYAML and are ruff- and mypy-checked in CI (`lint-ruff`, `type-mypy`); run locally with `./tests/check.sh ruff` / `./tests/check.sh mypy`.
 
 ## CI/CD
 - GitHub Actions runs focused validation plus the scheduled image-drift alert.
@@ -179,7 +179,7 @@ docker compose logs -f <service>
 - VPN: wg-easy over linuxserver/wireguard — web UI for peer management, no manual conf editing.
 - DinD test base: Debian over Alpine — BusyBox grep lacks -P, envsubst missing from Alpine default, musl/glibc edge cases. Matches production distro.
 - CI covers syntax, compose rendering, focused unit checks, public guards, wizard PTY scenarios, and image-digest drift alerts against the committed tested record. Full image-backed integration proof remains local/manual DinD so GitHub Actions does not need privileged nested Docker pulls.
-- Python stdlib only: small render/config helpers, no pip dependencies, no venv. Keeps host dependency footprint minimal.
+- Python uses the stdlib plus distro `python3-yaml`: small render/config helpers, no pip dependencies or venv. Keeps the host dependency footprint minimal.
 - Config via APIs: Services are configured by calling their HTTP APIs from bash, not by templating config files. More robust across image version upgrades.
 
 ## Reconsider If

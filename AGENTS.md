@@ -4,8 +4,9 @@ Entry point for anyone — person or tool — working on this repository without
 prior context. This file routes; it does not restate. Follow the link.
 
 MediaStack is a turnkey single-box media server: one guided setup, no config
-editing, safe re-runs. Bash and stdlib Python only, orchestrating Docker
-Compose. Every design choice serves zero-friction setup and low maintenance.
+editing, safe re-runs. Bash and Python (stdlib plus distro PyYAML; no pip),
+orchestrating Docker Compose. Every design choice serves zero-friction setup
+and low maintenance.
 
 ## Read first
 

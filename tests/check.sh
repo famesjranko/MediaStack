@@ -20,7 +20,7 @@
 #   ./tests/check.sh wizard   # single stage: image-free wizard scenarios only.
 #   ./tests/check.sh -h       # this help
 #
-# Tiers are cumulative and cost-ordered:
+# Tiers are cumulative and run in the fixed order below:
 #   fast    - lint (tests/lint.sh), shell formatting (tests/format.sh), python
 #             lint + format (ruff), python types (mypy) and the secret scan
 #             over the working tree (tests/secret-scan.sh). It starts no DinD
@@ -43,7 +43,7 @@
 # this after its fast stages pass. tests/unit.sh reports a skipped tier as
 # SKIP, never as OK — an unselected stage must stay visibly not-run.
 #
-# Stages run cheapest-first and stop at the FIRST failure (fail-fast): a
+# Stages run in the documented order and stop at the FIRST failure (fail-fast): a
 # failing lint stage means the DinD battery never starts. Every failure names
 # its tier and the exact underlying command, so it can be re-run in isolation.
 #

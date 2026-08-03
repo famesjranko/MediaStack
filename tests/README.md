@@ -725,9 +725,9 @@ command by hand:
 ./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
 ```
 
-Stages run cheapest-first and stop at the first failure, naming the tier and the exact
-underlying command so it can be re-run in isolation. It wraps the runners below; it
-does not reimplement their file discovery or logic:
+Stages run in the documented order and stop at the first failure, naming the tier and
+the exact underlying command so it can be re-run in isolation. It wraps the runners
+below; it does not reimplement their file discovery or logic:
 
 - **fast** — `./tests/lint.sh --severity=warning` (shellcheck), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
