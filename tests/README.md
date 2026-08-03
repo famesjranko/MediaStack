@@ -179,16 +179,19 @@ over every pinned flag.
 ## Python linting and formatting
 
 `ruff` (pinned in `tools.toml` `[ruff]`, configured in `pyproject.toml`) runs as
-`./tests/check.sh ruff` and the `lint-ruff` CI job: `ruff check .` first, then
-`ruff format --check .`. Both halves are blocking.
+`./tests/check.sh ruff` and the `lint-ruff` CI job: lint first, then format
+check, over the same non-empty `git ls-files '*.py'` population. Both halves
+are blocking.
 
 ## Python type checking
 
 `./tests/unit.sh` runs mypy (pinned version + stub, recorded in `tools.toml`
 `[mypy]`) with
 `check_untyped_defs` over every tracked `*.py`, config in `pyproject.toml`
-`[tool.mypy]`. The executable shell runners repeat those versions explicitly;
-keep their invocations aligned when changing a pin.
+`[tool.mypy]`. The standalone selector rejects an empty population or a missing
+`check_untyped_defs = true` and passes the Python 3.9 floor explicitly. The
+executable shell runners repeat those versions; keep their invocations aligned
+when changing a pin.
 
 The gate is mypy exiting 0 — every finding was fixed rather than shipping a
 suppression baseline, so there is nothing to compare against and nothing to

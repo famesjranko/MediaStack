@@ -2,7 +2,8 @@
 # tests/check.sh — canonical local check wrapper: one command surface over the
 # proven lint, type, unit, wizard, and DinD runners (tests/lint.sh,
 # tests/unit.sh, tests/ci-scenarios.sh, tests/run.sh, tests/battery.sh). It
-# wraps them; it does not reimplement their file discovery or logic.
+# wraps them. The two Python selectors share tracked-file discovery here so
+# Ruff and mypy cannot silently inspect different or empty populations.
 #
 # Usage:
 #   ./tests/check.sh          # default tier
@@ -102,13 +103,53 @@ stage() {
     fi
 }
 
+# Populate PYTHON_FILES once per Python selector from the tracked tree. Ruff
+# otherwise exits zero over an empty directory, and both tools accepting `.`
+# gives the selectors a different population from the tracked-file gates in
+# tests/unit.sh.
+PYTHON_FILES=()
+discover_tracked_python() {
+    local files_out files_err rc
+    files_out=$(mktemp) || return 1
+    files_err=$(mktemp) || {
+        rm -f "$files_out"
+        return 1
+    }
+
+    git ls-files -z '*.py' >"$files_out" 2>"$files_err"
+    rc=$?
+    if ((rc != 0)); then
+        echo "check: python file discovery failed — git ls-files '*.py': $(tr '\n' ' ' <"$files_err")" >&2
+        rm -f "$files_out" "$files_err"
+        return "$rc"
+    fi
+
+    mapfile -d '' -t PYTHON_FILES <"$files_out"
+    rm -f "$files_out" "$files_err"
+    if ((${#PYTHON_FILES[@]} == 0)); then
+        echo "check: python population empty — git ls-files '*.py' matched no files" >&2
+        return 1
+    fi
+}
+
 # tools.toml [mypy] records this pin; MYPY_CACHE_DIR is set outside the tree
-# since mypy self-ignores .mypy_cache/ (invisible to git status).
+# since mypy self-ignores .mypy_cache/ (invisible to git status). The accepted
+# config guarantee is asserted rather than trusting mypy's permissive default.
 mypy_type_check() {
     local cache_dir rc
+    discover_tracked_python || return $?
+    if ! awk '
+        /^\[/{ in_section = ($0 == "[tool.mypy]") }
+        in_section && /^check_untyped_defs[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { found = 1 }
+        END { exit !found }
+    ' pyproject.toml; then
+        echo "check: python types config missing check_untyped_defs — pyproject.toml [tool.mypy] must set check_untyped_defs = true" >&2
+        return 1
+    fi
     cache_dir=$(mktemp -d) || return 1
     MYPY_CACHE_DIR="$cache_dir" uv tool run --from mypy==1.20.2 \
-        --with types-PyYAML==6.0.12.20260724 mypy .
+        --with types-PyYAML==6.0.12.20260724 mypy --python-version 3.9 \
+        "${PYTHON_FILES[@]}"
     rc=$?
     rm -rf "$cache_dir"
     return "$rc"
@@ -119,11 +160,12 @@ mypy_type_check() {
 # The lint pass runs first because its findings explain a format diff.
 ruff_python_check() {
     local cache_dir rc
+    discover_tracked_python || return $?
     cache_dir=$(mktemp -d) || return 1
-    RUFF_CACHE_DIR="$cache_dir" uv tool run ruff@0.15.22 check .
+    RUFF_CACHE_DIR="$cache_dir" uv tool run ruff@0.15.22 check "${PYTHON_FILES[@]}"
     rc=$?
     if ((rc == 0)); then
-        RUFF_CACHE_DIR="$cache_dir" uv tool run ruff@0.15.22 format --check .
+        RUFF_CACHE_DIR="$cache_dir" uv tool run ruff@0.15.22 format --check "${PYTHON_FILES[@]}"
         rc=$?
     fi
     rm -rf "$cache_dir"
@@ -189,12 +231,12 @@ if [[ -n "$STAGE" ]]; then
             ;;
         ruff)
             stage ruff "python: ruff" \
-                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@0.15.22 check . && ... format --check ." \
+                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@0.15.22 check <tracked-python> && ... format --check <tracked-python>" \
                 ruff_python_check
             ;;
         mypy)
             stage mypy "type: mypy" \
-                "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy ." \
+                "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy --python-version 3.9 <tracked-python>" \
                 mypy_type_check
             ;;
         secrets)
@@ -225,10 +267,10 @@ stage fast "lint: shellcheck" "./tests/lint.sh --severity=warning" \
 stage fast "format: shfmt" "./tests/format.sh check" \
     ./tests/format.sh check
 stage fast "python: ruff" \
-    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@0.15.22 check . && ... format --check ." \
+    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@0.15.22 check <tracked-python> && ... format --check <tracked-python>" \
     ruff_python_check
 stage fast "type: mypy" \
-    "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy ." \
+    "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy --python-version 3.9 <tracked-python>" \
     mypy_type_check
 stage fast "secrets: gitleaks tree" \
     "./tests/secret-scan.sh install && ... gate-tree" \
