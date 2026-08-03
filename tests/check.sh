@@ -19,6 +19,11 @@
 #                             # single stage: pinned gitleaks over all history.
 #   ./tests/check.sh unit     # single stage: tests/unit.sh only.
 #   ./tests/check.sh wizard   # single stage: image-free wizard scenarios only.
+#   ./tests/check.sh warm-python
+#                             # fetch the pinned ruff + mypy toolchains via uv
+#                             # (no checks run). Exists so a caller (CI) can
+#                             # retry the PyPI download alone, then run the
+#                             # real ruff/mypy stage exactly once.
 #   ./tests/check.sh install  # fetch + verify every pinned dev tool from
 #                              # tools.toml (shellcheck, shfmt, gitleaks) into
 #                              # the local tool cache. One-time per machine;
@@ -38,8 +43,8 @@
 #             This is the PR gate's local equivalent.
 #   full    - default + tests/battery.sh (the complete DinD scenario battery).
 #
-# lint/shfmt/ruff/mypy/secrets/secrets-history/unit/wizard/install are
-# single-stage selectors, not tiers: each
+# lint/shfmt/ruff/mypy/secrets/secrets-history/unit/wizard/warm-python/install
+# are single-stage selectors, not tiers: each
 # runs exactly one stage and nothing else, so a caller (CI) can spread the
 # pipeline across parallel jobs without a stage running twice. tests/unit.sh
 # reruns the shellcheck sweep and the mypy check internally as its own tiers
@@ -62,7 +67,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.." || exit 2
 
 if (($# > 1)); then
-    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|install]" >&2
+    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
     exit 2
 fi
 
@@ -74,9 +79,9 @@ case "$arg" in
         exit 0
         ;;
     fast | default | full) TIER="$arg" ;;
-    lint | shfmt | ruff | mypy | secrets | secrets-history | unit | wizard | install) STAGE="$arg" ;;
+    lint | shfmt | ruff | mypy | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
     *)
-        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|install]" >&2
+        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
         exit 2
         ;;
 esac
@@ -226,6 +231,20 @@ secret_scan_history_gate() {
     return "$rc"
 }
 
+# Download-only warm-up for the uv-delivered python tools: resolves the pinned
+# ruff and mypy toolchains so a caller (CI) can retry PyPI transience here and
+# then run the real check stage exactly once — a genuine lint or type failure
+# is never retried. Runs no checks; --version proves each tool is executable.
+warm_python_tools() {
+    local ruff_pin mypy_pin stubs_pin
+    ruff_pin=$(tool_pin ruff version) || return 1
+    mypy_pin=$(tool_pin mypy version) || return 1
+    stubs_pin=$(tool_pin mypy types_pyyaml_version) || return 1
+    uv tool run "ruff@$ruff_pin" --version || return 1
+    uv tool run --from "mypy==$mypy_pin" --with "types-PyYAML==$stubs_pin" \
+        mypy --version
+}
+
 # Same image-free scenario set + invocation the wizard-ui CI job uses. Fails
 # on an empty set rather than letting run.sh fall back to its image-pulling
 # default with no scenario arguments.
@@ -254,12 +273,12 @@ if [[ -n "$STAGE" ]]; then
             ;;
         ruff)
             stage ruff "python: ruff" \
-                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@0.15.22 check <tracked-python> && ... format --check <tracked-python>" \
+                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check <tracked-python> && ... format --check <tracked-python>" \
                 ruff_python_check
             ;;
         mypy)
             stage mypy "type: mypy" \
-                "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy --python-version 3.9 <tracked-python>" \
+                "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==<tools.toml [mypy] version> --with types-PyYAML==<tools.toml [mypy] types_pyyaml_version> mypy --python-version 3.9 <tracked-python>" \
                 mypy_type_check
             ;;
         secrets)
@@ -281,6 +300,11 @@ if [[ -n "$STAGE" ]]; then
                 'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $(bash tests/ci-scenarios.sh)' \
                 wizard_scenarios
             ;;
+        warm-python)
+            stage warm-python "warm: pinned python tools (download only)" \
+                "uv tool run ruff@<pin> --version && uv tool run --from mypy==<pin> --with types-PyYAML==<pin> mypy --version" \
+                warm_python_tools
+            ;;
         install)
             stage install "install: shellcheck" "./tests/lint.sh install" \
                 ./tests/lint.sh install
@@ -298,10 +322,10 @@ stage fast "lint: shellcheck" "./tests/lint.sh --severity=warning" \
 stage fast "format: shfmt" "./tests/format.sh check" \
     ./tests/format.sh check
 stage fast "python: ruff" \
-    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@0.15.22 check <tracked-python> && ... format --check <tracked-python>" \
+    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check <tracked-python> && ... format --check <tracked-python>" \
     ruff_python_check
 stage fast "type: mypy" \
-    "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy --python-version 3.9 <tracked-python>" \
+    "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==<tools.toml [mypy] version> --with types-PyYAML==<tools.toml [mypy] types_pyyaml_version> mypy --python-version 3.9 <tracked-python>" \
     mypy_type_check
 stage fast "secrets: gitleaks tree" \
     "./tests/secret-scan.sh install && ... gate-tree" \

@@ -75,6 +75,19 @@ fi
 
 fail=0
 
+# Single source for the python tool pins: tools.toml (same reader as
+# tests/check.sh tool_pin). Empty result fails the tier — never a fallback pin.
+tool_pin() {
+    local value
+    value=$(awk -v section="[$1]" -v key="$2" '
+        $0 == section { in_section = 1; next }
+        /^\[/ { in_section = 0 }
+        in_section && $1 == key { gsub(/"/, "", $3); print $3; exit }
+    ' tools.toml)
+    [[ -n $value ]] || return 1
+    printf '%s\n' "$value"
+}
+
 # Discovery must fail loudly. `git ls-files` can exit nonzero after emitting a
 # partial listing, and a subshell pipeline would accept that as the population.
 DISCOVER_OUT=$(mktemp) || exit 1
@@ -172,8 +185,12 @@ else
     ' pyproject.toml; then
         err "python types config missing check_untyped_defs" "pyproject.toml [tool.mypy] must set check_untyped_defs = true"
         fail=1
+    elif ! mypy_pin=$(tool_pin mypy version) \
+        || ! stubs_pin=$(tool_pin mypy types_pyyaml_version); then
+        err "python types pin missing" "tools.toml [mypy] must set version and types_pyyaml_version"
+        fail=1
     elif ! command -v uv >/dev/null 2>&1; then
-        err "python types cannot run" "install uv — mypy is invoked via 'uv tool run --from mypy==1.20.2 ...' (tools.toml [mypy])"
+        err "python types cannot run" "install uv — mypy is invoked via 'uv tool run --from mypy==<tools.toml [mypy] version>' ..."
         fail=1
     else
         # Cache dir outside the tree: mypy self-ignores .mypy_cache/, invisible to
@@ -183,11 +200,11 @@ else
             fail=1
         }
         if [[ -n "${mypy_cache:-}" ]]; then
-            if ! MYPY_CACHE_DIR="$mypy_cache" uv tool run --from mypy==1.20.2 \
-                --with types-PyYAML==6.0.12.20260724 mypy --python-version 3.9 \
+            if ! MYPY_CACHE_DIR="$mypy_cache" uv tool run --from "mypy==$mypy_pin" \
+                --with "types-PyYAML==$stubs_pin" mypy --python-version 3.9 \
                 "${py_files[@]}"; then
                 err "python types found errors" \
-                    "run: uv tool run --from mypy==1.20.2 --with types-PyYAML==6.0.12.20260724 mypy ."
+                    "run: uv tool run --from mypy==$mypy_pin --with types-PyYAML==$stubs_pin mypy ."
                 fail=1
             else
                 echo "OK: python types ($n files)"

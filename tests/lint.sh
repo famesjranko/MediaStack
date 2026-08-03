@@ -72,6 +72,9 @@ install_engine() {
     archive_sha="$(pin sha256)" || exit 2
     dir="$TOOL_CACHE/shellcheck-$SC_VERSION"
     tmp=$(mktemp -d) || die "mktemp failed"
+    # A die below would otherwise strand the downloaded archive in /tmp.
+    # shellcheck disable=SC2064  # expand now: $tmp is a local, gone at EXIT
+    trap "rm -rf '$tmp'" EXIT
 
     curl -fsSL --retry 3 --retry-delay 2 --max-time 120 -o "$tmp/shellcheck.tar.xz" "$url" \
         || die "download failed: $url"

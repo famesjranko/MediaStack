@@ -5,6 +5,9 @@ name: Image Drift Alert
 # repository current until the baseline matches upstream again. Accept changed
 # digests only after the preflight documented in docs/operations/upgrades.md.
 
+# GitHub silently disables scheduled workflows in a repository with no commit
+# activity for 60 days; if this tripwire matters during a quiet stretch, run it
+# by hand (workflow_dispatch) or re-enable it from the Actions tab.
 on:
   schedule:
     - cron: "17 3 * * 1"
@@ -35,6 +38,14 @@ jobs:
         run: |
           rc=0
           python3 scripts/image-drift.py --require-previous >drift.md 2>drift.err || rc=$?
+          # image-drift.py exits 2 for drift, but argparse also exits 2 on a
+          # bad flag — with an empty report and the complaint on stderr. Remap
+          # that to an error so a workflow typo fails red instead of filing an
+          # empty drift issue.
+          if [ "$rc" -eq 2 ] && [ ! -s drift.md ]; then
+            echo "::error::rc=2 with an empty drift report — usage error, not drift; see drift.err below."
+            rc=1
+          fi
           echo "rc=$rc" >>"$GITHUB_OUTPUT"
           echo "image-drift exit code: $rc"
           cat drift.md || true
@@ -47,8 +58,19 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh label create image-drift --color FBCA04 \
-            --description "Upstream image moved past the tested baseline" 2>/dev/null || true
+          # Tolerate only the label already existing; any other failure (rate
+          # limit, permissions) surfaces here rather than as a confusing
+          # gh issue create --label error below.
+          if ! label_err=$(gh label create image-drift --color FBCA04 \
+            --description "Upstream image moved past the tested baseline" 2>&1); then
+            case "$label_err" in
+              *already?exists*) ;;
+              *)
+                echo "$label_err" >&2
+                exit 1
+                ;;
+            esac
+          fi
           title="Image drift: upstream images moved past the tested baseline"
           {
             cat drift.md

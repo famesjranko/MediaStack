@@ -51,6 +51,9 @@ FINDING_RC=7
 # means a secret inside a committed .zip or .tar.gz is never read.
 ARCHIVE_DEPTH=4
 SCRATCH=""
+# Install-time download scratch; removed by the shared EXIT trap so a die
+# between mktemp and the success-path rm does not strand the tarball in /tmp.
+INSTALL_TMP=""
 EXPECTED_DEFAULT="$REPO_ROOT/tests/secret-scan.expected"
 # Set by the scan functions so a gate mode can reconcile what they produced
 # instead of recomputing the report path and the resolved target.
@@ -65,6 +68,7 @@ die() {
 
 cleanup() {
     [ -n "$SCRATCH" ] && rm -rf "$SCRATCH"
+    [ -n "$INSTALL_TMP" ] && rm -rf "$INSTALL_TMP"
 }
 
 usage() {
@@ -127,6 +131,8 @@ install_scanner() {
 
     dir="$TOOL_CACHE/gitleaks-$VERSION"
     tmp=$(mktemp -d) || die "mktemp failed"
+    INSTALL_TMP="$tmp"
+    trap cleanup EXIT
     asset="$tmp/${url##*/}"
 
     fetch "$asset" "$url"

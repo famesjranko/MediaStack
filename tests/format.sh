@@ -71,6 +71,9 @@ install_formatter() {
     source="$(pin source)" || exit 2
     dir="$TOOL_CACHE/shfmt-$VERSION"
     tmp=$(mktemp -d) || die "mktemp failed"
+    # A die below would otherwise strand the downloaded binary in /tmp.
+    # shellcheck disable=SC2064  # expand now: $tmp is a local, gone at EXIT
+    trap "rm -rf '$tmp'" EXIT
 
     curl -fsSL --retry 3 --retry-delay 2 --max-time 120 -o "$tmp/shfmt" "$source" \
         || die "download failed: $source"
