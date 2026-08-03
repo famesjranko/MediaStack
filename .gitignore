@@ -55,6 +55,3 @@ docs/plans
 # Python bytecode (wizard helpers regenerate this on import)
 __pycache__/
 *.pyc
-
-# Agent-skill working state (local issue tracker; see .scratch/README inside)
-.scratch/
