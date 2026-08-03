@@ -11,10 +11,11 @@
 #   ./tests/secret-scan.sh gate-history [expected] [target]   history, reconciled
 #
 # The two gate modes are the blocking form: they run the same scan and then
-# compare the findings, as a multiset of stable identities, against the
-# declared set in tests/secret-scan.expected. An undeclared finding fails; a
-# declaration nothing produced fails too, so removing a false positive means
-# removing its line.
+# compare the findings, as stable identities, against the declared set in
+# tests/secret-scan.expected — the tree gate as a multiset, the history gate
+# as distinct identities (each edit of a declared line re-adds it to history).
+# An undeclared finding fails; a declaration nothing produced fails too, so
+# removing a false positive means removing its line.
 #
 # A tree scan covers what a checkout contains right now. It says nothing about
 # a secret that was committed and later deleted; only history mode reaches
@@ -455,6 +456,12 @@ expected = collections.Counter(
     for line in open(expected_path)
     if line.strip() and not line.lstrip().startswith("#")
 )
+
+# History compares distinct identities: every edit of a declared line re-adds
+# it as a new finding, while tree multiplicity is the tree gate's job.
+if mode == "history":
+    actual = collections.Counter(set(actual))
+    expected = collections.Counter(set(expected))
 
 # Fail closed: an all-comment declaration file would otherwise turn the gate
 # into "report whatever you find", which is what a rubber stamp looks like.
