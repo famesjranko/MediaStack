@@ -47,10 +47,10 @@ api_get() {
 }
 
 api_put() {
-    printf '%s' "$3" > "$PUT_BODY"
+    printf '%s' "$3" >"$PUT_BODY"
     local count=0
     [[ -f "$PUT_COUNT" ]] && count=$(<"$PUT_COUNT")
-    printf '%s\n' "$((count + 1))" > "$PUT_COUNT"
+    printf '%s\n' "$((count + 1))" >"$PUT_COUNT"
     return 0
 }
 
@@ -62,7 +62,8 @@ configure_arr_auth "sonarr" "http://localhost:8989/api/v3" "api-key"
 put_calls="$(cat "$PUT_COUNT" 2>/dev/null || echo 0)"
 assert_eq "1" "$put_calls" "Sonarr auth writes host config when forms auth is absent"
 
-mapfile -t auth_lines < <(python3 - "$PUT_BODY" "$JELLYFIN_ADMIN_USER" "$JELLYFIN_ADMIN_PASSWORD" <<'PY'
+mapfile -t auth_lines < <(
+    python3 - "$PUT_BODY" "$JELLYFIN_ADMIN_USER" "$JELLYFIN_ADMIN_PASSWORD" <<'PY'
 import json
 import sys
 
@@ -88,11 +89,12 @@ assert_eq "True" "${auth_lines[3]:-}" "Sonarr auth preserves password backslash 
 assert_eq "True" "${auth_lines[4]:-}" "Sonarr auth confirms password without escape corruption"
 assert_eq "kept" "${auth_lines[5]:-}" "Sonarr auth preserves unrelated host config fields"
 
-: > "$PUT_BODY"
-printf '%s\n' 0 > "$PUT_COUNT"
+: >"$PUT_BODY"
+printf '%s\n' 0 >"$PUT_COUNT"
 configure_arr_auth "radarr" "http://localhost:7878/api/v3" "api-key"
 
-radarr_pw_preserved=$(python3 - "$PUT_BODY" "$JELLYFIN_ADMIN_PASSWORD" <<'PY'
+radarr_pw_preserved=$(
+    python3 - "$PUT_BODY" "$JELLYFIN_ADMIN_PASSWORD" <<'PY'
 import json
 import sys
 
@@ -120,10 +122,10 @@ api_get() {
 }
 
 api_post() {
-    printf '%s' "$3" > "$POST_BODY"
+    printf '%s' "$3" >"$POST_BODY"
     local count=0
     [[ -f "$POST_COUNT" ]] && count=$(<"$POST_COUNT")
-    printf '%s\n' "$((count + 1))" > "$POST_COUNT"
+    printf '%s\n' "$((count + 1))" >"$POST_COUNT"
     return 0
 }
 
@@ -132,7 +134,8 @@ configure_arr_root_folder "sonarr" "http://localhost:8989/api/v3" "api-key"
 post_calls="$(cat "$POST_COUNT" 2>/dev/null || echo 0)"
 assert_eq "1" "$post_calls" "Sonarr root folder is created when absent"
 
-root_preserved=$(python3 - "$POST_BODY" "$ROOT_FOLDER_WANT" <<'PY'
+root_preserved=$(
+    python3 - "$POST_BODY" "$ROOT_FOLDER_WANT" <<'PY'
 import json
 import sys
 

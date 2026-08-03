@@ -32,7 +32,7 @@ write_summary_env() {
     local stage3_vendor="$3"
     local stage3_encoder="$4"
     local wg_init_pw="${5:-}"
-    cat > "$SCRIPT_DIR/.env" <<EOF
+    cat >"$SCRIPT_DIR/.env" <<EOF
 STAGE_1_COMPLETE=1
 REMOTE_WEB_STATE=${stage2_state}
 STAGE_3_GPU_STATE=${stage3_state}
@@ -48,59 +48,59 @@ EOF
 
 write_summary_env "ready" "complete" "intel" "qsv" ""
 intel_output="$(print_final_summary)"
-assert_contains "$intel_output" "Core media server" "FIN-01: summary includes core media server"
-assert_contains "$intel_output" "Hardware transcoding" "FIN-01: summary labels hardware transcoding separately"
-assert_contains "$intel_output" "Remote access" "FIN-01: summary labels remote access"
-assert_contains "$intel_output" "complete" "FIN-01: core media server complete label"
-assert_contains "$intel_output" "ready" "FIN-01: remote access ready label"
-assert_contains "$intel_output" "complete (Intel QSV)" "FIN-01: Intel summary label"
-assert_contains "$intel_output" "https://jellyfin.gate.test" "FIN-01: ready state prints Jellyfin remote URL"
-assert_contains "$intel_output" "https://seerr.gate.test" "FIN-01: ready state prints Seerr remote URL"
+assert_contains "$intel_output" "Core media server" "summary includes core media server"
+assert_contains "$intel_output" "Hardware transcoding" "summary labels hardware transcoding separately"
+assert_contains "$intel_output" "Remote access" "summary labels remote access"
+assert_contains "$intel_output" "complete" "core media server complete label"
+assert_contains "$intel_output" "ready" "remote access ready label"
+assert_contains "$intel_output" "complete (Intel QSV)" "Intel summary label"
+assert_contains "$intel_output" "https://jellyfin.gate.test" "ready state prints Jellyfin remote URL"
+assert_contains "$intel_output" "https://seerr.gate.test" "ready state prints Seerr remote URL"
 
 write_summary_env "ready" "complete" "amd" "vaapi" ""
 amd_output="$(print_final_summary)"
-assert_contains "$amd_output" "complete (AMD VAAPI)" "FIN-01: AMD summary label"
+assert_contains "$amd_output" "complete (AMD VAAPI)" "AMD summary label"
 
 write_summary_env "ready" "pending" "nvidia" "nvenc" ""
 pending_output="$(print_final_summary)"
-assert_contains "$pending_output" "pending reboot - NVIDIA finalization queued" "FIN-01: NVIDIA pending summary label"
+assert_contains "$pending_output" "pending reboot - NVIDIA finalization queued" "NVIDIA pending summary label"
 
 write_summary_env "ready" "complete" "nvidia" "nvenc" ""
 nvidia_output="$(print_final_summary)"
-assert_contains "$nvidia_output" "complete (NVIDIA NVENC)" "FIN-01: NVIDIA complete summary label"
+assert_contains "$nvidia_output" "complete (NVIDIA NVENC)" "NVIDIA complete summary label"
 
 write_summary_env "skipped" "skipped" "" "" ""
 skipped_output="$(print_final_summary)"
-assert_contains "$skipped_output" "skipped - choose Features & settings -> Add remote access to retry" "FIN-01: Stage 2 skipped label"
-assert_contains "$skipped_output" "skipped - software transcoding" "FIN-01: hardware transcoding skipped label"
+assert_contains "$skipped_output" "skipped - choose Features & settings -> Add remote access to retry" "Stage 2 skipped label"
+assert_contains "$skipped_output" "skipped - software transcoding" "hardware transcoding skipped label"
 if [[ "$skipped_output" == *"https://jellyfin.gate.test"* || "$skipped_output" == *"https://seerr.gate.test"* ]]; then
-    fail "FIN-01: skipped remote state does not print remote URLs"
+    fail "skipped remote state does not print remote URLs"
 else
-    pass "FIN-01: skipped remote state does not print remote URLs"
+    pass "skipped remote state does not print remote URLs"
 fi
 
 write_summary_env "failed" "skipped" "" "" ""
 failed_output="$(print_final_summary)"
-assert_contains "$failed_output" "failed - choose Features & settings -> Add remote access to retry" "FIN-01: Stage 2 failed label"
+assert_contains "$failed_output" "failed - choose Features & settings -> Add remote access to retry" "Stage 2 failed label"
 if [[ "$failed_output" == *"https://jellyfin.gate.test"* || "$failed_output" == *"https://seerr.gate.test"* ]]; then
-    fail "FIN-01: failed remote state does not print remote URLs"
+    fail "failed remote state does not print remote URLs"
 else
-    pass "FIN-01: failed remote state does not print remote URLs"
+    pass "failed remote state does not print remote URLs"
 fi
 
 write_summary_env "unchecked" "fallback" "" "" ""
 fallback_output="$(print_final_summary)"
-assert_contains "$fallback_output" "not configured" "FIN-01: Stage 2 unchecked label"
-assert_contains "$fallback_output" "fallback - software transcoding" "FIN-01: hardware transcoding fallback label"
+assert_contains "$fallback_output" "not configured" "Stage 2 unchecked label"
+assert_contains "$fallback_output" "fallback - software transcoding" "hardware transcoding fallback label"
 if [[ "$fallback_output" == *"./setup.sh --transcoding"* ]]; then
-    fail "FIN-01: final summary does not advertise --transcoding"
+    fail "final summary does not advertise --transcoding"
 else
-    pass "FIN-01: final summary does not advertise --transcoding"
+    pass "final summary does not advertise --transcoding"
 fi
 
 write_summary_env "ready" "skipped" "" "" '$2b$12$abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 wg_output="$(print_final_summary)"
-assert_contains "$wg_output" "WireGuard admin" "FIN-01: WireGuard admin appears when hash exists"
+assert_contains "$wg_output" "WireGuard admin" "WireGuard admin appears when hash exists"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

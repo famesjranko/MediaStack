@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # tests/unit/launcher-ddns.sh
 #
-# Hermetic launcher coverage for the day-2 "Update DDNS provider / credentials" support code
-# (#238) that the PTY scenario (tests/scenarios/wizard-ui-ddns.sh) STUBS and so
+# Hermetic launcher coverage for the day-2 "Update DDNS provider / credentials"
+# support code that the PTY scenario (tests/scenarios/wizard-ui-ddns.sh) STUBS and so
 # never exercises for real:
 #   1. _ddns_configured   — the row/guard predicate (provider key AND config.json).
 #   2. _ddns_status       — the banner/system-box classification (off/stopped/
 #                           unresolved/stale/ok) from cached DDNS-record vs WAN IP.
 #   3. _ddns_restart_and_check — the REAL restart + `.State.Status` up-check poll,
 #                           incl. the `restart: unless-stopped` crash-loop-flap case
-#                           the ADR justifies but the PTY scenario stubs out.
+#                           the design justifies but the PTY scenario stubs out.
 #   4. submenu_features gating — the "Update DDNS provider" row appears only when
 #                           remote is ready AND ddns is configured.
 #
@@ -30,8 +30,8 @@ scenario_begin "$CURRENT_SCENARIO"
 # 1. _ddns_configured — true ONLY when DDNS_PROVIDER is set AND config.json exists.
 # ---------------------------------------------------------------------------
 run_configured() {
-  # $1 = DDNS_PROVIDER value, $2 = "yes"/"no" seed config.json
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DPROV="$1" SEED="$2" bash -c '
+    # $1 = DDNS_PROVIDER value, $2 = "yes"/"no" seed config.json
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DPROV="$1" SEED="$2" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"
     DDNS_PROVIDER="$DPROV"
@@ -41,15 +41,15 @@ run_configured() {
   ' 2>&1
 }
 assert_contains "$(run_configured dynu yes)" "CONFIGURED" "_ddns_configured: provider + config.json -> true"
-assert_contains "$(run_configured dynu no)"  "NOT"        "_ddns_configured: provider but no config.json -> false"
-assert_contains "$(run_configured '' yes)"   "NOT"        "_ddns_configured: config.json but no provider -> false"
+assert_contains "$(run_configured dynu no)" "NOT" "_ddns_configured: provider but no config.json -> false"
+assert_contains "$(run_configured '' yes)" "NOT" "_ddns_configured: config.json but no provider -> false"
 
 # ---------------------------------------------------------------------------
 # 2. _ddns_status — classification from stubbed configured/running/cached-IP.
 # ---------------------------------------------------------------------------
 run_status() {
-  # $1 configured(0/1) $2 running(0/1) $3 cached-ddns-ip $4 wan-ip
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" C="$1" R="$2" DIP="$3" WAN="$4" bash -c '
+    # $1 configured(0/1) $2 running(0/1) $3 cached-ddns-ip $4 wan-ip
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" C="$1" R="$2" DIP="$3" WAN="$4" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     _ddns_configured(){ return "$C"; }
     _service_is_running(){ return "$R"; }
@@ -57,11 +57,11 @@ run_status() {
     _ddns_status "$WAN"; echo
   ' 2>&1
 }
-assert_contains "$(run_status 1 0 '' '')"                 "off"          "_ddns_status: not configured -> off"
-assert_contains "$(run_status 0 1 '' '')"                 "stopped"      "_ddns_status: configured but not running -> stopped"
-assert_contains "$(run_status 0 0 '' 1.2.3.4)"            "unresolved"   "_ddns_status: running, no A-record -> unresolved"
-assert_contains "$(run_status 0 0 1.2.3.4 1.2.3.4)"       "ok:1.2.3.4"   "_ddns_status: record == WAN -> ok:<ip>"
-assert_contains "$(run_status 0 0 1.2.3.4 5.6.7.8)"       "stale:1.2.3.4" "_ddns_status: record != WAN -> stale:<ip>"
+assert_contains "$(run_status 1 0 '' '')" "off" "_ddns_status: not configured -> off"
+assert_contains "$(run_status 0 1 '' '')" "stopped" "_ddns_status: configured but not running -> stopped"
+assert_contains "$(run_status 0 0 '' 1.2.3.4)" "unresolved" "_ddns_status: running, no A-record -> unresolved"
+assert_contains "$(run_status 0 0 1.2.3.4 1.2.3.4)" "ok:1.2.3.4" "_ddns_status: record == WAN -> ok:<ip>"
+assert_contains "$(run_status 0 0 1.2.3.4 5.6.7.8)" "stale:1.2.3.4" "_ddns_status: record != WAN -> stale:<ip>"
 
 # ---------------------------------------------------------------------------
 # 3. _ddns_restart_and_check — REAL function, stubbed docker + sleep.
@@ -69,8 +69,8 @@ assert_contains "$(run_status 0 0 1.2.3.4 5.6.7.8)"       "stale:1.2.3.4" "_ddns
 #    inspect stub pops in order (file-backed so it survives the $() subshell).
 # ---------------------------------------------------------------------------
 run_restart_check() {
-  # $1 = docker-restart rc, $2 = space-list of .State.Status samples
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" RC="$1" STATUSES="$2" bash -c '
+    # $1 = docker-restart rc, $2 = space-list of .State.Status samples
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" RC="$1" STATUSES="$2" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     idx=$(mktemp); echo 0 > "$idx"; export IDX="$idx"
     read -r -a _S <<< "$STATUSES"
@@ -93,15 +93,15 @@ run_restart_check() {
 assert_contains "$(run_restart_check 0 'running running running')" "RC=0" "_ddns_restart_and_check: restart ok + steadily running -> 0"
 assert_contains "$(run_restart_check 1 'running running running')" "RC=1" "_ddns_restart_and_check: docker restart fails -> 1"
 assert_contains "$(run_restart_check 0 'running exited restarting')" "RC=1" "_ddns_restart_and_check: crash-loop flap (running then exited) -> 1"
-assert_contains "$(run_restart_check 0 'exited exited exited')"     "RC=1" "_ddns_restart_and_check: never comes up -> 1"
+assert_contains "$(run_restart_check 0 'exited exited exited')" "RC=1" "_ddns_restart_and_check: never comes up -> 1"
 
 # ---------------------------------------------------------------------------
 # 4. submenu_features gating — the DDNS row appears only when remote is ready
 #    (recovery_menu_remote_available FALSE) AND ddns is configured.
 # ---------------------------------------------------------------------------
 run_row() {
-  # $1 = _ddns_configured rc (0 = configured)
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DC="$1" bash -c '
+    # $1 = _ddns_configured rc (0 = configured)
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DC="$1" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     LABELS=$(mktemp)
     render_banner(){ :; }
@@ -119,9 +119,9 @@ run_row() {
 assert_contains "$(run_row 0)" "Update DDNS provider" "features: DDNS row shown when remote ready + configured"
 row_off="$(run_row 1)"
 if grep -q "Update DDNS provider" <<<"$row_off"; then
-  fail "features: DDNS row hidden when not configured"
+    fail "features: DDNS row hidden when not configured"
 else
-  pass "features: DDNS row hidden when not configured"
+    pass "features: DDNS row hidden when not configured"
 fi
 
 # ---------------------------------------------------------------------------
@@ -129,8 +129,8 @@ fi
 #    ok/stale/unresolved; SKIPPED when off/stopped. Heavy deps stubbed; colour off.
 # ---------------------------------------------------------------------------
 run_banner() {
-  # $1 = _ddns_status echo value
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DST="$1" bash -c '
+    # $1 = _ddns_status echo value
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DST="$1" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     is_installed(){ return 0; }
     _docker_reachable(){ return 0; }
@@ -145,16 +145,16 @@ run_banner() {
   ' 2>&1
 }
 banner_ok="$(run_banner ok:1.2.3.4)"
-assert_contains "$banner_ok" "DDNS:"   "banner: DDNS line rendered when configured+running"
+assert_contains "$banner_ok" "DDNS:" "banner: DDNS line rendered when configured+running"
 assert_contains "$banner_ok" "1.2.3.4" "banner: DDNS line shows the confirmed IP"
 banner_stale="$(run_banner stale:9.9.9.9)"
-assert_contains "$banner_stale" "9.9.9.9"     "banner: mismatch shows the stale confirmed IP"
+assert_contains "$banner_stale" "9.9.9.9" "banner: mismatch shows the stale confirmed IP"
 assert_contains "$banner_stale" "propagating" "banner: mismatch flags propagating"
 banner_off="$(run_banner off)"
 if grep -q "DDNS:" <<<"$banner_off"; then
-  fail "banner: no DDNS line when off/stopped"
+    fail "banner: no DDNS line when off/stopped"
 else
-  pass "banner: no DDNS line when off/stopped"
+    pass "banner: no DDNS line when off/stopped"
 fi
 
 # ---------------------------------------------------------------------------
@@ -187,7 +187,9 @@ refresh_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$refresh_out" "PUB=0" "menu_post: Refresh status invalidates the public-IP cache"
 
 # ---------------------------------------------------------------------------
-# 7. render_banner cross-render probe budget (the #245 scope bug). Calling
+# 7. render_banner cross-render probe budget. A warm-cache flag that does not
+#    survive into the next render makes every render re-probe the public IP.
+#    Calling
 #    render_banner TWICE in the SAME shell (what main()'s loop does) must:
 #      - probe the public IP ONCE  — _cached_public_ip is primed in parent scope,
 #        so the warm _MS_PUBLIC_IP_CHECKED flag survives the second render;
@@ -215,7 +217,7 @@ probe_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   echo "IP=$(cat "$IPF") DIG=$(cat "$DIGF")"
   rm -f "$IPF" "$DIGF"
 ' 2>&1)
-assert_contains "$probe_out" "IP=1"  "render_banner: public IP probed ONCE across two renders (cache persists in parent scope)"
+assert_contains "$probe_out" "IP=1" "render_banner: public IP probed ONCE across two renders (cache persists in parent scope)"
 assert_contains "$probe_out" "DIG=2" "render_banner: DDNS resolved live EACH render (self-heals propagation)"
 
 scenario_end "$CURRENT_SCENARIO"

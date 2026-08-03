@@ -60,15 +60,15 @@ docker() {
 sleep() { :; }
 
 reset_fixture() {
-    : > "$CURL_LOG"
-    : > "$BODY_LOG"
+    : >"$CURL_LOG"
+    : >"$BODY_LOG"
     OK_MESSAGES=()
     WARN_MESSAGES=()
     SKIP_MESSAGES=()
     CLIENTS_JSON='[]'
-    printf '%s' "$CLIENTS_JSON" > "$CLIENTS_STATE_FILE"
-    printf 'false' > "$INTERFACE_STATE_FILE"
-    printf 'null' > "$PEER_FIREWALL_STATE_FILE"
+    printf '%s' "$CLIENTS_JSON" >"$CLIENTS_STATE_FILE"
+    printf 'false' >"$INTERFACE_STATE_FILE"
+    printf 'null' >"$PEER_FIREWALL_STATE_FILE"
     CREATE_HTTP='201'
     CREATE_BODY='{"id":"peer-uuid-1","name":"mediaadmin"}'
     CREATE_PERSISTS='false'
@@ -96,25 +96,29 @@ curl() {
             -d) ;;
             -o) ;;
             -w) ;;
-            -u|-H|-b|-c|-s|-f|-sf|--max-time|-)  ;;
+            -u | -H | -b | -c | -s | -f | -sf | --max-time | -) ;;
             http*) url="$arg" ;;
         esac
         prev="$arg"
     done
 
-    printf '%s %s\n' "$method" "$url" >> "$CURL_LOG"
+    printf '%s %s\n' "$method" "$url" >>"$CURL_LOG"
     if [[ -n "$body_arg" ]]; then
-        printf '%s %s :: %s\n' "$method" "$url" "$body_arg" >> "$BODY_LOG"
+        printf '%s %s :: %s\n' "$method" "$url" "$body_arg" >>"$BODY_LOG"
     fi
 
     local body_out="" http_out="200"
     case "$method:$url" in
-        GET:*/api/client) body_out="$(cat "$CLIENTS_STATE_FILE")"; http_out="200" ;;
+        GET:*/api/client)
+            body_out="$(cat "$CLIENTS_STATE_FILE")"
+            http_out="200"
+            ;;
         POST:*/api/client)
             if [[ "$CREATE_PERSISTS" == "true" ]]; then
-                printf '[{"id":"peer-uuid-1","name":"mediaadmin"}]' > "$CLIENTS_STATE_FILE"
+                printf '[{"id":"peer-uuid-1","name":"mediaadmin"}]' >"$CLIENTS_STATE_FILE"
             fi
-            body_out="$CREATE_BODY"; http_out="$CREATE_HTTP"
+            body_out="$CREATE_BODY"
+            http_out="$CREATE_HTTP"
             ;;
         GET:*/api/client/*)
             local peer_fw
@@ -137,9 +141,10 @@ if extra:
     # or future merge semantics) that would silently neutralize the tier.
     fw = [extra] + list(fw)
 print(json.dumps(fw))
-' "$body_arg" > "$PEER_FIREWALL_STATE_FILE"
+' "$body_arg" >"$PEER_FIREWALL_STATE_FILE"
             fi
-            body_out=""; http_out="$POST_PEER_HTTP"
+            body_out=""
+            http_out="$POST_PEER_HTTP"
             ;;
         GET:*/api/admin/interface)
             local fw_state
@@ -155,18 +160,22 @@ print(json.dumps(fw))
             # Honor what the POST body says, modeling persisted state.
             if [[ "$POST_INTERFACE_PERSISTS" == "true" ]]; then
                 if [[ "$body_arg" == *'"firewallEnabled": true'* ]]; then
-                    printf 'true' > "$INTERFACE_STATE_FILE"
+                    printf 'true' >"$INTERFACE_STATE_FILE"
                 else
-                    printf 'false' > "$INTERFACE_STATE_FILE"
+                    printf 'false' >"$INTERFACE_STATE_FILE"
                 fi
             fi
-            body_out=""; http_out="$POST_INTERFACE_HTTP"
+            body_out=""
+            http_out="$POST_INTERFACE_HTTP"
             ;;
-        *) body_out=""; http_out="200" ;;
+        *)
+            body_out=""
+            http_out="200"
+            ;;
     esac
 
     if [[ -n "$output_file" && "$output_file" != "/dev/null" ]]; then
-        printf '%s' "$body_out" > "$output_file"
+        printf '%s' "$body_out" >"$output_file"
         body_out=""
     elif [[ -n "$output_file" && "$output_file" == "/dev/null" ]]; then
         body_out=""
@@ -245,7 +254,7 @@ WG_LAN_CIDR="192.168.1.0/24"
 WG_SERVER_LAN_IP="192.168.1.50"
 WG_PER_CLIENT_FIREWALL="true"
 CLIENTS_JSON='[{"id":"peer-uuid-1","name":"mediaadmin"}]'
-printf '%s' "$CLIENTS_JSON" > "$CLIENTS_STATE_FILE"
+printf '%s' "$CLIENTS_JSON" >"$CLIENTS_STATE_FILE"
 configure_wireguard
 create_calls=$(grep -c '^POST .*/api/client$' "$CURL_LOG" 2>/dev/null || true)
 assert_eq "0" "$create_calls" \

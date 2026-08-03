@@ -17,7 +17,7 @@
 #     a lock-restamping commit that forgot the image-updates.md step 9 badge
 #     regen — see scripts/image-drift.py --check-readme-badges)
 # docker-compose.yml stays the single source of truth for tags; this guard makes
-# the manifest's policy claims self-checking (see ADR-24).
+# the manifest's policy claims self-checking.
 
 set -uo pipefail
 
@@ -29,7 +29,8 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="upgrades-manifest"
 echo -e "${CYAN}${BOLD}▶ scenario: upgrades-manifest${NC}"
 
-results=$(python3 - <<'PYEOF'
+results=$(
+    python3 - <<'PYEOF'
 import os, re, sys, yaml
 
 REPO = os.environ["REPO_ROOT"]
@@ -66,7 +67,7 @@ else:
         if not line.startswith("|"):
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 6:
+        if len(cells) < 5:
             continue
         svc = cells[0]
         if svc in ("Service", "") or set(svc) <= set("-: "):
@@ -96,6 +97,17 @@ with open(lock_path) as f:
         if svc in lock_rows:
             lock_dups.add(svc)
         lock_rows[svc] = cells[4]
+
+# 3b. Fail closed: every check below is a set difference, and three empty sets
+# differ in no way — a compose or table parse failure would pass them all.
+populations = [("compose services", services), ("manifest rows", rows), ("stable lock rows", lock_rows)]
+empty = [label for label, pop in populations if not pop]
+out.append(("FAIL", "parsed populations are non-empty :: empty=" + ",".join(empty))
+           if empty else ("PASS", "parsed populations are non-empty"))
+if empty:
+    for status, msg in out:
+        print(f"{status}\t{msg}")
+    sys.exit(0)
 
 # 4. Presence (and no stale rows).
 missing = sorted(s for s in services if s not in rows)
@@ -178,7 +190,8 @@ SCENARIO_COVERAGE = {
     "ddns-seed":      {"services": {"ddns-updater"}},
     "ddns-verify":    {"services": {"ddns-updater"}},
     # ddns-offline exercises the verify degrade path; not a preflight oracle for
-    # any lock row (so never consulted here), registered per the #237 DoD.
+    # any lock row (so never consulted here), but listed so scenario_starts below
+    # does not reject it as an unknown scenario.
     "ddns-offline":   {"services": {"ddns-updater"}},
 }
 
@@ -215,9 +228,9 @@ while IFS=$'\t' read -r status msg; do
     case "$status" in
         PASS) pass "$name" ;;
         FAIL) fail "$name" "$detail" ;;
-        *)    fail "unexpected checker line" "$status $msg" ;;
+        *) fail "unexpected checker line" "$status $msg" ;;
     esac
-done <<< "$results"
+done <<<"$results"
 
 # README Stable-baseline badge must reflect the current lock. Pure local file
 # read, no network — safe to run on every PR, not just at accept-time.

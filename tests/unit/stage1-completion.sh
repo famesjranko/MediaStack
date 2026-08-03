@@ -22,7 +22,7 @@ set +e
 set +u
 
 SCRIPT_DIR="$TMP_DIR"
-cat > "$TMP_DIR/.env" <<'EOF'
+cat >"$TMP_DIR/.env" <<'EOF'
 JELLYFIN_ADMIN_PASSWORD='GeneratedPassword123'
 DOMAIN=example.com
 EOF
@@ -45,7 +45,7 @@ assert_contains "$output" "mediaadmin / (admin password above)" "stage1-completi
 assert_contains "$output" "You can stop here. Your media server works on the LAN." "stage1-completion: completion message"
 assert_contains "$output" "To enable remote access (HTTPS, VPN), choose Features & settings -> Add remote access from the menu." "stage1-completion: retry hint"
 
-cat > "$TMP_DIR/.env" <<'EOF'
+cat >"$TMP_DIR/.env" <<'EOF'
 JELLYFIN_ADMIN_PASSWORD='GeneratedPassword123'
 DOMAIN=example.com
 JELLYFIN_GPU=none
@@ -61,7 +61,7 @@ else
     pass "stage1-completion: detected GPU alone does not advertise transcoding enabled"
 fi
 
-cat > "$TMP_DIR/.env" <<'EOF'
+cat >"$TMP_DIR/.env" <<'EOF'
 JELLYFIN_ADMIN_PASSWORD='GeneratedPassword123'
 DOMAIN=example.com
 JELLYFIN_GPU=nvidia

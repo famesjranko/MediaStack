@@ -22,6 +22,6 @@ run_scenario() {
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "Intel Quick Sync configured and verified" "wizard-ui stage3 intel: QSV verified message"
-    assert_eq "intel"    "$(env_get JELLYFIN_GPU)"      "wizard-ui stage3 intel: JELLYFIN_GPU=intel"
+    assert_eq "intel" "$(env_get JELLYFIN_GPU)" "wizard-ui stage3 intel: JELLYFIN_GPU=intel"
     assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 intel: STAGE_3_GPU_STATE=complete"
 }

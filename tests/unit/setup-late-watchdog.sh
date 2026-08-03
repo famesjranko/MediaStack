@@ -34,12 +34,18 @@ check_disk_floor() { record check_disk_floor; }
 check_internet_reachability() { record check_internet_reachability; }
 check_ram_warn() { record check_ram_warn; }
 prompt_sudo_cache() { record prompt_sudo_cache; }
-stash_gpu_type() { record stash_gpu_type; GPU_TYPE=none; }
+stash_gpu_type() {
+    record stash_gpu_type
+    GPU_TYPE=none
+}
 check_docker() { record check_docker; }
 check_compose() { record check_compose; }
 detect_existing_install() { record detect_existing_install; }
 cleanup_post_reboot() { record cleanup_post_reboot; }
-detect_host_memory() { record detect_host_memory; HOST_MEMORY_MB=4096; }
+detect_host_memory() {
+    record detect_host_memory
+    HOST_MEMORY_MB=4096
+}
 record_pre_install_state() { :; }
 # Silent no-op: base-package install is unrelated to the watchdog-pause ordering
 # under test, and the real one shells out to sudo (polluting ORDER).
@@ -76,7 +82,10 @@ log_info() { :; }
 log_ok() { :; }
 log_warn() { :; }
 log_skip() { record log_skip; }
-run_stage1() { record run_stage1; WIZARD_RAN_INSTALL=true; }
+run_stage1() {
+    record run_stage1
+    WIZARD_RAN_INSTALL=true
+}
 run_stage2() { record run_stage2; }
 run_stage3() { record run_stage3; }
 
@@ -102,10 +111,10 @@ seed_late_install_fixture() {
     local stage1_complete="${4-}"
     SCRIPT_DIR="$TMP_ROOT/$name"
     mkdir -p "$SCRIPT_DIR/scripts"
-    cat > "$SCRIPT_DIR/config.yml" <<'YAML'
+    cat >"$SCRIPT_DIR/config.yml" <<'YAML'
 wizard_completed: true
 YAML
-    cat > "$SCRIPT_DIR/.env" <<ENV
+    cat >"$SCRIPT_DIR/.env" <<ENV
 TZ=Etc/UTC
 PUID=1000
 PGID=1000
@@ -127,7 +136,7 @@ STORAGE_MODE=${storage_mode}
 STORAGE_APP_WIRING=${app_wiring}
 STAGE_1_COMPLETE=${stage1_complete}
 ENV
-    cat > "$SCRIPT_DIR/scripts/configure.sh" <<'SH'
+    cat >"$SCRIPT_DIR/scripts/configure.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
 SH
@@ -150,10 +159,10 @@ assert_contains "$nas_order" "storage_pause_watchdog_for_install stash_gpu_type 
 assert_contains "$nas_order" "storage_pause_watchdog_for_install stash_gpu_type check_docker check_compose detect_existing_install cleanup_post_reboot detect_host_memory verify_gpu_runtime" "interrupted NAS: pause precedes hardening"
 assert_contains "$nas_order" "storage_pause_watchdog_for_install stash_gpu_type check_docker check_compose detect_existing_install cleanup_post_reboot detect_host_memory verify_gpu_runtime detect_env run_stage1 run_stage3 run_stage2" "interrupted NAS: wizard resumes core, hardware add-on, and remote instead of self-skipping"
 case "$nas_order" in
-    *"stash_gpu_type"*"storage_pause_watchdog_for_install"*|*"check_docker"*"storage_pause_watchdog_for_install"*|\
-    *"check_compose"*"storage_pause_watchdog_for_install"*|*"detect_existing_install"*"storage_pause_watchdog_for_install"*|\
-    *"verify_gpu_runtime"*"storage_pause_watchdog_for_install"*|*"run_stage1"*"storage_pause_watchdog_for_install"*|\
-    *"setup_ufw_service_ports"*"storage_pause_watchdog_for_install"*|*"setup_samba"*"storage_pause_watchdog_for_install"*|*"stop_existing_stack"*"storage_pause_watchdog_for_install"*)
+    *"stash_gpu_type"*"storage_pause_watchdog_for_install"* | *"check_docker"*"storage_pause_watchdog_for_install"* | \
+        *"check_compose"*"storage_pause_watchdog_for_install"* | *"detect_existing_install"*"storage_pause_watchdog_for_install"* | \
+        *"verify_gpu_runtime"*"storage_pause_watchdog_for_install"* | *"run_stage1"*"storage_pause_watchdog_for_install"* | \
+        *"setup_ufw_service_ports"*"storage_pause_watchdog_for_install"* | *"setup_samba"*"storage_pause_watchdog_for_install"* | *"stop_existing_stack"*"storage_pause_watchdog_for_install"*)
         fail "interrupted NAS: pre-wizard/hardening/stage work does not precede watchdog pause" "order: $nas_order"
         ;;
     *)
@@ -161,7 +170,7 @@ case "$nas_order" in
         ;;
 esac
 case "$nas_order" in
-    *"log_skip"*|*"stop_existing_stack"*|*"pull_images"*|*"start_stack"*|*"storage_install_watchdog"*)
+    *"log_skip"* | *"stop_existing_stack"* | *"pull_images"* | *"start_stack"* | *"storage_install_watchdog"*)
         fail "interrupted NAS: markerless late install path is not used" "order: $nas_order"
         ;;
     *)
@@ -172,7 +181,7 @@ esac
 local_order="$(run_late_install_case local local manual)"
 assert_contains "$local_order" "storage_pause_watchdog_for_install stash_gpu_type check_docker check_compose detect_existing_install cleanup_post_reboot detect_host_memory verify_gpu_runtime detect_env run_stage1 run_stage3 run_stage2" "interrupted local fallback: stale watchdog paused before resumed core/hardware/remote"
 case "$local_order" in
-    *"stop_existing_stack"*|*"pull_images"*|*"start_stack"*|*"storage_install_watchdog"*)
+    *"stop_existing_stack"* | *"pull_images"* | *"start_stack"* | *"storage_install_watchdog"*)
         fail "interrupted local fallback: markerless late install path is not used" "order: $local_order"
         ;;
     *)
@@ -191,7 +200,10 @@ case "$completed_order" in
 esac
 
 ORDER=()
-storage_pause_watchdog_for_install() { record storage_pause_watchdog_for_install; return 1; }
+storage_pause_watchdog_for_install() {
+    record storage_pause_watchdog_for_install
+    return 1
+}
 unset WIZARD_RAN_INSTALL STAGE_1_COMPLETE STORAGE_MODE STORAGE_APP_WIRING RECOVERY_MENU_ACTION
 seed_late_install_fixture fail nas managed
 main >/dev/null 2>&1
@@ -199,7 +211,7 @@ late_fail_rc=$?
 late_fail_order="$(order_text)"
 assert_eq "1" "$late_fail_rc" "late install: pause failure aborts setup"
 case "$late_fail_order" in
-    *"stash_gpu_type"*|*"check_docker"*|*"detect_existing_install"*|*"verify_gpu_runtime"*|*"log_skip"*|*"setup_ufw_service_ports"*|*"setup_samba"*|*"stop_existing_stack"*|*"start_stack"*)
+    *"stash_gpu_type"* | *"check_docker"* | *"detect_existing_install"* | *"verify_gpu_runtime"* | *"log_skip"* | *"setup_ufw_service_ports"* | *"setup_samba"* | *"stop_existing_stack"* | *"start_stack"*)
         fail "late install: pause failure stops before pre-wizard work/stack churn" "order: $late_fail_order"
         ;;
     *)
@@ -224,8 +236,8 @@ assert_contains "$prewizard_order" "prompt_sudo_cache storage_pause_watchdog_for
 assert_contains "$prewizard_order" "storage_pause_watchdog_for_install stash_gpu_type check_docker check_compose detect_existing_install cleanup_post_reboot detect_host_memory verify_gpu_runtime" "pre-wizard incomplete install: pause happens before hardening"
 assert_contains "$prewizard_order" "storage_pause_watchdog_for_install stash_gpu_type check_docker check_compose detect_existing_install cleanup_post_reboot detect_host_memory verify_gpu_runtime detect_env run_wizard" "pre-wizard incomplete install: pause happens before run_wizard"
 case "$prewizard_order" in
-    *"stash_gpu_type"*"storage_pause_watchdog_for_install"*|*"detect_existing_install"*"storage_pause_watchdog_for_install"*|\
-    *"verify_gpu_runtime"*"storage_pause_watchdog_for_install"*|*"run_wizard"*"storage_pause_watchdog_for_install"*)
+    *"stash_gpu_type"*"storage_pause_watchdog_for_install"* | *"detect_existing_install"*"storage_pause_watchdog_for_install"* | \
+        *"verify_gpu_runtime"*"storage_pause_watchdog_for_install"* | *"run_wizard"*"storage_pause_watchdog_for_install"*)
         fail "pre-wizard incomplete install: pre-wizard work does not precede watchdog pause" "order: $prewizard_order"
         ;;
     *)
@@ -233,7 +245,10 @@ case "$prewizard_order" in
         ;;
 esac
 
-storage_pause_watchdog_for_install() { record storage_pause_watchdog_for_install; return 1; }
+storage_pause_watchdog_for_install() {
+    record storage_pause_watchdog_for_install
+    return 1
+}
 ORDER=()
 unset WIZARD_RAN_INSTALL STAGE_1_COMPLETE STORAGE_MODE STORAGE_APP_WIRING RECOVERY_MENU_ACTION
 seed_late_install_fixture prewizard-fail nas managed
@@ -242,7 +257,7 @@ prewizard_fail_rc=$?
 prewizard_fail_order="$(order_text)"
 assert_eq "1" "$prewizard_fail_rc" "pre-wizard incomplete install: pause failure aborts setup"
 case "$prewizard_fail_order" in
-    *"stash_gpu_type"*|*"detect_existing_install"*|*"verify_gpu_runtime"*|*"run_wizard"*)
+    *"stash_gpu_type"* | *"detect_existing_install"* | *"verify_gpu_runtime"* | *"run_wizard"*)
         fail "pre-wizard incomplete install: pause failure prevents pre-wizard work" "order: $prewizard_fail_order"
         ;;
     *)

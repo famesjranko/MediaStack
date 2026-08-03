@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/stage1-admin-password.sh
 #
-# Issue #95: the shared admin password must NEVER be auto-generated. Stage 1 collects
+# The shared admin password must NEVER be auto-generated. Stage 1 collects
 # it with NO default (a bare Enter is rejected by validate_admin_password), shows it
 # as typed (user preference), and accepts it via a persistent review step (not a
 # re-typed confirm). This unit pins that contract on _stage1_collect_admin:
@@ -39,11 +39,11 @@ ui_kv() { :; }
 # The review step accepts on the first pass unless a test overrides ui_choose.
 ui_choose() { printf '%s\n' "Use these details"; }
 
-# Spy: #95 forbids auto-generation. If anything reaches for `openssl rand` to seed a
+# Spy on auto-generation. If anything reaches for `openssl rand` to seed a
 # default, record it so the assertions below can fail loudly.
 openssl() {
     if [[ "${1:-}" == "rand" ]]; then
-        printf '%s\n' "called" > "$OPENSSL_CALLED_FILE"
+        printf '%s\n' "called" >"$OPENSSL_CALLED_FILE"
         printf '%s\n' "GeneratedShouldNeverBeUsed123"
         return 0
     fi
@@ -61,9 +61,12 @@ ui_input_validated() {
         return 0
     fi
     case "$prompt" in
-        Admin\ password*) printf '%s\n' "$default" > "$PASSWORD_DEFAULT_FILE"; printf '%s\n' "${PW_RETURN:-UserTyped-Pw-123456}" ;;
+        Admin\ password*)
+            printf '%s\n' "$default" >"$PASSWORD_DEFAULT_FILE"
+            printf '%s\n' "${PW_RETURN:-UserTyped-Pw-123456}"
+            ;;
         Admin\ username*) printf '%s\n' "${default:-admin}" ;;
-        *)                printf '%s\n' "owner@lan.test" ;;
+        *) printf '%s\n' "owner@lan.test" ;;
     esac
 }
 
@@ -90,14 +93,14 @@ assert_eq "UserTyped-Pw-123456" "$_WIZ_ADMIN_PW" "Stage 1 admin password: the us
 # =========================================================================
 # Test 2: the review must be accepted — "Re-enter" re-collects, "Use these details" accepts
 # =========================================================================
-printf '0\n' > "$REVIEW_CALLS_FILE"
+printf '0\n' >"$REVIEW_CALLS_FILE"
 PW_RETURN="Match-Me-Pw-1234"
 # First review picks "Re-enter" (re-collects); second picks "Use these details".
 ui_choose() {
     local n
     n=$(cat "$REVIEW_CALLS_FILE")
     n=$((n + 1))
-    printf '%s\n' "$n" > "$REVIEW_CALLS_FILE"
+    printf '%s\n' "$n" >"$REVIEW_CALLS_FILE"
     if [[ "$n" -eq 1 ]]; then
         printf '%s\n' "Re-enter"
     else

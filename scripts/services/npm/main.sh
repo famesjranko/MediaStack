@@ -70,7 +70,7 @@ _npm_latest_cert_id_by_fqdn() {
     local _ids _rc
     _ids=$(_npm_api_cert_ids_by_fqdn "$@")
     _rc=$?
-    (( _rc == 2 )) && return 2
+    ((_rc == 2)) && return 2
     echo "$_ids" | head -n1
 }
 
@@ -109,7 +109,7 @@ _npm_wait_usable_cert() {
     for _i in $(seq 1 "$_max"); do
         _id=$(_npm_usable_cert_id_by_fqdn "$_token" "$_api" "$_fqdn")
         _rc=$?
-        if (( _rc == 0 )); then
+        if ((_rc == 0)); then
             _api_ok=1
             if [[ -n "$_id" && "$_id" != "0" ]]; then
                 echo "$_id"
@@ -118,7 +118,7 @@ _npm_wait_usable_cert() {
         fi
         sleep "$_interval"
     done
-    (( _api_ok == 0 )) && return 2
+    ((_api_ok == 0)) && return 2
     return 1
 }
 
@@ -342,7 +342,7 @@ _npm_ensure_healthy() {
         [[ "$_has_missing" == "true" ]] && _affected+=("$_host_id")
     done
 
-    if (( ${#_affected[@]} == 0 )); then
+    if ((${#_affected[@]} == 0)); then
         log_error "NPM nginx -t failing but no proxy_host/*.conf has missing cert refs"
         log_error "Unknown corruption - inspect: docker exec npm nginx -t"
         log_error "Forensic: $_data_dir/nginx/proxy_host/"
@@ -417,7 +417,10 @@ print(json.dumps(h))
     # this is the most portable path. NPM's database.sqlite is owned by root
     # (the container writes as root), so we need sudo to open it for write.
     local _ids_csv _sql_err _sql_rc=0
-    _ids_csv=$(IFS=,; echo "${_affected[*]}")
+    _ids_csv=$(
+        IFS=,
+        echo "${_affected[*]}"
+    )
     # Capture stderr so a failure's SystemExit reason lands in the log_error
     # below instead of leaking to the terminal; discard stdout. On success
     # stderr is empty.
@@ -462,7 +465,7 @@ try:
 finally:
     con.close()
 ' "$_db" "$_ids_csv" 2>&1 >/dev/null) || _sql_rc=$?
-    if (( _sql_rc != 0 )); then
+    if ((_sql_rc != 0)); then
         log_error "sqlite patch via python3 failed (need sudo for $_db)${_sql_err:+: ${_sql_err}}"
         (cd "$SCRIPT_DIR" && docker compose start npm) >/dev/null 2>&1
         return 1
@@ -477,8 +480,8 @@ finally:
     for _host_id in "${_affected[@]}"; do
         local _src="$_data_dir/nginx/proxy_host/$_host_id.conf"
         if [[ -f "$_src" ]]; then
-            $_sudo mv "$_src" "$_archive/" 2>/dev/null && \
-                log_info "  archived $_host_id.conf -> $_archive/"
+            $_sudo mv "$_src" "$_archive/" 2>/dev/null \
+                && log_info "  archived $_host_id.conf -> $_archive/"
         fi
     done
 
@@ -602,8 +605,8 @@ print(json.dumps({
         local default_token
         default_token=$(curl -sf -X POST "$npm_api/tokens" \
             -H "Content-Type: application/json" \
-            -d "@$SCRIPT_DIR/scripts/services/npm/templates/token-default.json" 2>/dev/null | \
-            json_get token)
+            -d "@$SCRIPT_DIR/scripts/services/npm/templates/token-default.json" 2>/dev/null \
+            | json_get token)
 
         if [[ -z "$default_token" ]]; then
             log_skip "NPM admin already has non-default credentials"
@@ -638,8 +641,8 @@ print(json.dumps({
     tokens_body=$(json_body identity "$npm_email" secret "$npm_pw")
     npm_token=$(curl -sf -X POST "$npm_api/tokens" \
         -H "Content-Type: application/json" \
-        -d "$tokens_body" 2>/dev/null | \
-        json_get token)
+        -d "$tokens_body" 2>/dev/null \
+        | json_get token)
     if [[ -n "$npm_token" ]]; then
         log_ok "Verified: NPM admin credentials accepted"
     else
@@ -678,13 +681,13 @@ for s in json.load(sys.stdin):
     fi
 
     # --- Rate limiting zone (http{} context via NPM custom config) ---
-    # Disabled by default (config.yml rate_limiting.enabled) for upstream parity;
-    # see ADR-35. When disabled, no limit_req_zone is written here and no limit_req
+    # Disabled by default (config.yml rate_limiting.enabled) for parity with
+    # upstream. When disabled, no limit_req_zone is written here and no limit_req
     # is injected into proxy hosts (below), and the npm-ratelimit jail-verify is
     # skipped.
     local rate_enabled rate_rps rate_burst
     rate_enabled="$(cfg_field "rate_limiting.enabled" 2>/dev/null || echo "false")"
-    rate_enabled="${rate_enabled,,}"   # cfg_field prints Python "False"/"True"; normalize
+    rate_enabled="${rate_enabled,,}" # cfg_field prints Python "False"/"True"; normalize
     rate_rps=$(cfg_field "rate_limiting.requests_per_second" 2>/dev/null || echo "15")
     rate_burst=$(cfg_field "rate_limiting.burst" 2>/dev/null || echo "60")
 
@@ -715,7 +718,7 @@ for s in json.load(sys.stdin):
         if [[ -d "$http_top_dir" && ! -w "$http_top_dir" ]]; then
             sudo chown "$(id -u):$(id -g)" "$http_top_dir" 2>/dev/null || true
         fi
-        if mkdir -p "$http_top_dir" 2>/dev/null && printf '%s\n' "$expected_zone" > "$http_top_file" 2>/dev/null; then
+        if mkdir -p "$http_top_dir" 2>/dev/null && printf '%s\n' "$expected_zone" >"$http_top_file" 2>/dev/null; then
             http_top_created="true"
             log_ok "NPM rate limit zone: ${rate_rps}r/s (http_top.conf)"
         else
@@ -756,14 +759,14 @@ for s in json.load(sys.stdin):
     if [[ "$remote_attempt_allowed" == "true" ]]; then
         local fqdn_list=()
         for entry in "${proxy_hosts[@]}"; do
-            IFS='|' read -r subdomain forward_host forward_port websocket <<< "$entry"
+            IFS='|' read -r subdomain forward_host forward_port websocket <<<"$entry"
             fqdn_list+=("${subdomain}.${domain}")
         done
 
         # Disable any previously-created certless hosts before we wait on DNS or
         # attempt ACME. This closes the old exposure window on re-runs.
         for entry in "${proxy_hosts[@]}"; do
-            IFS='|' read -r subdomain forward_host forward_port websocket <<< "$entry"
+            IFS='|' read -r subdomain forward_host forward_port websocket <<<"$entry"
             local fqdn="${subdomain}.${domain}"
             local existing_host_json
             existing_host_json=$(echo "$existing_hosts" | FQDN="$fqdn" python3 -c '
@@ -808,15 +811,15 @@ for host in json.load(sys.stdin):
         if [[ "$_needs_public_dns_gate" != "true" ]]; then
             log_info "Custom ACME endpoint (${_le_server:-unset}) - skipping public DNS propagation gate"
         else
-            _public_ip=$(curl -s --connect-timeout 5 https://api.ipify.org 2>/dev/null) || \
-                _public_ip=$(curl -s --connect-timeout 5 https://ifconfig.me 2>/dev/null) || \
-                _public_ip=""
+            _public_ip=$(curl -s --connect-timeout 5 https://api.ipify.org 2>/dev/null) \
+                || _public_ip=$(curl -s --connect-timeout 5 https://ifconfig.me 2>/dev/null) \
+                || _public_ip=""
         fi
 
         if [[ -n "$_public_ip" ]]; then
             log_info "Public IP: $_public_ip - waiting for DNS propagation..."
             local _dns_wait=0 _dns_max="$NPM_DNS_PROPAGATION_TIMEOUT_SECONDS" _dns_status_line=""
-            while (( _dns_wait < _dns_max )); do
+            while ((_dns_wait < _dns_max)); do
                 local _all_dns_ok="yes"
                 local _dns_status=()
                 for fqdn in "${fqdn_list[@]}"; do
@@ -827,18 +830,21 @@ for host in json.load(sys.stdin):
                         _dns_status+=("${fqdn}=${_dns_ip:-unresolvable}")
                     fi
                 done
-                _dns_status_line=$(IFS=', '; echo "${_dns_status[*]}")
+                _dns_status_line=$(
+                    IFS=', '
+                    echo "${_dns_status[*]}"
+                )
                 if [[ -n "$_all_dns_ok" ]]; then
                     _dns_ok="yes"
                     log_ok "DNS propagated: ${fqdn_list[*]} -> $_public_ip (${_dns_wait}s)"
                     break
                 fi
                 sleep "$NPM_DNS_PROPAGATION_INTERVAL_SECONDS"
-                (( _dns_wait += NPM_DNS_PROPAGATION_INTERVAL_SECONDS ))
+                ((_dns_wait += NPM_DNS_PROPAGATION_INTERVAL_SECONDS))
                 echo -ne "."
             done
-            [[ -z "$_dns_ok" ]] && echo "" && \
-                log_warn "DNS did not resolve to $_public_ip after ${_dns_max}s (${_dns_status_line:-unresolvable}) - public proxy hosts may be deferred"
+            [[ -z "$_dns_ok" ]] && echo "" \
+                && log_warn "DNS did not resolve to $_public_ip after ${_dns_max}s (${_dns_status_line:-unresolvable}) - public proxy hosts may be deferred"
         else
             log_info "Could not detect public IP - skipping DNS propagation check"
         fi
@@ -852,14 +858,14 @@ for host in json.load(sys.stdin):
         fi
 
         for entry in "${proxy_hosts[@]}"; do
-            IFS='|' read -r subdomain forward_host forward_port websocket <<< "$entry"
+            IFS='|' read -r subdomain forward_host forward_port websocket <<<"$entry"
             local fqdn="${subdomain}.${domain}"
             local ws_val="false"
             [[ "$websocket" == "1" ]] && ws_val="true"
 
             local adv_config=""
             # Rate limiting is opt-in (config.yml rate_limiting.enabled); the
-            # security headers below are always applied. See ADR-35.
+            # security headers below are always applied.
             if [[ "$rate_enabled" == "true" ]]; then
                 adv_config="limit_req zone=mediastack_ratelimit burst=${rate_burst} nodelay;
 limit_req_status 429;
@@ -914,8 +920,8 @@ for host in json.load(sys.stdin):
             # material is actually on disk — NPM may have a stale row from
             # a prior aborted issuance (orphan FK).
             target_cert_id="${host_cert_id:-0}"
-            if [[ "${target_cert_id:-0}" != "0" ]] && \
-               ! _npm_cert_material_ready "$target_cert_id"; then
+            if [[ "${target_cert_id:-0}" != "0" ]] \
+                && ! _npm_cert_material_ready "$target_cert_id"; then
                 log_warn "Existing $fqdn cert_id=$target_cert_id has no key+chain on disk - re-issuing"
                 target_cert_id="0"
             fi
@@ -961,7 +967,7 @@ print(json.dumps({
                 existing_rc=$?
                 latest_cert_id="$existing_latest"
 
-                if (( existing_rc == 2 )); then
+                if ((existing_rc == 2)); then
                     log_warn "Cert pre-flight: NPM API unreachable for $fqdn - refusing to POST (would risk duplicate issuance); deferring"
                     _npm_cert_status_record "$fqdn" "$cert_post_attempted" "$cert_post_http" "$latest_cert_id" "${target_cert_id:-0}" "false" "false" "$host_id" "npm-api-unreachable"
                     continue
@@ -1004,7 +1010,7 @@ print(json.dumps({
                 local found_cert_id wait_rc
                 found_cert_id=$(_npm_wait_usable_cert "$npm_token" "$npm_api" "$fqdn" "$NPM_CERT_WAIT_MAX_POLLS" "$NPM_CERT_WAIT_INTERVAL_SECONDS")
                 wait_rc=$?
-                if (( wait_rc == 0 )) && [[ -n "$found_cert_id" && "$found_cert_id" != "0" ]]; then
+                if ((wait_rc == 0)) && [[ -n "$found_cert_id" && "$found_cert_id" != "0" ]]; then
                     target_cert_id="$found_cert_id"
                     latest_cert_id="${latest_cert_id:-$found_cert_id}"
                 else
@@ -1025,9 +1031,9 @@ print(json.dumps({
             # otherwise survive every re-run forever — the skip path here
             # was the gap that let the GCP-staging orphan persist past
             # multiple `configure.sh --only npm` invocations.
-            if [[ -n "$host_json" ]] && echo "$host_json" | \
-                FQDN="$fqdn" FH="$forward_host" FP="$forward_port" WS="$ws_val" \
-                ADV="$adv_config" CERT_ID="$target_cert_id" python3 -c '
+            if [[ -n "$host_json" ]] && echo "$host_json" \
+                | FQDN="$fqdn" FH="$forward_host" FP="$forward_port" WS="$ws_val" \
+                    ADV="$adv_config" CERT_ID="$target_cert_id" python3 -c '
 import sys, json, os
 host = json.load(sys.stdin)
 matches = (
@@ -1057,9 +1063,9 @@ sys.exit(0 if matches else 1)
             # forever as an "enabled but invisible" orphan.
             if [[ -n "$host_json" ]]; then
                 local update_body update_http
-                update_body=$(echo "$host_json" | \
-                    FQDN="$fqdn" FH="$forward_host" FP="$forward_port" WS="$ws_val" \
-                    ADV="$adv_config" CERT_ID="$target_cert_id" python3 -c '
+                update_body=$(echo "$host_json" \
+                    | FQDN="$fqdn" FH="$forward_host" FP="$forward_port" WS="$ws_val" \
+                        ADV="$adv_config" CERT_ID="$target_cert_id" python3 -c '
 import sys, json, os
 host = json.load(sys.stdin)
 host["domain_names"] = [os.environ["FQDN"]]
@@ -1141,15 +1147,15 @@ print(json.dumps({
                 proxy_resp=$(echo "$proxy_resp" | sed '$d')
                 if [[ "$proxy_http" == "201" ]]; then
                     new_host_id=$(echo "$proxy_resp" | json_get id)
-                    if [[ -n "$new_host_id" ]] && \
-                       _npm_wait_proxy_conf "$new_host_id" "$fqdn" "$target_cert_id"; then
+                    if [[ -n "$new_host_id" ]] \
+                        && _npm_wait_proxy_conf "$new_host_id" "$fqdn" "$target_cert_id"; then
                         proxy_published="true"
                         host_id="$new_host_id"
                         log_ok "Proxy host: $fqdn published (cert_id=$target_cert_id, SSL forced, HTTP/2)"
                     else
                         log_warn "Proxy host: $fqdn created in NPM API but proxy_host/${new_host_id:-?}.conf did not render with cert_id=$target_cert_id - disabling to avoid orphan"
-                        [[ -n "$new_host_id" ]] && \
-                            _npm_disable_host "$npm_token" "$npm_api" "$new_host_id" "" >/dev/null 2>&1 || true
+                        [[ -n "$new_host_id" ]] \
+                            && _npm_disable_host "$npm_token" "$npm_api" "$new_host_id" "" >/dev/null 2>&1 || true
                     fi
                 else
                     log_warn "Proxy host create failed: $fqdn (HTTP $proxy_http)"
@@ -1165,7 +1171,7 @@ print(json.dumps({
         log_skip "Remote web state is ${remote_state:-unset} -- skipping public proxy hosts"
         if [[ -n "$domain" && "$domain" != "example.com" ]]; then
             for entry in "${proxy_hosts[@]}"; do
-                IFS='|' read -r subdomain forward_host forward_port websocket <<< "$entry"
+                IFS='|' read -r subdomain forward_host forward_port websocket <<<"$entry"
                 local fqdn="${subdomain}.${domain}"
                 local existing_host_json
                 existing_host_json=$(echo "$existing_hosts" | FQDN="$fqdn" FH="$forward_host" FP="$forward_port" python3 -c '
@@ -1192,9 +1198,9 @@ for host in json.load(sys.stdin):
                     if [[ "$remote_state" == "failed" ]]; then
                         local existing_cert_id
                         existing_cert_id=$(echo "$existing_host_json" | json_get certificate_id 0)
-                        if [[ "${existing_cert_id:-0}" != "0" ]] && \
-                           _npm_cert_material_ready "$existing_cert_id" && \
-                           _npm_proxy_conf_renders "$host_id" "$fqdn" "$existing_cert_id"; then
+                        if [[ "${existing_cert_id:-0}" != "0" ]] \
+                            && _npm_cert_material_ready "$existing_cert_id" \
+                            && _npm_proxy_conf_renders "$host_id" "$fqdn" "$existing_cert_id"; then
                             log_skip "Preserved ready proxy host after failed Stage 2: $fqdn"
                             continue
                         fi
@@ -1213,13 +1219,13 @@ for host in json.load(sys.stdin):
     # Reload nginx if http_top.conf was just created (on re-runs where proxy
     # hosts already existed, no API call triggered an automatic reload).
     if [[ "$http_top_created" == "true" ]]; then
-        docker exec npm nginx -s reload >/dev/null 2>&1 && \
-            log_ok "NPM nginx reloaded (rate limit zone active)" || \
-            log_warn "Could not reload NPM nginx - rate limits active after next proxy host change"
+        docker exec npm nginx -s reload >/dev/null 2>&1 \
+            && log_ok "NPM nginx reloaded (rate limit zone active)" \
+            || log_warn "Could not reload NPM nginx - rate limits active after next proxy host change"
     fi
 
     # Verify npm-ratelimit jail values match config.yml. Only when rate limiting is
-    # enabled: the jail ships disabled alongside rate_limiting.enabled=false (ADR-35).
+    # enabled: the jail ships disabled alongside rate_limiting.enabled=false.
     if [[ "$rate_enabled" != "true" ]]; then
         log_skip "Fail2ban: npm-ratelimit jail skipped (rate limiting disabled)"
     else

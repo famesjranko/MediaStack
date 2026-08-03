@@ -4,7 +4,7 @@ End-to-end tests that run inside a Docker-in-Docker container so your host stays
 
 DinD is a **Debian-based** image (`ms-dind:debian`, built from `tests/Dockerfile.dind`), matching the production distro. First `./tests/run.sh` invocation builds it (~40s); subsequent runs use the docker layer cache.
 
-> **Two surfaces, complementary scope.** This README covers DinD — fast (~16 min full battery), runs everything that happens *inside* the VM. Real Let's Encrypt HTTP-01, real public DNS via Dynu, and the WAN-firewall proof for every Docker LAN-only TCP port are validated on **maintainer-private live-host harnesses** (cloud VM + bare metal — they need real infra/creds, so they're maintainer-only and not published here). The surfaces are complementary: DinD cannot prove DDNS pushes / public DNS resolution / firewall behavior, and the live-host runs don't exercise every in-VM scenario (npm-heal, wireguard-{server,containers,streaming}, wizard-presets are DinD-only). Pick by what's being validated.
+> **Three complementary surfaces.** DinD runs everything that happens inside the VM. The operator-run [`gcp-vm/`](gcp-vm/) harness proves real public DNS, DDNS, Let's Encrypt HTTP-01, HTTPS, and WAN firewall behavior on a disposable cloud VM. The [`lan-host/`](lan-host/) harness proves real Debian hardware, UFW/systemd, and GPU passthrough on a dedicated test box. Credentials and target values stay in gitignored local env files; neither live-host harness runs in CI.
 
 GitHub Actions runs a deliberately small PR gate: committed-secret checks, shell/Python
 syntax checks, compose rendering, focused host unit tests, and the `wizard-ui-*` PTY
@@ -18,8 +18,34 @@ installs intentionally follow upstream tags.
 ## Prerequisites
 
 - Docker on the host (Compose v2 not required inside DinD; it's pre-baked in the image).
+- `uv` on the host (runs the pinned Ruff and mypy versions without a project virtualenv).
 - Free disk: ~6 GB for `fresh-install` (image pulls inside DinD) + ~500 MB for the DinD image itself.
 - Network: first run downloads base images (debian:bookworm-slim + Docker CE apt repo); subsequent runs can go fully offline if the host already has the MediaStack images (see image cache below).
+
+## Live-host acceptance harnesses
+
+These are explicit operator actions, not automated gates. Read the co-located
+README before using either one, review the ignored env file, and never target a
+production host.
+
+```bash
+# Safe structural/config checks: no cloud, SSH, rsync, or destructive action.
+bash tests/gcp-vm/run-fresh.sh --preflight
+bash tests/lan-host/run-fresh.sh --preflight
+
+# Live runs only after reviewing target, credentials, cost, and cleanup.
+bash tests/gcp-vm/run-fresh.sh
+bash tests/lan-host/run-fresh.sh --yes
+```
+
+The GCP runner deletes and recreates one VM. It requires
+`GCP_EXPECT_TARGET=PROJECT_ID/ZONE/INSTANCE`, passes the project explicitly to
+every `gcloud` command, and incurs charges until the VM is deleted. The LAN
+runner can remove containers, volumes, generated configuration, drivers, and
+optionally `/data` on its SSH target. Interactive wipes require retyping the
+target hostname; `--yes` is refused unless `TARGET_HOST == LANHOST_EXPECT`.
+See [`gcp-vm/README.md`](gcp-vm/README.md) and
+[`lan-host/README.md`](lan-host/README.md) for prerequisites and cleanup.
 
 ## Running
 
@@ -95,17 +121,89 @@ needs no special flags — and neither do you.
 ./tests/lint.sh --severity=error         # stricter: only fail on errors
 ```
 
-It prefers a native `shellcheck` at the pinned version and falls back to the pinned
-`koalaman/shellcheck:v0.11.0` docker image, so the analysing engine is identical
-everywhere.
-The default severity is `--severity=warning` — the same gate CI uses (via `tests/unit.sh`).
+It prefers a native `shellcheck` at the pinned version, then the sha256-verified
+cached pin (`./tests/lint.sh install`, fetched per `tools.toml [shellcheck]`), and
+falls back to the pinned `koalaman/shellcheck:v0.11.0` docker image — the analysing
+engine is identical on every rung.
+The default severity is `--severity=warning` — the same gate CI's
+`lint-shellcheck` job uses via `./tests/check.sh lint`.
 A bare `./tests/lint.sh` therefore gives the same pass/fail result as CI; no flag needed.
 
-> **Version skew is real.** CI's native `shellcheck` and the pinned
-> `koalaman/shellcheck:stable` image are different versions that disagree on a few
-> codes (notably `SC2218`). A per-file/inline `# shellcheck disable=` can therefore
-> pass with the docker image yet still fail the CI gate — so suppress version-skewed
-> codes in `.shellcheckrc` (`disable=`), never inline. See the `SC2218` note there.
+Repo-wide suppressions live in `.shellcheckrc`, with a reason beside each one.
+Keep shared architectural suppressions there instead of scattering inline
+directives through individual files.
+
+### Fast tier for the two expensive roots
+
+`tests/unit/wizard-flow.sh` (1m45s) and `mediastack` (47s) are pathological
+ShellCheck roots — the rest of the tree lints in under two seconds each. While
+iterating on either file, pass `--extended-analysis=false` to cut them to 22s
+and 18s respectively:
+
+```bash
+./tests/lint.sh --extended-analysis=false tests/unit/wizard-flow.sh
+./tests/lint.sh --extended-analysis=false mediastack
+```
+
+This is a speed convenience for the edit loop on those two files, not a
+weaker gate:
+
+```
+fast touched-file check  → quick feedback
+full touched-root check  → pre-handoff confidence
+full whole-tree check    → CI authority
+```
+
+Never add `--extended-analysis=false` to `.shellcheckrc` or a CI job — it
+must stay an explicit, opt-in flag on those two files, never a default.
+
+## Shell formatting
+
+`./tests/format.sh` is the shell formatter gate (shfmt, pinned in `tools.toml`
+`[shfmt]`). It is a gate, not advice: `check` exits 1 on any difference and is
+what `./tests/check.sh shfmt` and the `format-shfmt` CI job run.
+
+```bash
+./tests/format.sh check                  # diff mode over every tracked shell file
+./tests/format.sh check scripts/lib/ui.sh  # only the named file(s)
+./tests/format.sh write                  # rewrite in place
+```
+
+Discovery is `git ls-files '*.sh' 'mediastack'` — the same definition of "what
+is shell here" that `tests/lint.sh` and the unit tier use, rather than shfmt's
+own directory walk, which would also read a live install's generated config. It
+fails closed on an empty population, re-verifies the cached binary's sha256
+against `tools.toml` on every run (re-fetching on a mismatch), and refuses to
+run at all if an `.editorconfig` appears, because shfmt would silently prefer it
+over every pinned flag.
+
+## Python linting and formatting
+
+`ruff` (pinned in `tools.toml` `[ruff]`, configured in `pyproject.toml`) runs as
+`./tests/check.sh ruff` and the `lint-ruff` CI job: lint first, then format
+check, over the same non-empty `git ls-files '*.py'` population. Both halves
+are blocking.
+
+## Python type checking
+
+`./tests/unit.sh` runs mypy (pinned version + stub, recorded in `tools.toml`
+`[mypy]`) with
+`check_untyped_defs` over every tracked `*.py`, config in `pyproject.toml`
+`[tool.mypy]`. The standalone selector rejects an empty population or a missing
+`check_untyped_defs = true` and passes the Python 3.9 floor explicitly. The
+executable shell runners repeat those versions; keep their invocations aligned
+when changing a pin.
+
+The gate is mypy exiting 0 — every finding was fixed rather than shipping a
+suppression baseline, so there is nothing to compare against and nothing to
+keep shrinking.
+
+> **Deferred, not enforced:** Python structural checks (cyclomatic complexity,
+> duplication) and Bash function/complexity limits are not gated anywhere in
+> this repo. mypy and ruff catch type and style issues; nothing here catches a
+> function that has grown too large or too tangled. This is a named limitation,
+> deliberately left out of scope, not a gap to route around with an inline
+> suppression.
 
 ## Scenarios
 
@@ -120,7 +218,7 @@ Proves:
 4. `npm`, `fail2ban`, and `ddns-updater` live in the **proxy** profile and stay out of the default profile.
 5. NPM port 81 has no `host_ip` binding (LAN-reachable).
 6. Fresh NPM accepts unauthenticated `POST /api/users` to seed the admin with rotated credentials (the happy path `configure_npm` uses).
-7. New credentials authenticate; `admin@example.com / changeme` defaults are never active.
+7. New credentials authenticate; NPM's stock `changeme` admin login is never active.
 8. Second `POST /api/users` is rejected → `configure.sh`'s re-run path falls through to the rotation/idempotency branch.
 
 ### `fresh-install` — ~15-18 min warm / ~25 min cold
@@ -133,7 +231,7 @@ Proves:
 - Each of the 8 configure steps produced the expected side-effect (API key present, root folder registered, etc.).
 - qBittorrent's live API accepts the shared admin credentials and reports configured preferences/categories through `tests/assertions/qbittorrent-live.sh`.
 - Sonarr + Radarr indexer wiring is checked against whatever `config.yml` lists — the default ships `indexers: []`, so this is a no-op skip here; `wizard-presets.sh` is the scenario that actually seeds indexers (via the opt-in public-indexer preset) and exercises the FlareSolverr cold-start retry path, against real Cloudflare-protected trackers, so it is not a deterministic image-drift oracle for FlareSolverr — see `docs/operations/upgrades.md` "FlareSolverr — confidence boundary".
-- Quality definitions were tightened from upstream defaults (HDTV-720p preferredSize on Sonarr, Bluray-1080p preferredSize on Radarr — both differ noticeably from stock; ADR-25 dropped Remux-1080p entirely).
+- Quality definitions were tightened from upstream defaults (HDTV-720p preferredSize on Sonarr, Bluray-1080p preferredSize on Radarr — both differ noticeably from stock; no Remux-1080p ships at all — see [quality bounds](../docs/reference/quality-bounds.md)).
 - `SONARR_API_KEY`, `RADARR_API_KEY`, `JELLYFIN_API_KEY`, and ready-state `REMOTE_WEB_STATE` are back-populated into `.env`.
 
 Total: 46 hard assertions at current scope.
@@ -185,7 +283,7 @@ Proves:
 2. Unchecked/skipped state creates no public NPM proxy hosts.
 3. Jellyfin omits the managed NPM `KnownProxies` entry and external HTTPS URLs until ready.
 4. Homepage uses LAN hrefs until ready.
-5. NPM's rate-limit step (disabled by default, ADR-35) and fail2ban validation still run outside the ready gate.
+5. NPM's rate-limit step (disabled by default) and fail2ban validation still run outside the ready gate.
 6. Ready state preserves cert-backed Jellyfin/Seerr proxy publication with the Pebble ACME override.
 
 ### Stage 2 remote-access scenarios
@@ -194,8 +292,8 @@ Stage 2 adds WireGuard/remote-access DinD scenarios:
 
 - `stage2-skip` proves the user can skip HTTPS setup, `REMOTE_WEB_STATE=skipped` is persisted, LAN URLs remain in Jellyfin/Homepage, and public NPM proxy hosts are not published.
 - `stage2-ready` proves the ready path with safe in-VM/Pebble ACME fixtures: NPM renders cert-backed hosts, Jellyfin HTTPS responds, and `REMOTE_WEB_STATE=ready` is written only after proxy/cert postconditions.
-- `wireguard` starts wg-easy v15 at the Full LAN tier with the `remote` profile, asserts the major-`15` image pin (digest-locked under stable) and bridge-network `.11` placement (ADR-23, ADR-28) plus the ADR-17 capability set, and verifies interface creation, Basic Auth on `/api/client`, peer creation via the v15 API, `wg-easy.db` persistence, NAT/MASQUERADE, and custom `WG_PORT` propagation end-to-end (compose binding, container listen-port, `wg0.conf`).
-- `wireguard-server`, `wireguard-containers`, `wireguard-streaming` cover the Server / Containers / Streaming access tiers (ADR-29, ADR-45). Each enables wg-easy's per-client firewall and verifies the tier's `firewallIps` shape persists through wg-easy's possibly-500-but-persisted mutation path (ADR-28). Server tier asserts the bare `/32` shape, Containers asserts the MediaStack port enumeration (51821 excluded), Streaming asserts the Jellyfin-only shape. The `streaming-requests` (Jellyfin + Seerr) shape is unit-covered in `tests/unit/stage2-wireguard.sh`; multi-entry persistence is already proven here by `wireguard-containers`.
+- `wireguard` starts wg-easy v15 at the Full LAN tier with the `remote` profile, asserts the major-`15` image pin (digest-locked under stable) and bridge-network `.11` placement plus the capability set, and verifies interface creation, Basic Auth on `/api/client`, peer creation via the v15 API, `wg-easy.db` persistence, NAT/MASQUERADE, and custom `WG_PORT` propagation end-to-end (compose binding, container listen-port, `wg0.conf`).
+- `wireguard-server`, `wireguard-containers`, `wireguard-streaming` cover the Server / Containers / Streaming access tiers. Each enables wg-easy's per-client firewall and verifies the tier's `firewallIps` shape persists through wg-easy's possibly-500-but-persisted mutation path (classified on read-back, never on HTTP status). Server tier asserts the bare `/32` shape, Containers asserts the MediaStack port enumeration (51821 excluded), Streaming asserts the Jellyfin-only shape. The `streaming-requests` (Jellyfin + Seerr) shape is unit-covered in `tests/unit/stage2-wireguard.sh`; multi-entry persistence is already proven here by `wireguard-containers`.
 - Stage 2 distinguishes failed HTTPS attempts from intentional skips with `REMOTE_WEB_STATE=failed`; a failed LE gate keeps LAN/VPN usable and is retried by rerunning `./setup.sh --remote`, never by an automatic in-process retry.
 
 Run the focused remote-access DinD gate with:
@@ -204,7 +302,7 @@ Run the focused remote-access DinD gate with:
 ./tests/run.sh smoke remote-gating npm-heal ddns-seed wireguard wireguard-server wireguard-containers wireguard-streaming stage2-skip stage2-ready
 ```
 
-This gate is intentionally not a real public WAN proof. Real public DNS, DDNS provider pushes, firewall behavior, and real Let's Encrypt HTTP-01 remain covered on the maintainer-private live-host harnesses.
+This gate is intentionally not a real public WAN proof. Real public DNS, DDNS provider pushes, firewall behavior, and real Let's Encrypt HTTP-01 are covered by the operator-run `tests/gcp-vm/` harness.
 
 ### `nas-storage` — managed NAS/NFS fixture
 
@@ -258,8 +356,8 @@ point), it covers the full parameter space, so it's the surface for new
 API-driven features, day-2 re-push actions, and backfilling existing ones.
 Modules live in `tests/api-matrix/<service>.sh` and reuse the product renderers
 and `api_*` helpers. **Today Sonarr/Radarr, qBittorrent, Jackett, Jellyfin, and
-Seerr modules exist** (#164's full scope): `quality` loops the six
-resolution×size cells in place, `quality-rename` exercises the #71 day-2
+Seerr modules exist**: `quality` loops the six
+resolution×size cells in place, `quality-rename` exercises the day-2
 change-quality rename, `qbittorrent` covers setup plus its surgical day-2
 speed-limit action, `jackett` covers indexer enable/skip plus the
 FlareSolverr-URL/admin-password set-once cycles (live Torznab/Cloudflare
@@ -268,8 +366,14 @@ config match/drift/absent branches plus the Sonarr/Radarr notification
 wiring (including idempotent re-run), and `seerr` covers the Sonarr/Radarr
 connection wiring plus its idempotent re-run. It's a parameter-space gate, not
 a cross-service interop oracle and not an image-drift preflight — `fresh-install`
-owns those. Image-backed local gate, not in CI. See
-[`docs/testing/README.md`](../docs/testing/README.md#api-matrix-layer) for the full write-up and how to add a module.
+owns those. Image-backed local gate, not in CI.
+
+**Adding a module.** Drop `tests/api-matrix/<service>.sh` defining a
+`matrix_<service> …` function that drives the service's API through its states
+and asserts with `pass`/`fail`/`assert_eq`; `source` it and call it from
+`api-matrix.sh`, bringing up whatever services it needs. Reuse the product's
+render/config helpers rather than re-implementing request payloads. Each new
+day-2 action that mutates a service API should ship with a matrix module here.
 
 ### Stage 1 wizard UI scenarios
 
@@ -365,6 +469,15 @@ override actually reaches compose:
 MS_TEST_IMAGE_OVERRIDES="wireguard=example.invalid/wg:0" ./tests/run.sh --no-preload image-override
 ```
 
+`MS_TEST_STRIP_SERVICES` (comma or space separated service names) is the sibling mechanism: it
+removes those services from the DinD copy of compose and cleans the dangling `depends_on`, so a
+scenario can skip services it does not assert on rather than pulling their images. Setting a
+service in both variables aborts the run — the override would be stripped.
+
+```bash
+MS_TEST_STRIP_SERVICES="homepage,npm,fail2ban" ./tests/run.sh fresh-install
+```
+
 Preflight checks API **shape** only — for a major/API-unstable bump, also run the service's own battery plus `fresh-install` where relevant (note `fresh-install` excludes the `remote`/wireguard and `subtitles`/bazarr profiles). Host
 image sideload reads the host compose, so a candidate ref may need a network pull inside DinD.
 
@@ -376,10 +489,18 @@ Not every test needs DinD. Pure-bash units — function-level checks that can ru
 ./tests/unit/gpu-branching.sh
 ```
 
-`./tests/unit.sh` runs the whole host tier in one shot — static validation (shell syntax, shellcheck, `py_compile`, compose render) **plus** every `tests/unit/*.sh` below — and is the exact tier CI's PR check runs. Mirroring `tests/lint.sh`, it is the single source of truth invoked identically by developers, agents, and CI. Unlike the individual units it needs the docker CLI (compose render + the pinned shellcheck image), so it is not a "no Docker" runner.
+`./tests/unit.sh` runs the whole host-unit tier in one shot — static validation
+(shell syntax, ShellCheck, `py_compile`, mypy, compose render) **plus** every
+`tests/unit/*.sh` below. It is one stage of the PR gate, whose full local
+equivalent is `./tests/check.sh`. A direct local invocation runs every tier. CI
+and cumulative `default`/`full` checks call this runner with the ShellCheck and
+mypy tiers visibly skipped because those same gates have already passed.
+Unlike the individual units, the complete direct tier needs the Docker CLI
+(compose render and the pinned ShellCheck image unless version 0.11.0 is
+installed natively or cached via `./tests/lint.sh install`) and `uv` for mypy.
 
 ```bash
-./tests/unit.sh        # static validation + every unit test (what CI runs)
+./tests/unit.sh        # static validation + every host unit
 ```
 
 Current units:
@@ -393,17 +514,19 @@ Current units:
 - **seerr** — checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
 - **json-helpers** — exercises `json_get`, `json_path`, `json_has_name`, `json_array_nonempty` from `scripts/lib/json.sh` with representative inputs (missing keys, nested paths, case-insensitive matching, empty/invalid JSON).
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
+- **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening.sh`.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
-- **manage-updates** — covers the day-2 "Manage updates" feature (ADR-30): `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
+- **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
 - **launcher-hardware / nvidia-maintenance** — cover the day-2 hardware surface, Unlock-only visibility/dispatch guards, default-No cancellation, resolve-before-stop ordering, unload failure cleanup, one installer/toolkit execution, and expected-version marker persistence. Pure bash; no Docker/network.
 - **launcher-uninstall / uninstall-system-cleanup** — cover launcher routing/result reporting, root-only ledger reads, selective UFW/APT/sysctl/Samba cleanup, teardown failure rollback, and Stage 3 routing precedence.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
+- **lint-sweep** — checks the `tests/lint.sh` single-sweep contract against a fixture repo with a stub shellcheck: the sweep is invoked exactly once over the whole discovered file list, covers every file in it, and still propagates a non-zero result. Pure bash + git, no Docker and no network; run directly with `./tests/unit/lint-sweep.sh`.
 - **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.
 - **remote-web-state** (`tests/unit/remote-web-state.sh`) — exercises `write_env()` remote marker rules and `print_access_info` output for unchecked, ready, skipped, and LAN-only states.
 - **ddns-config** — exercises the shared DDNS provider registry + `config.json` renderer (`scripts/lib/ddns_providers.sh`): all 6 providers render valid typed JSON (Cloudflare `ttl`/`proxied` typed, dynv6 carries no inert `ipv4` key), missing/unknown inputs fail, the Dynu render stays byte-identical to the inline writer it replaced, and the registry accessors (`pick`/`fields`/`verify_tier`/`category`) map correctly. No credentials.
 - **stage2-domain** — exercises domain/DNS classification, Cloudflare proxy detection, and safe routing before publication.
 - **stage2-ports** — exercises local port checks and failure classification without claiming public WAN reachability.
-- **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming / Streaming + requests) plus `detect_lan_cidr` normalization. See ADR-29, ADR-45.
+- **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming / Streaming + requests) plus `detect_lan_cidr` normalization. Tier semantics: [VPN access tiers](../docs/setup/configuration-schema.md).
 - **wireguard-service** — checks wg-easy peer provisioning uses the wizard admin username rather than a hardcoded peer name.
 - **stage2-flow** — exercises Stage 2 offer/tell-me-more/skip/confirm flow and persisted remote setup state.
 - **stage2-npm-stale** — exercises stale NPM host warning behavior without automatic reconciliation.
@@ -422,6 +545,9 @@ Current units:
 - **stage3-gpu-content** — verifies `generate_override` GPU branches stay exclusive, including NVIDIA-only runtime healthcheck content.
 - **config-validation** — exercises configure.sh's YAML validation gate with malformed inputs (bad indentation, tabs, missing colons, empty files, special characters in quoted strings). Verifies that parse errors exit non-zero and include a line number in the error message.
 - **upgrades-manifest** — keeps `docs/operations/upgrades.md` in sync with `docker-compose.yml`: every service has a row, each row's pin-policy token matches the live image tag, and each preflight token resolves to a real scenario/unit. Pure bash + python3; run directly with `./tests/unit/upgrades-manifest.sh`.
+- **repository-safety** — fixture proof for `tests/lib/repo_guard.py`, the publication-safety guard: forbidden private artifacts, tracked host artifacts, secret files and credential patterns, and config/workflow YAML validity. Exit codes are `0` clean, `1` findings, `2` guard error — an unreadable file, an empty population or an empty rule list is a guard error, never a silent pass. Findings print `<RULE-ID>`, path and detail, and never echo the matched text: a credential finding names the pattern and the line number, not the value. Rules split by population — host artifacts and content scanning read the git index; the private-directory, analyzer-cache, log and secret-file rules read the working tree, because a gitignored `.ua/` is invisible to `git ls-files` and an untracked private key can still be `git add`-ed later. Worktree rules skip the gitignored live-install state that the host-artifact rule already rejects in the index, so a real install is not a wall of findings. History is out of scope: the guard reads the tree as it stands. Every entry of every rule list has its own probe fixture and an `EXPECTED_*` set assertion, so deleting one turns the suite red. Pure bash + python3 + git, no Docker and no network; run directly with `./tests/unit/repository-safety.sh`.
+- **secret-scan** — regression proof for `tests/secret-scan.sh`, the pinned gitleaks wrapper: the `0`/`1`/`2` exit-code contract, both scan modes, and every guard that stands between a weakened scan and a confident "clean". Covers the canary self-test (an emptied ruleset, a catch-all allowlist and a single disabled rule all fail closed), the `binary_sha256` check, the `.gitleaksignore` pre-flight on disk and in history, the bytes-scanned and commits-scanned guards, symlinked and real scan roots agreeing, archive traversal, merge-resolution content, commit and annotated-tag messages, and redaction. Fixtures are temp dirs and temp git repos; canary literals are assembled at runtime from split halves so the file is not itself a finding, and only rule IDs are asserted on. Also covers the two blocking `gate-*` modes: a missing or declaration-free expectation file is an error, an undeclared finding and a declaration nothing produced both fail, one declaration file satisfies both modes, an edit that moves a finding's line does not invalidate it, and a substituted secret at the same rule, path and finding count does. It **fails closed rather than skipping** when the scanner is missing, and calls `secret-scan.sh install` itself — idempotent on a warm cache, one network fetch on a cold one. Pure bash + python3 + git, no Docker; run directly with `./tests/unit/secret-scan.sh`.
+- **docs** — contract suite for the public control surface: `LICENSE`, `README.md`, `CONTRIBUTING.md`, `docs/README.md`, `.github/SECURITY.md` and `.github/ISSUE_TEMPLATE/`. Asserts each one exists, that every file under `.github/ISSUE_TEMPLATE/` parses as YAML — the whole file for `.yml`/`.yaml`, the front matter for a markdown template — using the same `yaml.safe_load` mechanism `repo_guard.py` uses, and that the chooser's `config.yml` carries a contact link whose name or `about` text names security, and whose URL is a known private GitHub route (`security/policy`, `security/advisories/new`) backed by a file that exists here. The route is matched on the URL path tail, not the literal URL, so an org or repo rename does not break it. Every relative markdown link in the control files must resolve; that scope is deliberate — a tree-wide link check is separate work. `CONTRIBUTING.md` must exist exactly once in the tree, at the repository root, so a second copy under `.github/` fails. Fails closed on the declared control-file list, the issue-template population and the link population: an empty population is a failure, not a vacuous pass. `MS_TEST_DOCS_ROOT` points it at a fixture tree instead of the real repository. Pure bash + python3, no Docker and no network; run directly with `./tests/unit/docs.sh`.
 - **wizard-flow** — exercises the full wizard interactive flow (`detect_env`, `run_wizard`, `write_env`) in `UI_DEMO=1` mode. Verifies `.env` is written with correct values and permissions, `config.yml` gets the wizard preset and completion marker, re-run skips correctly, and interrupted-run defaults are preserved from a previous `.env`.
 
 Focused remote-access units:
@@ -469,6 +595,177 @@ Focused recovery DinD regression gate:
 
 This is still an in-VM proof. Public WAN reachability, production Let's Encrypt issuance, DDNS propagation, and firewall behavior remain GCP VM coverage. Real GPU transcode proof requires a real host because DinD has no physical GPU passthrough.
 
+## Secret scanning (`tests/secret-scan.sh`)
+
+`tests/lib/repo_guard.py` reads the tree as it stands with a hand-written credential
+grammar. `tests/secret-scan.sh` is the formal scanner that complements it: a pinned
+[gitleaks](https://github.com/gitleaks/gitleaks) with the tool's own maintained ruleset,
+run in two modes. It is a **blocking gate over this repository**, not only a review step:
+`./tests/check.sh secrets` — the `fast` tier and the `secret-scan` CI context — scans the
+working tree on every PR. The history mode is deliberately **not** in any tier: it re-reads
+every commit, so a declared benign finding is reported once per revision of its file and an
+unrelated edit turns the tier red. It guards publication rather than the edit loop — run
+`./tests/check.sh secrets-history` before any push that makes new history public. Its
+guards are covered by
+`tests/unit/secret-scan.sh`, which is in `./tests/unit.sh` and needs network on a cold tool
+cache.
+
+```bash
+./tests/secret-scan.sh install                  # fetch + verify the pinned binary
+./tests/secret-scan.sh tree .                   # the tree as it stands
+./tests/secret-scan.sh history . --all          # every reachable commit
+./tests/secret-scan.sh history . "main..HEAD"   # one range
+./tests/secret-scan.sh gate-tree                # tree, reconciled (blocking)
+./tests/secret-scan.sh gate-history             # history, reconciled (blocking)
+```
+
+### The declared finding set (`tests/secret-scan.expected`)
+
+This repository carries four findings, all `generic-api-key` on empty values or prose, none
+a credential. The two gate modes reconcile what they find against
+`tests/secret-scan.expected` as a **multiset, in both directions**: an undeclared finding
+fails, and a declaration nothing produced fails too. That second direction is the shrink
+path — fixing a false positive means deleting its line in the same commit, so the set cannot
+grow silently and cannot rot into a rubber stamp.
+
+A declaration is `<rule-id>`, the repo-relative path, and a fingerprint hashing the rule, the
+path, gitleaks' **redacted** match text and its entropy. It is deliberately not derived from
+a line number: an ordinary edit elsewhere in one of those files must not invalidate the
+declaration, or whoever hits the false red loosens the check instead of reading it. Because
+the fingerprint covers the finding's own content, a real secret appearing in a file that
+already carries a declared false positive — same rule, same path, even the same finding
+count — produces an identity the file does not contain, and the gate goes red. No matched
+value is ever written to the declaration file or printed; regenerate a changed fingerprint
+from the gate's own `UNEXPECTED` output.
+
+The declaration file is written for the tree mode, whose multiset describes one snapshot.
+History multiplicity counts revisions instead, so the same declared finding is reported once
+per revision of its file and a shared declaration set cannot satisfy both modes at once —
+removing a declared false positive obliges the tree mode to drop its line while append-only
+history still produces it. `gate-history` therefore takes its own declaration file as its
+first argument; pass one when the counts diverge rather than editing the tree's set to make
+red go green.
+
+Both gate modes fail closed before reconciling anything: a missing declaration file, a file
+holding only comments, and every scanner-level failure listed below (missing binary, gutted
+ruleset, zero bytes read, empty revision range) exit `2`. Findings in commit or tag messages
+are never declarable — a message is written by hand, so a secret in one is always a defect.
+
+The whole-history scan sits in the same always-on tier as the tree scan rather than a slower
+one: it costs ~0.6s over 128 commits today, and the cost of catching a leaked credential one
+tier later is that it has already been pushed. History grows, so revisit the tier placement
+if that figure ever approaches the tier's other stages.
+
+**Tree mode does not cover removed history.** `tree` walks the filesystem, so it sees
+untracked and gitignored files a `git ls-files` scan would miss — but a secret that was
+committed and later deleted is absent from the tree and present forever in the object
+store. Only `history` reaches those blobs. Both modes, every time; neither substitutes
+for the other.
+
+The pin lives in `tools.toml`: version, download URL, the sha256 recorded there, upstream's
+published checksums file, and `binary_sha256` for the extracted executable. `install` verifies
+the download against both checksums and fails if they disagree; `binary_sha256` is re-checked on
+every scan, because a version string is self-reported and a three-line shell script can print
+one. The binary is cached under `MS_TOOL_CACHE` (default `~/.cache/mediastack-tools`). Reports
+go to `MS_SCAN_REPORT_DIR` (default a temp dir) — that override moves reports and nothing else;
+every working file the scan needs comes from an unconditional `mktemp -d`.
+
+Before each scan the wrapper runs a **self-test**: it writes synthetic canaries covering
+`aws-access-token`, `private-key` and `generic-api-key` to a temp dir and scans them with the
+pinned binary and the pinned `--config`. If any of the three does not fire, the scan is an error
+(`2`), not a result. A gutted `.gitleaks.toml`, a catch-all allowlist, a disabled rule and a
+substituted binary all land here instead of printing `clean`. Canary literals are assembled at
+runtime from split halves so the scanner's own source is not a finding, and the values are chosen
+to clear the default ruleset's entropy and base32 checks — a canary that never fires would make
+the self-test vacuous.
+
+Exit codes match the guards: `0` clean, `1` findings, `2` scanner or usage error.
+Findings print `FINDING`, the rule ID, path, line and commit, never the matched value
+(the scanner runs with `--redact=100`). Suppression is deliberately hard: the ruleset comes from
+`.gitleaks.toml`, which extends the default set and allowlists nothing, and inline
+`gitleaks:allow` comments are disabled with `--ignore-gitleaks-allow`. A `.gitleaksignore` cannot
+be disabled by any flag — `-i` only *adds* a second location — so the wrapper refuses to scan at
+all if one exists anywhere in the target on disk, or is reachable in any commit in the selected
+range. A false positive is a reviewed diff to `.gitleaks.toml` or it is a finding.
+
+Failing closed matters more here than anywhere else, because this scan is the last check
+before something becomes public and permanent:
+
+- gitleaks exits `1` for a leak *and* for an internal error, so the wrapper asks for
+  `--exit-code 7` and treats every other nonzero code as an error.
+- `gitleaks git` exits `0` when its revision range selects nothing, so the wrapper
+  resolves the range with `git rev-list --count` first and errors on an empty selection,
+  and errors again if the scanner then reports zero commits scanned.
+- `gitleaks dir` exits `0` after reading nothing, so the wrapper errors when the scanner
+  reports zero bytes scanned — an empty tree, or a scan root that read as present but was
+  never walked.
+- `gitleaks dir` does not follow a symlinked scan root while `[ -e ]` does, so the two
+  spellings of one path disagreed. The target is resolved with `realpath -e` before anything
+  else, which also normalises `.` so the report-dir-inside-target check works for it.
+
+Three things gitleaks does not cover by default, and what the wrapper does about each:
+
+- **Archives.** `--max-archive-depth` defaults to `0`, so a secret inside a committed `.zip`
+  or `.tar.gz` is never read. The wrapper sets depth `4`.
+- **Merge diffs.** `git log -p` omits them, so content introduced only by a merge resolution
+  is invisible. The wrapper appends `--diff-merges=first-parent` to the log options, which puts
+  the resolution back in scope. Content already scanned on a side branch can be reported twice;
+  the counts are assertions, not totals.
+- **Commit and annotated-tag messages.** No gitleaks mode reads them, and both are published
+  by the same push as the blobs. History mode dumps them to a temp dir outside the target, one
+  file per object, and scans that too — a finding names `commit-<sha>` or `tag-<name>`.
+
+`git log -p` reports **additions only**, so "commits scanned" is normally lower than the number
+selected: a pure-deletion commit contributes nothing to scan.
+
+## Command contract
+
+`tests/check.sh` is the wrapper over these tiers — one command surface over the lint,
+type, unit, wizard, and DinD runners above, so nobody has to remember the equivalent
+command by hand:
+
+```bash
+./tests/check.sh          # default: fast + tests/unit.sh + image-free wizard scenarios
+./tests/check.sh fast     # static tier: shellcheck, shfmt, ruff, mypy, secrets.
+./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
+./tests/check.sh install  # one-time per machine: fetch + verify every pinned dev
+                          # tool (shellcheck, shfmt, gitleaks) into the local cache
+```
+
+Stages run in the documented order and stop at the first failure, naming the tier and
+the exact underlying command so it can be re-run in isolation. It wraps the runners
+below; it does not reimplement their file discovery or logic:
+
+- **fast** — `./tests/lint.sh --severity=warning` (shellcheck), `./tests/format.sh check`
+  (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
+  pinned gitleaks over this repository's tree — all five from `tools.toml`. It starts
+  no DinD or service containers; ShellCheck runs from a native or cached pinned
+  binary (`./tests/check.sh install`) and only falls back to Docker when neither
+  is present, but its whole-tree sweep can still take several minutes. Use
+  the touched-file lint/format commands above for quick feedback. The pinned tools
+  need network on a cold tool cache. History is the separate
+  `./tests/check.sh secrets-history` pre-push selector.
+- **default** (`fast` plus) — the coverage GitHub Actions runs on push to `main`
+  and on every pull request (`.github/workflows/ci.yml`): the host-unit stages
+  (shell syntax, `py_compile`, compose render, every host unit) and the
+  image-free wizard scenarios in DinD. CI runs ShellCheck and mypy in separate
+  required jobs, then skips their duplicate `tests/unit.sh` tiers. Locally,
+  `./tests/check.sh` runs the same coverage serially and likewise skips those
+  duplicate tiers after `fast` has passed.
+- **full** (`default` plus) — the complete local/on-demand gate, adding
+  `./tests/battery.sh`. `battery.sh` alone is not the default tier's superset — it
+  never invokes `unit.sh`, and it runs every scenario under `tests/scenarios/`,
+  image-free `wizard-ui-*` included, not only image-backed ones. Maintainer-run
+  before accepting an image update (see `docs/operations/upgrades.md`).
+
+`./tests/battery.sh` (`--list` prints the plan without running anything) is
+the standalone entry point for that same full scenario set: every scenario
+shares one DinD via `run.sh --reset-between` — images sideloaded once, state
+(containers/volumes/networks, repo copy) reset between scenarios — except
+`image-override`, which patches the compose for the whole DinD and so runs
+alone on its own DinD. Discovery is by glob, so a new scenario file is picked
+up without editing the runner.
+
 ## Focused staged-setup scenarios
 
 Use these when changing staged setup, recovery hooks, demo mode, destructive reinstall, or fail2ban filters:
@@ -477,7 +774,8 @@ Use these when changing staged setup, recovery hooks, demo mode, destructive rei
 ./tests/run.sh smoke stage1-lan stage2-skip stage2-ready remote-after-skip remote-ready-idempotent demo-lan existing-install-nuke fail2ban-drift
 ```
 
-Scenario catalog:
+Scenario catalog. Requirement IDs are historical and not contiguous — a gap means a
+requirement is covered outside this suite, not that a scenario is missing.
 
 | Scenario | Requirement | Scope |
 |----------|-------------|-------|
@@ -490,7 +788,7 @@ Scenario catalog:
 | `existing-install-nuke` | TEST-07 | Existing-install wipe menu plus exact `DESTROY`; all-profile compose down is used; data bind-mount sentinel survives reinstall. |
 | `fail2ban-drift` | TEST-09 | Focused regex drift checks for `jellyfin`, `seerr`, `npm`, and `npm-ratelimit`. |
 
-Boundary: these are DinD proofs. `stage2-ready`, `remote-after-skip`, and `remote-ready-idempotent` use fixture DNS and Pebble, not public WAN. TEST-08 — real public DNS, DDNS updates, WAN firewall behavior, and real Let's Encrypt HTTP-01 — is proven on the maintainer-private live-host harnesses, not in this public repo.
+Boundary: these are DinD proofs. `stage2-ready`, `remote-after-skip`, and `remote-ready-idempotent` use fixture DNS and Pebble, not public WAN. Real public DNS, DDNS updates, WAN firewall behavior, and real Let's Encrypt HTTP-01 are proven by the separately invoked `tests/gcp-vm/` harness.
 
 ## Debugging with `--keep`
 
@@ -505,6 +803,35 @@ docker rm -fv ms-test-dind               # when done — the -v is important
 ```
 
 The host-side `/tmp/configure.out` captures the full `configure.sh` log from the last run.
+
+### Live browser access via socat
+
+DinD services listen on the container's internal IP, unreachable from a browser
+on another machine. Forward ports from the host with `socat`. Since the host
+may already run production MediaStack on the standard ports, use a +10000
+offset to avoid collisions:
+
+```bash
+DIND_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ms-test-dind)
+
+for port in 8096 8989 7878 9117 8080 5055 3000 3001 9000 81 8090; do
+    host_port=$((port + 10000))
+    socat TCP-LISTEN:${host_port},fork,reuseaddr TCP:${DIND_IP}:${port} &
+done
+```
+
+Then access services at `http://<host-ip>:<port+10000>` — e.g. Jellyfin at
+`18096`, Sonarr at `18989`, Radarr at `17878`, Seerr at `15055`, qBittorrent at
+`18080`, Jackett at `19117`, Portainer at `19000`, NPM at `10081`, Homepage at
+`13000`, Uptime Kuma at `13001`, Beszel at `18090`. Credentials are in the
+DinD's `.env` — all services share `JELLYFIN_ADMIN_PASSWORD`; NPM and Beszel
+use `NPM_ADMIN_EMAIL` as the username, everything else uses
+`JELLYFIN_ADMIN_USER` (default `admin`).
+
+```bash
+pkill -f 'socat.*TCP:.*fork'   # clean up forwarders when done
+docker rm -fv ms-test-dind
+```
 
 ## Targeted configure.sh re-runs
 
@@ -534,7 +861,8 @@ Without `KEEP_ALWAYS=1`, use `--keep` — DinD stays up only on failure.
 
 Every DinD run starts with an empty nested image store, so without help each run pulls all 12 service images fresh — about 3 GB and 12+ pulls per run against Docker Hub's 100/6h anonymous cap. Two mechanisms together keep that near zero:
 
-1. **Pull-through registry mirror** (`ms-registry-mirror` container on the Docker bridge gateway, usually `172.17.0.1:5000`). Started on demand by `tests/run.sh`. Configured as a mirror for `registry-1.docker.io` via `REGISTRY_PROXY_REMOTEURL`. DinD's inner dockerd points at it via `--registry-mirror=http://host.docker.internal:5000`. First pull of any image hits Hub once and caches in the `ms-registry-cache` Docker volume; every subsequent DinD run is free. Treated as **transitory dev infrastructure** (`--restart no`) — auto-starts when you run tests and is removed on normal runner exit, even when a previous test left it running. The volume persists across teardowns so the cache is intact next session. Set `MS_CACHE_MIRROR_KEEP=1` to leave only the mirror container running between normal test exits.
+1. **Pull-through registry mirror** (`ms-registry-mirror` container on the Docker bridge gateway, usually `172.17.0.1:5000`). Image `ghcr.io/distribution/distribution:3.0.0` — sourced from GHCR, not Docker Hub, since bootstrapping a mirror *from* the rate-limited registry it exists to bypass would be circular. Started on demand by `tests/run.sh`. Configured as a mirror for `registry-1.docker.io` via `REGISTRY_PROXY_REMOTEURL`. DinD's inner dockerd points at it via `--registry-mirror=http://host.docker.internal:5000`. First pull of any image hits Hub once and caches in the `ms-registry-cache` Docker volume; every subsequent DinD run is free. Treated as **transitory dev infrastructure** (`--restart no`) — auto-starts when you run tests and is removed on normal runner exit, even when a previous test left it running. The volume persists across teardowns so the cache is intact next session. Set `MS_CACHE_MIRROR_KEEP=1` to leave only the mirror container running between normal test exits.
+   The mirror binds on the bridge gateway (not localhost) so DinD's nested containers can reach it, with no auth — on a shared dev host another container on that bridge could poison the cache. Mitigated by the transitory lifecycle, but worth knowing. GHCR is a single point of failure for the cache bootstrap: if that image becomes unavailable the mirror can't start and tests fall back to direct Hub pulls.
 
 2. **Host image sideload.** After DinD boots, `cache_preload_into_dind` scans `docker-compose.yml` for pinned image tags, and for every image already present on the host runs `docker save <img> | docker exec -i ms-test-dind docker load`. Zero network. Works offline. If you run MediaStack in production on the same box, every image is already there — first test run costs essentially nothing.
 
@@ -584,4 +912,4 @@ A previous pass accumulated **133 GB across 68 dangling DinD volumes** over five
 - **Docker-in-Docker.** DinD is **Debian-based** (`ms-dind:debian`, built from `tests/Dockerfile.dind`) to match production. All deps (`gettext-base`/`envsubst`, GNU grep/sed, python3, docker-ce) are pre-baked in the image. Earlier revisions used Alpine-based `docker:dind`; Alpine's BusyBox + musl quietly diverge from Debian in ways that pass `bash -n` but fail at runtime.
 - **Fresh DinD per `run.sh` invocation.** Each run pays the image-pull cost. We chose hermeticity over iteration speed; add a `--reuse-dind` flag if that changes.
 - **Scenarios share one DinD.** `run.sh smoke fresh-install` does one DinD setup, runs both, tears down.
-- **Counters are global across scenarios.** Final summary is a sum of all scenarios.
+- **Counters are global across scenarios.** Final summary is a sum of all scenarios. A scenario that silently bypasses a `fail` (e.g. `return 1` without calling `fail` first) leaves the counter confused — every exit path should record a result.

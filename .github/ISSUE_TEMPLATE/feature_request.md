@@ -19,3 +19,9 @@ about it.
 
 **Alternatives considered**
 If you weighed other approaches, feel free to share them here. Optional.
+
+**Are you willing to contribute this?**
+No obligation either way; it just helps with planning.
+
+- [ ] I'd like to implement this myself and open a pull request
+- [ ] I'm suggesting the idea; happy for someone else to build it

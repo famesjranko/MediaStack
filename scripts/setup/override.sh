@@ -16,17 +16,17 @@ detect_host_memory() {
         log_warn "Could not detect host memory - defaulting to 4GB for resource limits"
         mem_kb=4194304
     fi
-    HOST_MEMORY_MB=$(( mem_kb / 1024 ))
-    log_ok "Host memory: ${HOST_MEMORY_MB}MB ($(( HOST_MEMORY_MB / 1024 ))GB)"
+    HOST_MEMORY_MB=$((mem_kb / 1024))
+    log_ok "Host memory: ${HOST_MEMORY_MB}MB ($((HOST_MEMORY_MB / 1024))GB)"
 }
 
 # compute_mem_limit <percentage> <floor_mb> <cap_mb>
 # Reads HOST_MEMORY_MB. Echoes clamped value with 'm' suffix.
 compute_mem_limit() {
     local pct="$1" floor="$2" cap="$3"
-    local raw=$(( HOST_MEMORY_MB * pct / 100 ))
-    (( raw < floor )) && raw=$floor
-    (( raw > cap )) && raw=$cap
+    local raw=$((HOST_MEMORY_MB * pct / 100))
+    ((raw < floor)) && raw=$floor
+    ((raw > cap)) && raw=$cap
     echo "${raw}m"
 }
 
@@ -41,7 +41,7 @@ _image_channel() {
     local channel="${IMAGE_CHANNEL:-stable}"
     channel="${channel,,}"
     case "$channel" in
-        stable|latest)
+        stable | latest)
             printf '%s\n' "$channel"
             ;;
         *)
@@ -51,14 +51,14 @@ _image_channel() {
     esac
 }
 
-# --- Per-service image policy (ADR-30) -------------------------------------
+# --- Per-service image policy ----------------------------------------------
 # Lets a user float one service from its tested stable digest to its compose
 # tag (and back) without flipping the global IMAGE_CHANNEL. Managed by the
 # "Manage updates" launcher menu and recorded in a gitignored state file.
 # Absent row = follow the global channel. The lock file (docs/operations/image-digests.lock)
 # is NEVER edited by this path — it stays the maintainer-tested record; user
 # intent lives here. Policy 'latest' means "follow the compose tag", which keeps
-# ADR-24's tag pins (npm:2, wireguard:15) intact — it only drops the digest.
+# the compose tag pins (npm:2, wireguard:15) intact — it only drops the digest.
 _image_policy_file() {
     printf '%s\n' "$SCRIPT_DIR/config/state/image-policy.tsv"
 }
@@ -80,7 +80,7 @@ _service_policy() {
 }
 
 # Echo the per-service digest pin (<image>@sha256:...) if one is set, else
-# nothing. A pin is orthogonal to the channel: "Revert to installed image" (#208)
+# nothing. A pin is orthogonal to the channel: "Revert to installed image"
 # re-pins a service to its recorded install digest on any channel.
 _service_pin() {
     local service="$1" file
@@ -109,7 +109,10 @@ _effective_channel() {
 _policy_overrides_note() {
     local file svc pol out=""
     file="$(_image_policy_file)"
-    [[ -f "$file" ]] || { printf 'none\n'; return 0; }
+    [[ -f "$file" ]] || {
+        printf 'none\n'
+        return 0
+    }
     while IFS=$'\t' read -r svc pol; do
         [[ -z "$svc" || "$svc" == \#* ]] && continue
         if [[ "$pol" == "stable" || "$pol" == "latest" ]]; then
@@ -117,7 +120,7 @@ _policy_overrides_note() {
         elif [[ "$pol" == *@sha256:* ]]; then
             out+="${svc}=pinned "
         fi
-    done < "$file"
+    done <"$file"
     if [[ -n "$out" ]]; then printf '%s\n' "${out% }"; else printf 'none\n'; fi
 }
 
@@ -172,7 +175,7 @@ _validate_stable_image_lock() {
 _compose_image_line() {
     local service="$1"
     local pin channel
-    # Precedence: an explicit digest pin (#208) wins over channel, so a reverted
+    # Precedence: an explicit digest pin wins over channel, so a reverted
     # service holds its installed image on any channel.
     pin="$(_service_pin "$service")"
     if [[ -n "$pin" ]]; then
@@ -201,8 +204,8 @@ generate_override() {
     # Declared separately from assignment so compute_mem_limit's exit status is
     # not masked by `local` (SC2155).
     local jf_mem sonarr_mem radarr_mem jackett_mem qbt_mem flare_mem seerr_mem \
-          npm_mem unpackerr_mem bazarr_mem homepage_mem portainer_mem f2b_mem \
-          wg_mem ddns_mem kuma_mem beszel_mem beszel_agent_mem autoheal_mem
+        npm_mem unpackerr_mem bazarr_mem homepage_mem portainer_mem f2b_mem \
+        wg_mem ddns_mem kuma_mem beszel_mem beszel_agent_mem autoheal_mem
     jf_mem=$(compute_mem_limit 40 1024 8192)
     sonarr_mem=$(compute_mem_limit 12 256 4096)
     radarr_mem=$(compute_mem_limit 12 256 4096)
@@ -224,17 +227,20 @@ generate_override() {
     autoheal_mem=$(compute_mem_limit 1 32 128)
 
     # memswap_limit = 1.5x mem_limit (existing convention: 1g/1536m, 512m/768m)
-    _swap() { local v="${1%m}"; echo "$(( v * 3 / 2 ))m"; }
+    _swap() {
+        local v="${1%m}"
+        echo "$((v * 3 / 2))m"
+    }
     _restart_line() {
         case "${STORAGE_MODE:-local}:$1" in
-            nas:jellyfin|nas:qbittorrent|nas:sonarr|nas:radarr|nas:seerr|nas:unpackerr|nas:bazarr)
+            nas:jellyfin | nas:qbittorrent | nas:sonarr | nas:radarr | nas:seerr | nas:unpackerr | nas:bazarr)
                 echo '    restart: "no"'
                 ;;
         esac
     }
 
     # --- Build override: selected image channel + resource limits + GPU config ---
-    cat > "$override_file" <<YAML
+    cat >"$override_file" <<YAML
 # Auto-generated by setup.sh — image channel + resource limits + GPU config
 # Host memory: ${HOST_MEMORY_MB}MB — regenerated on every setup.sh run
 # Image channel: ${image_channel}
@@ -249,7 +255,7 @@ YAML
 
     case "$gpu_type" in
         nvidia)
-            cat >> "$override_file" <<'YAML'
+            cat >>"$override_file" <<'YAML'
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
@@ -262,7 +268,7 @@ YAML
       start_period: 60s
 YAML
             ;;
-        amd|intel)
+        amd | intel)
             local render_gid render_device
             render_device="${STAGE_3_GPU_RENDER_DEVICE:-}"
             if [[ -z "$render_device" ]] && type gpu_render_device_for_vendor >/dev/null 2>&1; then
@@ -277,12 +283,12 @@ YAML
             if [[ -z "$render_gid" ]]; then
                 render_gid=$(getent group render 2>/dev/null | cut -d: -f3 || true)
             fi
-            cat >> "$override_file" <<YAML
+            cat >>"$override_file" <<YAML
     devices:
       - /dev/dri:/dev/dri
 YAML
             if [[ -n "$render_gid" ]]; then
-                cat >> "$override_file" <<YAML
+                cat >>"$override_file" <<YAML
     group_add:
       - "${render_gid}"
 YAML
@@ -292,7 +298,7 @@ YAML
             ;;
     esac
 
-    cat >> "$override_file" <<YAML
+    cat >>"$override_file" <<YAML
   sonarr:
 $(_compose_image_line sonarr)
     mem_limit: ${sonarr_mem}
@@ -379,15 +385,15 @@ YAML
     for dev in /dev/sd? /dev/nvme?; do
         [[ -b "$dev" ]] && smart_disks+=("$dev")
     done
-    if (( ${#smart_disks[@]} > 0 )); then
-        cat >> "$override_file" <<'YAML'
+    if ((${#smart_disks[@]} > 0)); then
+        cat >>"$override_file" <<'YAML'
     cap_add:
       - SYS_RAWIO
       - SYS_ADMIN
     devices:
 YAML
         for dev in "${smart_disks[@]}"; do
-            echo "      - ${dev}:${dev}" >> "$override_file"
+            echo "      - ${dev}:${dev}" >>"$override_file"
         done
     fi
 

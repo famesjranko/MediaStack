@@ -25,8 +25,11 @@ trap cleanup EXIT
 FORCE=0
 for arg in "$@"; do
     case "$arg" in
-        -f|--force) FORCE=1 ;;
-        -h|--help)  echo "Usage: scripts/nvidia-repatch.sh [--force]"; exit 0 ;;
+        -f | --force) FORCE=1 ;;
+        -h | --help)
+            echo "Usage: scripts/nvidia-repatch.sh [--force]"
+            exit 0
+            ;;
         *)
             echo "Unknown argument: $arg" >&2
             echo "Usage: scripts/nvidia-repatch.sh [--force]" >&2
@@ -46,7 +49,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
             NVIDIA_DRIVER_MODE="$_v"
             break
         fi
-    done < "$SCRIPT_DIR/.env"
+    done <"$SCRIPT_DIR/.env"
 fi
 
 if [[ "$NVIDIA_DRIVER_MODE" != "unlock" && "$FORCE" != "1" ]]; then

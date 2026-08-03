@@ -18,7 +18,7 @@ _qbtm_login() {
     response=$(dind_exec "rm -f /tmp/ms-qbt-matrix.cookie; curl -s -c /tmp/ms-qbt-matrix.cookie -w '\\n%{http_code}' http://localhost:8080/api/v2/auth/login --data-urlencode 'username=$username' --data-urlencode 'password=$password'") || return 1
     http_code=$(printf '%s' "$response" | tail -1 | tr -d '\r')
     body=$(printf '%s' "$response" | sed '$d' | tr -d '\r')
-    [[ "$body" == "Ok." || ( "$http_code" == "204" && -z "$body" ) ]]
+    [[ "$body" == "Ok." || ("$http_code" == "204" && -z "$body") ]]
 }
 
 _qbtm_preferences() {

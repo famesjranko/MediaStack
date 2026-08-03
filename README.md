@@ -58,6 +58,9 @@ The installer detects the GPU, creates the storage layout (local, NAS/NFS, or ma
 
 <img src="docs/assets/mediastack-day2-menu.png" alt="The ./mediastack day-2 management menu: a status header (running containers, domain, host, IPs) over the management options" width="680">
 
+These PNGs are manually refreshed snapshots. The capture tooling is not part of
+the repository, so the screenshots may briefly lag menu changes.
+
 This is the main tool once the stack is running. Each item is documented in depth in [`docs/operations/day-2.md`](docs/operations/day-2.md).
 
 | Menu item | What it does |
@@ -282,21 +285,7 @@ Set the client-side **Allowed IPs** to match: `<lan-cidr>` for Full LAN, `<serve
 
 </details>
 
-<details>
-<summary><strong>Advanced: full-tunnel routing</strong></summary>
-
-<br>
-
-To route every device's internet traffic through your home VPN (rare for media-server use), edit `.env` before first boot and set **both**:
-
-```text
-WG_INIT_ALLOWED_IPS='0.0.0.0/0, ::/0'
-WG_PER_CLIENT_FIREWALL=false
-```
-
-Both are required, because the per-client firewall would otherwise drop the routed traffic. This bypasses the access-tier model; the peer can reach anything the wg-easy container can.
-
-</details>
+**Advanced: full-tunnel routing** (routing every device's internet traffic through your home VPN, rare for media-server use) bypasses the access-tier model entirely — see the "Advanced — full-tunnel routing" note in [`docs/setup/configuration-schema.md`](docs/setup/configuration-schema.md) for the `.env` settings.
 
 <details>
 <summary><strong>Security details</strong></summary>
@@ -407,7 +396,7 @@ docker compose --profile proxy --profile remote --profile subtitles --profile au
 | [`docs/setup/configure-flow.md`](docs/setup/configure-flow.md) | API-driven service configuration flow |
 | [`docs/project/stack.md`](docs/project/stack.md) | Runtime, services, commands, and host dependencies |
 | [`docs/project/structure.md`](docs/project/structure.md) | Directory tree, placement rules, and service-add workflow |
-| [`docs/testing/README.md`](docs/testing/README.md) | DinD harness, scenarios, and verification workflow |
+| [`tests/README.md`](tests/README.md) | DinD harness, scenarios, and verification workflow |
 | [`docs/README.md`](docs/README.md) | Full architecture docs index and reading order |
 
 ---
@@ -415,7 +404,7 @@ docker compose --profile proxy --profile remote --profile subtitles --profile au
 ## Contributing
 
 Bug reports, feature ideas, and pull requests are welcome. Start with
-[`CONTRIBUTING.md`](.github/CONTRIBUTING.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 
@@ -423,6 +412,6 @@ Bug reports, feature ideas, and pull requests are welcome. Start with
 
 MediaStack is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE)
 
-Non-commercial use is permitted. Commercial use requires prior written permission from Andrew Mcdonald.
+Non-commercial use is permitted. Commercial use requires prior written permission from the licensor.
 
 SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0

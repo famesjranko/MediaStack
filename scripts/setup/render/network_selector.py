@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """Select a non-conflicting MediaStack Docker subnet."""
+
+from __future__ import annotations
+
 import ipaddress
 import json
 import os
@@ -64,7 +67,7 @@ def docker_networks(path):
             bridge_name = options.get("com.docker.network.bridge.name")
             if bridge_name:
                 interfaces.add(str(bridge_name))
-        for cfg in ((item.get("IPAM") or {}).get("Config") or []):
+        for cfg in (item.get("IPAM") or {}).get("Config") or []:
             subnet = cfg.get("Subnet") if isinstance(cfg, dict) else None
             gateway = cfg.get("Gateway") if isinstance(cfg, dict) else None
             if subnet:
@@ -115,7 +118,7 @@ def main() -> int:
                 }
             )
 
-    conflicts = []
+    conflicts: list[tuple[ipaddress._BaseNetwork, str]] = []
     for line in routes_path.read_text().splitlines():
         parts = line.split()
         if not parts or parts[0] == "default":
@@ -222,7 +225,9 @@ def main() -> int:
         locked_prefix, locked_record = first_existing_record()
         if not locked_prefix:
             locked_prefix = requested_prefix if valid_prefix(requested_prefix) else "172.28.0"
-            locked_record = existing_record_for_prefix(locked_prefix) or requested_record_for_prefix(locked_prefix)
+            locked_record = existing_record_for_prefix(
+                locked_prefix
+            ) or requested_record_for_prefix(locked_prefix)
         locked_net = locked_record["net"] if locked_record else net_for_prefix(locked_prefix)
         locked_conflicts = conflicts_for(locked_net)
         if locked_conflicts:
@@ -230,9 +235,14 @@ def main() -> int:
                 f"ERROR: MediaStack is already installed with Docker subnet {locked_net}, "
                 "but that range now overlaps host networking."
             )
-            print("INFO: This is usually caused by a LAN or VPN route using the same private range.")
+            print(
+                "INFO: This is usually caused by a LAN or VPN route using the same private range."
+            )
             print("INFO: Disconnect or narrow the conflicting VPN/LAN route, then rerun setup.")
-            print("INFO: MediaStack will not silently migrate an existing install to a different Docker subnet.")
+            print(
+                "INFO: MediaStack will not silently migrate an existing install to a "
+                "different Docker subnet."
+            )
             for net, source in locked_conflicts[:6]:
                 print(f"INFO: conflict: {net} ({source})")
             return 1
@@ -255,7 +265,10 @@ def main() -> int:
             return 0
 
     print("ERROR: No available MediaStack Docker subnet found inside 172.16.0.0/12.")
-    print("INFO: A LAN, VPN, or corporate route appears to overlap every conservative Docker candidate.")
+    print(
+        "INFO: A LAN, VPN, or corporate route appears to overlap every conservative "
+        "Docker candidate."
+    )
     print("INFO: Disconnect or narrow the conflicting VPN route, then rerun setup.")
     print(
         "INFO: MediaStack intentionally does not auto-pick 10.x or 192.168.x in this mode "

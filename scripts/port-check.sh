@@ -51,10 +51,20 @@ _PC_LW=21
 # Pad the status glyph to a fixed visible width so the label column aligns across
 # pass/fail/skip rows: ASCII tags vary 4-7 cols ([OK]..[ERROR]) -> pad to 7;
 # unicode icons are 1 col (multibyte, width 1 -> %-*s never byte-pads them).
-_PC_GW=1; [[ "$_G_UNICODE" == 1 ]] || _PC_GW=7
-check_pass() { printf "  ${GREEN}%-*s${NC} %-*s ${GRAY}%s${NC}\n" "$_PC_GW" "$(_ui_status_token ok)"    "$_PC_LW" "$1" "${2:-}"; checks_pass=$((checks_pass + 1)); }
-check_fail() { printf "  ${RED}%-*s${NC} %-*s ${GRAY}%s${NC}\n"   "$_PC_GW" "$(_ui_status_token error)" "$_PC_LW" "$1" "${2:-}"; checks_fail=$((checks_fail + 1)); }
-check_skip() { printf "  ${YELLOW}%-*s${NC} %-*s ${GRAY}%s${NC}\n" "$_PC_GW" "$(_ui_status_token skip)"  "$_PC_LW" "$1" "${2:-}"; checks_skip=$((checks_skip + 1)); }
+_PC_GW=1
+[[ "$_G_UNICODE" == 1 ]] || _PC_GW=7
+check_pass() {
+    printf "  ${GREEN}%-*s${NC} %-*s ${GRAY}%s${NC}\n" "$_PC_GW" "$(_ui_status_token ok)" "$_PC_LW" "$1" "${2:-}"
+    checks_pass=$((checks_pass + 1))
+}
+check_fail() {
+    printf "  ${RED}%-*s${NC} %-*s ${GRAY}%s${NC}\n" "$_PC_GW" "$(_ui_status_token error)" "$_PC_LW" "$1" "${2:-}"
+    checks_fail=$((checks_fail + 1))
+}
+check_skip() {
+    printf "  ${YELLOW}%-*s${NC} %-*s ${GRAY}%s${NC}\n" "$_PC_GW" "$(_ui_status_token skip)" "$_PC_LW" "$1" "${2:-}"
+    checks_skip=$((checks_skip + 1))
+}
 
 resolve_host_ip() {
     local host="$1"
@@ -138,19 +148,25 @@ elif [[ -n "$public_ip" ]]; then
     # box before NPM is installed. Privileged ports (80/443) need sudo to
     # bind; the helper sudo-wraps internally and may prompt.
     log_info "Probing TCP 80 + 443 (sudo may prompt to bind privileged ports)..."
-    case $(net_check_tcp_port_external 80; echo "rc:$?") in
+    case $(
+        net_check_tcp_port_external 80
+        echo "rc:$?"
+    ) in
         rc:0) check_pass "TCP 80 (HTTP)" "reachable" ;;
         rc:1) check_fail "TCP 80 (HTTP)" "no response" ;;
         rc:3) check_fail "TCP 80 (HTTP)" "forwarded to another device" ;;
         rc:4) check_skip "TCP 80 (HTTP)" "port in use - re-test later" ;;
-        *)    check_skip "TCP 80 (HTTP)" "probe unavailable" ;;
+        *) check_skip "TCP 80 (HTTP)" "probe unavailable" ;;
     esac
-    case $(net_check_tcp_port_external 443; echo "rc:$?") in
+    case $(
+        net_check_tcp_port_external 443
+        echo "rc:$?"
+    ) in
         rc:0) check_pass "TCP 443 (HTTPS)" "reachable" ;;
         rc:1) check_fail "TCP 443 (HTTPS)" "no response" ;;
         rc:3) check_fail "TCP 443 (HTTPS)" "forwarded to another device" ;;
         rc:4) check_skip "TCP 443 (HTTPS)" "port in use - re-test later" ;;
-        *)    check_skip "TCP 443 (HTTPS)" "probe unavailable" ;;
+        *) check_skip "TCP 443 (HTTPS)" "probe unavailable" ;;
     esac
 else
     check_skip "TCP 80 (HTTP)" "no public IP"
@@ -161,12 +177,15 @@ fi
 # same answer a real external peer would (canyouseeme/portchecker.io probe
 # from their server, no hairpin-NAT dependency).
 if [[ -n "$public_ip" ]]; then
-    case $(net_check_tcp_port_external "$TORRENT_PORT"; echo "rc:$?") in
+    case $(
+        net_check_tcp_port_external "$TORRENT_PORT"
+        echo "rc:$?"
+    ) in
         rc:0) check_pass "TCP $TORRENT_PORT (torrent)" "reachable" ;;
         rc:1) check_fail "TCP $TORRENT_PORT (torrent)" "no response" ;;
         rc:3) check_fail "TCP $TORRENT_PORT (torrent)" "forwarded to another device" ;;
         rc:4) check_skip "TCP $TORRENT_PORT (torrent)" "port in use - re-test later" ;;
-        *)    check_skip "TCP $TORRENT_PORT (torrent)" "probe unavailable" ;;
+        *) check_skip "TCP $TORRENT_PORT (torrent)" "probe unavailable" ;;
     esac
 else
     check_skip "TCP $TORRENT_PORT (torrent)" "no public IP"
@@ -193,7 +212,7 @@ gateway=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')
 
 total=$((checks_pass + checks_fail + checks_skip))
 if [[ $checks_fail -eq 0 ]]; then
-    if (( checks_skip > 0 )); then
+    if ((checks_skip > 0)); then
         # Avoid the misleading "1/4" framing when 3 of 4 are skipped — that
         # reads as a 25% pass rate to a non-technical user.
         log_ok "$checks_pass passed / $checks_skip skipped / $checks_fail failed"

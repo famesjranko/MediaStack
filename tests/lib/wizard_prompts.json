@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for MediaStack setup-wizard prompt regexes (Python 're' flavor, as consumed by tests/lib/wizard_pty.py). Both wizard-driven test surfaces build their PTY steps from these definitions: the DinD wizard-ui-stage3-* scenarios (via tests/lib/wizard_steps_build.py) and the maintainer-private bare-metal harness. Change a prompt HERE and both surfaces track it automatically — no silent drift (the F-001 failure class). Values are JSON-escaped regexes: a literal '?' is matched with '\\?'.",
+  "_comment": "Single source of truth for MediaStack setup-wizard prompt regexes (Python 're' flavor, as consumed by tests/lib/wizard_pty.py). Wizard-driven test surfaces build their PTY steps from these definitions, including the DinD wizard-ui-stage3-* scenarios via tests/lib/wizard_steps_build.py. Change a prompt HERE so every consumer tracks it without silent drift. Values are JSON-escaped regexes: a literal '?' is matched with '\\?'.",
   "prompts": {
     "stage1_continue_detected": "Continue with these detected values\\?",
     "stage1_admin_username": "Admin username",

@@ -57,14 +57,14 @@ BASH"
     assert_contains "$transcript" "Full system" "wizard-ui stage1 options: full-system scope option shown"
     assert_contains "$transcript" "Which image versions should MediaStack install?" "wizard-ui stage1 options: image channel menu shown"
 
-    assert_eq "true"   "$(env_get BAZARR_ENABLED)"          "wizard-ui stage1 options: Bazarr enabled"
-    assert_eq "true"   "$(env_get SMB_ENABLED)"             "wizard-ui stage1 options: SMB enabled"
-    assert_eq "system" "$(env_get SMB_SHARE_SCOPE)"         "wizard-ui stage1 options: SMB system scope"
-    assert_eq "latest" "$(env_get IMAGE_CHANNEL)"           "wizard-ui stage1 options: Latest image channel"
-    assert_eq "true"   "$(env_get PUBLIC_INDEXERS_ENABLED)" "wizard-ui stage1 options: public indexers enabled"
-    assert_eq "local"  "$(env_get STORAGE_MODE)"            "wizard-ui stage1 options: local storage mode"
+    assert_eq "true" "$(env_get BAZARR_ENABLED)" "wizard-ui stage1 options: Bazarr enabled"
+    assert_eq "true" "$(env_get SMB_ENABLED)" "wizard-ui stage1 options: SMB enabled"
+    assert_eq "system" "$(env_get SMB_SHARE_SCOPE)" "wizard-ui stage1 options: SMB system scope"
+    assert_eq "latest" "$(env_get IMAGE_CHANNEL)" "wizard-ui stage1 options: Latest image channel"
+    assert_eq "true" "$(env_get PUBLIC_INDEXERS_ENABLED)" "wizard-ui stage1 options: public indexers enabled"
+    assert_eq "local" "$(env_get STORAGE_MODE)" "wizard-ui stage1 options: local storage mode"
     assert_eq "/tmp/ms-wizard-options" "$(env_get DATA_DIR)" "wizard-ui stage1 options: data dir from prompt"
-    assert_eq "1"      "$(env_get STAGE_1_COMPLETE)"        "wizard-ui stage1 options: Stage 1 completed"
+    assert_eq "1" "$(env_get STAGE_1_COMPLETE)" "wizard-ui stage1 options: Stage 1 completed"
 
     # Quality propagation: picking 1080p resolution + Large size must compose
     # config.yml's quality_profile via wizard_apply.py. "1080p Large" is distinct

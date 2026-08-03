@@ -101,9 +101,9 @@ labels_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   submenu_fail2ban >/dev/null 2>&1
   cat "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$labels_out" "Banned IPs"                   "submenu_fail2ban: Banned IPs label shown"
+assert_contains "$labels_out" "Banned IPs" "submenu_fail2ban: Banned IPs label shown"
 assert_contains "$labels_out" "Whitelist (always-allow IPs)" "submenu_fail2ban: Whitelist label shown"
-assert_contains "$labels_out" "Jail stats & history"         "submenu_fail2ban: Jail stats & history label shown"
+assert_contains "$labels_out" "Jail stats & history" "submenu_fail2ban: Jail stats & history label shown"
 
 # --- 5. _f2b_banned_pairs emits one <jail>\t<ip> per banned IP -------------
 pairs_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" bash -c '
@@ -112,9 +112,9 @@ pairs_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOC
   _f2b_banned_pairs
 ' 2>&1)
 piped=$(tr "\t" "|" <<<"$pairs_out")
-assert_contains "$piped" "jellyfin|203.0.113.5"  "_f2b_banned_pairs: jellyfin/203.0.113.5 pair"
+assert_contains "$piped" "jellyfin|203.0.113.5" "_f2b_banned_pairs: jellyfin/203.0.113.5 pair"
 assert_contains "$piped" "jellyfin|198.51.100.9" "_f2b_banned_pairs: jellyfin/198.51.100.9 pair"
-assert_contains "$piped" "npm|203.0.113.5"       "_f2b_banned_pairs: npm/203.0.113.5 pair"
+assert_contains "$piped" "npm|203.0.113.5" "_f2b_banned_pairs: npm/203.0.113.5 pair"
 
 empty_pairs=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -125,8 +125,9 @@ assert_eq "" "$empty_pairs" "_f2b_banned_pairs: no lines when no jails/bans"
 
 # --- 6. main-screen banner: live stats (distinct count + per-jail tally, custom
 # whitelist count). Stub ui_box/ui_kv so the composed kv strings surface as text. -
-BANROOT=$(mktemp -d); mkdir -p "$BANROOT/config/fail2ban/jail.d"
-printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 203.0.113.7" "" "[jellyfin]" "enabled = true" > "$BANROOT/config/fail2ban/jail.d/mediastack.conf"
+BANROOT=$(mktemp -d)
+mkdir -p "$BANROOT/config/fail2ban/jail.d"
+printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 203.0.113.7" "" "[jellyfin]" "enabled = true" >"$BANROOT/config/fail2ban/jail.d/mediastack.conf"
 banner_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" BANROOT="$BANROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -140,7 +141,7 @@ banner_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DO
   submenu_fail2ban
 ' 2>&1)
 assert_contains "$banner_out" "Banned now=2 IPs  (jellyfin 2, npm 1)" "submenu_fail2ban banner: distinct count + per-jail tally"
-assert_contains "$banner_out" "Whitelist=4 defaults + 1 custom"       "submenu_fail2ban banner: user-added whitelist count"
+assert_contains "$banner_out" "Whitelist=4 defaults + 1 custom" "submenu_fail2ban banner: user-added whitelist count"
 rm -rf "$BANROOT"
 
 # --- 6b. banner "none" when no jail holds a ban -----------------------------
@@ -198,8 +199,9 @@ assert_contains "$unban_count" "Unban 203.0.113.5 completed successfully" "f2b_d
 # --- 7b. Banned-IPs hub: one row per distinct IP, jails joined; pick routes the
 # bare IP to f2b_ip_actions. Disk-backed queue drives the two successive picks
 # (each ui_choose runs in its own $() subshell; the file survives, in-memory won't).
-ITEMS=$(mktemp); QUEUE=$(mktemp)
-printf '%s\n' "203.0.113.5  (jellyfin, npm)" "Back" > "$QUEUE"
+ITEMS=$(mktemp)
+QUEUE=$(mktemp)
+printf '%s\n' "203.0.113.5  (jellyfin, npm)" "Back" >"$QUEUE"
 hub_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" ITEMS="$ITEMS" QUEUE="$QUEUE" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -209,10 +211,11 @@ hub_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKE
   f2b_ip_actions(){ echo "IP_ACTIONS:$1"; }
   f2b_banned_menu
 ' 2>&1)
-items=$(cat "$ITEMS"); rm -f "$ITEMS" "$QUEUE"
+items=$(cat "$ITEMS")
+rm -f "$ITEMS" "$QUEUE"
 assert_contains "$items" "203.0.113.5  (jellyfin, npm)" "f2b_banned_menu: 203.0.113.5 collapsed to one row, jails joined"
-assert_contains "$items" "198.51.100.9  (jellyfin)"     "f2b_banned_menu: single-jail IP shown once"
-assert_contains "$hub_out" "IP_ACTIONS:203.0.113.5"     "f2b_banned_menu: picking a row routes the bare IP to context actions"
+assert_contains "$items" "198.51.100.9  (jellyfin)" "f2b_banned_menu: single-jail IP shown once"
+assert_contains "$hub_out" "IP_ACTIONS:203.0.113.5" "f2b_banned_menu: picking a row routes the bare IP to context actions"
 
 # --- 7c. hub empty state: info message, only Back --------------------------
 hubempty_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -231,8 +234,9 @@ assert_contains "$hubempty_out" "No IPs are currently banned." "f2b_banned_menu:
 # renders total prove the reset was honoured. jellyfin holds 17 IPs (.101-.117),
 # which sort lexically in order (equal-length strings). --------------------------
 PAGE_IPS=$(for i in $(seq 101 117); do printf '203.0.113.%s ' "$i"; done)
-PITEMS=$(mktemp); PQUEUE=$(mktemp)
-printf '%s\n' "Show more (2 remaining)" "Back to first page" "Back" > "$PQUEUE"
+PITEMS=$(mktemp)
+PQUEUE=$(mktemp)
+printf '%s\n' "Show more (2 remaining)" "Back to first page" "Back" >"$PQUEUE"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" PAGE_IPS="$PAGE_IPS" PITEMS="$PITEMS" PQUEUE="$PQUEUE" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   docker(){ case "$*" in
@@ -244,24 +248,27 @@ MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" PAGE_IPS="$PAGE_IPS" PITEMS="
   ui_choose(){ shift; printf "===CALL===\n" >> "$PITEMS"; printf "%s\n" "$@" >> "$PITEMS"; local l; l=$(head -1 "$PQUEUE"); sed -i "1d" "$PQUEUE"; printf "%s\n" "$l"; }
   f2b_banned_menu
 ' >/dev/null 2>&1
-pitems=$(cat "$PITEMS"); rm -f "$PITEMS" "$PQUEUE"
+pitems=$(cat "$PITEMS")
+rm -f "$PITEMS" "$PQUEUE"
 ncalls=$(grep -c "===CALL===" <<<"$pitems")
 first_block=$(awk '/===CALL===/{c++} c==1 && !/===CALL===/{print}' <<<"$pitems")
 first_rows=$(grep -c "203.0.113." <<<"$first_block")
 assert_eq "15" "$first_rows" "f2b_banned_menu paging: exactly 15 IP rows on the first page"
 assert_contains "$first_block" "203.0.113.101  (jellyfin)" "f2b_banned_menu paging: first page starts at .101"
-assert_contains "$first_block" "Show more (2 remaining)"   "f2b_banned_menu paging: Show more shows the remaining count"
+assert_contains "$first_block" "Show more (2 remaining)" "f2b_banned_menu paging: Show more shows the remaining count"
 assert_contains "$pitems" "203.0.113.116  (jellyfin)" "f2b_banned_menu paging: page 2 shows .116"
 assert_contains "$pitems" "203.0.113.117  (jellyfin)" "f2b_banned_menu paging: page 2 shows .117"
-assert_contains "$pitems" "Back to first page"        "f2b_banned_menu paging: 'Back to first page' offered on page 2"
+assert_contains "$pitems" "Back to first page" "f2b_banned_menu paging: 'Back to first page' offered on page 2"
 assert_eq "3" "$ncalls" "f2b_banned_menu paging: 'Back to first page' redraws page 1 (not swallowed), then Back exits"
 
 # --- 7d2. hub bulk unban: "Unban all (N IPs)" only when >1 IP is banned; the
 # confirm gates it (yes -> the all-jails `unban --all` fires + success result;
 # no -> nothing runs). With a single IP the item must NOT render - the per-IP
 # context actions already cover that case. ------------------------------------
-UITEMS=$(mktemp); UQUEUE=$(mktemp); UCALLS=$(mktemp)
-printf '%s\n' "Unban all (2 IPs)" "Back" > "$UQUEUE"
+UITEMS=$(mktemp)
+UQUEUE=$(mktemp)
+UCALLS=$(mktemp)
+printf '%s\n' "Unban all (2 IPs)" "Back" >"$UQUEUE"
 bulk_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UITEMS="$UITEMS" UQUEUE="$UQUEUE" UCALLS="$UCALLS" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   docker(){ echo "$*" >> "$UCALLS"; case "$*" in
@@ -274,15 +281,18 @@ bulk_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UITEMS="$UITEMS" U
   ui_choose(){ shift; printf "%s\n" "$@" >> "$UITEMS"; local l; l=$(head -1 "$UQUEUE"); sed -i "1d" "$UQUEUE"; printf "%s\n" "$l"; }
   f2b_banned_menu
 ' 2>&1)
-uitems=$(cat "$UITEMS"); ucalls=$(cat "$UCALLS"); rm -f "$UITEMS" "$UQUEUE" "$UCALLS"
+uitems=$(cat "$UITEMS")
+ucalls=$(cat "$UCALLS")
+rm -f "$UITEMS" "$UQUEUE" "$UCALLS"
 assert_contains "$uitems" "Unban all (2 IPs)" "f2b_banned_menu bulk: 'Unban all (N IPs)' offered with >1 IP"
 assert_contains "$bulk_out" "CONFIRM:Unban all 2 IPs" "f2b_banned_menu bulk: confirm names the count"
 assert_contains "$ucalls" "exec fail2ban fail2ban-client unban --all" "f2b_banned_menu bulk: confirm-yes fires unban --all"
 assert_contains "$bulk_out" "RESULT:Unban all (2 IPs)" "f2b_banned_menu bulk: success routes to the action result"
 
 # Confirm-no: no unban call, explicit cancel message.
-UQUEUE=$(mktemp); UCALLS=$(mktemp)
-printf '%s\n' "Unban all (2 IPs)" "Back" > "$UQUEUE"
+UQUEUE=$(mktemp)
+UCALLS=$(mktemp)
+printf '%s\n' "Unban all (2 IPs)" "Back" >"$UQUEUE"
 bulkno_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UQUEUE="$UQUEUE" UCALLS="$UCALLS" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   docker(){ echo "$*" >> "$UCALLS"; case "$*" in
@@ -294,7 +304,8 @@ bulkno_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UQUEUE="$UQUEUE"
   ui_choose(){ shift; local l; l=$(head -1 "$UQUEUE"); sed -i "1d" "$UQUEUE"; printf "%s\n" "$l"; }
   f2b_banned_menu
 ' 2>&1)
-ucalls=$(cat "$UCALLS"); rm -f "$UQUEUE" "$UCALLS"
+ucalls=$(cat "$UCALLS")
+rm -f "$UQUEUE" "$UCALLS"
 assert_contains "$bulkno_out" "Cancelled - nothing changed." "f2b_banned_menu bulk: confirm-no cancels"
 assert_eq "0" "$(grep -c 'unban --all' <<<"$ucalls")" "f2b_banned_menu bulk: confirm-no fires nothing"
 
@@ -310,7 +321,8 @@ MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UITEMS="$UITEMS" bash -c '
   ui_choose(){ shift; printf "%s\n" "$@" >> "$UITEMS"; echo "Back"; }
   f2b_banned_menu
 ' >/dev/null 2>&1
-uitems=$(cat "$UITEMS"); rm -f "$UITEMS"
+uitems=$(cat "$UITEMS")
+rm -f "$UITEMS"
 assert_eq "0" "$(grep -c 'Unban all' <<<"$uitems")" "f2b_banned_menu bulk: item hidden with a single banned IP"
 
 # --- 7e. context actions route DISTINCTLY - a naive \"Unban\"* glob would send
@@ -327,9 +339,9 @@ ctx_unban=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOC
   ui_choose(){ echo "Unban (restores all access)"; }
   f2b_ip_actions 203.0.113.5
 ' 2>&1)
-assert_contains "$ctx_unban" "IP=203.0.113.5"          "f2b_ip_actions: IP kv shown"
+assert_contains "$ctx_unban" "IP=203.0.113.5" "f2b_ip_actions: IP kv shown"
 assert_contains "$ctx_unban" "Banned by=jellyfin, npm" "f2b_ip_actions: Banned by joins the jail list"
-assert_contains "$ctx_unban" "DO_UNBAN:203.0.113.5"    "f2b_ip_actions: plain Unban routes the bare IP to f2b_do_unban"
+assert_contains "$ctx_unban" "DO_UNBAN:203.0.113.5" "f2b_ip_actions: plain Unban routes the bare IP to f2b_do_unban"
 if grep -q "WL_APPLY" <<<"$ctx_unban"; then
     fail "f2b_ip_actions: plain Unban does NOT whitelist" "$ctx_unban"
 else
@@ -361,7 +373,8 @@ else
 fi
 
 # --- 7f. jail detail: all four translated kv rows + pickable IPs -> context ---
-JDQ=$(mktemp); printf '%s\n' "203.0.113.5" "Back" > "$JDQ"
+JDQ=$(mktemp)
+printf '%s\n' "203.0.113.5" "Back" >"$JDQ"
 jd_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" JDQ="$JDQ" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   docker(){ case "$*" in
@@ -376,11 +389,11 @@ jd_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" JDQ="$JDQ" bash -c '
   ui_choose(){ shift; local l; l=$(head -1 "$JDQ"); sed -i "1d" "$JDQ"; printf "%s\n" "$l"; }
   f2b_jail_detail jellyfin
 ' 2>&1)
-assert_contains "$jd_out" "Banned now=2"                        "f2b_jail_detail: Banned now = Currently banned"
-assert_contains "$jd_out" "Banned total=5"                      "f2b_jail_detail: Banned total = Total banned"
-assert_contains "$jd_out" "Failed logins=1 recent (34 total)"   "f2b_jail_detail: Failed logins composite (Currently/Total failed)"
+assert_contains "$jd_out" "Banned now=2" "f2b_jail_detail: Banned now = Currently banned"
+assert_contains "$jd_out" "Banned total=5" "f2b_jail_detail: Banned total = Total banned"
+assert_contains "$jd_out" "Failed logins=1 recent (34 total)" "f2b_jail_detail: Failed logins composite (Currently/Total failed)"
 assert_contains "$jd_out" "Watching=/var/log/jellyfin/log_.log" "f2b_jail_detail: Watching = raw File list (no friendly-name table)"
-assert_contains "$jd_out" "IP_ACTIONS:203.0.113.5"             "f2b_jail_detail: picking a banned IP routes to context actions"
+assert_contains "$jd_out" "IP_ACTIONS:203.0.113.5" "f2b_jail_detail: picking a banned IP routes to context actions"
 
 # --- 7g. jail detail empty state + unreadable-status warn ------------------
 jde_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -419,10 +432,10 @@ stats_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOC
   f2b_stats_menu
 ' 2>&1)
 assert_contains "$stats_out" "Jails=jellyfin, npm" "f2b_stats_menu: jail list comma-joined"
-assert_contains "$stats_out" "Banned now=2"        "f2b_stats_menu: distinct-IP count (203.0.113.5 counted once across jails)"
-assert_contains "$stats_out" "Bans all-time=8"     "f2b_stats_menu: sum of per-jail Total banned (5+3)"
+assert_contains "$stats_out" "Banned now=2" "f2b_stats_menu: distinct-IP count (203.0.113.5 counted once across jails)"
+assert_contains "$stats_out" "Bans all-time=8" "f2b_stats_menu: sum of per-jail Total banned (5+3)"
 assert_contains "$stats_out" "info: jellyfin: 2 banned now (5 total)" "f2b_stats_menu: jellyfin per-jail info line"
-assert_contains "$stats_out" "info: npm: 1 banned now (3 total)"      "f2b_stats_menu: npm per-jail info line"
+assert_contains "$stats_out" "info: npm: 1 banned now (3 total)" "f2b_stats_menu: npm per-jail info line"
 if grep -q "^warn:" <<<"$stats_out"; then
     fail "f2b_stats_menu: ban lines use info, not warn" "found a warn line: $stats_out"
 else
@@ -430,7 +443,8 @@ else
 fi
 assert_contains "$stats_out" "fail2ban protection (regex + jails)" "f2b_stats_menu: points at the Health & security regex probe"
 
-STQ=$(mktemp); printf '%s\n' "jellyfin" "Back" > "$STQ"
+STQ=$(mktemp)
+printf '%s\n' "jellyfin" "Back" >"$STQ"
 stroute=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" STQ="$STQ" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -444,7 +458,8 @@ stroute=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKE
 rm -f "$STQ"
 assert_contains "$stroute" "JAIL_DETAIL:jellyfin" "f2b_stats_menu: picking a jail routes to f2b_jail_detail"
 
-STR=$(mktemp); printf '%s\n' "Recent ban history" "Back" > "$STR"
+STR=$(mktemp)
+printf '%s\n' "Recent ban history" "Back" >"$STR"
 strec=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" STR="$STR" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -469,13 +484,13 @@ rec_empty=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   f2b_show_recent
 ' 2>&1)
 assert_contains "$rec_empty" "BOX_DRAWN:MediaStack - Recent ban history" "f2b_show_recent: box drawn even when no events"
-assert_contains "$rec_empty" "No recent ban activity"                    "f2b_show_recent: empty-state message preserved"
+assert_contains "$rec_empty" "No recent ban activity" "f2b_show_recent: empty-state message preserved"
 
 # --- 7j. screen rhythm: each sub-view emits exactly ONE box per render (the
 # clear -> one ui_box -> content -> ui_choose house rhythm). ui_choose returns Back
 # so each loop draws exactly once. ---------------------------------------------
 for view in "f2b_banned_menu" "f2b_ip_actions 203.0.113.5" "f2b_stats_menu"; do
-  rhythm=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" VIEW="$view" bash -c '
+    rhythm=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" VIEW="$view" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     eval "$DOCKER_STUB"
     clear(){ :; }; ui_kv(){ :; }; ui_log(){ :; }; pause_for_menu(){ :; }
@@ -485,7 +500,7 @@ for view in "f2b_banned_menu" "f2b_ip_actions 203.0.113.5" "f2b_stats_menu"; do
     $VIEW
     echo "BOXES:$N"
   ' 2>&1)
-  assert_contains "$rhythm" "BOXES:1" "screen rhythm: '$view' renders exactly one box"
+    assert_contains "$rhythm" "BOXES:1" "screen rhythm: '$view' renders exactly one box"
 done
 
 # --- 7k. gum height clamp: --height = min(item count, max(3, rows-4)) ---------
@@ -498,17 +513,19 @@ MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GA="$GA" bash -c '
   _render_choose "p" 0 "${big[@]}" >/dev/null
   _render_choose "p" 0 a b c d e   >/dev/null
 ' 2>&1
-ga=$(cat "$GA"); rm -f "$GA"
+ga=$(cat "$GA")
+rm -f "$GA"
 assert_contains "$ga" "--height=20" "gum clamp: 40-item list clamped to the terminal (rows-4=20)"
-assert_contains "$ga" "--height=5"  "gum clamp: short 5-item list keeps its item count"
+assert_contains "$ga" "--height=5" "gum clamp: short 5-item list keeps its item count"
 
 # --- 8. f2b_whitelist_menu: the four defaults render LOCKED (no Remove) ------
 # Seed a temp SCRIPT_DIR/config/... jail file (the whitelist read path needs a
 # real file). SCRIPT_DIR is overridden after sourcing so the menu reads the seed.
 DEFAULT_IGN="ignoreip = 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
-seed_jail() { printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN" "bantime = 30m" "" "[jellyfin]" "enabled = true" "" "[npm]" "enabled = true" > "$1"; }
+seed_jail() { printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN" "bantime = 30m" "" "[jellyfin]" "enabled = true" "" "[npm]" "enabled = true" >"$1"; }
 
-WLROOT=$(mktemp -d); mkdir -p "$WLROOT/config/fail2ban/jail.d"
+WLROOT=$(mktemp -d)
+mkdir -p "$WLROOT/config/fail2ban/jail.d"
 seed_jail "$WLROOT/config/fail2ban/jail.d/mediastack.conf"
 menu8=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" WLROOT="$WLROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -520,9 +537,9 @@ menu8=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" WLROOT="$WLROOT" bash
   f2b_whitelist_menu
   echo "---OPTS---"; cat "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$menu8" "127.0.0.0/8  (default - locked)"    "f2b_whitelist_menu: 127/8 locked"
-assert_contains "$menu8" "10.0.0.0/8  (default - locked)"     "f2b_whitelist_menu: 10/8 locked"
-assert_contains "$menu8" "172.16.0.0/12  (default - locked)"  "f2b_whitelist_menu: 172.16/12 locked"
+assert_contains "$menu8" "127.0.0.0/8  (default - locked)" "f2b_whitelist_menu: 127/8 locked"
+assert_contains "$menu8" "10.0.0.0/8  (default - locked)" "f2b_whitelist_menu: 10/8 locked"
+assert_contains "$menu8" "172.16.0.0/12  (default - locked)" "f2b_whitelist_menu: 172.16/12 locked"
 assert_contains "$menu8" "192.168.0.0/16  (default - locked)" "f2b_whitelist_menu: 192.168/16 locked"
 opts8=${menu8#*---OPTS---}
 if grep -q "Remove" <<<"$opts8"; then
@@ -533,7 +550,8 @@ fi
 assert_contains "$opts8" "Add an IP" "f2b_whitelist_menu: Add an IP offered"
 
 # --- 9a. add via banned-IP quick-pick: appended, jails preserved ------------
-JAILP=$(mktemp); seed_jail "$JAILP"
+JAILP=$(mktemp)
+seed_jail "$JAILP"
 add_qp=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" JAILP="$JAILP" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -542,13 +560,15 @@ add_qp=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER
   ui_choose(){ echo "203.0.113.5"; }
   f2b_whitelist_add "$JAILP"
 ' 2>&1)
-assert_contains "$add_qp" "completed successfully"                    "f2b_whitelist_add quick-pick: reports success"
+assert_contains "$add_qp" "completed successfully" "f2b_whitelist_add quick-pick: reports success"
 assert_contains "$(grep "^ignoreip" "$JAILP")" "$DEFAULT_IGN 203.0.113.5" "f2b_whitelist_add quick-pick: IP appended after defaults"
-assert_contains "$(cat "$JAILP")" "[jellyfin]"                        "f2b_whitelist_add: [jellyfin] jail preserved (whole-file write)"
-assert_contains "$(cat "$JAILP")" "[npm]"                             "f2b_whitelist_add: [npm] jail preserved (whole-file write)"
+assert_contains "$(cat "$JAILP")" "[jellyfin]" "f2b_whitelist_add: [jellyfin] jail preserved (whole-file write)"
+assert_contains "$(cat "$JAILP")" "[npm]" "f2b_whitelist_add: [npm] jail preserved (whole-file write)"
 
 # --- 9b. manual path, blank Enter -> clean cancel, file untouched -----------
-JAILB=$(mktemp); seed_jail "$JAILB"; before_b=$(cat "$JAILB")
+JAILB=$(mktemp)
+seed_jail "$JAILB"
+before_b=$(cat "$JAILB")
 blank_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" JAILB="$JAILB" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -558,11 +578,12 @@ blank_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOC
   ui_input(){ echo ""; }
   f2b_whitelist_add "$JAILB"
 ' 2>&1)
-assert_contains "$blank_out" "Cancelled"        "f2b_whitelist_add manual blank: clean cancel message"
-assert_eq "$before_b" "$(cat "$JAILB")"         "f2b_whitelist_add manual blank: file untouched"
+assert_contains "$blank_out" "Cancelled" "f2b_whitelist_add manual blank: clean cancel message"
+assert_eq "$before_b" "$(cat "$JAILB")" "f2b_whitelist_add manual blank: file untouched"
 
 # --- 9c. manual path, valid typed IP -> written; invalid -> no write --------
-JAILM=$(mktemp); seed_jail "$JAILM"
+JAILM=$(mktemp)
+seed_jail "$JAILM"
 man_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" JAILM="$JAILM" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -572,10 +593,12 @@ man_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKE
   ui_input(){ echo "203.0.113.99"; }
   f2b_whitelist_add "$JAILM"
 ' 2>&1)
-assert_contains "$man_out" "completed successfully"           "f2b_whitelist_add manual: valid typed IP reports success"
+assert_contains "$man_out" "completed successfully" "f2b_whitelist_add manual: valid typed IP reports success"
 assert_contains "$(grep "^ignoreip" "$JAILM")" "203.0.113.99" "f2b_whitelist_add manual: valid typed IP written"
 
-JAILI=$(mktemp); seed_jail "$JAILI"; before_i=$(cat "$JAILI")
+JAILI=$(mktemp)
+seed_jail "$JAILI"
+before_i=$(cat "$JAILI")
 inv_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" JAILI="$JAILI" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
@@ -586,7 +609,7 @@ inv_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKE
   f2b_whitelist_add "$JAILI"
 ' 2>&1)
 assert_contains "$inv_out" "not a valid IP address" "f2b_whitelist_add manual: invalid IP warns"
-assert_eq "$before_i" "$(cat "$JAILI")"             "f2b_whitelist_add manual: invalid IP rejected, file untouched"
+assert_eq "$before_i" "$(cat "$JAILI")" "f2b_whitelist_add manual: invalid IP rejected, file untouched"
 
 # --- 9d. re-add the same IP -> "already whitelisted", no duplicate token -----
 dup_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" JAILP="$JAILP" bash -c '
@@ -619,7 +642,8 @@ fi
 assert_contains "$rm_line" "$DEFAULT_IGN" "f2b_whitelist_remove: locked defaults intact"
 
 # --- 9f. rule 1: empty read must NOT truncate/write (guard fires) ------------
-EMPTYF=$(mktemp); : > "$EMPTYF"
+EMPTYF=$(mktemp)
+: >"$EMPTYF"
 r1_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" EMPTYF="$EMPTYF" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_log(){ echo "$1: ${*:2}"; }
@@ -628,11 +652,13 @@ r1_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" EMPTYF="$EMPTYF" bas
   sudo(){ return 1; }
   f2b_whitelist_apply add 203.0.113.5 "$EMPTYF"
 ' 2>&1)
-assert_contains "$r1_out" "Couldn't read"        "f2b_whitelist_apply rule 1: empty read warns"
-assert_eq "0" "$(wc -c < "$EMPTYF" | tr -d ' ')" "f2b_whitelist_apply rule 1: empty file NOT written (still 0 bytes)"
+assert_contains "$r1_out" "Couldn't read" "f2b_whitelist_apply rule 1: empty read warns"
+assert_eq "0" "$(wc -c <"$EMPTYF" | tr -d ' ')" "f2b_whitelist_apply rule 1: empty file NOT written (still 0 bytes)"
 
 # --- 9g. rule 3: no ignoreip line -> warn, file untouched, no false success --
-NOIGN=$(mktemp); printf '%s\n' "[DEFAULT]" "bantime = 30m" "" "[jellyfin]" "enabled = true" > "$NOIGN"; before_n=$(cat "$NOIGN")
+NOIGN=$(mktemp)
+printf '%s\n' "[DEFAULT]" "bantime = 30m" "" "[jellyfin]" "enabled = true" >"$NOIGN"
+before_n=$(cat "$NOIGN")
 r3_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" NOIGN="$NOIGN" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_log(){ echo "$1: ${*:2}"; }
@@ -641,7 +667,7 @@ r3_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" NOIGN="$NOIGN" bash 
   f2b_whitelist_apply add 203.0.113.5 "$NOIGN"
 ' 2>&1)
 assert_contains "$r3_out" "No ignoreip line" "f2b_whitelist_apply rule 3: missing-line warns"
-assert_eq "$before_n" "$(cat "$NOIGN")"      "f2b_whitelist_apply rule 3: file untouched"
+assert_eq "$before_n" "$(cat "$NOIGN")" "f2b_whitelist_apply rule 3: file untouched"
 if grep -q "completed successfully" <<<"$r3_out"; then
     fail "f2b_whitelist_apply rule 3: no false success" "reported success: $r3_out"
 else
@@ -649,7 +675,8 @@ else
 fi
 
 # --- 9h. reload failure -> accurate warn (not false success); file still written
-RLF=$(mktemp); seed_jail "$RLF"
+RLF=$(mktemp)
+seed_jail "$RLF"
 rlf_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" RLF="$RLF" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }
@@ -666,8 +693,9 @@ fi
 assert_contains "$(grep "^ignoreip" "$RLF")" "203.0.113.7" "f2b_whitelist_apply reload-fail: write still landed"
 
 # --- 9i. unban-on-add fires on ADD but NOT on remove ------------------------
-UBLOG=$(mktemp); UBJAIL=$(mktemp)
-printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN 203.0.113.8" "" "[jellyfin]" "enabled = true" > "$UBJAIL"
+UBLOG=$(mktemp)
+UBJAIL=$(mktemp)
+printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN 203.0.113.8" "" "[jellyfin]" "enabled = true" >"$UBJAIL"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UBLOG="$UBLOG" UBJAIL="$UBJAIL" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }
@@ -676,7 +704,7 @@ MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UBLOG="$UBLOG" UBJAIL="$UBJAI
   f2b_whitelist_apply add 203.0.113.9 "$UBJAIL"
 ' >/dev/null 2>&1
 assert_contains "$(cat "$UBLOG")" "unban 203.0.113.9" "f2b_whitelist_apply: add path calls best-effort unban"
-: > "$UBLOG"
+: >"$UBLOG"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UBLOG="$UBLOG" UBJAIL="$UBJAIL" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }
@@ -691,8 +719,9 @@ assert_eq "" "$(cat "$UBLOG")" "f2b_whitelist_apply: remove path does NOT call u
 # pre-existing whitelist token can still be live-banned (ignoreip is enforced only
 # at ban time, or a prior best-effort unban failed), so the short-circuit must not
 # drop the unban - and it must not write a duplicate token either. ----------------
-DUPLOG=$(mktemp); DUPJAIL=$(mktemp)
-printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN 203.0.113.50" "" "[jellyfin]" "enabled = true" > "$DUPJAIL"
+DUPLOG=$(mktemp)
+DUPJAIL=$(mktemp)
+printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN 203.0.113.50" "" "[jellyfin]" "enabled = true" >"$DUPJAIL"
 dup_ub=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DUPLOG="$DUPLOG" DUPJAIL="$DUPJAIL" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }
@@ -701,15 +730,16 @@ dup_ub=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DUPLOG="$DUPLOG" DUP
   f2b_whitelist_apply add 203.0.113.50 "$DUPJAIL"
 ' 2>&1)
 assert_contains "$(cat "$DUPLOG")" "unban 203.0.113.50" "f2b_whitelist_apply: dedup add path still fires best-effort unban"
-assert_contains "$dup_ub" "already whitelisted"          "f2b_whitelist_apply: dedup add path reports already whitelisted"
+assert_contains "$dup_ub" "already whitelisted" "f2b_whitelist_apply: dedup add path reports already whitelisted"
 dupn=$(grep "^ignoreip" "$DUPJAIL" | grep -o "203.0.113.50" | wc -l | tr -d ' ')
 assert_eq "1" "$dupn" "f2b_whitelist_apply: dedup add path writes no duplicate token"
 rm -f "$DUPLOG" "$DUPJAIL"
 
 # --- 9i3. defensive empty-$ip guard: an empty IP must warn, touch nothing, and
 # never call unban (grep -Fqw "" would false-match the whole line otherwise). ------
-EMPLOG=$(mktemp); EMPJAIL=$(mktemp)
-printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN" "" "[jellyfin]" "enabled = true" > "$EMPJAIL"
+EMPLOG=$(mktemp)
+EMPJAIL=$(mktemp)
+printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN" "" "[jellyfin]" "enabled = true" >"$EMPJAIL"
 emp_before=$(cat "$EMPJAIL")
 emp_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" EMPLOG="$EMPLOG" EMPJAIL="$EMPJAIL" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -718,9 +748,9 @@ emp_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" EMPLOG="$EMPLOG" EM
   docker(){ case "$*" in *unban*) echo "$*" >> "$EMPLOG" ;; esac; return 0; }
   f2b_whitelist_apply add "" "$EMPJAIL"
 ' 2>&1)
-assert_contains "$emp_out" "No IP given"          "f2b_whitelist_apply: empty \$ip warns and stops"
-assert_eq "" "$(cat "$EMPLOG")"                   "f2b_whitelist_apply: empty \$ip never calls unban"
-assert_eq "$emp_before" "$(cat "$EMPJAIL")"       "f2b_whitelist_apply: empty \$ip leaves the jail file untouched"
+assert_contains "$emp_out" "No IP given" "f2b_whitelist_apply: empty \$ip warns and stops"
+assert_eq "" "$(cat "$EMPLOG")" "f2b_whitelist_apply: empty \$ip never calls unban"
+assert_eq "$emp_before" "$(cat "$EMPJAIL")" "f2b_whitelist_apply: empty \$ip leaves the jail file untouched"
 rm -f "$EMPLOG" "$EMPJAIL"
 
 # --- 9j. HIGH regression: an inline '# comment' on the ignoreip line must NOT ---
@@ -729,21 +759,21 @@ rm -f "$EMPLOG" "$EMPJAIL"
 # success. The awk/ENVIRON rebuild passes the line verbatim; the inline comment may
 # legitimately be dropped, so assert jails intact + new IP present (not comment survival).
 HASHJ=$(mktemp)
-printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.0.0.0/8  # home office" "" "[jellyfin]" "enabled = true" "" "[npm]" "enabled = true" "" "[seerr]" "enabled = true" > "$HASHJ"
+printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.0.0.0/8  # home office" "" "[jellyfin]" "enabled = true" "" "[npm]" "enabled = true" "" "[seerr]" "enabled = true" >"$HASHJ"
 hash_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HASHJ="$HASHJ" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }
   ui_confirm(){ return 0; }; docker(){ return 0; }
   f2b_whitelist_apply add 8.8.8.8 "$HASHJ"
 ' 2>&1)
-assert_contains "$hash_out" "completed successfully"       "regression #-comment: add still reports success"
-assert_contains "$(grep "^ignoreip" "$HASHJ")" "8.8.8.8"   "regression #-comment: new IP present on ignoreip line"
-assert_eq "4" "$(grep -c "^\[" "$HASHJ" | tr -d ' ')"      "regression #-comment: all four jail sections survive (no truncation)"
+assert_contains "$hash_out" "completed successfully" "regression #-comment: add still reports success"
+assert_contains "$(grep "^ignoreip" "$HASHJ")" "8.8.8.8" "regression #-comment: new IP present on ignoreip line"
+assert_eq "4" "$(grep -c "^\[" "$HASHJ" | tr -d ' ')" "regression #-comment: all four jail sections survive (no truncation)"
 
 # --- 9k. regression: an existing '&' token is preserved verbatim (sed replacement
 # side expanded '&' to the whole match). ------------------------------------------
 AMPJ=$(mktemp)
-printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 a&b" "" "[jellyfin]" "enabled = true" > "$AMPJ"
+printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 a&b" "" "[jellyfin]" "enabled = true" >"$AMPJ"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" AMPJ="$AMPJ" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }
@@ -756,7 +786,7 @@ assert_contains "$(grep "^ignoreip" "$AMPJ")" "a&b 8.8.8.8" "regression &: exist
 # -> only the FIRST is rewritten; the second is byte-identical (grep -m1 read
 # consistency). The old global sed clobbered both. -------------------------------
 DUPJ=$(mktemp)
-printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN" "" "[jellyfin]" "ignoreip = 5.5.5.5" "enabled = true" > "$DUPJ"
+printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN" "" "[jellyfin]" "ignoreip = 5.5.5.5" "enabled = true" >"$DUPJ"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DUPJ="$DUPJ" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }
@@ -764,14 +794,15 @@ MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DUPJ="$DUPJ" bash -c '
   f2b_whitelist_apply add 8.8.8.8 "$DUPJ"
 ' >/dev/null 2>&1
 assert_contains "$(grep -m1 "^ignoreip" "$DUPJ")" "$DEFAULT_IGN 8.8.8.8" "regression 2x-ignoreip: first line rewritten with new IP"
-assert_eq "ignoreip = 5.5.5.5" "$(grep "^ignoreip" "$DUPJ" | sed -n 2p)"  "regression 2x-ignoreip: per-jail override line byte-identical"
+assert_eq "ignoreip = 5.5.5.5" "$(grep "^ignoreip" "$DUPJ" | sed -n 2p)" "regression 2x-ignoreip: per-jail override line byte-identical"
 
 # --- 9m. regression: a '10.*' glob token survives an unrelated add un-expanded.
 # The old `echo $new_list` was unquoted -> pathname expansion turned the token into
 # matching CWD filenames. A matching file is created in the run CWD to make it bite.
-GLOBDIR=$(mktemp -d); : > "$GLOBDIR/10.match"
+GLOBDIR=$(mktemp -d)
+: >"$GLOBDIR/10.match"
 GLOBJ="$GLOBDIR/jail.conf"
-printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.*" "" "[jellyfin]" "enabled = true" > "$GLOBJ"
+printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.*" "" "[jellyfin]" "enabled = true" >"$GLOBJ"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GLOBJ="$GLOBJ" GLOBDIR="$GLOBDIR" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null   # sourcing cds to SCRIPT_DIR; enter the
   cd "$GLOBDIR"                                # decoy dir AFTER so the glob can bite
@@ -792,9 +823,10 @@ rm -rf "$GLOBDIR"
 # The remove path split `$new_list` with an unquoted `printf '%s\n' $new_list` BEFORE
 # the collapse, so pathname expansion turned the token into matching CWD filenames
 # while removing a different token. A matching file in the run CWD makes it bite. ----
-GLOBDIR2=$(mktemp -d); : > "$GLOBDIR2/10.match"
+GLOBDIR2=$(mktemp -d)
+: >"$GLOBDIR2/10.match"
 GLOBJ2="$GLOBDIR2/jail.conf"
-printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.* 203.0.113.5" "" "[jellyfin]" "enabled = true" > "$GLOBJ2"
+printf '%s\n' "[DEFAULT]" "ignoreip = 127.0.0.0/8 10.* 203.0.113.5" "" "[jellyfin]" "enabled = true" >"$GLOBJ2"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GLOBJ2="$GLOBJ2" GLOBDIR2="$GLOBDIR2" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null   # sourcing cds to SCRIPT_DIR; enter the
   cd "$GLOBDIR2"                               # decoy dir AFTER so the glob can bite
@@ -819,7 +851,7 @@ rm -rf "$GLOBDIR2"
 # --- 9n. regression: a successful REMOVE returns rc 0 (the old success branch ended
 # on `[[ $op == add ]] && ...`, falsey on remove, so the function rc lied). --------
 REMJ=$(mktemp)
-printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN 203.0.113.5" "" "[jellyfin]" "enabled = true" > "$REMJ"
+printf '%s\n' "[DEFAULT]" "$DEFAULT_IGN 203.0.113.5" "" "[jellyfin]" "enabled = true" >"$REMJ"
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" REMJ="$REMJ" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }
@@ -831,7 +863,9 @@ assert_eq "0" "$?" "regression remove-rc: successful remove returns rc 0"
 # --- 9o. rule 4: a rebuild that comes out empty must NOT write (guard fires). The
 # awk rebuild can't emit empty, so drive the invariant directly: stub awk to emit
 # nothing, then assert the guard warns and leaves the file byte-for-byte intact. ---
-R4J=$(mktemp); seed_jail "$R4J"; before_r4=$(cat "$R4J")
+R4J=$(mktemp)
+seed_jail "$R4J"
+before_r4=$(cat "$R4J")
 r4_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" R4J="$R4J" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }
@@ -839,8 +873,8 @@ r4_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" R4J="$R4J" bash -c '
   awk(){ printf ""; }
   f2b_whitelist_apply add 203.0.113.5 "$R4J"
 ' 2>&1)
-assert_contains "$r4_out" "came out empty"  "f2b_whitelist_apply rule 4: empty transform warns"
-assert_eq "$before_r4" "$(cat "$R4J")"      "f2b_whitelist_apply rule 4: file untouched on empty transform"
+assert_contains "$r4_out" "came out empty" "f2b_whitelist_apply rule 4: empty transform warns"
+assert_eq "$before_r4" "$(cat "$R4J")" "f2b_whitelist_apply rule 4: file untouched on empty transform"
 if grep -q "completed successfully" <<<"$r4_out"; then
     fail "f2b_whitelist_apply rule 4: no false success" "reported success: $r4_out"
 else
@@ -848,7 +882,7 @@ else
 fi
 
 rm -rf "$WLROOT" "$JAILP" "$JAILB" "$JAILM" "$JAILI" "$EMPTYF" "$NOIGN" "$RLF" "$UBLOG" "$UBJAIL" \
-       "$HASHJ" "$AMPJ" "$DUPJ" "$REMJ" "$R4J"
+    "$HASHJ" "$AMPJ" "$DUPJ" "$REMJ" "$R4J"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

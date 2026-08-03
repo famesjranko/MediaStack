@@ -9,7 +9,8 @@
 #   push_jellyfin.sh connect <sonarr|radarr> <api-base> <api-key>
 set -uo pipefail
 
-mode="$1"; shift
+mode="$1"
+shift
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR" || exit 1
@@ -26,7 +27,7 @@ export CONFIG_FILE
 [[ -f "$CONFIG_FILE" ]] || cp "$SCRIPT_DIR/config.yml" "$CONFIG_FILE"
 
 if [[ "$mode" == "seed-config" ]]; then
-    (( $# >= 1 )) || {
+    (($# >= 1)) || {
         echo "usage: push_jellyfin.sh seed-config <name:type:path> [name:type:path ...]" >&2
         exit 2
     }

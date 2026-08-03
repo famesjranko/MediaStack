@@ -1,8 +1,8 @@
 # =============================================================================
 # MediaStack Setup - Storage modes, NAS guards, and watchdog install
 # =============================================================================
-# Sourced by setup.sh and selected scripts. Sources common.sh itself
-# (invariant #11): storage_env_set delegates to its _env_write_kv, and
+# Sourced by setup.sh and selected scripts. Sources common.sh itself:
+# storage_env_set delegates to its _env_write_kv, and
 # common.sh is side-effect-free at source time so the watchdog stays safe.
 
 # No include guard of its own: this file is safe to re-source (plain function/
@@ -47,9 +47,9 @@ storage_data_services() {
 }
 
 storage_log_info() { if declare -F log_info >/dev/null; then log_info "$*"; else echo "INFO: $*"; fi; }
-storage_log_ok()   { if declare -F log_ok   >/dev/null; then log_ok "$*";   else echo "OK: $*"; fi; }
+storage_log_ok() { if declare -F log_ok >/dev/null; then log_ok "$*"; else echo "OK: $*"; fi; }
 storage_log_warn() { if declare -F log_warn >/dev/null; then log_warn "$*"; else echo "WARN: $*"; fi; }
-storage_log_err()  { if declare -F log_error >/dev/null; then log_error "$*"; else echo "ERROR: $*"; fi; }
+storage_log_err() { if declare -F log_error >/dev/null; then log_error "$*"; else echo "ERROR: $*"; fi; }
 storage_log_skip() { if declare -F log_skip >/dev/null; then log_skip "$*"; else echo "SKIP: $*"; fi; }
 
 storage_expected_source() {
@@ -110,7 +110,7 @@ storage_mount_matches() {
     [[ -n "$live_source" && -n "$want_source" ]] || return 1
     [[ "$live_source" == "$want_source" ]] || return 1
     case "$want_fstype:$live_fstype" in
-        nfs4:nfs|nfs4:nfs4|nfs:nfs|nfs:nfs4) return 0 ;;
+        nfs4:nfs | nfs4:nfs4 | nfs:nfs | nfs:nfs4) return 0 ;;
         *) [[ "$live_fstype" == "$want_fstype" ]] ;;
     esac
 }
@@ -258,7 +258,7 @@ storage_probe_nas() {
     # 2. Export mountable — temp mount with fail-fast opts, never the real mountpoint.
     probe_opts="$(storage_probe_opts "$opts")"
     if ui_spin "Testing NFS export ${host}:${export_path}..." \
-            sudo mount -t nfs4 -o "$probe_opts" "${host}:${export_path}" "$tmp" \
+        sudo mount -t nfs4 -o "$probe_opts" "${host}:${export_path}" "$tmp" \
         || sudo mount -t nfs -o "$probe_opts" "${host}:${export_path}" "$tmp" >/dev/null 2>&1; then
         storage_log_ok "NFS export available (${export_path})"
     else
@@ -294,7 +294,7 @@ storage_probe_nas() {
     fi
     sudo umount -l "$tmp" >/dev/null 2>&1 || true
     rmdir "$tmp" 2>/dev/null || true
-    return $rc
+    return "$rc"
 }
 
 storage_env_set() {
@@ -504,7 +504,7 @@ storage_pause_watchdog_for_install() {
     local state
     state="$(sudo systemctl is-active mediastack-storage-watchdog.service 2>/dev/null)" || true
     case "$state" in
-        active|activating|reloading|deactivating)
+        active | activating | reloading | deactivating)
             storage_log_info "Pausing NAS storage watchdog during Stage 1 install..."
             ;;
     esac
@@ -519,13 +519,15 @@ storage_pause_watchdog_for_install() {
     local rc=0
     state="$(sudo systemctl is-active mediastack-storage-watchdog.service 2>/dev/null)" || rc=$?
     case "$state" in
-        inactive|failed|unknown) return 0 ;;
-        active|activating|reloading|deactivating)
+        inactive | failed | unknown) return 0 ;;
+        active | activating | reloading | deactivating)
             storage_log_err "NAS storage watchdog is still active; refusing to continue while setup may stop/start protected services."
-            return 1 ;;
+            return 1
+            ;;
         *)
             storage_log_err "Could not verify NAS storage watchdog inactive state (systemctl exit ${rc}); refusing to continue."
-            return 1 ;;
+            return 1
+            ;;
     esac
 }
 
@@ -592,5 +594,5 @@ storage_uninstall_watchdog() {
     fi
     sudo rm -f "$MEDIASTACK_STORAGE_WATCHDOG_SUDOERS" || rc=1
     sudo rm -rf "$MEDIASTACK_STORAGE_LIBEXEC_DIR" || rc=1
-    return $rc
+    return "$rc"
 }

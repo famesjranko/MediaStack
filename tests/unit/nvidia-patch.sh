@@ -20,9 +20,9 @@ source "$REPO_ROOT/scripts/lib/nvidia_patch.sh"
 set +e
 set +u
 
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
 
 TMP_ROOT=$(mktemp -d)
@@ -35,7 +35,7 @@ make_patch_repo() {
     git -C "$repo" init -q
     git -C "$repo" config user.email "test@example.invalid"
     git -C "$repo" config user.name "MediaStack Test"
-    cat > "$repo/patch.sh" <<'SH'
+    cat >"$repo/patch.sh" <<'SH'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-c" ]]; then
     printf 'compat:%s\n' "${2:-}"
@@ -43,11 +43,11 @@ if [[ "${1:-}" == "-c" ]]; then
 fi
 printf 'patch-run\n'
 SH
-    cat > "$repo/patch-fbc.sh" <<'SH'
+    cat >"$repo/patch-fbc.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'fbc-run\n'
 SH
-    printf '{"drivers":[]}\n' > "$repo/drivers.json"
+    printf '{"drivers":[]}\n' >"$repo/drivers.json"
     git -C "$repo" add patch.sh patch-fbc.sh drivers.json
     git -C "$repo" commit -q -m "seed nvidia patch fixture"
     git -C "$repo" remote add origin "$NVIDIA_PATCH_REPO_URL"
@@ -56,7 +56,7 @@ SH
 
 repo="$TMP_ROOT/pinned"
 first_commit=$(make_patch_repo "$repo")
-printf 'moving branch content\n' > "$repo/moving.txt"
+printf 'moving branch content\n' >"$repo/moving.txt"
 git -C "$repo" add moving.txt
 git -C "$repo" commit -q -m "advance branch"
 second_commit=$(git -C "$repo" rev-parse HEAD)
@@ -85,7 +85,7 @@ rm -rf "$run_dir"
 repo="$TMP_ROOT/dirty"
 dirty_commit=$(make_patch_repo "$repo")
 NVIDIA_PATCH_REPO_COMMIT="$dirty_commit"
-printf 'local edit\n' > "$repo/local-untracked.txt"
+printf 'local edit\n' >"$repo/local-untracked.txt"
 if nvidia_patch_prepare_repo "$repo"; then
     fail "nvidia_patch_prepare_repo: rejects dirty tree" "prepare succeeded with untracked file"
 else
@@ -104,7 +104,7 @@ fi
 
 repo="$TMP_ROOT/wrong-head"
 base_commit=$(make_patch_repo "$repo")
-printf 'new content\n' > "$repo/other.txt"
+printf 'new content\n' >"$repo/other.txt"
 git -C "$repo" add other.txt
 git -C "$repo" commit -q -m "different head"
 NVIDIA_PATCH_REPO_COMMIT="$base_commit"

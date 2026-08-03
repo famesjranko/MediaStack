@@ -15,6 +15,7 @@ prompt change is made once (in wizard_prompts.json) and both surfaces track it â
 drift. Emits separate {"expect":...} and {"send":...} objects to match the hand-written
 steps format the scenarios used before.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,7 +32,7 @@ def load_prompts() -> dict:
 
 def regex_for(name: str, prompts: dict) -> str:
     if name.startswith("literal:"):
-        return name[len("literal:"):]
+        return name[len("literal:") :]
     if name not in prompts:
         sys.exit(f"wizard_steps_build: unknown prompt {name!r} (not in wizard_prompts.json)")
     return prompts[name]
@@ -50,14 +51,14 @@ def main() -> int:
             base, suffix = name.rsplit("@", 1)
             if suffix.isdigit():
                 name, timeout = base, int(suffix)
-        expect = {"expect": regex_for(name, prompts)}
+        expect: dict[str, str | int] = {"expect": regex_for(name, prompts)}
         if timeout is not None:
             expect["timeout"] = timeout
         steps.append(expect)
         if send == "NONE":
-            pass                                   # expect with no send
+            pass  # expect with no send
         elif send == "ENTER":
-            steps.append({"send": "\n"})           # accept the default
+            steps.append({"send": "\n"})  # accept the default
         else:
             steps.append({"send": send + "\n"})
     json.dump(steps, sys.stdout, indent=2)

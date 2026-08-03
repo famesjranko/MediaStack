@@ -12,7 +12,12 @@
 #   push_quality.sh <app> <base_url> <api_key> <resolution> <size> [rename_from]
 set -uo pipefail
 
-app="$1"; base="$2"; key="$3"; res="$4"; size="$5"; rename_from="${6:-}"
+app="$1"
+base="$2"
+key="$3"
+res="$4"
+size="$5"
+rename_from="${6:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR" || exit 1

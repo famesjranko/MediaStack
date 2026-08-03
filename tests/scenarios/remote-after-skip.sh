@@ -94,7 +94,10 @@ EOF"
             ok=false
         fi
     done
-    $ok || { dind_exec "docker compose ps"; return 1; }
+    $ok || {
+        dind_exec "docker compose ps"
+        return 1
+    }
 
     if pebble_up && pebble_setup_dns; then
         pass "TEST-04 fixture DNS/Pebble: ACME server and fixture DNS ready"

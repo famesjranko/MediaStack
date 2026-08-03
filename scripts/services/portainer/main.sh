@@ -76,7 +76,7 @@ configure_portainer() {
                     log_warn "Portainer admin creation returned HTTP 400: $init_body_resp"
                 fi
                 ;;
-            *)   log_warn "Portainer admin creation returned HTTP $init_http: $init_body_resp" ;;
+            *) log_warn "Portainer admin creation returned HTTP $init_http: $init_body_resp" ;;
         esac
     fi
 
@@ -158,8 +158,8 @@ configure_portainer() {
                 -H "Authorization: Bearer $jwt" \
                 -d "Name=local&EndpointCreationType=1" 2>/dev/null)
             case "$ep_http" in
-                200|201) log_ok "Portainer local Docker endpoint created" ;;
-                *)       log_warn "Portainer endpoint creation returned HTTP $ep_http" ;;
+                200 | 201) log_ok "Portainer local Docker endpoint created" ;;
+                *) log_warn "Portainer endpoint creation returned HTTP $ep_http" ;;
             esac
         else
             log_skip "Portainer already has $endpoint_count endpoint(s)"

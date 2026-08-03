@@ -39,17 +39,17 @@ run_scenario() {
     assert_contains "$transcript" "Remote Access: Install Plan" "wizard-ui stage2 install ready: install plan box shown"
     assert_contains "$transcript" "Remote access is ready" "wizard-ui stage2 install ready: LE-ready success message"
 
-    assert_eq "ready"   "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 install ready: REMOTE_WEB_STATE=ready"
-    assert_eq "demo.mywire.org" "$(env_get DOMAIN)"   "wizard-ui stage2 install ready: DOMAIN persisted"
-    assert_eq "demo.mywire.org" "$(env_get WG_HOST)"  "wizard-ui stage2 install ready: WG_HOST follows domain"
-    # #236: secrets moved out of .env into the chmod-600 config.json; only the
-    # non-secret provider key stays in .env. #248: Dynu collects password only
+    assert_eq "ready" "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 install ready: REMOTE_WEB_STATE=ready"
+    assert_eq "demo.mywire.org" "$(env_get DOMAIN)" "wizard-ui stage2 install ready: DOMAIN persisted"
+    assert_eq "demo.mywire.org" "$(env_get WG_HOST)" "wizard-ui stage2 install ready: WG_HOST follows domain"
+    # Secrets live in the chmod-600 config.json, not .env; only the non-secret
+    # provider key stays in .env. Dynu collects password only
     # (the username is a constant placeholder), so the secret persisted is the
     # password.
-    assert_eq "dynu" "$(env_get DDNS_PROVIDER)"            "wizard-ui stage2 install ready: DDNS provider persisted to .env"
+    assert_eq "dynu" "$(env_get DDNS_PROVIDER)" "wizard-ui stage2 install ready: DDNS provider persisted to .env"
     local ddns_pw
     ddns_pw="$(dind_exec "python3 -c 'import json; print(json.load(open(\"/root/MediaStack/config/ddns-updater/config.json\"))[\"settings\"][0][\"password\"])'" 2>/dev/null)"
-    assert_eq "dynupass123" "$ddns_pw"                     "wizard-ui stage2 install ready: Dynu password persisted to config.json"
-    assert_eq "full-lan" "$(env_get WG_ACCESS_TIER)"        "wizard-ui stage2 install ready: WG full-lan tier"
-    assert_eq "51820"    "$(env_get WG_PORT)"               "wizard-ui stage2 install ready: WG port default"
+    assert_eq "dynupass123" "$ddns_pw" "wizard-ui stage2 install ready: Dynu password persisted to config.json"
+    assert_eq "full-lan" "$(env_get WG_ACCESS_TIER)" "wizard-ui stage2 install ready: WG full-lan tier"
+    assert_eq "51820" "$(env_get WG_PORT)" "wizard-ui stage2 install ready: WG port default"
 }

@@ -13,7 +13,7 @@ _qbt_login() {
         --data-urlencode "password=$password" 2>/dev/null) || return 1
     http_code=$(echo "$resp" | tail -1)
     body=$(echo "$resp" | sed '$d')
-    [[ "$body" == "Ok." || ( "$http_code" == "204" && -z "$body" ) ]]
+    [[ "$body" == "Ok." || ("$http_code" == "204" && -z "$body") ]]
 }
 
 # MB/s (megabytes) -> bytes/s for the qBittorrent API. Shared so the 1048576
@@ -86,7 +86,8 @@ print(password)
 
     if [[ -z "$authed" ]]; then
         log_warn "Could not authenticate with qBittorrent (JELLYFIN_ADMIN_PASSWORD failed, no usable temp password in logs after waiting)"
-        rm -f "$jar"; return 0
+        rm -f "$jar"
+        return 0
     fi
 
     local manual_storage=false
@@ -221,7 +222,7 @@ except Exception:
     cats = {}
 cat = cats.get(os.environ["CATEGORY_NAME"], {})
 print(cat.get("savePath", ""))
-' <<< "$cats_json" 2>/dev/null || echo ""
+' <<<"$cats_json" 2>/dev/null || echo ""
     }
 
     while IFS=: read -r cat_name cat_path; do
@@ -268,7 +269,7 @@ print(cat.get("savePath", ""))
 # the container would NOT change them. Used by the ./mediastack "Adjust bandwidth
 # limits" action.
 #
-# Deliberately surgical (invariant #2 — no broad reconcile): POSTs ONLY dl_limit
+# Deliberately surgical (no broad reconcile): POSTs ONLY dl_limit
 # and up_limit. setPreferences merges, so every other preference, the WebUI
 # credentials and the categories are left untouched. Re-uses _qbt_login and
 # _qbt_mb_to_bytes (no cfg_field/api_fetch dependency, so the launcher can source
@@ -287,7 +288,8 @@ qbt_set_speed_limits() {
         return 1
     fi
 
-    local jar; jar=$(mktemp)
+    local jar
+    jar=$(mktemp)
     local authed=""
     if _qbt_login "$jar" "$qbt_url" "$target_user" "$target_pw"; then
         authed=1
@@ -296,7 +298,8 @@ qbt_set_speed_limits() {
     fi
     if [[ -z "$authed" ]]; then
         log_warn "Could not authenticate with qBittorrent to adjust speed limits."
-        rm -f "$jar"; return 1
+        rm -f "$jar"
+        return 1
     fi
 
     local dl_limit ul_limit prefs_json
@@ -318,5 +321,5 @@ print(json.dumps({
         rc=1
     fi
     rm -f "$jar"
-    return $rc
+    return "$rc"
 }

@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
         metavar="PATH",
         help=(
             "Record each running service's local install digest (service<TAB>image<TAB>digest) "
-            "to PATH and exit. Overwrites PATH with the current full set (ADR-30)."
+            "to PATH and exit. Overwrites PATH with the current full set."
         ),
     )
     parser.add_argument(
@@ -124,7 +124,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--status-tsv",
         action="store_true",
-        help="Print per-service status as TSV (service, policy, override, status, updatable) and exit",
+        help=(
+            "Print per-service status as TSV (service, policy, override, status, updatable) "
+            "and exit"
+        ),
     )
     parser.add_argument(
         "--readme-badges",
@@ -158,7 +161,7 @@ def load_compose_images(path: pathlib.Path) -> list[tuple[str, str]]:
 
 def resolve_digest(image: str) -> str:
     cmd = ["docker", "buildx", "imagetools", "inspect", image]
-    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.run(cmd, text=True, capture_output=True)
     if proc.returncode != 0:
         raise RuntimeError(
             f"failed to inspect {image}:\n{proc.stderr.strip() or proc.stdout.strip()}"
@@ -236,8 +239,7 @@ def _shield_badge(
     query: str = "",
 ) -> str:
     url = (
-        "https://img.shields.io/badge/"
-        f"{_shield_segment(label)}-{_shield_segment(message)}-{color}"
+        f"https://img.shields.io/badge/{_shield_segment(label)}-{_shield_segment(message)}-{color}"
     )
     if query:
         url = f"{url}?{query}"
@@ -268,9 +270,7 @@ def _replace_readme_badges(text: str, block: str) -> str:
     )
     matches = list(pattern.finditer(text))
     if len(matches) != 1:
-        raise ValueError(
-            f"expected exactly one README badge block marked by {README_BADGES_START}"
-        )
+        raise ValueError(f"expected exactly one README badge block marked by {README_BADGES_START}")
     return text[: matches[0].start()] + block + text[matches[0].end() :]
 
 
@@ -282,7 +282,8 @@ def run_readme_badges(args: argparse.Namespace) -> int:
     ]
     if sum(actions) != 1:
         print(
-            "choose exactly one of --readme-badges, --write-readme-badges, or --check-readme-badges",
+            "choose exactly one of --readme-badges, --write-readme-badges, "
+            "or --check-readme-badges",
             file=sys.stderr,
         )
         return 2
@@ -368,7 +369,10 @@ def enrich_rows(
                 image=row.image,
                 digest=row.digest,
                 tested_at_utc=tested_at_utc
-                if restamp_all or not unchanged or not previous_row or not previous_row.tested_at_utc
+                if restamp_all
+                or not unchanged
+                or not previous_row
+                or not previous_row.tested_at_utc
                 else previous_row.tested_at_utc,
                 preflight=preflights.get(row.service)
                 or (previous_row.preflight if previous_row else ""),
@@ -465,10 +469,7 @@ def resolve_accept_services(
             )
         previous_row = previous_by_service[name]
         current_row = current_by_service[name]
-        if (
-            previous_row.image == current_row.image
-            and previous_row.digest == current_row.digest
-        ):
+        if previous_row.image == current_row.image and previous_row.digest == current_row.digest:
             raise SystemExit(
                 f"--accept-services: '{name}' has not drifted; it already matches the lock"
             )
@@ -486,10 +487,7 @@ def merge_selective(
     only the selected services with their freshly enriched current row.
     """
     current_by_service = {row.service: row for row in current}
-    return [
-        current_by_service[row.service] if row.service in selected else row
-        for row in previous
-    ]
+    return [current_by_service[row.service] if row.service in selected else row for row in previous]
 
 
 def read_pass_receipts(path: pathlib.Path | None) -> dict[str, set[tuple[str, str, str]]]:
@@ -574,8 +572,10 @@ def verify_preflight_receipts(
             scenario = token.split(":", 1)[1]
             if (current_row.image, current_row.digest, scenario) not in receipts.get(name, set()):
                 missing.append(
-                    f"  {name}: no passing preflight receipt for {current_row.image}@{current_row.digest}\n"
-                    f'    run: MS_TEST_IMAGE_OVERRIDES="{name}={current_row.image}@{current_row.digest}" ./tests/run.sh {scenario}'
+                    f"  {name}: no passing preflight receipt for "
+                    f"{current_row.image}@{current_row.digest}\n"
+                    f'    run: MS_TEST_IMAGE_OVERRIDES="{name}='
+                    f'{current_row.image}@{current_row.digest}" ./tests/run.sh {scenario}'
                 )
         elif token.startswith("unit:") or token in ("compose-only", "manual"):
             print(
@@ -587,7 +587,8 @@ def verify_preflight_receipts(
             missing.append(
                 f"  {name}: preflight tier '{token or 'unknown'}' is not a recognized oracle "
                 "(expected scenario:/unit:/compose-only/manual); accept cannot vouch for "
-                f"{current_row.image}@{current_row.digest} — check the service's upgrades-manifest row"
+                f"{current_row.image}@{current_row.digest} — check the service's "
+                "upgrades-manifest row"
             )
     if missing:
         raise SystemExit(
@@ -625,19 +626,21 @@ def markdown_summary(
         [
             "",
             "Remote image tags now resolve differently than the previous baseline.",
-            "Run the affected service preflight from `docs/operations/upgrades.md` locally with DinD before accepting the new baseline.",
+            "Run the affected service preflight from `docs/operations/upgrades.md` locally "
+            "with DinD before accepting the new baseline.",
         ]
     )
     # Jellyfin/seerr preflight is scenario:fresh-install, which also runs
     # assert_fail2ban_configured — the only automated check that their fail2ban
     # filter still matches the new log format. Surface that here so a maintainer
-    # accepting the bump knows brute-force protection was re-verified (ADR-44).
+    # accepting the bump knows brute-force protection was re-verified.
     drift_services = {c.service for _, c in changed} | {a.service for a in added}
     if drift_services & {"jellyfin", "seerr"}:
         lines.append(
-            "For **jellyfin**/**seerr**, that `fresh-install` preflight also re-verifies the service's "
-            "fail2ban filter still matches the new log format (`assert_fail2ban_configured`) — the only "
-            "automated signal for a log-format change that would silently stop brute-force bans."
+            "For **jellyfin**/**seerr**, that `fresh-install` preflight also re-verifies the "
+            "service's fail2ban filter still matches the new log format "
+            "(`assert_fail2ban_configured`) — the only automated signal for a log-format "
+            "change that would silently stop brute-force bans."
         )
     lines.extend(
         [
@@ -654,7 +657,8 @@ def markdown_summary(
         )
     for row in added:
         lines.append(
-            f"| `{row.service}` | new service | `{row.image}`<br>`{row.digest}` | `{preflight_command(row)}` |"
+            f"| `{row.service}` | new service | `{row.image}`<br>`{row.digest}` | "
+            f"`{preflight_command(row)}` |"
         )
     for row in removed:
         lines.append(f"| `{row.service}` | `{row.image}`<br>`{row.digest}` | removed | n/a |")
@@ -672,7 +676,8 @@ def markdown_summary(
             "After every affected preflight passes, accept that same snapshot and commit it:",
             "",
             "```bash",
-            "python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current",
+            "python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv "
+            "--write-current docs/operations/image-digests.lock --accept-current",
             "```",
         ]
     )
@@ -709,10 +714,10 @@ def markdown_summary(
 # --- User-facing per-service update status (Manage updates menu) ------------
 # The maintainer drift check above compares compose tags to the tested lock.
 # This scan instead answers, per service: "is a newer image available for me?"
-# Fully channel-agnostic (#206): stable/latest is an install-time choice, so the
+# Fully channel-agnostic: stable/latest is an install-time choice, so the
 # label no longer branches on channel — a pinned Stable service and an upstream-tag
 # service both read "Update available" when they trail their compose tag.
-# See ADR-30 and scripts/setup/override.sh (_effective_channel).
+# See scripts/setup/override.sh (_effective_channel).
 
 IMAGE_POLICY_FILE = "config/state/image-policy.tsv"
 
@@ -789,7 +794,7 @@ def image_repo_digest(image_id: str, image: str) -> str | None:
 
 
 def _is_pin(value: str) -> bool:
-    """A per-service policy value that is a literal digest pin (ADR-30 #208)."""
+    """A per-service policy value that is a literal digest pin."""
     return "@sha256:" in value
 
 
@@ -798,7 +803,7 @@ def record_install(compose_path: pathlib.Path, out_path: pathlib.Path) -> int:
 
     Reuses the local digest readers (no registry) — the digest a service is
     actually running right after install. Overwritten on every install run so a
-    `down -v && ./setup.sh --full` rebuild re-baselines (ADR-30 #208). Services
+    `down -v && ./setup.sh --full` rebuild re-baselines. Services
     with no resolvable local digest are skipped, not recorded as revertable.
     """
     rows: list[tuple[str, str, str]] = []
@@ -813,7 +818,7 @@ def record_install(compose_path: pathlib.Path, out_path: pathlib.Path) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# MediaStack per-service install digests - the image each service was installed running.",
-        "# Format: service<TAB>image<TAB>digest. Overwritten on each install run (ADR-30).",
+        "# Format: service<TAB>image<TAB>digest. Overwritten on each install run.",
     ]
     lines += [f"{service}\t{image}\t{digest}" for service, image, digest in rows]
     out_path.write_text("\n".join(lines) + "\n")
@@ -823,7 +828,7 @@ def record_install(compose_path: pathlib.Path, out_path: pathlib.Path) -> int:
 def read_policy(path: pathlib.Path) -> dict[str, str]:
     """Per-service policy overrides: {service: 'stable'|'latest'|'<image>@sha256:...'}.
 
-    A digest-pin value (#208 "Revert to installed image") is a real override too,
+    A digest-pin value ("Revert to installed image") is a real override too,
     so it's kept — presence drives the `manual` override flag; the value is
     normalized to the display token `pinned` by the status formatters.
     """
@@ -845,7 +850,7 @@ def derive_status(
 ) -> tuple[str, bool]:
     """Return (status_text, updatable). upstream == 'unknown' means offline.
 
-    Channel-agnostic (#206): stable/latest is an install-time choice, so the day-2
+    Channel-agnostic: stable/latest is an install-time choice, so the day-2
     status answers one question for every service regardless of channel — "does a
     newer image exist for this compose tag?" ``policy`` and ``lock`` are retained
     for signature + CLI-column compatibility but no longer branch the label; a
@@ -955,7 +960,9 @@ def format_status_table(rows: list[dict]) -> str:
         lines.append(f"{service:<{w0}}  {lbl:<{w1}}  {status}")
     if any(r["override"] == "manual" and not is_pin_row(r) for r in rows):
         lines.append("")
-        lines.append("* manual override — tracking its upstream tag, not the image it was installed with")
+        lines.append(
+            "* manual override — tracking its upstream tag, not the image it was installed with"
+        )
     return "\n".join(lines)
 
 
@@ -981,7 +988,11 @@ def run_status(args: argparse.Namespace) -> int:
     policy_path = pathlib.Path(os.environ.get("IMAGE_POLICY_FILE", IMAGE_POLICY_FILE))
     # Prefer the exported var (the launcher sources .env); fall back to reading
     # .env so the documented direct command isn't mislabeled on a Latest install.
-    global_channel = (os.environ.get("IMAGE_CHANNEL") or _channel_from_env_file(compose_path) or "stable").strip().lower()
+    global_channel = (
+        (os.environ.get("IMAGE_CHANNEL") or _channel_from_env_file(compose_path) or "stable")
+        .strip()
+        .lower()
+    )
     if global_channel not in ("stable", "latest"):
         global_channel = "stable"
     try:
@@ -1019,7 +1030,8 @@ def main() -> int:
             return 1
         if not args.current_file:
             print(
-                "--accept-services requires --current-file so the accepted digest snapshot is the one that was preflighted",
+                "--accept-services requires --current-file so the accepted digest snapshot "
+                "is the one that was preflighted",
                 file=sys.stderr,
             )
             return 1
@@ -1032,7 +1044,8 @@ def main() -> int:
 
     if args.accept_current and not args.current_file:
         print(
-            "--accept-current requires --current-file so the accepted digest snapshot is the one that was preflighted",
+            "--accept-current requires --current-file so the accepted digest snapshot "
+            "is the one that was preflighted",
             file=sys.stderr,
         )
         return 1
@@ -1102,6 +1115,10 @@ def main() -> int:
             no_verify=args.no_verify_preflight,
         )
         merged = merge_selective(previous, current, selected)
+        if current_path is None:
+            # --accept-services requires --write-current, checked above; an
+            # if/raise survives python -O, unlike a bare assert.
+            raise AssertionError("--accept-services requires --write-current")
         write_tsv(current_path, merged)
         print(
             "Selectively accepted drifted services: "
@@ -1129,7 +1146,7 @@ def main() -> int:
         # --write-current names an output lock. accept_services has already returned
         # above, so --accept-current is the only accept that legitimately writes here;
         # writing the drifted snapshot into an existing lock with neither accept flag
-        # would slip image drift past the receipt gate (ADR-52). Refuse that, while
+        # would slip image drift past the receipt gate. Refuse that, while
         # still allowing a no-drift restamp write.
         if (added or changed or removed) and not args.accept_current:
             raise SystemExit(

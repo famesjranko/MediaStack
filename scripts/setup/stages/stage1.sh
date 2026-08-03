@@ -31,7 +31,7 @@ _stage1_read_limit() {
 }
 
 run_stage1() {
-    seed_root_config   # ensure live config.yml exists before the wizard mutates it (env_gen.sh)
+    seed_root_config # ensure live config.yml exists before the wizard mutates it (env_gen.sh)
     # Sentinel convention: STAGE_1_COMPLETE is unset OR empty when Stage 1
     # has not yet completed; literal "1" means complete. env_gen.sh writes
     # the empty value (see 'STAGE_1_COMPLETE=${prev_stage1}' where
@@ -216,7 +216,7 @@ _stage1_collect_admin() {
     # (the gum backend clears each input widget after submit), so the earlier
     # answers appear to "disappear".
     #
-    # WR-08 / #95: NEVER auto-generate the shared admin credential — it is the one
+    # NEVER auto-generate the shared admin credential — it is the one
     # password for every service, so the user must set it (no default; a bare
     # Enter is rejected). Validated against the strictest service floor
     # (validate_admin_password: >=12 chars, >=2 char types, no single quote).
@@ -374,7 +374,7 @@ _stage1_collect_subtitles_once() {
     fi
     ui_kv "Subtitles (Bazarr)" "$([[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]] && echo enabled || echo disabled)"
 
-    # Only ask for subtitle languages when Bazarr is enabled (#100): the value
+    # Only ask for subtitle languages when Bazarr is enabled: the value
     # feeds render_bazarr alone, so prompting after the user declined Bazarr asks
     # for something inert and contradicts the choice just made. When Bazarr is
     # off, keep a stored default so a later `./setup.sh` that enables Bazarr still
@@ -432,7 +432,7 @@ _stage1_collect_smb_once() {
                         "Full system (/) - advanced admin access to the whole server.")
                     case "$smb_scope_choice" in
                         "Full system"*) _WIZ_SMB_SHARE_SCOPE="system" ;;
-                        *)               _WIZ_SMB_SHARE_SCOPE="data" ;;
+                        *) _WIZ_SMB_SHARE_SCOPE="data" ;;
                     esac
                     break 2
                 fi
@@ -444,7 +444,10 @@ _stage1_collect_smb_once() {
                     "Quit installer")
                 case "$smb_action" in
                     "Retry"*) continue ;;
-                    "Quit"*) log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
+                    "Quit"*)
+                        log_info "Setup aborted - choose Install MediaStack from the menu to try again"
+                        exit 0
+                        ;;
                     *)
                         _WIZ_SMB_ENABLED="false"
                         _WIZ_SMB_SHARE_SCOPE="${_WIZ_SMB_SHARE_SCOPE:-${_WIZ_PREV_SMB_SHARE_SCOPE:-data}}"
@@ -557,11 +560,14 @@ _stage1_collect_nas_managed() {
                     "Change storage type" \
                     "Abort installation")
                 case "$action" in
-                    "Confirm"*)        return 0 ;;
-                    "Change NFS"*)     step=options ;;
-                    "Change NAS"*)     step=connection ;;
+                    "Confirm"*) return 0 ;;
+                    "Change NFS"*) step=options ;;
+                    "Change NAS"*) step=connection ;;
                     "Change storage"*) return 1 ;;
-                    "Abort"*)          log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
+                    "Abort"*)
+                        log_info "Setup aborted - choose Install MediaStack from the menu to try again"
+                        exit 0
+                        ;;
                 esac
                 ;;
         esac
@@ -634,8 +640,10 @@ _stage1_reprobe_with_current_opts() {
     export STORAGE_NFS_OPTS="$_WIZ_STORAGE_NFS_OPTS"
     local rc=0
     storage_probe_nas || rc=1
-    STORAGE_NFS_HOST="$prev_host"; STORAGE_NFS_EXPORT="$prev_export"; STORAGE_NFS_OPTS="$prev_opts"
-    return $rc
+    STORAGE_NFS_HOST="$prev_host"
+    STORAGE_NFS_EXPORT="$prev_export"
+    STORAGE_NFS_OPTS="$prev_opts"
+    return "$rc"
 }
 
 _stage1_reset_local_storage_fields() {
@@ -720,10 +728,24 @@ _stage1_preflight_nas_choice() {
             case "$fallback" in
                 "Retry"*) continue ;;
                 "Advanced manual"*) _stage1_collect_manual_storage ;;
-                "Quit"*) log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
-                *) _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"; _stage1_reset_local_storage_fields ;;
+                "Quit"*)
+                    log_info "Setup aborted - choose Install MediaStack from the menu to try again"
+                    exit 0
+                    ;;
+                *)
+                    _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"
+                    _stage1_reset_local_storage_fields
+                    ;;
             esac
-            DATA_DIR="$prev_data"; STORAGE_MODE="$prev_mode"; STORAGE_NFS_HOST="$prev_host"; STORAGE_NFS_EXPORT="$prev_export"; STORAGE_NFS_OPTS="$prev_opts"; STORAGE_SENTINEL="$prev_sentinel"; STORAGE_MOUNTPOINT="$prev_mountpoint"; STORAGE_EXPECTED_SOURCE="$prev_expected_source"; STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
+            DATA_DIR="$prev_data"
+            STORAGE_MODE="$prev_mode"
+            STORAGE_NFS_HOST="$prev_host"
+            STORAGE_NFS_EXPORT="$prev_export"
+            STORAGE_NFS_OPTS="$prev_opts"
+            STORAGE_SENTINEL="$prev_sentinel"
+            STORAGE_MOUNTPOINT="$prev_mountpoint"
+            STORAGE_EXPECTED_SOURCE="$prev_expected_source"
+            STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
             return 0
         fi
         # Verify only — never mount the real mountpoint during the wizard. The
@@ -740,18 +762,32 @@ _stage1_preflight_nas_choice() {
                 "Advanced manual storage" \
                 "Quit installer")
             case "$fallback" in
-                "Edit"*) _stage1_collect_nas_settings; continue ;;
+                "Edit"*)
+                    _stage1_collect_nas_settings
+                    continue
+                    ;;
                 "Retry"*) continue ;;
                 "Advanced manual"*)
                     _stage1_collect_manual_storage
                     ;;
-                "Quit"*) log_info "Setup aborted - choose Install MediaStack from the menu to try again"; exit 0 ;;
+                "Quit"*)
+                    log_info "Setup aborted - choose Install MediaStack from the menu to try again"
+                    exit 0
+                    ;;
                 *)
                     _WIZ_DATA_DIR="${_WIZ_PREV_DATA_DIR:-/data}"
                     _stage1_reset_local_storage_fields
                     ;;
             esac
-            DATA_DIR="$prev_data"; STORAGE_MODE="$prev_mode"; STORAGE_NFS_HOST="$prev_host"; STORAGE_NFS_EXPORT="$prev_export"; STORAGE_NFS_OPTS="$prev_opts"; STORAGE_SENTINEL="$prev_sentinel"; STORAGE_MOUNTPOINT="$prev_mountpoint"; STORAGE_EXPECTED_SOURCE="$prev_expected_source"; STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
+            DATA_DIR="$prev_data"
+            STORAGE_MODE="$prev_mode"
+            STORAGE_NFS_HOST="$prev_host"
+            STORAGE_NFS_EXPORT="$prev_export"
+            STORAGE_NFS_OPTS="$prev_opts"
+            STORAGE_SENTINEL="$prev_sentinel"
+            STORAGE_MOUNTPOINT="$prev_mountpoint"
+            STORAGE_EXPECTED_SOURCE="$prev_expected_source"
+            STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
             return 0
         fi
         break
@@ -783,7 +819,15 @@ _stage1_preflight_nas_choice() {
             ;;
     esac
 
-    DATA_DIR="$prev_data"; STORAGE_MODE="$prev_mode"; STORAGE_NFS_HOST="$prev_host"; STORAGE_NFS_EXPORT="$prev_export"; STORAGE_NFS_OPTS="$prev_opts"; STORAGE_SENTINEL="$prev_sentinel"; STORAGE_MOUNTPOINT="$prev_mountpoint"; STORAGE_EXPECTED_SOURCE="$prev_expected_source"; STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
+    DATA_DIR="$prev_data"
+    STORAGE_MODE="$prev_mode"
+    STORAGE_NFS_HOST="$prev_host"
+    STORAGE_NFS_EXPORT="$prev_export"
+    STORAGE_NFS_OPTS="$prev_opts"
+    STORAGE_SENTINEL="$prev_sentinel"
+    STORAGE_MOUNTPOINT="$prev_mountpoint"
+    STORAGE_EXPECTED_SOURCE="$prev_expected_source"
+    STORAGE_EXPECTED_FSTYPE="$prev_expected_fstype"
 }
 
 _stage1_resolve_nonstandard_nas_root() {
@@ -949,7 +993,10 @@ _stage1_collect_image_channel() {
     current_channel="${current_channel,,}"
     case "$current_channel" in
         latest) default_index=2 ;;
-        *)      default_index=1; current_channel="stable" ;;
+        *)
+            default_index=1
+            current_channel="stable"
+            ;;
     esac
 
     channel_choice=$(UI_CHOOSE_DEFAULT_INDEX=$default_index ui_choose "Which image versions should MediaStack install?" \
@@ -957,7 +1004,7 @@ _stage1_collect_image_channel() {
         "Latest - newest upstream tags, straight from the registries. YOLO (advanced).")
     case "$channel_choice" in
         Latest*) _WIZ_IMAGE_CHANNEL="latest" ;;
-        *)       _WIZ_IMAGE_CHANNEL="stable" ;;
+        *) _WIZ_IMAGE_CHANNEL="stable" ;;
     esac
     ui_kv "Image channel" "$_WIZ_IMAGE_CHANNEL"
 }
@@ -1059,7 +1106,7 @@ _stage1_confirm() {
     # abort. Drop them here so the install plan reflects .env.example; the real
     # install re-derives them from the _WIZ_* values when it writes and sources .env.
     unset DATA_DIR STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_NFS_HOST STORAGE_NFS_EXPORT \
-          STORAGE_NFS_OPTS STORAGE_SENTINEL STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE
+        STORAGE_NFS_OPTS STORAGE_SENTINEL STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE
 
     local -a compose_args=(--env-file "$SCRIPT_DIR/.env.example")
     if [[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]]; then
@@ -1072,7 +1119,7 @@ _stage1_confirm() {
     local services_raw service_count image_count
     services_raw=$(docker compose "${compose_args[@]}" config --services 2>/dev/null || true)
     if [[ -z "$services_raw" ]]; then
-        # WR-07: removed the hardcoded fallback list — it omitted unpackerr
+        # Removed the hardcoded fallback list — it omitted unpackerr
         # and flaresolverr (both default-profile services per docs/project/stack.md), so
         # users hit the fallback would have seen an inaccurate plan, clicked
         # Install, and gotten more services than promised. A non-technical
@@ -1140,10 +1187,10 @@ _stage1_install() {
     # the data partition's free space, clamped to [2, 20]GB.
     local data_free_gb scaled_min_free
     data_free_gb=$(df -BG "${_WIZ_DATA_DIR:-/data}" 2>/dev/null | awk 'NR==2 {gsub(/G/, "", $4); print $4}')
-    if [[ -n "$data_free_gb" ]] && (( data_free_gb < 200 )); then
-        scaled_min_free=$(( data_free_gb / 10 ))
-        (( scaled_min_free < 2 )) && scaled_min_free=2
-        (( scaled_min_free > 20 )) && scaled_min_free=20
+    if [[ -n "$data_free_gb" ]] && ((data_free_gb < 200)); then
+        scaled_min_free=$((data_free_gb / 10))
+        ((scaled_min_free < 2)) && scaled_min_free=2
+        ((scaled_min_free > 20)) && scaled_min_free=20
         if [[ "$scaled_min_free" != "20" ]]; then
             sed -i "s/^min_free_space_gb:.*/min_free_space_gb: ${scaled_min_free}    # auto-scaled by wizard from ${data_free_gb}GB free/" "$SCRIPT_DIR/config.yml"
             log_info "Auto-scaled min_free_space_gb to ${scaled_min_free}GB (10% of ${data_free_gb}GB available - was hardcoded 20GB)."
@@ -1159,7 +1206,7 @@ _stage1_install() {
     wait_all_healthy
 
     # Record the digest each service was installed running, so day-2 "Revert to
-    # installed image" has a channel-independent target (ADR-30 #208). Overwrites
+    # installed image" has a channel-independent target. Overwrites
     # on every install run to re-baseline a rebuild; best-effort and never fatal.
     python3 "$SCRIPT_DIR/scripts/image-drift.py" \
         --compose "$SCRIPT_DIR/docker-compose.yml" \
@@ -1169,16 +1216,16 @@ _stage1_install() {
     log_info "Running auto-configuration..."
     "$SCRIPT_DIR/scripts/configure.sh"
 
-    # WR-05: detect_env() falls back to "localhost" when 'hostname -I' returns
+    # detect_env() falls back to "localhost" when 'hostname -I' returns
     # nothing. Probing http://localhost:8096/health proves the container
     # responds on the loopback but does NOT prove LAN-side clients can reach
-    # it — which is the whole point of S1-08 (Jellyfin LAN reachability).
+    # it — which is the whole point of the Jellyfin LAN reachability check.
     # Warn loudly so the user knows the green tick covers loopback only.
     if [[ "${_ENV_HOST_ADDRESS}" == "localhost" ]]; then
         log_warn "LAN IP not detected (hostname -I returned nothing). Probe will use localhost; LAN access from phones/TVs may not work until you assign a routable IP."
     fi
 
-    # WR-06: stronger probe than /health to gate STAGE_1_COMPLETE flip.
+    # Stronger probe than /health to gate STAGE_1_COMPLETE flip.
     # /health returns 200 well before the admin user is created, so a
     # half-broken configure.sh (warnings, not hard failure) could leave the
     # admin user uncreated and we'd still flip the marker — locking the user
@@ -1235,9 +1282,9 @@ _stage1_install() {
         echo -e "${YELLOW}${BOLD}  ⚠  Services that need attention:${NC}"
         while IFS='|' read -r _ilabel _; do
             echo -e "    ${YELLOW}$(_ui_status_token warn)${NC}  $_ilabel"
-        done < "$_issues_file"
+        done <"$_issues_file"
         rm -f "$_issues_file"
-        echo    "    Re-run MediaStack setup to retry (already-configured services are skipped)."
+        echo "    Re-run MediaStack setup to retry (already-configured services are skipped)."
         echo ""
     fi
 }

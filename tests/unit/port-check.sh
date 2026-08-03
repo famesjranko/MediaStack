@@ -26,8 +26,8 @@ setup_sandbox() {
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/"
     cp "$REPO_ROOT/scripts/lib/ui.sh" "$TMP_DIR/sandbox/scripts/lib/"
     cp "$REPO_ROOT/scripts/lib/ui_render_fallback.sh" "$TMP_DIR/sandbox/scripts/lib/"
-    cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/"  # common.sh + ui_render_fallback.sh source it
-    cat > "$TMP_DIR/sandbox/bin/getent" <<'STUB'
+    cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/" # common.sh + ui_render_fallback.sh source it
+    cat >"$TMP_DIR/sandbox/bin/getent" <<'STUB'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "ahosts" ]]; then
     case "${2:-}" in
@@ -43,7 +43,7 @@ fi
 exit 2
 STUB
     chmod +x "$TMP_DIR/sandbox/bin/getent"
-    cat > "$TMP_DIR/sandbox/scripts/lib/network.sh" <<'STUB'
+    cat >"$TMP_DIR/sandbox/scripts/lib/network.sh" <<'STUB'
 _NET_PUBLIC_IP="203.0.113.10"
 net_detect_public_ip() {
     _NET_PUBLIC_IP="203.0.113.10"
@@ -60,12 +60,12 @@ net_check_tcp_port_external() {
 }
 STUB
     if [[ -n "$env_content" ]]; then
-        echo "$env_content" > "$TMP_DIR/sandbox/.env"
+        echo "$env_content" >"$TMP_DIR/sandbox/.env"
     fi
 }
 
 run_port_check() {
-    : > "$TMP_DIR/http.log"
+    : >"$TMP_DIR/http.log"
     PATH="$TMP_DIR/sandbox/bin:$PATH" \
         PORT_CHECK_HTTP_LOG="$TMP_DIR/http.log" \
         "$TMP_DIR/sandbox/scripts/port-check.sh" 2>&1
@@ -83,7 +83,7 @@ assert_http_log_has_service_urls() {
         grep -qx "$url" "$TMP_DIR/http.log" || missing+=("$url")
     done
 
-    if (( ${#missing[@]} == 0 )) && ! grep -q "://${domain}" "$TMP_DIR/http.log"; then
+    if ((${#missing[@]} == 0)) && ! grep -q "://${domain}" "$TMP_DIR/http.log"; then
         pass "$label"
     else
         fail "$label" "missing=${missing[*]:-none}; log=$(cat "$TMP_DIR/http.log")"

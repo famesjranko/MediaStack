@@ -43,21 +43,30 @@ emit_skip() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --url)
-            [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+            [[ $# -ge 2 ]] || {
+                usage >&2
+                exit 2
+            }
             QBT_URL="$2"
             shift 2
             ;;
         --env)
-            [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+            [[ $# -ge 2 ]] || {
+                usage >&2
+                exit 2
+            }
             ENV_FILE="$2"
             shift 2
             ;;
         --config)
-            [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+            [[ $# -ge 2 ]] || {
+                usage >&2
+                exit 2
+            }
             CONFIG_FILE="$2"
             shift 2
             ;;
-        -h|--help)
+        -h | --help)
             usage
             exit 0
             ;;
@@ -86,7 +95,7 @@ fi
 if [[ ! -f "$CONFIG_FILE" ]]; then
     emit_fail "step 1 qBittorrent: config.yml readable" "$CONFIG_FILE not found"
 fi
-if (( FAIL_COUNT > 0 )); then
+if ((FAIL_COUNT > 0)); then
     exit 1
 fi
 
@@ -212,7 +221,7 @@ qbt_login() {
         --data-urlencode "password=$password" 2>/dev/null) || return 1
     http_code=$(printf '%s' "$resp" | tail -1 | tr -d '\r')
     body=$(printf '%s' "$resp" | sed '$d' | tr -d '\r')
-    [[ "$body" == "Ok." || ( "$http_code" == "204" && -z "$body" ) ]]
+    [[ "$body" == "Ok." || ("$http_code" == "204" && -z "$body") ]]
 }
 
 api_get() {
@@ -232,7 +241,7 @@ else
     fi
 fi
 
-if (( FAIL_COUNT > 0 )); then
+if ((FAIL_COUNT > 0)); then
     exit 1
 fi
 
@@ -250,7 +259,7 @@ else
     emit_pass "step 1 qBittorrent: categories API readable"
 fi
 
-if (( FAIL_COUNT > 0 )); then
+if ((FAIL_COUNT > 0)); then
     exit 1
 fi
 
@@ -283,9 +292,9 @@ else
         category_count=$((category_count + 1))
         assert_eq "$expected_path" "$(category_path "$cats_json" "$category")" "step 1 qBittorrent: category $category save path"
     done < <(cfg_categories)
-    if (( category_count == 0 )); then
+    if ((category_count == 0)); then
         emit_fail "step 1 qBittorrent: managed categories configured" "config.yml has no qbittorrent.categories entries"
     fi
 fi
 
-exit $(( FAIL_COUNT > 0 ))
+exit $((FAIL_COUNT > 0))

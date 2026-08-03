@@ -25,11 +25,11 @@ set +e
 set +u
 
 # Silence log_* output — tests drive their own assertions.
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
-log_skip()  { :; }
+log_skip() { :; }
 _ms_state_set() { :; }
 _ms_state_get() { echo false; }
 
@@ -64,7 +64,10 @@ sudo() {
     fi
     return 0
 }
-ufw() { UFW_CALLS+=("ufw $*"); return 0; }
+ufw() {
+    UFW_CALLS+=("ufw $*")
+    return 0
+}
 
 UFW_CALLS=()
 SSH_CONNECTION="198.51.100.10 55123 192.0.2.20 2222"
@@ -124,7 +127,10 @@ sudo() {
     fi
     return 0
 }
-ufw() { UFW_CALLS+=("ufw $*"); return 0; }
+ufw() {
+    UFW_CALLS+=("ufw $*")
+    return 0
+}
 
 UFW_CALLS=()
 setup_ufw
@@ -143,7 +149,7 @@ unset -f sudo ufw
 
 # ===========================================================================
 # setup_ufw_docker_dedup_hook — injects the dedup block into a stock after.init,
-# makes it executable, and is idempotent on re-run. Guards issue #214: the jump
+# makes it executable, and is idempotent on re-run. Guards the defect: the jump
 # duplicates on every ufw reload unless after.init trims it back to one.
 # ===========================================================================
 
@@ -151,7 +157,7 @@ DEDUP_TMP=$(mktemp -d)
 MEDIASTACK_UFW_AFTER_INIT="$DEDUP_TMP/after.init"
 
 # Seed the stock Canonical after.init sample (mode 640, not executable).
-cat > "$MEDIASTACK_UFW_AFTER_INIT" <<'STOCK'
+cat >"$MEDIASTACK_UFW_AFTER_INIT" <<'STOCK'
 #!/bin/sh
 set -e
 case "$1" in
@@ -172,7 +178,7 @@ chmod 640 "$MEDIASTACK_UFW_AFTER_INIT"
 # self-invocation ("sudo $after_init start", whose $1 is a path, not a command).
 sudo() {
     case "${1:-}" in
-        test|grep|awk|tee|chmod|sed|rm|cat|mktemp) command "$@" ;;
+        test | grep | awk | tee | chmod | sed | rm | cat | mktemp) command "$@" ;;
         iptables) return 0 ;;
         *) return 0 ;;
     esac
@@ -211,7 +217,7 @@ else
         "$(cat "$MEDIASTACK_UFW_AFTER_INIT")"
 fi
 # Inject path recorded CREATED=false — otherwise a stale =true from an earlier
-# created-install would make uninstall rm an admin-owned after.init (issue #214).
+# created-install would make uninstall rm an admin-owned after.init.
 if printf '%s\n' "${DEDUP_STATE[@]}" | grep -qx 'UFW_AFTER_INIT_CREATED=false'; then
     pass "dedup hook: inject path records CREATED=false (uninstall strips, never rm's admin file)"
 else
@@ -221,11 +227,11 @@ fi
 
 # Idempotent re-run: marker present -> no second copy.
 setup_ufw_docker_dedup_hook
-occ=$(grep -c 'MEDIASTACK-DOCKER-DEDUP (issue #214)' "$MEDIASTACK_UFW_AFTER_INIT")
+occ=$(grep -c '^# >>> MEDIASTACK-DOCKER-DEDUP' "$MEDIASTACK_UFW_AFTER_INIT")
 assert_eq "1" "$occ" "dedup hook: idempotent re-run does not duplicate the block"
 
 # Custom after.init without a stock start) arm -> warn + skip, never edit.
-cat > "$MEDIASTACK_UFW_AFTER_INIT" <<'CUSTOM'
+cat >"$MEDIASTACK_UFW_AFTER_INIT" <<'CUSTOM'
 #!/bin/sh
 # admin's own hook, no start) case
 iptables -N MY-CHAIN 2>/dev/null || true
@@ -252,7 +258,7 @@ MEDIASTACK_UFW_AFTER_INIT=/etc/ufw/after.init
 UFW_TRACE=$(mktemp)
 UFW_RELOADED="$UFW_TRACE.reloaded"
 sudo() {
-    printf '%s\n' "$*" >> "$UFW_TRACE"
+    printf '%s\n' "$*" >>"$UFW_TRACE"
     if [[ "${1:-}" == "ufw" ]]; then
         if [[ "${2:-}" == "status" ]]; then
             echo "Status: active"
@@ -309,7 +315,7 @@ unset -f sudo ufw
 
 UFW_TRACE=$(mktemp)
 sudo() {
-    printf '%s\n' "$*" >> "$UFW_TRACE"
+    printf '%s\n' "$*" >>"$UFW_TRACE"
     if [[ "${1:-}" == "ufw" ]]; then
         if [[ "${2:-}" == "status" ]]; then
             echo "Status: active"
@@ -351,7 +357,7 @@ unset -f sudo ufw
 
 UFW_TRACE=$(mktemp)
 sudo() {
-    printf '%s\n' "$*" >> "$UFW_TRACE"
+    printf '%s\n' "$*" >>"$UFW_TRACE"
     if [[ "${1:-}" == "ufw" ]]; then
         if [[ "${2:-}" == "status" ]]; then
             echo "Status: active"
@@ -401,8 +407,8 @@ unset -f sudo ufw
 
 # Case A: post-reset ledger (UFW_DEFAULTS_APPLIED=false) -> setup_ufw proceeds.
 UFW_CALLS=()
-_ms_state_get() { echo false; }          # reset latch
-_ufw_defaults() { echo ""; }             # inactive UFW reports no defaults
+_ms_state_get() { echo false; } # reset latch
+_ufw_defaults() { echo ""; }    # inactive UFW reports no defaults
 sudo() {
     if [[ "${1:-}" == "ufw" ]]; then
         UFW_CALLS+=("$*")
@@ -411,7 +417,10 @@ sudo() {
     fi
     return 0
 }
-ufw() { UFW_CALLS+=("ufw $*"); return 0; }
+ufw() {
+    UFW_CALLS+=("ufw $*")
+    return 0
+}
 SSH_CONNECTION=""
 setup_ufw
 found_configure=false
@@ -424,9 +433,16 @@ unset -f sudo ufw _ms_state_get _ufw_defaults
 UFW_CALLS=()
 _ms_state_get() { [[ "$1" == "UFW_DEFAULTS_APPLIED" ]] && echo true || echo false; }
 _ufw_defaults() { echo "allow allow"; }
-sudo() { [[ "${1:-}" == "ufw" ]] && UFW_CALLS+=("$*"); return 0; }
-ufw() { UFW_CALLS+=("ufw $*"); return 0; }
-setup_ufw; ufw_rc=$?
+sudo() {
+    [[ "${1:-}" == "ufw" ]] && UFW_CALLS+=("$*")
+    return 0
+}
+ufw() {
+    UFW_CALLS+=("ufw $*")
+    return 0
+}
+setup_ufw
+ufw_rc=$?
 found_configure=false
 for c in "${UFW_CALLS[@]}"; do [[ "$c" == *"default deny incoming"* ]] && found_configure=true; done
 assert_eq "0" "$ufw_rc" "setup_ufw: reentrancy — stale latch returns cleanly (leaves UFW unchanged)"
@@ -674,7 +690,7 @@ SYSCTL_CONF="$SYSCTL_TMPDIR/90-mediastack-hardening.conf"
 SYSCTL_CALLS=()
 sudo() {
     if [[ "${1:-}" == "tee" ]]; then
-        cat > "$2" 2>/dev/null || cat >/dev/null
+        cat >"$2" 2>/dev/null || cat >/dev/null
         SYSCTL_CALLS+=("tee $2")
         return 0
     fi
@@ -735,7 +751,7 @@ unset -f sudo
 # ===========================================================================
 
 DAEMON_JSON_TMP=$(mktemp)
-cat > "$DAEMON_JSON_TMP" <<'JSON'
+cat >"$DAEMON_JSON_TMP" <<'JSON'
 {
     "runtimes": {
         "nvidia": {
@@ -788,8 +804,14 @@ SAMBA_MAIN_CONF="$SAMBA_TMP/smb.conf"
 # ===========================================================================
 
 SAMBA_CALLS=()
-sudo() { SAMBA_CALLS+=("$*"); return 0; }
-systemctl() { SAMBA_CALLS+=("systemctl $*"); return 0; }
+sudo() {
+    SAMBA_CALLS+=("$*")
+    return 0
+}
+systemctl() {
+    SAMBA_CALLS+=("systemctl $*")
+    return 0
+}
 
 rm -f "$SAMBA_INCLUDE_FILE"
 SMB_ENABLED="false"
@@ -808,11 +830,11 @@ unset -f sudo systemctl
 # ===========================================================================
 
 mkdir -p "$(dirname "$SAMBA_INCLUDE_FILE")"
-cat > "$SAMBA_INCLUDE_FILE" <<'EOF'
+cat >"$SAMBA_INCLUDE_FILE" <<'EOF'
 [Media]
    path = /
 EOF
-cat > "$SAMBA_MAIN_CONF" <<EOF
+cat >"$SAMBA_MAIN_CONF" <<EOF
 [global]
    workgroup = WORKGROUP
    security = user
@@ -828,7 +850,11 @@ EOF
 
 sudo() {
     case "${1:-}" in
-        rm)        shift; command rm "$@"; return 0 ;;
+        rm)
+            shift
+            command rm "$@"
+            return 0
+            ;;
         systemctl) return 0 ;;
         *) return 0 ;;
     esac
@@ -846,7 +872,7 @@ if grep -Fq '[UserShare]' "$SAMBA_MAIN_CONF" \
     pass "setup_samba: cleanup preserves pre-existing user [UserShare] section"
 else
     fail "setup_samba: cleanup preserves pre-existing user [UserShare] section" \
-         "lost user content:\n$(cat "$SAMBA_MAIN_CONF")"
+        "lost user content:\n$(cat "$SAMBA_MAIN_CONF")"
 fi
 
 unset -f sudo
@@ -857,11 +883,11 @@ unset -f sudo
 # ===========================================================================
 
 mkdir -p "$(dirname "$SAMBA_INCLUDE_FILE")"
-cat > "$SAMBA_INCLUDE_FILE" <<'EOF'
+cat >"$SAMBA_INCLUDE_FILE" <<'EOF'
 [Media]
    path = /data
 EOF
-cat > "$SAMBA_MAIN_CONF" <<EOF
+cat >"$SAMBA_MAIN_CONF" <<EOF
 [global]
    workgroup = WORKGROUP
 
@@ -872,7 +898,9 @@ EOF
 SAMBA_CALLS=()
 sudo() {
     if [[ "${1:-}" == "grep" ]]; then
-        shift; command grep "$@"; return $?
+        shift
+        command grep "$@"
+        return $?
     fi
     SAMBA_CALLS+=("$*")
     return 0
@@ -906,16 +934,28 @@ unset -f sudo smbd
 # include line but no (or a differently-punctuated) comment must still be
 # detected as already-configured — a prose marker's em-dash was once a fragile
 # byte-exact grep target that silently broke this.
-cat > "$SAMBA_MAIN_CONF" <<EOF
+cat >"$SAMBA_MAIN_CONF" <<EOF
 [global]
    workgroup = WORKGROUP
 
 include = $SAMBA_INCLUDE_FILE
 EOF
 SAMBA_CALLS=()
-sudo() { if [[ "${1:-}" == "grep" ]]; then shift; command grep "$@"; return $?; fi; SAMBA_CALLS+=("$*"); return 0; }
+sudo() {
+    if [[ "${1:-}" == "grep" ]]; then
+        shift
+        command grep "$@"
+        return $?
+    fi
+    SAMBA_CALLS+=("$*")
+    return 0
+}
 smbd() { :; }
-SMB_ENABLED="true"; JELLYFIN_ADMIN_USER="testadmin"; JELLYFIN_ADMIN_PASSWORD="testpass"; DATA_DIR="/data"; PGID="1000"
+SMB_ENABLED="true"
+JELLYFIN_ADMIN_USER="testadmin"
+JELLYFIN_ADMIN_PASSWORD="testpass"
+DATA_DIR="/data"
+PGID="1000"
 setup_samba
 assert_eq "0" "${#SAMBA_CALLS[@]}" "setup_samba: skip is comment-independent (detects bare include line, no marker)"
 unset -f sudo smbd
@@ -923,12 +963,13 @@ unset -f sudo smbd
 # A matching include from an interrupted run must resume the remaining
 # idempotent work instead of taking the completed-install fast path forever.
 PENDING_HASH=$(sha256sum "$SAMBA_INCLUDE_FILE" | awk '{print $1}')
-PENDING_CALLS=(); PENDING_STATE=()
+PENDING_CALLS=()
+PENDING_STATE=()
 _ms_state_get() {
     case "$1" in
-        SAMBA_SETUP_PENDING|SAMBA_OWNERSHIP_RECORDED|SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK) echo true ;;
+        SAMBA_SETUP_PENDING | SAMBA_OWNERSHIP_RECORDED | SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK) echo true ;;
         SAMBA_USER) echo testadmin ;;
-        SAMBA_PASSDB_PREEXISTED|SAMBA_GROUP_PREEXISTED) echo false ;;
+        SAMBA_PASSDB_PREEXISTED | SAMBA_GROUP_PREEXISTED) echo false ;;
         SAMBA_GROUP) echo media ;;
         SAMBA_INCLUDE_SHA256) echo "$PENDING_HASH" ;;
     esac
@@ -936,17 +977,27 @@ _ms_state_get() {
 _ms_state_set() { PENDING_STATE+=("$1=$2"); }
 sudo() {
     case "${1:-}" in
-        grep|install|tee|sha256sum) command "$@" ;;
+        grep | install | tee | sha256sum) command "$@" ;;
         pdbedit) return 0 ;;
         testparm) echo effective ;;
-        systemctl|ufw) PENDING_CALLS+=("$*"); return 0 ;;
+        systemctl | ufw)
+            PENDING_CALLS+=("$*")
+            return 0
+            ;;
         *) return 0 ;;
     esac
 }
 smbd() { :; }
-id() { [[ "${1:-}" == -nG ]] && echo media; return 0; }
+id() {
+    [[ "${1:-}" == -nG ]] && echo media
+    return 0
+}
 getent() { echo 'media:x:1000:'; }
-SMB_ENABLED=true; JELLYFIN_ADMIN_USER=testadmin; JELLYFIN_ADMIN_PASSWORD=testpass; DATA_DIR=/data; PGID=1000
+SMB_ENABLED=true
+JELLYFIN_ADMIN_USER=testadmin
+JELLYFIN_ADMIN_PASSWORD=testpass
+DATA_DIR=/data
+PGID=1000
 setup_samba
 assert_contains "${PENDING_CALLS[*]}" "systemctl enable --now smbd" \
     "setup_samba: interrupted matching config resumes remaining work"
@@ -966,7 +1017,7 @@ _ms_state_set() { :; }
 
 # Seed main smb.conf with pre-existing user content that must survive.
 rm -f "$SAMBA_INCLUDE_FILE"
-cat > "$SAMBA_MAIN_CONF" <<'EOF'
+cat >"$SAMBA_MAIN_CONF" <<'EOF'
 [global]
    workgroup = HOMEUSER
    security = user
@@ -977,26 +1028,54 @@ cat > "$SAMBA_MAIN_CONF" <<'EOF'
 EOF
 # Fixture consumed by the sourced product code under test.
 # shellcheck disable=SC2034
-SAMBA_MAIN_BEFORE_BYTES=$(wc -c < "$SAMBA_MAIN_CONF")
+SAMBA_MAIN_BEFORE_BYTES=$(wc -c <"$SAMBA_MAIN_CONF")
 
 SAMBA_CALLS=()
 sudo() {
     case "${1:-}" in
-        grep)    shift; command grep "$@"; return $? ;;
-        useradd) SAMBA_CALLS+=("useradd"); return 0 ;;
-        usermod) SAMBA_CALLS+=("usermod"); return 0 ;;
-        install) shift; command install "$@"; return 0 ;;
+        grep)
+            shift
+            command grep "$@"
+            return $?
+            ;;
+        useradd)
+            SAMBA_CALLS+=("useradd")
+            return 0
+            ;;
+        usermod)
+            SAMBA_CALLS+=("usermod")
+            return 0
+            ;;
+        install)
+            shift
+            command install "$@"
+            return 0
+            ;;
         # `sudo tee` here also runs from inside the right side of a pipe
         # (`printf … | sudo tee -a $main`). Pipe RHS executes in a subshell,
         # so any `SAMBA_CALLS+=(…)` we'd add inside the function would be
         # invisible to the parent. We rely on the file-content assertions
         # below to verify the include-line append, instead of capturing the
         # call into the array.
-        tee)     shift; command tee "$@" >/dev/null; return 0 ;;
-        smbpasswd) shift; smbpasswd "$@"; return $? ;;
+        tee)
+            shift
+            command tee "$@" >/dev/null
+            return 0
+            ;;
+        smbpasswd)
+            shift
+            smbpasswd "$@"
+            return $?
+            ;;
         pdbedit) return 1 ;;
-        systemctl) SAMBA_CALLS+=("systemctl $2"); return 0 ;;
-        ufw) SAMBA_CALLS+=("ufw $*"); return 0 ;;
+        systemctl)
+            SAMBA_CALLS+=("systemctl $2")
+            return 0
+            ;;
+        ufw)
+            SAMBA_CALLS+=("ufw $*")
+            return 0
+            ;;
         *) return 0 ;;
     esac
 }
@@ -1006,13 +1085,22 @@ sudo() {
 # `command -v smbd` succeed (functions are visible to `command -v`) so the
 # install-path check stays a no-op and doesn't pollute SAMBA_CALLS.
 smbd() { :; }
-smbpasswd() { SAMBA_CALLS+=("smbpasswd"); return 0; }
+smbpasswd() {
+    SAMBA_CALLS+=("smbpasswd")
+    return 0
+}
 id() {
-    if [[ "${1:-}" == "-u" || "${1:-}" == "-g" ]]; then echo "1000"; return 0; fi
+    if [[ "${1:-}" == "-u" || "${1:-}" == "-g" ]]; then
+        echo "1000"
+        return 0
+    fi
     return 1
 }
 getent() {
-    if [[ "${1:-}" == "group" ]]; then echo "mediaadmin:x:1000:"; return 0; fi
+    if [[ "${1:-}" == "group" ]]; then
+        echo "mediaadmin:x:1000:"
+        return 0
+    fi
     return 1
 }
 
@@ -1057,7 +1145,7 @@ if grep -Fq '[UserShare]' "$SAMBA_MAIN_CONF" \
     pass "setup_samba: fresh — user's pre-existing smb.conf content survived"
 else
     fail "setup_samba: fresh — user's pre-existing smb.conf content survived" \
-         "main conf after install:\n$(cat "$SAMBA_MAIN_CONF")"
+        "main conf after install:\n$(cat "$SAMBA_MAIN_CONF")"
 fi
 
 # And the include line was actually appended.
@@ -1065,14 +1153,14 @@ if grep -Fxq "include = $SAMBA_INCLUDE_FILE" "$SAMBA_MAIN_CONF"; then
     pass "setup_samba: fresh — include line present in main smb.conf"
 else
     fail "setup_samba: fresh — include line present in main smb.conf" \
-         "no match in:\n$(cat "$SAMBA_MAIN_CONF")"
+        "no match in:\n$(cat "$SAMBA_MAIN_CONF")"
 fi
 
 if grep -Fxq "   path = /data" "$SAMBA_INCLUDE_FILE"; then
     pass "setup_samba: fresh — default SMB scope shares DATA_DIR"
 else
     fail "setup_samba: fresh — default SMB scope shares DATA_DIR" \
-         "include file:\n$(cat "$SAMBA_INCLUDE_FILE")"
+        "include file:\n$(cat "$SAMBA_INCLUDE_FILE")"
 fi
 
 # Backslash escapes in the shared admin password must pass through to
@@ -1080,7 +1168,7 @@ fi
 # entries from stdin; interpreting `\n`, `\t`, `\c`, or `\\` changes the
 # password before Samba receives it.
 rm -f "$SAMBA_INCLUDE_FILE"
-cat > "$SAMBA_MAIN_CONF" <<'EOF'
+cat >"$SAMBA_MAIN_CONF" <<'EOF'
 [global]
    workgroup = HOMEUSER
 EOF
@@ -1088,20 +1176,23 @@ SMB_SHARE_SCOPE="data"
 JELLYFIN_ADMIN_PASSWORD='alpha\nbravo\tcharlie\cdelta\\end'
 SMB_PASS_STDIN="$SAMBA_TMP/smbpasswd.stdin"
 SMB_PASS_EXPECTED="$SAMBA_TMP/smbpasswd.expected"
-smbpasswd() { cat > "$SMB_PASS_STDIN"; return 0; }
+smbpasswd() {
+    cat >"$SMB_PASS_STDIN"
+    return 0
+}
 
 setup_samba
-printf '%s\n%s\n' "$JELLYFIN_ADMIN_PASSWORD" "$JELLYFIN_ADMIN_PASSWORD" > "$SMB_PASS_EXPECTED"
+printf '%s\n%s\n' "$JELLYFIN_ADMIN_PASSWORD" "$JELLYFIN_ADMIN_PASSWORD" >"$SMB_PASS_EXPECTED"
 if cmp -s "$SMB_PASS_EXPECTED" "$SMB_PASS_STDIN"; then
     pass "setup_samba: fresh — smbpasswd receives passwords with backslashes literally"
 else
     fail "setup_samba: fresh — smbpasswd receives passwords with backslashes literally" \
-         "expected:\n$(od -An -tx1 -c "$SMB_PASS_EXPECTED")\nactual:\n$(od -An -tx1 -c "$SMB_PASS_STDIN")"
+        "expected:\n$(od -An -tx1 -c "$SMB_PASS_EXPECTED")\nactual:\n$(od -An -tx1 -c "$SMB_PASS_STDIN")"
 fi
 unset SMB_SHARE_SCOPE
 
 rm -f "$SAMBA_INCLUDE_FILE"
-cat > "$SAMBA_MAIN_CONF" <<'EOF'
+cat >"$SAMBA_MAIN_CONF" <<'EOF'
 [global]
    workgroup = HOMEUSER
 EOF
@@ -1114,7 +1205,7 @@ if grep -Fxq "[MediaStackSystem]" "$SAMBA_INCLUDE_FILE" \
     pass "setup_samba: system SMB scope keeps full filesystem access explicit"
 else
     fail "setup_samba: system SMB scope keeps full filesystem access explicit" \
-         "include file:\n$(cat "$SAMBA_INCLUDE_FILE")"
+        "include file:\n$(cat "$SAMBA_INCLUDE_FILE")"
 fi
 unset SMB_SHARE_SCOPE
 

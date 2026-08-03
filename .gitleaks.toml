@@ -1,0 +1,9 @@
+title = "MediaStack secret scan"
+
+# The ruleset is gitleaks' own default set, pinned by the binary version in
+# tools.toml. Nothing is disabled and nothing is allowlisted: a suppression
+# here is a reviewable diff, which is the only way one is allowed to happen.
+# Gutting this file is not enough to go green: tests/secret-scan.sh runs a
+# canary self-test with it before every scan and fails closed if a rule is mute.
+[extend]
+useDefault = true

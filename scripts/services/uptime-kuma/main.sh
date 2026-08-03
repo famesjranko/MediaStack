@@ -66,7 +66,7 @@ configure_uptime_kuma() {
     local kuma_err="/tmp/kuma-configure.err"
     local _kuma_envfile
     _kuma_envfile=$(mktemp)
-    printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" > "$_kuma_envfile"
+    printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
     result=$(timeout 120 docker run --rm --network mediastack \
         --env-file "$_kuma_envfile" \

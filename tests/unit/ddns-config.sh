@@ -2,7 +2,7 @@
 # tests/unit/ddns-config.sh
 #
 # Contract tests for the shared DDNS provider registry + config.json renderer
-# (scripts/lib/ddns_providers.sh, epic #234). No live credentials — fixture
+# (scripts/lib/ddns_providers.sh). No live credentials — fixture
 # values only. Proves all 6 providers render valid typed JSON, dynv6 carries
 # no inert ipv4 key (ddns-updater detects and sends the IP itself), missing/
 # unknown inputs fail, and the Dynu render is byte-identical to the inline
@@ -23,7 +23,7 @@ set +e
 set +u
 
 # ---------------------------------------------------------------------------
-# Golden Dynu render. Dynu collects password ONLY (#248: it ignores the username,
+# Golden Dynu render. Dynu collects password ONLY (it ignores the username,
 # so we drop the prompt and auto-fill a constant "mediastack" placeholder via the
 # const-JSON cell). dynu_golden encodes the exact expected bytes — key order and
 # the placeholder included — so any renderer drift or accidental username-prompt
@@ -52,14 +52,14 @@ golden_case() {
     assert_eq "$expected" "$actual" "ddns_render dynu golden: $name"
 }
 
-golden_case "ascii"         "media.example.com"  "s3cret"
-golden_case "shell-special" "media.example.com"  'p@ss"w\rd$#!'
-golden_case "unicode"       "münchen.example.de" "pä ss"
+golden_case "ascii" "media.example.com" "s3cret"
+golden_case "shell-special" "media.example.com" 'p@ss"w\rd$#!'
+golden_case "unicode" "münchen.example.de" "pä ss"
 
 # ---------------------------------------------------------------------------
 # All 6 providers render valid JSON with the right provider tag + required
 # fields. render_provider fills every credential field with a dummy value
-# (the renderer does not validate — that is #236's field loop).
+# (the renderer does not validate — that is the wizard's field loop).
 # ---------------------------------------------------------------------------
 render_provider() {
     local key="$1" spec name
@@ -73,7 +73,8 @@ render_provider() {
 }
 
 for key in dynu duckdns desec dynv6 cloudflare porkbun; do
-    json=$(render_provider "$key"); rc=$?
+    json=$(render_provider "$key")
+    rc=$?
     assert_eq "0" "$rc" "ddns_render $key: exits 0"
     prov=$(printf '%s' "$json" | python3 -c 'import sys,json; print(json.load(sys.stdin)["settings"][0]["provider"])' 2>/dev/null)
     assert_eq "$key" "$prov" "ddns_render $key: provider tag is $key"
@@ -129,22 +130,22 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Registry accessor smoke (pick / fields / verify_tier / category). pick is not
-# wired into the wizard until #236, so this is its only exercise: stub ui_choose to
-# return a label and assert the label→key mapping.
+# Registry accessor smoke (pick / fields / verify_tier / category). For pick,
+# ui_choose is stubbed to return a label so the label→key mapping is asserted on
+# its own, including the skip sentinel.
 # ---------------------------------------------------------------------------
 assert_eq "password:validate_ddns_password" \
-    "$(ddns_provider_fields dynu)" "ddns_provider_fields: dynu specs (password only, #248)"
+    "$(ddns_provider_fields dynu)" "ddns_provider_fields: dynu specs (password only)"
 assert_eq "token:validate_ddns_token" \
     "$(ddns_provider_fields duckdns)" "ddns_provider_fields: duckdns specs"
 
-assert_eq "dyndns2" "$(ddns_provider_verify_tier dynu)"   "ddns_provider_verify_tier: dynu = dyndns2"
-assert_eq "dyndns2" "$(ddns_provider_verify_tier desec)"  "ddns_provider_verify_tier: deSEC = dyndns2 (conservative)"
-assert_eq "token"   "$(ddns_provider_verify_tier dynv6)"  "ddns_provider_verify_tier: dynv6 = token"
-assert_eq "token"   "$(ddns_provider_verify_tier porkbun)" "ddns_provider_verify_tier: porkbun = token"
+assert_eq "dyndns2" "$(ddns_provider_verify_tier dynu)" "ddns_provider_verify_tier: dynu = dyndns2"
+assert_eq "dyndns2" "$(ddns_provider_verify_tier desec)" "ddns_provider_verify_tier: deSEC = dyndns2 (conservative)"
+assert_eq "token" "$(ddns_provider_verify_tier dynv6)" "ddns_provider_verify_tier: dynv6 = token"
+assert_eq "token" "$(ddns_provider_verify_tier porkbun)" "ddns_provider_verify_tier: porkbun = token"
 
-assert_eq "free" "$(ddns_provider_category duckdns)"    "ddns_provider_category: duckdns = free"
-assert_eq "byo"  "$(ddns_provider_category cloudflare)" "ddns_provider_category: cloudflare = byo"
+assert_eq "free" "$(ddns_provider_category duckdns)" "ddns_provider_category: duckdns = free"
+assert_eq "byo" "$(ddns_provider_category cloudflare)" "ddns_provider_category: cloudflare = byo"
 if ddns_provider_category nope >/dev/null 2>&1; then
     fail "ddns_provider_category: unknown key returns non-zero"
 else
@@ -152,11 +153,11 @@ else
 fi
 
 ui_choose() { printf '%s\n' "${STUB_CHOICE:-}"; }
-STUB_CHOICE="${_DDNS_LABEL[0]}"   # DuckDNS (index 0 — the default free pick, #248)
+STUB_CHOICE="${_DDNS_LABEL[0]}" # DuckDNS (index 0 — the default free pick)
 assert_eq "duckdns" "$(ddns_provider_pick)" "ddns_provider_pick: maps free label to key"
-STUB_CHOICE="${_DDNS_LABEL[4]}"   # Cloudflare
+STUB_CHOICE="${_DDNS_LABEL[4]}" # Cloudflare
 assert_eq "cloudflare" "$(ddns_provider_pick)" "ddns_provider_pick: maps BYO label to key"
-STUB_CHOICE="$_DDNS_SKIP_LABEL"   # escape hatch
+STUB_CHOICE="$_DDNS_SKIP_LABEL" # escape hatch
 assert_eq "$_DDNS_SKIP" "$(ddns_provider_pick)" "ddns_provider_pick: skip escape hatch maps to the skip sentinel"
 
 scenario_end "$CURRENT_SCENARIO"

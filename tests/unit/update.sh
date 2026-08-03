@@ -21,14 +21,14 @@ setup_update_sandbox() {
 
     cp "$REPO_ROOT/scripts/update.sh" "$TMP_DIR/sandbox/scripts/update.sh"
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/common.sh"
-    cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/term_caps.sh"  # common.sh sources it
+    cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/term_caps.sh" # common.sh sources it
     cp "$REPO_ROOT/scripts/setup/override.sh" "$TMP_DIR/sandbox/scripts/setup/override.sh"
     cp "$REPO_ROOT/docs/operations/image-digests.lock" "$TMP_DIR/sandbox/docs/operations/image-digests.lock"
     chmod +x "$TMP_DIR/sandbox/scripts/update.sh"
-    cat > "$TMP_DIR/sandbox/scripts/setup/storage.sh" <<'STUB'
+    cat >"$TMP_DIR/sandbox/scripts/setup/storage.sh" <<'STUB'
 storage_guard_before_start() { printf 'storage_guard_before_start\n' >> "$UPDATE_DOCKER_LOG"; }
 STUB
-    cat > "$TMP_DIR/sandbox/bin/docker" <<'STUB'
+    cat >"$TMP_DIR/sandbox/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$UPDATE_DOCKER_LOG"
 if [[ "${1:-}" == "compose" && "$*" == *" ps --status running"* ]]; then
@@ -37,7 +37,7 @@ fi
 exit 0
 STUB
     chmod +x "$TMP_DIR/sandbox/bin/docker"
-    : > "$TMP_DIR/docker.log"
+    : >"$TMP_DIR/docker.log"
 }
 
 run_update() {
@@ -50,7 +50,7 @@ assert_not_contains_local() {
     local haystack="$1" needle="$2" name="$3"
     case "$haystack" in
         *"$needle"*) fail "$name" "'$needle' was found" ;;
-        *)           pass "$name" ;;
+        *) pass "$name" ;;
     esac
 }
 
@@ -77,7 +77,7 @@ assert_contains "$log" "image prune -f" "update.sh --prune runs Docker image pru
 assert_contains "$output" "host-wide" "update.sh --prune warns about host-wide cleanup"
 
 setup_update_sandbox
-printf '%s\n' "IMAGE_CHANNEL=latest" > "$TMP_DIR/sandbox/.env"
+printf '%s\n' "IMAGE_CHANNEL=latest" >"$TMP_DIR/sandbox/.env"
 output=$(run_update)
 rc=$?
 override_text=$(cat "$TMP_DIR/sandbox/docker-compose.override.yml")

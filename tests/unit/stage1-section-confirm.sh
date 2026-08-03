@@ -25,17 +25,19 @@ source "$REPO_ROOT/scripts/setup/wizard.sh"
 
 set +e +u
 
-ui_kv() { :; }   # silence the echo lines; not under test here
+ui_kv() { :; } # silence the echo lines; not under test here
 
 # ui_choose runs in a $(...) subshell, so it can't keep its own counter — drive
 # the decision off ONCE_COUNT, which the stubbed _once increments in the parent
 # shell before each review: accept once the body has run ACCEPT_AT times.
 ui_choose() {
-    if (( ONCE_COUNT >= ACCEPT_AT )); then echo "Use these details"; else echo "Re-enter"; fi
+    if ((ONCE_COUNT >= ACCEPT_AT)); then echo "Use these details"; else echo "Re-enter"; fi
 }
 
 run_case() {
-    local wrapper="$1" once="$2"; ACCEPT_AT="$3"; ONCE_COUNT=0
+    local wrapper="$1" once="$2"
+    ACCEPT_AT="$3"
+    ONCE_COUNT=0
     eval "${once}() { ONCE_COUNT=\$((ONCE_COUNT + 1)); }"
     "$wrapper"
 }

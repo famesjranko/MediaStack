@@ -13,6 +13,11 @@ What went wrong, and what you expected to happen instead.
 - Install channel (stable or latest):
 - MediaStack version / commit (`git -C <install-dir> rev-parse --short HEAD`):
 
+**Diagnostics**
+For setup, networking, or remote-access problems, paste the output of the
+relevant check from `./mediastack` → Diagnostics (System readiness check,
+domain DNS, port forwarding).
+
 **Affected services**
 Which service(s) are involved (Jellyfin, Sonarr, Radarr, qBittorrent, Jackett,
 NPM, WireGuard, Portainer, ...).

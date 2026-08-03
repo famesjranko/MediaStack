@@ -33,7 +33,7 @@ schedule_post_reboot() {
         return 1
     fi
 
-    sudo tee "$service_file" > /dev/null <<EOF
+    sudo tee "$service_file" >/dev/null <<EOF
 [Unit]
 Description=MediaStack post-reboot setup (one-time)
 After=network-online.target docker.service
@@ -109,7 +109,7 @@ install_post_reboot_banner() {
 
     result_file_q=$(_shell_single_quote "$result_file")
 
-    sudo tee "$banner_script" > /dev/null <<PROFILE_EOF
+    sudo tee "$banner_script" >/dev/null <<PROFILE_EOF
 # MediaStack: show post-reboot setup status on login
 _ms_setup_result=$result_file_q
 if [ -f "\$_ms_setup_result" ]; then
@@ -134,7 +134,7 @@ PROFILE_EOF
 
 # Called by setup.sh at the end of a successful post-reboot run.
 write_setup_result() {
-    local status="$1"  # "ok" or "error"
+    local status="$1" # "ok" or "error"
     local result_file="$SCRIPT_DIR/.setup-result"
     local script_dir_q lan_ip
 
@@ -155,16 +155,18 @@ write_setup_result() {
             _tc_gpu=$(grep -oP '^JELLYFIN_GPU=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "\"'")
             _tc_mode=$(grep -oP '^NVIDIA_DRIVER_MODE=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "\"'")
             case "$_tc_gpu" in
-                nvidia) tc_line="NVIDIA NVENC"
-                        if [[ "$_tc_mode" == "unlock" ]]; then
-                            if [[ -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched" ]]; then
-                                tc_line+=" (session limit NOT removed - patch failed; retry via Manage hardware transcoding)"
-                            else
-                                tc_line+=" - session limit removed (patch applied)"
-                            fi
-                        fi ;;
-                intel)  tc_line="Intel QSV" ;;
-                amd)    tc_line="AMD VAAPI" ;;
+                nvidia)
+                    tc_line="NVIDIA NVENC"
+                    if [[ "$_tc_mode" == "unlock" ]]; then
+                        if [[ -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched" ]]; then
+                            tc_line+=" (session limit NOT removed - patch failed; retry via Manage hardware transcoding)"
+                        else
+                            tc_line+=" - session limit removed (patch applied)"
+                        fi
+                    fi
+                    ;;
+                intel) tc_line="Intel QSV" ;;
+                amd) tc_line="AMD VAAPI" ;;
             esac
             ;;
         fallback)
@@ -186,7 +188,7 @@ write_setup_result() {
             printf "  Open your dashboard:  http://%s:3000\n" "$lan_ip"
             printf "  Manage MediaStack:    cd %s && ./mediastack\n" "$script_dir_q"
             printf '\n'
-        } > "$result_file"
+        } >"$result_file"
     else
         _c='\033[0;31m'
         {
@@ -198,7 +200,7 @@ write_setup_result() {
             printf '  Check the log:  journalctl -u mediastack-setup --no-pager\n'
             printf '  Then re-run:    cd %s && ./setup.sh\n' "$script_dir_q"
             printf '\n'
-        } > "$result_file"
+        } >"$result_file"
     fi
 }
 

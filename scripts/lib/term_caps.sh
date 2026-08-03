@@ -66,7 +66,7 @@ _glyphs_enabled() {
     [[ -n "${UI_FORCE_GLYPHS:-}" ]] && return 0
     [[ -n "${UI_ASCII:-}" ]] && return 1
     case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
-        *[Uu][Tt][Ff]8* | *[Uu][Tt][Ff]-8*) ;;   # en_US.UTF-8 / utf8 / C.UTF-8
+        *[Uu][Tt][Ff]8* | *[Uu][Tt][Ff]-8*) ;; # en_US.UTF-8 / utf8 / C.UTF-8
         *) return 1 ;;
     esac
     case "${TERM:-}" in
@@ -82,17 +82,41 @@ _glyphs_enabled() {
 # ever placed inline, never repeated, so they cannot break width math.
 if _glyphs_enabled; then
     _G_UNICODE=1
-    _G_H='─'; _G_V='│'; _G_TL='╭'; _G_TR='╮'; _G_BL='╰'; _G_BR='╯'   # light box
-    _G_DH='═'; _G_DV='║'; _G_DTL='╔'; _G_DTR='╗'; _G_DBL='╚'; _G_DBR='╝'  # double box (banner)
-    _G_BAR_FILL='█'; _G_BAR_EMPTY='░'
-    _G_CHECK='✓'; _G_CROSS='✗'   # status icons (prose →/•/— are ASCII-ified, not gated)
+    _G_H='─'
+    _G_V='│'
+    _G_TL='╭'
+    _G_TR='╮'
+    _G_BL='╰'
+    _G_BR='╯' # light box
+    _G_DH='═'
+    _G_DV='║'
+    _G_DTL='╔'
+    _G_DTR='╗'
+    _G_DBL='╚'
+    _G_DBR='╝' # double box (banner)
+    _G_BAR_FILL='█'
+    _G_BAR_EMPTY='░'
+    _G_CHECK='✓'
+    _G_CROSS='✗' # status icons (prose →/•/— are ASCII-ified, not gated)
     _G_SPIN=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 else
     _G_UNICODE=0
-    _G_H='-'; _G_V='|'; _G_TL='+'; _G_TR='+'; _G_BL='+'; _G_BR='+'
-    _G_DH='='; _G_DV='|'; _G_DTL='+'; _G_DTR='+'; _G_DBL='+'; _G_DBR='+'
-    _G_BAR_FILL='#'; _G_BAR_EMPTY='.'
-    _G_CHECK='+'; _G_CROSS='x'
+    _G_H='-'
+    _G_V='|'
+    _G_TL='+'
+    _G_TR='+'
+    _G_BL='+'
+    _G_BR='+'
+    _G_DH='='
+    _G_DV='|'
+    _G_DTL='+'
+    _G_DTR='+'
+    _G_DBL='+'
+    _G_DBR='+'
+    _G_BAR_FILL='#'
+    _G_BAR_EMPTY='.'
+    _G_CHECK='+'
+    _G_CROSS='x'
     _G_SPIN=('|' '/' '-' '\')
 fi
 
@@ -118,7 +142,7 @@ fi
 # mode it is the icon (✓ ! ✗ • →); in ASCII mode it is the bracket tag
 # ([OK]/[WARN]/[ERROR]/[INFO]/[SKIP]) — byte-identical to the historical
 # configure.sh output, so the degraded surface is exactly today's look.
-_ui_status_token() {  # $1 = level
+_ui_status_token() { # $1 = level
     if [[ "$_G_UNICODE" == 1 ]]; then
         case "$1" in
             ok) printf '✓' ;; warn) printf '!' ;; error) printf '✗' ;;
@@ -136,7 +160,7 @@ _ui_status_token() {  # $1 = level
 # rules / box borders drawn OUTSIDE the ui_render_fallback layer (configure.sh,
 # stack.sh, stage2.sh etc., which source common.sh but not ui.sh). Uses a gated
 # _G_* char so the rule degrades to ASCII with everything else.
-_g_repeat() {  # $1 = width, $2 = char (default _G_H)
+_g_repeat() { # $1 = width, $2 = char (default _G_H)
     local n="${1:-0}" ch="${2:-$_G_H}" out="" i
     for ((i = 0; i < n; i++)); do out+="$ch"; done
     printf '%s' "$out"

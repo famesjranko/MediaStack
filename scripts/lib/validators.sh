@@ -24,9 +24,9 @@ _validators_wireguard_port_is_mediastack() {
         ports="${row#* }"
         [[ "$name" == "wireguard" ]] || continue
         case "$ports" in
-            *":${value}->"*"/udp"*|*"${value}/udp"*) return 0 ;;
+            *":${value}->"*"/udp"* | *"${value}/udp"*) return 0 ;;
         esac
-    done <<< "$rows"
+    done <<<"$rows"
 
     return 1
 }
@@ -80,7 +80,7 @@ validate_admin_email() {
     # point the user has forgotten what they typed).
     local domain_part="${value#*@}"
     local tld="${domain_part##*.}"
-    if (( ${#tld} < 2 )); then
+    if ((${#tld} < 2)); then
         ui_log warn "Email TLD must be at least 2 characters (e.g. 'com', 'net')."
         return 1
     fi
@@ -97,7 +97,7 @@ validate_admin_password() {
     # rejects passwords <12 chars at admin/init with HTTP 400). MediaStack
     # uses one shared admin password across services, so the wizard's floor
     # must be the strictest of any service we provision.
-    if (( ${#value} < 12 )); then
+    if ((${#value} < 12)); then
         ui_log warn "Password must be at least 12 characters (Portainer requires this)."
         return 1
     fi
@@ -106,11 +106,11 @@ validate_admin_password() {
     # uppercase, digits, symbols — so all-lowercase strings like qwertyuiopas
     # are caught here rather than failing silently at provision time.
     local types=0
-    [[ "$value" =~ [a-z] ]]        && (( types += 1 )) || true
-    [[ "$value" =~ [A-Z] ]]        && (( types += 1 )) || true
-    [[ "$value" =~ [0-9] ]]        && (( types += 1 )) || true
-    [[ "$value" =~ [^a-zA-Z0-9] ]] && (( types += 1 )) || true
-    if (( types < 2 )); then
+    [[ "$value" =~ [a-z] ]] && ((types += 1)) || true
+    [[ "$value" =~ [A-Z] ]] && ((types += 1)) || true
+    [[ "$value" =~ [0-9] ]] && ((types += 1)) || true
+    [[ "$value" =~ [^a-zA-Z0-9] ]] && ((types += 1)) || true
+    if ((types < 2)); then
         ui_log warn "Password must use at least 2 character types (lowercase, uppercase, digits, symbols). Example: MyPass12 or pass123!"
         return 1
     fi
@@ -137,9 +137,9 @@ validate_ddns_password() {
     validate_ddns_credential "Dynu password" "$1"
 }
 
-# Multi-provider DDNS field validators (epic #234). Consumed by the wizard's
-# per-provider field loop (#236) AND the day-2 change-provider action (#238); the
-# #235 config renderer emits JSON and does not itself validate. Tokens/keys are
+# Multi-provider DDNS field validators. Consumed by the wizard's per-provider
+# field loop AND the day-2 change-provider action; the config renderer in
+# scripts/lib/ddns_providers.sh emits JSON and does not itself validate. Tokens/keys are
 # opaque, contiguous secrets. SURROUNDING whitespace from a dashboard paste
 # (trailing newline/space) is trimmed here so it validates — both call sites store
 # the trimmed value — while an INTERNAL space (almost always a copy error), the
@@ -148,7 +148,8 @@ validate_ddns_password() {
 _validate_ddns_opaque() {
     local label="${1:-value}"
     local value="${2:-}"
-    value="${value#"${value%%[![:space:]]*}"}"; value="${value%"${value##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
     if [[ -z "$value" ]]; then
         ui_log warn "$label is required."
         return 1
@@ -165,13 +166,14 @@ _validate_ddns_opaque() {
 }
 
 validate_ddns_token() { _validate_ddns_opaque "API token" "$1"; }
-validate_api_key()    { _validate_ddns_opaque "API key" "$1"; }
+validate_api_key() { _validate_ddns_opaque "API key" "$1"; }
 
 # Cloudflare Zone ID — the 32-hex identifier from the domain's Overview page.
 # Surrounding whitespace from a paste is trimmed (see _validate_ddns_opaque).
 validate_zone_id() {
     local value="$1"
-    value="${value#"${value%%[![:space:]]*}"}"; value="${value%"${value##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
     if [[ -z "$value" ]]; then
         ui_log warn "Cloudflare Zone ID is required."
         return 1
@@ -218,7 +220,7 @@ validate_data_dir() {
     fi
     # Whitelist: letters, digits, '/', '.', '_', '-'. Anything else (single
     # quotes, $, backtick, ;, =, whitespace, newlines, ...) is rejected.
-    # This subsumes the BL-01 shell-metacharacter guard and additionally
+    # This subsumes the shell-metacharacter guard and additionally
     # blocks characters that silently corrupt downstream parsers:
     #   - '='     breaks awk -F= in _resolve_data_partition / .env parsers
     #   - newline breaks 'awk NR==2' parse of df output and .env line itself
@@ -280,11 +282,11 @@ validate_data_dir() {
         ui_log warn "Could not read free space on $path (df returned no output)."
         return 1
     fi
-    # PRE-01 already warned-but-continued for the resolved data partition at
+    # Pre-flight already warned-but-continued for the resolved data partition at
     # startup. The validator's disk floor is a parallel safety net that fires
-    # when the user picks a custom path. Match PRE-01's behavior: warn + ask
+    # when the user picks a custom path. Match that behavior: warn + ask
     # for explicit confirmation, rather than silently looping the prompt.
-    if (( free_gb < 30 )); then
+    if ((free_gb < 30)); then
         ui_log warn "$path has only ${free_gb}GB free - recommended minimum is 30GB."
         if ! ui_confirm "Continue anyway?" "yes"; then
             ui_log warn "Pick a different path with more free space, or free up space on $path."
@@ -353,11 +355,12 @@ validate_nfs_host() {
     # Dotted-quad IPv4: bound each octet to <= 255 (same shape check as
     # validate_wireguard_hostname) so 999.999.999.999 is rejected up front.
     if [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        local octet; local -a octets
-        IFS='.' read -ra octets <<< "$value"
+        local octet
+        local -a octets
+        IFS='.' read -ra octets <<<"$value"
         for octet in "${octets[@]}"; do
             # 10# forces base-10 so a leading-zero octet (08/09) isn't read as octal.
-            if (( 10#$octet > 255 )); then
+            if ((10#$octet > 255)); then
                 ui_log warn "NAS IP has an octet over 255 (expected e.g. 192.168.1.10)."
                 return 1
             fi
@@ -440,7 +443,7 @@ validate_torrent_port() {
         ui_log warn "qBittorrent peer port must be numeric."
         return 1
     fi
-    if (( value < 1 || value > 65535 )); then
+    if ((value < 1 || value > 65535)); then
         ui_log warn "qBittorrent peer port must be between 1 and 65535."
         return 1
     fi
@@ -472,16 +475,16 @@ validate_domain_name() {
         return 1
     fi
     case "$lc" in
-        example.com|*.example.com|example.org|*.example.org|example.net|*.example.net|example.edu|*.example.edu)
+        example.com | *.example.com | example.org | *.example.org | example.net | *.example.net | example.edu | *.example.edu)
             ui_log warn "$value is a reserved example domain (RFC 2606) - enter your real domain."
             return 1
             ;;
-        test|*.test|invalid|*.invalid)
+        test | *.test | invalid | *.invalid)
             ui_log warn "$value is a reserved test/invalid domain (RFC 6761)."
             return 1
             ;;
     esac
-    if (( ${#value} > 253 )); then
+    if ((${#value} > 253)); then
         ui_log warn "Domain name is too long."
         return 1
     fi
@@ -491,7 +494,7 @@ validate_domain_name() {
     fi
 
     local label
-    IFS='.' read -ra labels <<< "$value"
+    IFS='.' read -ra labels <<<"$value"
     for label in "${labels[@]}"; do
         if [[ -z "$label" || ${#label} -gt 63 ]]; then
             ui_log warn "Domain labels must be 1-63 characters."
@@ -513,9 +516,9 @@ validate_wireguard_hostname() {
     fi
     if [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         local octet
-        IFS='.' read -ra octets <<< "$value"
+        IFS='.' read -ra octets <<<"$value"
         for octet in "${octets[@]}"; do
-            if (( octet > 255 )); then
+            if ((octet > 255)); then
                 ui_log warn "WireGuard IPv4 address is invalid."
                 return 1
             fi
@@ -535,7 +538,7 @@ validate_wireguard_port() {
         ui_log warn "WireGuard UDP port must be numeric."
         return 1
     fi
-    if (( value < 1 || value > 65535 )); then
+    if ((value < 1 || value > 65535)); then
         ui_log warn "WireGuard UDP port must be between 1 and 65535."
         return 1
     fi
@@ -606,7 +609,7 @@ if not any(n.subnet_of(r) for r in rfc1918):
     sys.exit(3)
 ' "$value" 2>/dev/null
     rc=$?
-    if (( rc != 0 )); then
+    if ((rc != 0)); then
         case "$rc" in
             2) ui_log warn "'$value' is not a valid IPv4 CIDR (try '192.168.1.0/24')." ;;
             3) ui_log warn "'$value' is not an RFC1918 LAN range - use 10/8, 172.16/12, or 192.168/16." ;;
@@ -619,7 +622,7 @@ if not any(n.subnet_of(r) for r in rfc1918):
 
 # Accepts a single IPv4/IPv6 host address; rejects CIDR / range / hostname.
 # Used by the fail2ban whitelist manual-entry path (mediastack). Mirrors
-# validate_lan_cidr: empty -> warn+1; python3 ipaddress via argv (invariant #10).
+# validate_lan_cidr: empty -> warn+1; python3 ipaddress via argv.
 validate_ip() {
     local value="$1"
     if [[ -z "$value" ]]; then
@@ -650,7 +653,7 @@ validate_timezone() {
         return 1
     fi
     case "$value" in
-        zone.tab|zone1970.tab|iso3166.tab|leapseconds|posixrules|tzdata.zi|leap-seconds.list)
+        zone.tab | zone1970.tab | iso3166.tab | leapseconds | posixrules | tzdata.zi | leap-seconds.list)
             ui_log warn "'$value' is a tzdata metadata file, not a timezone. Try 'America/New_York' or 'Etc/UTC'."
             return 1
             ;;
@@ -678,7 +681,7 @@ validate_subtitle_langs() {
     local -a tokens=()
     # read -ra splits on the comma without pathname expansion (a bare '*' in
     # the input must not glob). Matches wizard_apply.py: split(',').
-    IFS=',' read -ra tokens <<< "$value"
+    IFS=',' read -ra tokens <<<"$value"
 
     local -a bad=()
     local count=0 tok known s
@@ -696,16 +699,19 @@ validate_subtitle_langs() {
         # entries in the space-delimited set. Exact equality avoids both.
         known=0
         for s in $supported; do
-            [[ "$tok" == "$s" ]] && { known=1; break; }
+            [[ "$tok" == "$s" ]] && {
+                known=1
+                break
+            }
         done
-        (( known )) || bad+=("$tok")
+        ((known)) || bad+=("$tok")
     done
 
-    if (( count == 0 )); then
+    if ((count == 0)); then
         ui_log warn "Enter at least one subtitle language (e.g. english,spanish). Supported: ${supported// /, }."
         return 1
     fi
-    if (( ${#bad[@]} > 0 )); then
+    if ((${#bad[@]} > 0)); then
         ui_log warn "Unsupported subtitle language(s): ${bad[*]}. Supported: ${supported// /, }."
         return 1
     fi

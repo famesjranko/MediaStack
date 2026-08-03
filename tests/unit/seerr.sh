@@ -19,8 +19,8 @@ SONARR_BODY="$TMP_DIR/sonarr-body.json"
 RADARR_BODY="$TMP_DIR/radarr-body.json"
 
 mkdir -p "$SCRIPT_DIR/config/sonarr" "$SCRIPT_DIR/config/radarr"
-printf '%s\n' '<Config><ApiKey>sonarr-key</ApiKey></Config>' > "$SCRIPT_DIR/config/sonarr/config.xml"
-printf '%s\n' '<Config><ApiKey>radarr-key</ApiKey></Config>' > "$SCRIPT_DIR/config/radarr/config.xml"
+printf '%s\n' '<Config><ApiKey>sonarr-key</ApiKey></Config>' >"$SCRIPT_DIR/config/sonarr/config.xml"
+printf '%s\n' '<Config><ApiKey>radarr-key</ApiKey></Config>' >"$SCRIPT_DIR/config/radarr/config.xml"
 
 source "$REPO_ROOT/scripts/lib/json.sh"
 source "$REPO_ROOT/scripts/services/seerr/arr_connect.sh"
@@ -71,8 +71,8 @@ print(json.dumps([
 
 js_post() {
     case "$1" in
-        Sonarr) printf '%s' "$3" > "$SONARR_BODY" ;;
-        Radarr) printf '%s' "$3" > "$RADARR_BODY" ;;
+        Sonarr) printf '%s' "$3" >"$SONARR_BODY" ;;
+        Radarr) printf '%s' "$3" >"$RADARR_BODY" ;;
         *) return 1 ;;
     esac
 }
@@ -80,7 +80,8 @@ js_post() {
 connect_arr_to_seerr sonarr 8989 "http://localhost:5055" "$TMP_DIR/cookie"
 connect_arr_to_seerr radarr 7878 "http://localhost:5055" "$TMP_DIR/cookie"
 
-mapfile -t sonarr_lines < <(WANT_PROFILE="$PROFILE_NAME" python3 - "$SONARR_BODY" <<'PY'
+mapfile -t sonarr_lines < <(
+    WANT_PROFILE="$PROFILE_NAME" python3 - "$SONARR_BODY" <<'PY'
 import json
 import os
 import sys
@@ -100,7 +101,8 @@ assert_eq "True" "${sonarr_lines[1]:-}" "Seerr Sonarr profile name preserves quo
 assert_eq "/data/media/tv" "${sonarr_lines[2]:-}" "Seerr Sonarr payload keeps configured root folder"
 assert_eq "7" "${sonarr_lines[3]:-}" "Seerr Sonarr payload keeps language profile id"
 
-mapfile -t radarr_lines < <(WANT_PROFILE="$PROFILE_NAME" python3 - "$RADARR_BODY" <<'PY'
+mapfile -t radarr_lines < <(
+    WANT_PROFILE="$PROFILE_NAME" python3 - "$RADARR_BODY" <<'PY'
 import json
 import os
 import sys

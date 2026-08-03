@@ -30,7 +30,7 @@ BASH"
     assert_contains "$transcript" "Reboot needed to finish NVIDIA transcoding" "wizard-ui stage3 nvidia reboot: reboot box shown"
     assert_contains "$transcript" "Reboot manually when ready" "wizard-ui stage3 nvidia reboot: manual-later path message"
     assert_eq "standard" "$(env_get NVIDIA_DRIVER_MODE)" "wizard-ui stage3 nvidia reboot: NVIDIA_DRIVER_MODE=standard"
-    assert_eq "pending"  "$(env_get STAGE_3_GPU_STATE)"  "wizard-ui stage3 nvidia reboot: STAGE_3_GPU_STATE=pending"
+    assert_eq "pending" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 nvidia reboot: STAGE_3_GPU_STATE=pending"
     if dind_exec "test -f .nvidia-finalize-pending"; then
         pass "wizard-ui stage3 nvidia reboot: finalize marker written"
     else

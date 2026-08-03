@@ -6,7 +6,7 @@
 # start / reload. Jellyfin (Serilog) and Seerr (winston) roll to a NEW
 # date-stamped file (log_YYYYMMDD.log) every day, so after midnight the live
 # jail keeps tailing yesterday's file and silently stops matching — brute-force
-# bans stop firing — until the next reload (issue #291).
+# bans stop firing — until the next reload.
 #
 # This watcher reloads fail2ban the moment a service rolls to a new log file, so
 # the globs re-resolve and protection never lapses. It watches create/rename

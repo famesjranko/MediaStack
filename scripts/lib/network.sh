@@ -55,7 +55,7 @@ net_detect_public_ip() {
 _speedtest_set_mbps() {
     local dl="$1" ul="$2"
     [[ "$dl" =~ ^[0-9]+$ && "$ul" =~ ^[0-9]+$ ]] || return 1
-    (( dl > 0 && ul > 0 )) || return 1
+    ((dl > 0 && ul > 0)) || return 1
     _NET_DL_MBPS="$dl"
     _NET_UL_MBPS="$ul"
     return 0
@@ -322,7 +322,7 @@ stage2_dns_classify() {
 # verify behaviour against this image's digest.
 _DDNS_VERIFY_IMAGE="qmcgaw/ddns-updater:latest"
 
-# Delay before the single retry poll after a first 500 (#248). NOT a correctness
+# Delay before the single retry poll after a first 500. NOT a correctness
 # knob — the body classification below is the real arbiter, so an unhealed
 # transient just falls through to degrade (creds kept), never a wrong reject. This
 # only trades how often a slow transient auto-heals to 202 vs lands the honest
@@ -429,7 +429,7 @@ ddns_verify_via_container() {
                     | grep -iE 'validating .* settings|is not valid' \
                     | tail -1)
                 if [[ -n "$ferr" ]]; then
-                    [[ -n "$body_file" ]] && printf '%s\n' "$ferr" > "$body_file"
+                    [[ -n "$body_file" ]] && printf '%s\n' "$ferr" >"$body_file"
                     exit 1
                 fi
                 exit 2
@@ -459,7 +459,7 @@ ddns_verify_via_container() {
         # OWN transient failures too — a failed public-IP fetch alone yields
         # 500 {"errors":["obtaining ipv4 address: ... connection refused"]} with
         # ZERO provider contact, and a provider-side blip surfaces the same way.
-        # This is #248's flakiness: identical creds rejected on attempt 1, accepted
+        # The flakiness this guards: identical creds rejected on attempt 1, accepted
         # on attempt 2, because attempt 1 cleared good creds on a transient 500. So
         # a single 500 never decides — wait for the transient to clear and re-poll
         # once (one extra push on a genuine badauth is bounded and harmless).
@@ -486,7 +486,7 @@ ddns_verify_via_container() {
                 fi
                 exit 1
                 ;;
-            *)   exit 2 ;;
+            *) exit 2 ;;
         esac
     )
 }
@@ -497,17 +497,32 @@ stage2_check_http_ports() {
     # but verification skipped) as "open" for the wizard's LE attempt — if
     # the existing service is actually wrong-host'd, the LE attempt itself
     # will fail and the wizard's existing retry loop catches it.
-    case $(net_check_tcp_port_external 80; echo "rc:$?") in
-        rc:0|rc:4) port80="open" ;;
-        rc:2) port80="probe-unavailable"; unavailable+=("80") ;;
+    case $(
+        net_check_tcp_port_external 80
+        echo "rc:$?"
+    ) in
+        rc:0 | rc:4) port80="open" ;;
+        rc:2)
+            port80="probe-unavailable"
+            unavailable+=("80")
+            ;;
     esac
-    case $(net_check_tcp_port_external 443; echo "rc:$?") in
-        rc:0|rc:4) port443="open" ;;
-        rc:2) port443="probe-unavailable"; unavailable+=("443") ;;
+    case $(
+        net_check_tcp_port_external 443
+        echo "rc:$?"
+    ) in
+        rc:0 | rc:4) port443="open" ;;
+        rc:2)
+            port443="probe-unavailable"
+            unavailable+=("443")
+            ;;
     esac
 
-    if (( ${#unavailable[@]} > 0 )); then
-        printf 'probe-unavailable:%s' "$(IFS=,; echo "${unavailable[*]}")"
+    if ((${#unavailable[@]} > 0)); then
+        printf 'probe-unavailable:%s' "$(
+            IFS=,
+            echo "${unavailable[*]}"
+        )"
     elif [[ "$port80" == "open" && "$port443" == "open" ]]; then
         printf 'ok'
     elif [[ "$port80" == "closed" && "$port443" == "closed" ]]; then
@@ -551,7 +566,7 @@ stage2_check_http_ports() {
 net_check_tcp_port_external() {
     local port="$1"
     local listener_pid="" sudo_cmd="" marker_file=""
-    (( port < 1024 )) && sudo_cmd="sudo"
+    ((port < 1024)) && sudo_cmd="sudo"
 
     # If something is already bound (NPM running on a re-run, or another
     # service we should NOT disturb), skip the stand-in and just probe.
@@ -587,7 +602,7 @@ while time.time() < deadline:
         break
     except OSError:
         break
-' "$port" > "$marker_file" 2>&1 &
+' "$port" >"$marker_file" 2>&1 &
         listener_pid=$!
         sleep 1
         # Verify the listener actually bound (sudo prompt swallow, port
@@ -627,10 +642,10 @@ while time.time() < deadline:
         local saw_connection=0
         grep -q "GOT_CONNECTION" "$marker_file" 2>/dev/null && saw_connection=1
         rm -f "$marker_file"
-        if (( rc == 0 )) && (( saw_connection == 0 )); then
+        if ((rc == 0)) && ((saw_connection == 0)); then
             return 3
         fi
-    elif (( rc == 0 )); then
+    elif ((rc == 0)); then
         # Existing-bound case + probe says open. We could NOT verify the
         # connection actually landed on this host (skipping the listener
         # spin-up for an already-bound port). Return rc=4 to surface the
@@ -654,28 +669,49 @@ _net_probe_via_external() {
     local port="$1"
     local ip resp
     ip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null) || ip=""
-    [[ -z "$ip" ]] && { printf 2; return 0; }
+    [[ -z "$ip" ]] && {
+        printf 2
+        return 0
+    }
 
     # 1. portchecker.io
     if resp=$(curl -sf --max-time 12 "https://portchecker.io/api/${ip}/${port}" 2>/dev/null); then
         case "$(printf '%s' "$resp" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
-            true)  printf 0; return 0 ;;
-            false) printf 1; return 0 ;;
+            true)
+                printf 0
+                return 0
+                ;;
+            false)
+                printf 1
+                return 0
+                ;;
         esac
     fi
 
     # 2. canyouseeme.org — GET form is documented and scriptable; POST also
     #    works in current testing but GET is what the docs recommend.
     if resp=$(curl -sf --max-time 15 "https://canyouseeme.org/?port=${port}" 2>/dev/null); then
-        if [[ "$resp" == *'<b>Success:</b>'* ]]; then printf 0; return 0; fi
-        if [[ "$resp" == *'<b>Error:</b>'* ]];   then printf 1; return 0; fi
+        if [[ "$resp" == *'<b>Success:</b>'* ]]; then
+            printf 0
+            return 0
+        fi
+        if [[ "$resp" == *'<b>Error:</b>'* ]]; then
+            printf 1
+            return 0
+        fi
     fi
 
     # 3. yougetsignal.com
     if resp=$(curl -sf --max-time 12 https://ports.yougetsignal.com/check-port.php \
         -d "remoteAddress=${ip}" -d "portNumber=${port}" 2>/dev/null); then
-        if [[ "$resp" == *'flag_green'* || "$resp" == *'alt="Open"'* ]];   then printf 0; return 0; fi
-        if [[ "$resp" == *'flag_red'*   || "$resp" == *'alt="Closed"'* ]]; then printf 1; return 0; fi
+        if [[ "$resp" == *'flag_green'* || "$resp" == *'alt="Open"'* ]]; then
+            printf 0
+            return 0
+        fi
+        if [[ "$resp" == *'flag_red'* || "$resp" == *'alt="Closed"'* ]]; then
+            printf 1
+            return 0
+        fi
     fi
 
     # All three returned non-2xx, timed out, or unparseable
@@ -742,7 +778,7 @@ stage2_classify_port_failure() {
             ;;
         *)
             case "$port_state" in
-                closed:80|closed:443|closed:80,443) printf '%s' "$port_state" ;;
+                closed:80 | closed:443 | closed:80,443) printf '%s' "$port_state" ;;
                 *) printf 'hairpin-ambiguous' ;;
             esac
             ;;
@@ -811,12 +847,13 @@ wg_firewall_ips_for_tier() {
             # 5055 Seerr, 6767 Bazarr, 7359/udp Jellyfin auto-discovery, 7878 Radarr,
             # 8000 DDNS, 8080 qBittorrent, 8090 Beszel, 8096 Jellyfin, 8191 FlareSolverr,
             # 8989 Sonarr, 9000 Portainer, 9117 Jackett. 51821 (wg-easy admin) excluded.
-            local ports=(80/tcp 81/tcp 443/tcp 3000/tcp 3001/tcp 5055/tcp 6767/tcp \
-                7359/udp 7878/tcp 8000/tcp 8080/tcp 8090/tcp 8096/tcp 8191/tcp \
+            local ports=(80/tcp 81/tcp 443/tcp 3000/tcp 3001/tcp 5055/tcp 6767/tcp
+                7359/udp 7878/tcp 8000/tcp 8080/tcp 8090/tcp 8096/tcp 8191/tcp
                 8989/tcp 9000/tcp 9117/tcp)
             local entries=() p
             for p in "${ports[@]}"; do entries+=("${server_ip}:${p}"); done
-            local IFS=,; printf '%s' "${entries[*]}"
+            local IFS=,
+            printf '%s' "${entries[*]}"
             ;;
         streaming)
             [[ -z "$server_ip" ]] && return 1
@@ -845,7 +882,7 @@ stage2_wireguard_access_tier_env() {
             [[ -z "$lan_cidr" ]] && return 1
             allowed_ips="$lan_cidr"
             ;;
-        server|containers|streaming|streaming-requests)
+        server | containers | streaming | streaming-requests)
             [[ -z "$server_ip" ]] && return 1
             allowed_ips="${server_ip}/32"
             ;;

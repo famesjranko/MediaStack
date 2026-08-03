@@ -65,12 +65,12 @@ _ui_center_text() {
     local text="$1" width="$2"
     local len left right
     len=$(_ui_visible_len "$text")
-    if (( len >= width )); then
+    if ((len >= width)); then
         printf '%s' "$text"
         return
     fi
-    left=$(( (width - len) / 2 ))
-    right=$(( width - len - left ))
+    left=$(((width - len) / 2))
+    right=$((width - len - left))
     printf '%s%s%s' "$(_ui_spaces "$left")" "$text" "$(_ui_spaces "$right")"
 }
 
@@ -81,9 +81,10 @@ _render_banner() {
     local subtitle="${2:-Turnkey Media Server for Home Networks}"
     local width="$_UI_FRAME_WIDTH"
     local _tlen _slen
-    _tlen=$(_ui_visible_len "$title"); _slen=$(_ui_visible_len "$subtitle")
-    (( _tlen > width )) && width=$_tlen
-    (( _slen > width )) && width=$_slen
+    _tlen=$(_ui_visible_len "$title")
+    _slen=$(_ui_visible_len "$subtitle")
+    ((_tlen > width)) && width=$_tlen
+    ((_slen > width)) && width=$_slen
 
     local title_line sub_line border
     title_line=$(_ui_center_text "$title" "$width")
@@ -116,17 +117,18 @@ _render_section() {
 }
 
 _render_log() {
-    local level="$1"; shift
+    local level="$1"
+    shift
     local msg="$*"
     local color icon
 
     case "$level" in
-        ok)    color="$_UI_GREEN"  ;;
-        warn)  color="$_UI_YELLOW" ;;
-        error) color="$_UI_RED"    ;;
-        info)  color="$_UI_BLUE"   ;;
-        skip)  color="$_UI_GRAY"   ;;
-        *)     color="$_UI_GRAY"   ;;
+        ok) color="$_UI_GREEN" ;;
+        warn) color="$_UI_YELLOW" ;;
+        error) color="$_UI_RED" ;;
+        info) color="$_UI_BLUE" ;;
+        skip) color="$_UI_GRAY" ;;
+        *) color="$_UI_GRAY" ;;
     esac
     # Unified marker: glyph (✓/!/✗/•/→) when the terminal can render it, else the
     # ASCII bracket tag ([OK]/...). Same vocabulary as common.sh log_*, so a single
@@ -144,11 +146,12 @@ _render_spin_demo() {
     # Called by ui.sh's ui_spin/ui_spin_fg when UI_DEMO=1; the delay
     # duration is passed in so the backend stays unaware of UI_DEMO_DELAY.
     local title="$1" delay="${2:-0}"
-    local frames=("${_G_SPIN[@]}"); local frame_count=${#frames[@]}
+    local frames=("${_G_SPIN[@]}")
+    local frame_count=${#frames[@]}
     local delay_int="${delay%.*}"
-    local cycles=$(( ${delay_int:-0} * 12 + 6 ))
+    local cycles=$((${delay_int:-0} * 12 + 6))
     local i=0
-    while (( i < cycles )); do
+    while ((i < cycles)); do
         echo -ne "\r  ${_UI_CYAN}${frames[$((i % frame_count))]}${_UI_RESET} $title"
         sleep 0.08 2>/dev/null || sleep 1
         ((i++)) || true
@@ -157,14 +160,17 @@ _render_spin_demo() {
 }
 
 _render_spin() {
-    local title="$1"; shift
-    local frames=("${_G_SPIN[@]}"); local frame_count=${#frames[@]}
+    local title="$1"
+    shift
+    local frames=("${_G_SPIN[@]}")
+    local frame_count=${#frames[@]}
 
     # The spinner owns the terminal line, so the wrapped command's stdout/stderr
     # must not print here — a chatty apt/dpkg run would collide with the \r
     # repaint and render as garbled fragments. Capture to a log; surface it only
     # if the command fails (below), where the output is actually useful.
-    local _log; _log=$(mktemp 2>/dev/null) || _log=/dev/null
+    local _log
+    _log=$(mktemp 2>/dev/null) || _log=/dev/null
 
     "$@" >"$_log" 2>&1 &
     local pid=$!
@@ -202,23 +208,25 @@ _render_spin() {
     # Ctrl-C: re-raise so the caller's INT handler (setup.sh's _setup_on_interrupt
     # / the launcher's exit) runs, instead of the caller treating the killed child
     # as a plain failure and "falling back" through the interrupt.
-    if (( _interrupted )); then
+    if ((_interrupted)); then
         [[ "$_log" != /dev/null ]] && rm -f "$_log"
         kill -INT "$$" 2>/dev/null
         return 130
     fi
     # On failure, surface the captured output so the caller's "Failed to..."
     # message has the real error under it.
-    if (( rc != 0 )) && [[ -s "$_log" ]]; then
+    if ((rc != 0)) && [[ -s "$_log" ]]; then
         tail -n 20 "$_log" >&2
     fi
     [[ "$_log" != /dev/null ]] && rm -f "$_log"
-    return $rc
+    return "$rc"
 }
 
 _render_spin_fg() {
-    local title="$1"; shift
-    local frames=("${_G_SPIN[@]}"); local frame_count=${#frames[@]}
+    local title="$1"
+    shift
+    local frames=("${_G_SPIN[@]}")
+    local frame_count=${#frames[@]}
 
     (
         trap 'exit 0' TERM INT
@@ -240,7 +248,7 @@ _render_spin_fg() {
     kill "$spinner_pid" 2>/dev/null
     wait "$spinner_pid" 2>/dev/null
     echo -ne "\r\033[K"
-    return $rc
+    return "$rc"
 }
 
 _render_input() {
@@ -271,30 +279,31 @@ _render_confirm() {
     local prompt="$1" default="$2" hint="$3"
     local result=""
     if ! read -rp "  $prompt [$hint - press Enter]: " result; then
-        return 3  # EOF
+        return 3 # EOF
     fi
     result="${result:-$default}"
     case "${result,,}" in
-        y|yes) return 0 ;;
-        n|no)  return 1 ;;
-        *)     return 2 ;;  # unrecognised — orchestrator re-prompts or uses default
+        y | yes) return 0 ;;
+        n | no) return 1 ;;
+        *) return 2 ;; # unrecognised — orchestrator re-prompts or uses default
     esac
 }
 
 _render_box() {
-    local title="$1"; shift
+    local title="$1"
+    shift
     local content=("$@")
 
     # Auto-size: find longest line (title + 1 for leading space, or content + 2 for indent)
     local inner_width
-    inner_width=$(( $(_ui_visible_len "$title") + 2 ))
+    inner_width=$(($(_ui_visible_len "$title") + 2))
     for line in "${content[@]}"; do
-        local line_width=$(( $(_ui_visible_len "$line") + 4 ))
-        (( line_width > inner_width )) && inner_width=$line_width
+        local line_width=$(($(_ui_visible_len "$line") + 4))
+        ((line_width > inner_width)) && inner_width=$line_width
     done
     # Minimum width and add padding
-    (( inner_width < 40 )) && inner_width=40
-    (( inner_width += 2 ))
+    ((inner_width < 40)) && inner_width=40
+    ((inner_width += 2))
 
     # NOTE: bash printf "%-Ns" pads to N bytes, not terminal-visible
     # characters. Multi-byte UTF-8 and ANSI styles break alignment. Measure
@@ -303,14 +312,14 @@ _render_box() {
     border=$(_ui_repeat_char "$inner_width" "$_G_H")
     echo ""
     echo -e "  ${_UI_CYAN}${_G_TL}${border}${_G_TR}${_UI_RESET}"
-    _pad=$(( inner_width - $(_ui_visible_len " ${title}") ))
+    _pad=$((inner_width - $(_ui_visible_len " ${title}")))
     padded_title=" ${title}$(_ui_spaces "$_pad")"
     echo -e "  ${_UI_CYAN}${_G_V}${_UI_RESET}${_UI_BOLD}${padded_title}${_UI_RESET}${_UI_CYAN}${_G_V}${_UI_RESET}"
     empty_line=$(_ui_spaces "$inner_width")
     echo -e "  ${_UI_CYAN}${_G_V}${_UI_RESET}${empty_line}${_UI_CYAN}${_G_V}${_UI_RESET}"
     for line in "${content[@]}"; do
-        _pad=$(( inner_width - $(_ui_visible_len "  ${line}") ))
-        (( _pad < 0 )) && _pad=0
+        _pad=$((inner_width - $(_ui_visible_len "  ${line}")))
+        ((_pad < 0)) && _pad=0
         padded_line="  ${line}$(_ui_spaces "$_pad")"
         echo -e "  ${_UI_CYAN}${_G_V}${_UI_RESET}${padded_line}${_UI_CYAN}${_G_V}${_UI_RESET}"
     done
@@ -324,7 +333,8 @@ _render_kv() {
     # Pad keys to the widest one any ui_kv caller renders so every value column
     # aligns. Currently 20: 'Hardware transcoding' / 'Remote streaming cap'. Bump
     # this if a longer key is ever added (no caller passes a variable-length key).
-    _pad=$(( 20 - _klen )); (( _pad < 0 )) && _pad=0
+    _pad=$((20 - _klen))
+    ((_pad < 0)) && _pad=0
     echo -e "  ${_UI_BOLD}${key}$(_ui_spaces "$_pad")${_UI_RESET} ${value}"
 }
 
@@ -332,8 +342,8 @@ _render_divider() {
     local title="${1:-}" width="$_UI_FRAME_WIDTH"
     echo ""
     if [[ -n "$title" ]]; then
-        local rest=$(( width - 4 - $(_ui_visible_len "$title") ))   # "-- title " uses 2 + 1 + len + 1
-        (( rest < 0 )) && rest=0
+        local rest=$((width - 4 - $(_ui_visible_len "$title"))) # "-- title " uses 2 + 1 + len + 1
+        ((rest < 0)) && rest=0
         echo -e "  ${_UI_GRAY}$(_ui_repeat_char 2 "$_G_H") ${title} $(_ui_repeat_char "$rest" "$_G_H")${_UI_RESET}"
     else
         echo -e "  ${_UI_GRAY}$(_ui_repeat_char "$width" "$_G_H")${_UI_RESET}"
@@ -342,15 +352,15 @@ _render_divider() {
 
 _render_progress() {
     local current="$1" total="$2" label="${3:-}"
-    (( total == 0 )) && total=1
-    local pct=$(( current * 100 / total ))
+    ((total == 0)) && total=1
+    local pct=$((current * 100 / total))
     local bar_width=30
-    local filled=$(( current * bar_width / total ))
-    local empty=$(( bar_width - filled ))
+    local filled=$((current * bar_width / total))
+    local empty=$((bar_width - filled))
 
     local bar_fill="" bar_empty=""
-    for ((i=0; i<filled; i++)); do bar_fill+="$_G_BAR_FILL"; done
-    for ((i=0; i<empty; i++)); do bar_empty+="$_G_BAR_EMPTY"; done
+    for ((i = 0; i < filled; i++)); do bar_fill+="$_G_BAR_FILL"; done
+    for ((i = 0; i < empty; i++)); do bar_empty+="$_G_BAR_EMPTY"; done
 
     echo -e "  ${_UI_GREEN}${bar_fill}${_UI_GRAY}${bar_empty}${_UI_RESET} ${pct}%  ${label}"
 }
@@ -368,32 +378,35 @@ _render_choose() {
     # $1 prompt, $2 default_index (0=no default), $3..N items
     # Exit codes: 0=valid (echoes item), 1=invalid (echoes raw input),
     #             2=blank Enter, 3=EOF
-    local prompt="$1" default_index="$2"; shift 2
-    local items=("$@"); local n=${#items[@]}
+    local prompt="$1" default_index="$2"
+    shift 2
+    local items=("$@")
+    local n=${#items[@]}
     local has_default=0
-    (( default_index > 0 )) && has_default=1
+    ((default_index > 0)) && has_default=1
 
     echo -e "  ${_UI_CYAN}$prompt${_UI_RESET}" >&2
     local i=1 item suffix
     for item in "${items[@]}"; do
         suffix=""
-        (( has_default && i == default_index )) && suffix="  ${_UI_GRAY}(default - press Enter)${_UI_RESET}"
+        ((has_default && i == default_index)) && suffix="  ${_UI_GRAY}(default - press Enter)${_UI_RESET}"
         printf '  %s) %s%b\n' "$i" "$item" "$suffix" >&2
         ((i++))
     done
 
-    local label; (( has_default )) && label="[$default_index]" || label="1-$n"
+    local label
+    ((has_default)) && label="[$default_index]" || label="1-$n"
     local choice=""
     if ! read -rp "  Choice ${label}: " choice; then
-        return 3  # EOF
+        return 3 # EOF
     fi
     if [[ -z "$choice" ]]; then
-        return 2  # blank Enter
+        return 2 # blank Enter
     fi
-    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= n )); then
+    if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= n)); then
         echo "${items[$((choice - 1))]}"
         return 0
     fi
-    echo "$choice"  # echo the invalid input for the orchestrator's error message
+    echo "$choice" # echo the invalid input for the orchestrator's error message
     return 1
 }

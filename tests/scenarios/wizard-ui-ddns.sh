@@ -7,7 +7,7 @@
 #   - verify-reject  : verify KO -> re-prompt loop, live config + .env UNTOUCHED
 #   - restore-failure: verify OK but the container fails to come up -> config.json
 #                      rolled back to the previous provider, .env NOT persisted
-# plus the #254 route path:
+# plus the route path:
 #   - route          : a domain-changing switch (free-hostname provider) is detected
 #                      by registry category BEFORE collect/verify and hands off to
 #                      "Add remote access" instead of dead-ending at the verify.
@@ -16,8 +16,8 @@
 # providers, so the switch KEEPS the current domain and is allowed through to the
 # real collect+verify (a free-hostname target would be intercepted by the route
 # branch instead — that's what the route path proves). The provider picker, field
-# loop, JSON renderer and config write are the REAL shared functions (the point of
-# #238 — the day-2 surface reuses the wizard's ddns_provider_pick /
+# loop, JSON renderer and config write are the REAL shared functions (the point
+# being that the day-2 surface reuses the wizard's ddns_provider_pick /
 # ddns_render_config_json / ddns_provider_category and the env_gen write helpers).
 # Only the two live edges are stubbed: ddns_verify_via_container (the ephemeral
 # verify) and _ddns_restart_and_check (the docker restart + up-check), each returning
@@ -211,7 +211,7 @@ chmod +x $fixture"
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "restoring your previous DDNS config" "wizard-ui ddns [restore]: rollback path taken"
 
-    # ---- Path 4: domain-changing switch is routed to Add remote access (#254) --
+    # ---- Path 4: domain-changing switch is routed to Add remote access --------
     # dynu (free) -> duckdns (free) needs a NEW hostname, so it is intercepted by the
     # category route BEFORE collect/verify. Decline the hand-off ('n') to stay
     # hermetic (accepting execs the real Stage-2 wizard). Live config + .env untouched.

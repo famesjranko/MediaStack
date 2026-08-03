@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/unit/launcher-bandwidth.sh
 #
-# Launcher coverage for the day-2 "Adjust bandwidth limits (qBittorrent)" action
-# (#50): a guided knob to change qBittorrent download/upload speed limits (MB/s)
+# Launcher coverage for the day-2 "Adjust bandwidth limits (qBittorrent)"
+# action: a guided knob to change qBittorrent download/upload speed limits (MB/s)
 # post-install, without re-running the wizard or hand-editing config. Verifies:
 #   1. submenu_features renders the new option and routes it to the handler.
 #   2. Apply-FIRST / persist-on-SUCCESS: qbt_set_speed_limits is called with the
@@ -43,7 +43,7 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
 assert_contains "$render_out" "Adjust bandwidth:" \
-  "features: bandwidth option is listed"
+    "features: bandwidth option is listed"
 
 dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -56,7 +56,7 @@ dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   submenu_features 2>&1
 ' 2>&1)
 assert_contains "$dispatch_out" "DISPATCH_BANDWIDTH" \
-  "features: bandwidth label routes to action_adjust_bandwidth"
+    "features: bandwidth label routes to action_adjust_bandwidth"
 
 # ---------------------------------------------------------------------------
 # 2-4. Handler behaviour in a sandbox — capture qbt_set_speed_limits args + .env.
@@ -65,8 +65,8 @@ assert_contains "$dispatch_out" "DISPATCH_BANDWIDTH" \
 # _set_env_var/_reload_env run so .env writes are genuine.
 # ---------------------------------------------------------------------------
 run_band() {
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" \
-  NEW_DL="$1" NEW_UL="$2" QBT_RC="$3" INIT="$4" bash -c '
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" \
+        NEW_DL="$1" NEW_UL="$2" QBT_RC="$3" INIT="$4" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     printf "%s\n" "$INIT" > "$tmp/.env"
@@ -89,36 +89,36 @@ run_band() {
 
 # 2. Success: apply with new values, then persist (single-quoted) on rc 0.
 ok=$(run_band "5" "2" "0" $'QBT_DL_LIMIT=0\nQBT_UL_LIMIT=0')
-assert_contains "$ok" "QBT_SET 5 2"          "apply: qbt_set_speed_limits called with new DL/UL MB/s"
-assert_contains "$ok" "QBT_DL_LIMIT='5'"     "persist: QBT_DL_LIMIT written on success (single-quoted)"
-assert_contains "$ok" "QBT_UL_LIMIT='2'"     "persist: QBT_UL_LIMIT written on success (single-quoted)"
-assert_contains "$ok" "RESULT rc=0"          "apply: success reported"
+assert_contains "$ok" "QBT_SET 5 2" "apply: qbt_set_speed_limits called with new DL/UL MB/s"
+assert_contains "$ok" "QBT_DL_LIMIT='5'" "persist: QBT_DL_LIMIT written on success (single-quoted)"
+assert_contains "$ok" "QBT_UL_LIMIT='2'" "persist: QBT_UL_LIMIT written on success (single-quoted)"
+assert_contains "$ok" "RESULT rc=0" "apply: success reported"
 
 # 3. Failure: apply returns 1 -> .env left UNTOUCHED (no drift ahead of daemon).
 fail=$(run_band "5" "2" "1" $'QBT_DL_LIMIT=0\nQBT_UL_LIMIT=0')
-assert_contains "$fail" "QBT_SET 5 2"        "fail: apply still attempted"
-assert_contains "$fail" "RESULT rc=1"        "fail: failure reported"
+assert_contains "$fail" "QBT_SET 5 2" "fail: apply still attempted"
+assert_contains "$fail" "RESULT rc=1" "fail: failure reported"
 if grep -q "QBT_DL_LIMIT='5'\|QBT_UL_LIMIT='2'" <<<"$fail"; then
-  fail "fail: .env NOT rewritten when the live apply fails (apply-first, persist-on-success)"
+    fail "fail: .env NOT rewritten when the live apply fails (apply-first, persist-on-success)"
 else
-  pass "fail: .env NOT rewritten when the live apply fails (apply-first, persist-on-success)"
+    pass "fail: .env NOT rewritten when the live apply fails (apply-first, persist-on-success)"
 fi
-assert_contains "$fail" "QBT_DL_LIMIT=0"     "fail: .env keeps the old value"
+assert_contains "$fail" "QBT_DL_LIMIT=0" "fail: .env keeps the old value"
 
 # 4. No change: new == current for both -> short-circuit, no apply, no persist.
 nochg=$(run_band "0" "0" "0" $'QBT_DL_LIMIT=0\nQBT_UL_LIMIT=0')
 if grep -q "QBT_SET" <<<"$nochg"; then
-  fail "no-change: equal values skip the apply entirely"
+    fail "no-change: equal values skip the apply entirely"
 else
-  pass "no-change: equal values skip the apply entirely"
+    pass "no-change: equal values skip the apply entirely"
 fi
 
 # ---------------------------------------------------------------------------
 # 5. Guards: Docker unreachable / qBittorrent not running -> warn, no apply.
 # ---------------------------------------------------------------------------
 run_guard() {
-  # $1 = body that defines _docker_reachable / _service_is_running
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GUARD="$1" bash -c '
+    # $1 = body that defines _docker_reachable / _service_is_running
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GUARD="$1" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     printf "QBT_DL_LIMIT=0\nQBT_UL_LIMIT=0\n" > "$tmp/.env"
@@ -151,9 +151,9 @@ if grep -q "QBT_SET" <<<"$g_qbt"; then fail "guard: qBittorrent down -> no apply
 # run_real_input <init-env> -> drives action_adjust_bandwidth with the REAL
 # ui_input_validated against closed stdin, under a timeout. Prints TIMEOUT_RC + cap.
 run_real_input() {
-  local out trc
-  # shellcheck disable=SC2016
-  out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" INIT="$1" timeout 20 bash -c '
+    local out trc
+    # shellcheck disable=SC2016
+    out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" INIT="$1" timeout 20 bash -c '
       source "$REPO_ROOT/mediastack" </dev/null
       tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
       printf "%s\n" "$INIT" > "$tmp/.env"
@@ -168,18 +168,18 @@ run_real_input() {
       cat "$CAPTURE"
       rm -rf "$tmp"
     ' 2>&1)
-  trc=$?
-  printf "TIMEOUT_RC=%s\n%s\n" "$trc" "$out"
+    trc=$?
+    printf "TIMEOUT_RC=%s\n%s\n" "$trc" "$out"
 }
 
 # 6a. Well-formed .env: numeric default -> EOF returns it, no change, no API call.
 real_out=$(run_real_input $'QBT_DL_LIMIT=3\nQBT_UL_LIMIT=1')
 assert_contains "$real_out" "TIMEOUT_RC=0" \
-  "non-TTY: real ui_input_validated on closed stdin terminates (no re-prompt hang)"
+    "non-TTY: real ui_input_validated on closed stdin terminates (no re-prompt hang)"
 if grep -q "QBT_SET" <<<"$real_out"; then
-  fail "non-TTY: EOF -> default (unchanged) = No change, no API call"
+    fail "non-TTY: EOF -> default (unchanged) = No change, no API call"
 else
-  pass "non-TTY: EOF -> default (unchanged) = No change, no API call"
+    pass "non-TTY: EOF -> default (unchanged) = No change, no API call"
 fi
 
 # 6b. HOSTILE .env: a hand-edited non-numeric value must NOT become a failing
@@ -187,11 +187,11 @@ fi
 # so the EOF default validates and the handler still terminates deterministically.
 hostile_out=$(run_real_input $'QBT_DL_LIMIT=10mb\nQBT_UL_LIMIT=5 ')
 assert_contains "$hostile_out" "TIMEOUT_RC=0" \
-  "non-TTY: non-numeric .env default is sanitized -> terminates (no re-prompt hang)"
+    "non-TTY: non-numeric .env default is sanitized -> terminates (no re-prompt hang)"
 if grep -q "QBT_SET" <<<"$hostile_out"; then
-  fail "non-TTY: sanitized garbage default = No change, no API call"
+    fail "non-TTY: sanitized garbage default = No change, no API call"
 else
-  pass "non-TTY: sanitized garbage default = No change, no API call"
+    pass "non-TTY: sanitized garbage default = No change, no API call"
 fi
 
 scenario_end "$CURRENT_SCENARIO"

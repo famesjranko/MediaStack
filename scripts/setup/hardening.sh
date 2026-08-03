@@ -12,7 +12,7 @@
 # uninstall_system_cleanup dispatches host-artefact teardown to the owning
 # modules (gpu_uninstall, storage_uninstall_watchdog, f2b_uninstall_reload_watcher);
 # source them from a BASH_SOURCE-resolved path so the calls resolve without
-# relying on setup.sh's source order (invariant #11). All are side-effect-free
+# relying on setup.sh's source order. All are side-effect-free
 # and re-source-safe.
 _HARDENING_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=gpu.sh
@@ -48,7 +48,10 @@ _ms_state_set() {
     tmp=$(mktemp)
     if sudo test -f "$MEDIASTACK_STATE_FILE"; then
         # shellcheck disable=SC2024 # output intentionally goes to the user-owned temp file
-        sudo awk -F= -v key="$key" '$1 != key' "$MEDIASTACK_STATE_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
+        sudo awk -F= -v key="$key" '$1 != key' "$MEDIASTACK_STATE_FILE" >"$tmp" || {
+            rm -f "$tmp"
+            return 1
+        }
     fi
     printf '%s=%s\n' "$key" "$value" >>"$tmp"
     sudo install -d -m 0755 "$MEDIASTACK_STATE_DIR" \
@@ -97,7 +100,7 @@ _ms_ufw_allow() {
 
 ufw_valid_port() {
     local port="${1:-}"
-    [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 ))
+    [[ "$port" =~ ^[0-9]+$ ]] && ((port >= 1 && port <= 65535))
 }
 
 ufw_add_unique_port() {
@@ -118,7 +121,7 @@ detect_ssh_server_ports() {
 
     if [[ -n "${SSH_CONNECTION:-}" ]]; then
         # Only the 4th field (server_port) is needed; the rest go to throwaway `_`.
-        read -r _ _ _ server_port _ <<< "$SSH_CONNECTION"
+        read -r _ _ _ server_port _ <<<"$SSH_CONNECTION"
         ufw_add_unique_port ports "$server_port"
     fi
 
@@ -152,7 +155,7 @@ ufw_valid_ipv4() {
     c="${BASH_REMATCH[3]}"
     d="${BASH_REMATCH[4]}"
 
-    (( 10#$a <= 255 && 10#$b <= 255 && 10#$c <= 255 && 10#$d <= 255 ))
+    ((10#$a <= 255 && 10#$b <= 255 && 10#$c <= 255 && 10#$d <= 255))
 }
 
 ufw_rfc1918_ipv4() {
@@ -160,11 +163,11 @@ ufw_rfc1918_ipv4() {
     local a b _c _d
 
     ufw_valid_ipv4 "$ip" || return 1
-    IFS=. read -r a b _c _d <<< "$ip"
+    IFS=. read -r a b _c _d <<<"$ip"
 
-    (( 10#$a == 10 )) && return 0
-    (( 10#$a == 172 && 10#$b >= 16 && 10#$b <= 31 )) && return 0
-    (( 10#$a == 192 && 10#$b == 168 )) && return 0
+    ((10#$a == 10)) && return 0
+    ((10#$a == 172 && 10#$b >= 16 && 10#$b <= 31)) && return 0
+    ((10#$a == 192 && 10#$b == 168)) && return 0
     return 1
 }
 
@@ -181,7 +184,7 @@ detect_active_ssh_client() {
     [[ -n "${SSH_CONNECTION:-}" ]] || return 0
     # SSH_CONNECTION = "<client_ip> <client_port> <server_ip> <server_port>"; only
     # the client IP and server port are used, the rest go to throwaway `_`.
-    read -r client_ip _ _ server_port _ <<< "$SSH_CONNECTION"
+    read -r client_ip _ _ server_port _ <<<"$SSH_CONNECTION"
     ufw_valid_ip_literal "$client_ip" || return 0
     ufw_valid_port "$server_port" || return 0
 
@@ -215,7 +218,7 @@ setup_ufw_ssh_rules() {
     local active_client=()
     mapfile -t active_client < <(detect_active_ssh_client)
     if ((${#active_client[@]} > 0)); then
-        read -r active_client_ip active_server_port <<< "${active_client[0]}"
+        read -r active_client_ip active_server_port <<<"${active_client[0]}"
     fi
 
     if ((${#ssh_ports[@]} == 0)); then
@@ -236,8 +239,8 @@ setup_ufw() {
         ui_spin "Installing ufw..." sudo apt-get install -y -qq ufw
     fi
 
-    if [[ "$(_ms_state_get UFW_DEFAULTS_APPLIED 2>/dev/null || true)" == "true" \
-        && "$(_ufw_defaults)" != "deny allow" ]]; then
+    if [[ "$(_ms_state_get UFW_DEFAULTS_APPLIED 2>/dev/null || true)" == "true" &&
+    "$(_ufw_defaults)" != "deny allow" ]]; then
         log_warn "UFW default policy changed after setup; leaving UFW unchanged"
         return 0
     fi
@@ -371,7 +374,7 @@ RULES
 # duplicates back to one. Emitted as literal text for /etc/ufw/after.init.
 _ufw_docker_dedup_block() {
     cat <<'DEDUP'
-# >>> MEDIASTACK-DOCKER-DEDUP (issue #214) — keep exactly one DOCKER-USER→RESTRICT jump
+# >>> MEDIASTACK-DOCKER-DEDUP — keep exactly one DOCKER-USER→RESTRICT jump
     while [ "$(iptables -S DOCKER-USER 2>/dev/null | grep -c -- '-j MEDIASTACK-DOCKER-RESTRICT')" -gt 1 ]; do
         iptables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT || break
     done
@@ -399,7 +402,7 @@ setup_ufw_docker_dedup_hook() {
         # No stock sample present — write a minimal MediaStack-owned hook.
         {
             printf '%s\n' '#!/bin/sh' \
-                '# after.init — MediaStack-managed; trims duplicate DOCKER-USER jumps (issue #214).' \
+                '# after.init — MediaStack-managed; trims duplicate DOCKER-USER jumps.' \
                 'set -e' \
                 'case "$1" in' \
                 'start)'
@@ -475,8 +478,8 @@ setup_unattended_upgrades() {
         || sudo test -e "$MEDIASTACK_APT_POLICY_CONF"; then
         if sudo test -f "$MEDIASTACK_APT_AUTO_CONF" \
             && sudo test -f "$MEDIASTACK_APT_POLICY_CONF" \
-            && [[ "$(_ms_root_sha256 "$MEDIASTACK_APT_AUTO_CONF")" == "$(_ms_state_get APT_AUTO_SHA256 2>/dev/null || true)" \
-            && "$(_ms_root_sha256 "$MEDIASTACK_APT_POLICY_CONF")" == "$(_ms_state_get APT_POLICY_SHA256 2>/dev/null || true)" ]]; then
+            && [[ "$(_ms_root_sha256 "$MEDIASTACK_APT_AUTO_CONF")" == "$(_ms_state_get APT_AUTO_SHA256 2>/dev/null || true)" &&
+            "$(_ms_root_sha256 "$MEDIASTACK_APT_POLICY_CONF")" == "$(_ms_state_get APT_POLICY_SHA256 2>/dev/null || true)" ]]; then
             log_skip "Unattended-upgrades already configured"
         else
             log_warn "MediaStack unattended-upgrades files are incomplete or changed; leaving them unchanged"
@@ -516,7 +519,10 @@ EOF
     apt_dump=$(apt-config dump)
     grep -q 'APT::Periodic::Unattended-Upgrade "1"' <<<"$apt_dump" \
         && grep -q 'Unattended-Upgrade::Automatic-Reboot "false"' <<<"$apt_dump" \
-        || { log_error "MediaStack unattended-upgrades policy is not effective"; return 1; }
+        || {
+            log_error "MediaStack unattended-upgrades policy is not effective"
+            return 1
+        }
 
     log_ok "Automatic security updates configured"
 }
@@ -601,7 +607,7 @@ verify_gpu_runtime() {
     local daemon_json="/etc/docker/daemon.json"
     if [[ ! -f "$daemon_json" ]]; then
         if ! command -v nvidia-ctk &>/dev/null; then
-            return  # nvidia-ctk not installed yet — Stage 3 will configure the runtime
+            return # nvidia-ctk not installed yet — Stage 3 will configure the runtime
         fi
         log_warn "daemon.json missing - attempting nvidia-ctk runtime configure..."
         sudo nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
@@ -678,7 +684,10 @@ record_pre_install_state() {
     fi
     read -r incoming outgoing <<<"$defaults"
     [[ -n "$incoming" && -n "$outgoing" && "$rules_hash" =~ ^[0-9a-f]{64}$ ]] \
-        || { log_error "Could not read UFW pre-install state"; return 1; }
+        || {
+            log_error "Could not read UFW pre-install state"
+            return 1
+        }
 
     tmp=$(mktemp)
     cat >"$tmp" <<EOF
@@ -829,7 +838,7 @@ setup_samba() {
             share_comment="MediaStack full system access"
             share_path="/"
             ;;
-        data|"")
+        data | "")
             share_name="Media"
             share_comment="MediaStack data directory"
             share_path="${DATA_DIR:-/data}"
@@ -941,7 +950,10 @@ setup_samba() {
 
     if ! id "$admin_user" &>/dev/null; then
         [[ "$(_ms_state_get SAMBA_USER_PREEXISTED)" == "false" ]] \
-            || { log_warn "Pre-existing Samba OS user was removed; leaving state unchanged"; return 0; }
+            || {
+                log_warn "Pre-existing Samba OS user was removed; leaving state unchanged"
+                return 0
+            }
         sudo useradd -M -s /usr/sbin/nologin "$admin_user"
     fi
     if [[ -n "$gid_group" && "$group_preexisted" == "false" ]] \
@@ -1074,8 +1086,8 @@ _uninstall_ufw() {
     if [[ "$(_ms_state_get UFW_ENABLED_BY_MEDIASTACK)" == "true" ]] \
         && sudo ufw status 2>/dev/null | grep -q 'Status: active'; then
         defaults=$(_ufw_defaults)
-        if [[ "$current" == "$before" \
-            && "$defaults" == "$(_ms_state_get UFW_DEFAULT_INCOMING) $(_ms_state_get UFW_DEFAULT_OUTGOING)" ]]; then
+        if [[ "$current" == "$before" &&
+            "$defaults" == "$(_ms_state_get UFW_DEFAULT_INCOMING) $(_ms_state_get UFW_DEFAULT_OUTGOING)" ]]; then
             sudo ufw --force disable >/dev/null || return 1
         else
             log_warn "UFW gained user changes after install; leaving it active"
@@ -1130,7 +1142,7 @@ _uninstall_apt() {
         fi
         sudo rm -f "$path" || return 1
     done
-    gpu_uninstall  # apt sources owned by gpu.sh; removed by their owner
+    gpu_uninstall # apt sources owned by gpu.sh; removed by their owner
     log_ok "MediaStack apt sources and unattended-upgrades policy removed"
 }
 
@@ -1156,10 +1168,13 @@ _uninstall_sysctl() {
         net.ipv4.conf.default.log_martians:1
     ) item key applied state_key current
     for item in "${keys[@]}"; do
-        key="${item%%:*}"; applied="${item#*:}"
-        state_key="SYSCTL_BEFORE_${key^^}"; state_key="${state_key//./_}"
-        local before; before=$(_ms_state_get "$state_key" 2>/dev/null || true)
-        current=$(sysctl -n "$key" 2>/dev/null)   # reading sysctl needs no root
+        key="${item%%:*}"
+        applied="${item#*:}"
+        state_key="SYSCTL_BEFORE_${key^^}"
+        state_key="${state_key//./_}"
+        local before
+        before=$(_ms_state_get "$state_key" 2>/dev/null || true)
+        current=$(sysctl -n "$key" 2>/dev/null) # reading sysctl needs no root
         if [[ "$current" == "$applied" ]]; then
             if [[ -n "$before" ]]; then
                 sudo sysctl -w "$key=$before" >/dev/null || return 1
@@ -1230,14 +1245,35 @@ _uninstall_samba() {
 }
 
 uninstall_system_cleanup() {
-    validate_install_state || { log_error "Missing or invalid MediaStack ownership ledger; refusing host cleanup"; return 1; }
+    validate_install_state || {
+        log_error "Missing or invalid MediaStack ownership ledger; refusing host cleanup"
+        return 1
+    }
     local failed=0
-    _uninstall_ufw || { log_error "UFW cleanup failed"; failed=1; }
-    _uninstall_apt || { log_error "APT cleanup failed"; failed=1; }
-    _uninstall_sysctl || { log_error "sysctl cleanup failed"; failed=1; }
-    _uninstall_samba || { log_error "Samba cleanup failed"; failed=1; }
-    storage_uninstall_watchdog || { log_error "Storage watchdog cleanup failed"; failed=1; }
-    f2b_uninstall_reload_watcher || { log_error "fail2ban reload watcher cleanup failed"; failed=1; }
+    _uninstall_ufw || {
+        log_error "UFW cleanup failed"
+        failed=1
+    }
+    _uninstall_apt || {
+        log_error "APT cleanup failed"
+        failed=1
+    }
+    _uninstall_sysctl || {
+        log_error "sysctl cleanup failed"
+        failed=1
+    }
+    _uninstall_samba || {
+        log_error "Samba cleanup failed"
+        failed=1
+    }
+    storage_uninstall_watchdog || {
+        log_error "Storage watchdog cleanup failed"
+        failed=1
+    }
+    f2b_uninstall_reload_watcher || {
+        log_error "fail2ban reload watcher cleanup failed"
+        failed=1
+    }
 
     # mediastack-setup unit + setup-result banner are stage/hardening-owned.
     if sudo test -f /etc/systemd/system/mediastack-setup.service; then
@@ -1248,6 +1284,9 @@ uninstall_system_cleanup() {
     sudo rm -f /etc/profile.d/mediastack-setup-result.sh || failed=1
     sudo systemctl daemon-reload 2>/dev/null || failed=1
 
-    (( failed == 0 )) || { log_error "Host cleanup incomplete; ownership ledger retained for retry"; return 1; }
+    ((failed == 0)) || {
+        log_error "Host cleanup incomplete; ownership ledger retained for retry"
+        return 1
+    }
     log_ok "MediaStack system artefacts removed"
 }

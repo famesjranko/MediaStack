@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/ratelimit-toggle.sh
 #
-# Guards the NPM rate-limiting master switch (config.yml rate_limiting.enabled,
-# ADR-35):
+# Guards the NPM rate-limiting master switch (config.yml rate_limiting.enabled):
 #   - the shipped default must be OFF (turnkey safety — the whole point of the
 #     switch),
 #   - the opt-in flip must normalize to a usable boolean,

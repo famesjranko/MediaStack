@@ -57,6 +57,6 @@ run_scenario() {
             else
                 pass "override changes the image: $rsvc ($rold -> $rnew)"
             fi
-        done <<< "$rec"
+        done <<<"$rec"
     fi
 }

@@ -78,9 +78,17 @@ matrix_jackett() {
     assert_contains "$apply_log" "not available in Jackett" \
         "Jackett api-matrix: bogus indexer logged as not available"
 
-    api_key=$(_jkm_api_key) || { fail "Jackett api-matrix: API key readable"; skip "Jackett api-matrix: all remaining module assertions" "API key unreadable"; return; }
+    api_key=$(_jkm_api_key) || {
+        fail "Jackett api-matrix: API key readable"
+        skip "Jackett api-matrix: all remaining module assertions" "API key unreadable"
+        return
+    }
     [[ -n "$api_key" ]] && pass "Jackett api-matrix: API key readable" \
-        || { fail "Jackett api-matrix: API key readable"; skip "Jackett api-matrix: all remaining module assertions" "API key empty"; return; }
+        || {
+            fail "Jackett api-matrix: API key readable"
+            skip "Jackett api-matrix: all remaining module assertions" "API key empty"
+            return
+        }
 
     # Log in only AFTER apply completes — configure_jackett may trigger an
     # internal FlareSolverr-config-triggered webhost restart (~20s) and
@@ -94,12 +102,20 @@ matrix_jackett() {
         return
     fi
 
-    configured=$(_jkm_configured "$api_key") || { fail "Jackett api-matrix: configured-indexers API readable"; skip "Jackett api-matrix: indexer/server-config + re-run assertions" "configured-indexers API unreadable"; return; }
+    configured=$(_jkm_configured "$api_key") || {
+        fail "Jackett api-matrix: configured-indexers API readable"
+        skip "Jackett api-matrix: indexer/server-config + re-run assertions" "configured-indexers API unreadable"
+        return
+    }
     pass "Jackett api-matrix: configured-indexers API readable"
     assert_eq "eztv yts" "$(_jkm_configured_ids "$configured")" \
         "Jackett api-matrix: exactly the 2 valid indexers are configured"
 
-    server_cfg=$(_jkm_server_config "$api_key") || { fail "Jackett api-matrix: server-config API readable"; skip "Jackett api-matrix: server-config + re-run assertions" "server-config API unreadable"; return; }
+    server_cfg=$(_jkm_server_config "$api_key") || {
+        fail "Jackett api-matrix: server-config API readable"
+        skip "Jackett api-matrix: server-config + re-run assertions" "server-config API unreadable"
+        return
+    }
     pass "Jackett api-matrix: server-config API readable"
     assert_eq "http://flaresolverr:8191" "$(_jkm_json_field "$server_cfg" flaresolverrurl)" \
         "Jackett api-matrix: FlareSolverr URL set"
@@ -128,7 +144,11 @@ matrix_jackett() {
     assert_contains "$apply_log" "Jackett admin password already set" \
         "Jackett api-matrix: re-run skips admin password (already set)"
 
-    configured=$(_jkm_configured "$api_key") || { fail "Jackett api-matrix: configured-indexers API readable after re-run"; skip "Jackett api-matrix: configured-indexers-unchanged assertion" "configured-indexers API unreadable after re-run"; return; }
+    configured=$(_jkm_configured "$api_key") || {
+        fail "Jackett api-matrix: configured-indexers API readable after re-run"
+        skip "Jackett api-matrix: configured-indexers-unchanged assertion" "configured-indexers API unreadable after re-run"
+        return
+    }
     assert_eq "eztv yts" "$(_jkm_configured_ids "$configured")" \
         "Jackett api-matrix: configured indexers unchanged after re-run"
 }

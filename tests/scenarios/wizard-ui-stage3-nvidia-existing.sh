@@ -28,7 +28,7 @@ BASH"
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "NVIDIA driver managed outside MediaStack" "wizard-ui stage3 nvidia existing: external-driver menu shown"
-    assert_eq "nvidia"   "$(env_get JELLYFIN_GPU)"       "wizard-ui stage3 nvidia existing: JELLYFIN_GPU=nvidia"
+    assert_eq "nvidia" "$(env_get JELLYFIN_GPU)" "wizard-ui stage3 nvidia existing: JELLYFIN_GPU=nvidia"
     assert_eq "existing" "$(env_get NVIDIA_DRIVER_MODE)" "wizard-ui stage3 nvidia existing: NVIDIA_DRIVER_MODE=existing"
-    assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)"  "wizard-ui stage3 nvidia existing: STAGE_3_GPU_STATE=complete"
+    assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 nvidia existing: STAGE_3_GPU_STATE=complete"
 }

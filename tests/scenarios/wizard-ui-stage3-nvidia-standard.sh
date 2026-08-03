@@ -1,6 +1,6 @@
 # tests/scenarios/wizard-ui-stage3-nvidia-standard.sh — NVIDIA Standard driver mode.
 #
-# Headline ADR-31 path: GPU detected, user configures transcoding, then picks the
+# Headline path: GPU detected, user configures transcoding, then picks the
 # Standard (Debian-managed, official NVENC limits) driver mode. With the driver
 # install reporting no reboot needed and verification passing, the flow reaches
 # the verified/complete state. Asserts NVIDIA_DRIVER_MODE=standard is recorded.
@@ -26,7 +26,7 @@ run_scenario() {
     assert_contains "$transcript" "NVIDIA driver setup" "wizard-ui stage3 nvidia standard: driver-mode box shown"
     assert_contains "$transcript" "Standard driver: Debian-managed" "wizard-ui stage3 nvidia standard: standard option described"
     assert_contains "$transcript" "NVIDIA NVENC configured and verified" "wizard-ui stage3 nvidia standard: verified success message"
-    assert_eq "nvidia"   "$(env_get JELLYFIN_GPU)"        "wizard-ui stage3 nvidia standard: JELLYFIN_GPU=nvidia"
-    assert_eq "standard" "$(env_get NVIDIA_DRIVER_MODE)"  "wizard-ui stage3 nvidia standard: NVIDIA_DRIVER_MODE=standard"
-    assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)"   "wizard-ui stage3 nvidia standard: STAGE_3_GPU_STATE=complete"
+    assert_eq "nvidia" "$(env_get JELLYFIN_GPU)" "wizard-ui stage3 nvidia standard: JELLYFIN_GPU=nvidia"
+    assert_eq "standard" "$(env_get NVIDIA_DRIVER_MODE)" "wizard-ui stage3 nvidia standard: NVIDIA_DRIVER_MODE=standard"
+    assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 nvidia standard: STAGE_3_GPU_STATE=complete"
 }

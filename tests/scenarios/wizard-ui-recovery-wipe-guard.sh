@@ -2,7 +2,7 @@
 #
 # Safety-critical: choosing "Wipe everything and start fresh" must require typing
 # DESTROY exactly. Here the user types something else; the guard must abort with
-# no destruction (.env preserved). One typo aborts (D-22).
+# no destruction (.env preserved). One typo aborts.
 
 source tests/lib/wizard_recovery_common.sh
 

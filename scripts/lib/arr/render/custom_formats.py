@@ -9,6 +9,7 @@ Env:
 Stdout: one line per format to create, as <name>\t<post-body-json>.
 Skips formats already present (matched by name).
 """
+
 import json
 import os
 import sys
@@ -34,9 +35,7 @@ def main() -> int:
             continue
         body = {
             "name": name,
-            "includeCustomFormatWhenRenaming": fmt.get(
-                "includeCustomFormatWhenRenaming", False
-            ),
+            "includeCustomFormatWhenRenaming": fmt.get("includeCustomFormatWhenRenaming", False),
             "specifications": fmt.get("specifications", []),
         }
         sys.stdout.write(f"{name}\t{json.dumps(body)}\n")

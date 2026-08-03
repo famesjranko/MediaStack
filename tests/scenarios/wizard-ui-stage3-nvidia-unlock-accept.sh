@@ -24,7 +24,7 @@ run_scenario() {
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "NVIDIA NVENC configured and verified" "wizard-ui stage3 nvidia unlock accept: verified success message"
-    assert_eq "nvidia" "$(env_get JELLYFIN_GPU)"       "wizard-ui stage3 nvidia unlock accept: JELLYFIN_GPU=nvidia"
+    assert_eq "nvidia" "$(env_get JELLYFIN_GPU)" "wizard-ui stage3 nvidia unlock accept: JELLYFIN_GPU=nvidia"
     assert_eq "unlock" "$(env_get NVIDIA_DRIVER_MODE)" "wizard-ui stage3 nvidia unlock accept: NVIDIA_DRIVER_MODE=unlock"
     assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 nvidia unlock accept: STAGE_3_GPU_STATE=complete"
 }

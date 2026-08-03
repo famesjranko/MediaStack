@@ -63,7 +63,7 @@ standard_submenu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -
   rm -f "$LABELS"
 ' 2>&1)
 case "$standard_submenu_out" in
-    *"Reapply Unlock patch"*|*"Update NVIDIA driver"*)
+    *"Reapply Unlock patch"* | *"Update NVIDIA driver"*)
         fail "launcher: Standard mode does not show Unlock-only actions"
         ;;
     *)
@@ -133,7 +133,7 @@ gpu_hw_ok=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 case "$gpu_hw_ok" in
     *"software mode"*) fail "launcher: _warn_gpu_runtime_fallback must be silent when HW mode is active" ;;
-    *)                 pass "launcher: _warn_gpu_runtime_fallback silent when HW mode is active" ;;
+    *) pass "launcher: _warn_gpu_runtime_fallback silent when HW mode is active" ;;
 esac
 
 # No-op when GPU state is not complete (skipped/pending/unset).
@@ -144,7 +144,7 @@ gpu_noop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 case "$gpu_noop" in
     *"software mode"*) fail "launcher: _warn_gpu_runtime_fallback must be no-op when state != complete" ;;
-    *)                 pass "launcher: _warn_gpu_runtime_fallback no-op when GPU state != complete" ;;
+    *) pass "launcher: _warn_gpu_runtime_fallback no-op when GPU state != complete" ;;
 esac
 
 echo -e "${CYAN}◀ launcher-hardware done${NC}"

@@ -93,8 +93,8 @@ _wizard_apply_settings() {
         --config "$SCRIPT_DIR/config.yml") || _apply_rc=$?
     while IFS= read -r _line; do
         [[ -n "$_line" ]] && log_ok "$_line"
-    done <<< "$_apply_out"
-    return $_apply_rc
+    done <<<"$_apply_out"
+    return "$_apply_rc"
 }
 
 _discovery_ip_ok=false
@@ -139,10 +139,10 @@ _wizard_run_discovery() {
         for port in 6881 80 443 51820; do
             status="${_NET_PORT_STATUS[$port]:-unknown}"
             case "$status" in
-                open)             ui_log warn "Port $port: in use by another process - free it before Stage 1 (e.g. 'sudo lsof -i :$port')" ;;
-                closed)           ui_log ok "Port $port: available" ;;
+                open) ui_log warn "Port $port: in use by another process - free it before Stage 1 (e.g. 'sudo lsof -i :$port')" ;;
+                closed) ui_log ok "Port $port: available" ;;
                 udp-unverifiable) ui_log info "Port $port: UDP - availability checked when WireGuard starts" ;;
-                *)                ui_log info "Port $port: status unknown" ;;
+                *) ui_log info "Port $port: status unknown" ;;
             esac
         done
         ui_log info "Public reachability for ports 80/443 will be checked in Stage 2 once NPM is running."
@@ -158,7 +158,7 @@ source "$SCRIPT_DIR/scripts/setup/stages/stage2.sh"
 source "$SCRIPT_DIR/scripts/setup/stages/stage3.sh"
 
 run_wizard() {
-    seed_root_config   # seed live config.yml from template (defined in env_gen.sh)
+    seed_root_config # seed live config.yml from template (defined in env_gen.sh)
     # Self-skip only when config.yml, .env, and the Stage 1 completion marker
     # all agree. `_wizard_apply_settings` writes `wizard_completed: true`
     # before Stage 1 starts containers and proves Jellyfin is usable; if setup
@@ -204,7 +204,7 @@ exit(0 if c.get('wizard_completed') else 1)
 
     local stage2_rc=0
     run_stage2 || stage2_rc=$?
-    if (( stage2_rc != 0 )); then
+    if ((stage2_rc != 0)); then
         if stage3_pending_nvidia_reboot_same_boot; then
             log_warn "NVIDIA hardware transcoding is prepared and still needs a reboot. Choose Manage hardware transcoding (GPU) from the menu when you are ready to finish it."
         fi

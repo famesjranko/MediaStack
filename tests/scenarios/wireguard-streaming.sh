@@ -1,8 +1,9 @@
-# tests/scenarios/wireguard-streaming.sh — Streaming-tier firewallIps shape (ADR-45).
+# tests/scenarios/wireguard-streaming.sh — Streaming-tier firewallIps shape.
 # Brings up wg-easy v15, enables the per-client firewall, creates a family-style
 # peer, and writes the streaming-tier firewallIps (Jellyfin only, no Homepage).
 # Verifies the shape round-trips through wg-easy's possibly-500-but-persisted
-# mutation path documented in ADR-28. The streaming-requests (Jellyfin + Seerr)
+# mutation path: wg-easy may answer 500 and still persist, so every mutation is
+# classified on read-back, never on the HTTP status. The streaming-requests (Jellyfin + Seerr)
 # shape is unit-covered in tests/unit/stage2-wireguard.sh; multi-entry
 # persistence is already proven end-to-end by wireguard-containers.
 #
@@ -44,7 +45,7 @@ run_scenario() {
     echo "  starting wireguard (pulling image)…"
     dind_exec "docker compose --profile remote up -d wireguard" >/dev/null 2>&1
     local up_rc=$?
-    if (( up_rc != 0 )); then
+    if ((up_rc != 0)); then
         fail "docker compose up wireguard" "exit $up_rc"
         dind_exec "docker compose --profile remote logs wireguard" 2>&1 | tail -30
         return 1
@@ -77,7 +78,7 @@ run_scenario() {
     # ------------------------------------------------------------------
     # 2. Enable per-client firewall via Basic Auth API. Classify on read-back
     # because v15.3.0 can return 500 while still persisting firewallEnabled=true
-    # (ip6tables touched even with DISABLE_IPV6=true). ADR-28.
+    # (ip6tables touched even with DISABLE_IPV6=true).
     # ------------------------------------------------------------------
     local interface_body enable_http
     interface_body=$(dind_exec "curl -s -u admin:$wg_password http://localhost:51821/api/admin/interface" | python3 -c '
@@ -91,8 +92,11 @@ print(json.dumps(d))')
     fw_state=$(dind_exec "curl -s -u admin:$wg_password http://localhost:51821/api/admin/interface | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"yes\" if d.get(\"firewallEnabled\") else \"no\")'" | tr -d '\r\n')
     case "$enable_http:$fw_state" in
         2*:yes) pass "per-client firewall enabled (HTTP $enable_http, state=yes)" ;;
-        *:yes)  pass "per-client firewall enabled — POST returned HTTP $enable_http but state persisted (ADR-28 read-back path)" ;;
-        *)      fail "per-client firewall enabled" "HTTP $enable_http, state=$fw_state"; return 1 ;;
+        *:yes) pass "per-client firewall enabled — POST returned HTTP $enable_http but state persisted (read-back path)" ;;
+        *)
+            fail "per-client firewall enabled" "HTTP $enable_http, state=$fw_state"
+            return 1
+            ;;
     esac
 
     # ------------------------------------------------------------------
@@ -108,7 +112,7 @@ print(json.dumps(d))')
     create_resp=$(printf '%s\n' "$create_result" | sed '1d')
 
     local peer_id
-peer_id=$(echo "$create_resp" | python3 -c '
+    peer_id=$(echo "$create_resp" | python3 -c '
 import sys, json
 try:
     d = json.loads(sys.stdin.read())
@@ -127,8 +131,8 @@ if isinstance(d, dict):
         return 1
     fi
     case "$create_http" in
-        200|201) pass "POST /api/client creates family peer (HTTP $create_http)" ;;
-        *)       pass "POST /api/client returned HTTP $create_http but family peer persisted (ADR-28 read-back path)" ;;
+        200 | 201) pass "POST /api/client creates family peer (HTTP $create_http)" ;;
+        *) pass "POST /api/client returned HTTP $create_http but family peer persisted (read-back path)" ;;
     esac
     pass "family peer id extracted: ${peer_id:0:8}…"
 
@@ -139,7 +143,7 @@ if isinstance(d, dict):
 import os, sys, json
 d = json.loads(sys.stdin.read())
 d["firewallIps"] = [x.strip() for x in os.environ["IPS"].split(",") if x.strip()]
-print(json.dumps(d))' <<< "$peer_obj")
+print(json.dumps(d))' <<<"$peer_obj")
     peer_update_http=$(dind_exec "curl -s -o /dev/null -w '%{http_code}' -u admin:$wg_password -X POST http://localhost:51821/api/client/$peer_id -H 'Content-Type: application/json' -d '$peer_update_body'" | tr -d '\r\n')
 
     # ------------------------------------------------------------------
@@ -149,8 +153,8 @@ print(json.dumps(d))' <<< "$peer_obj")
     peer_after_state=$(dind_exec "curl -s -u admin:$wg_password http://localhost:51821/api/client/$peer_id | IPS='$family_fw_ips' python3 -c 'import os,sys,json; d=json.load(sys.stdin); got=d.get(\"firewallIps\") or []; want=[x.strip() for x in os.environ[\"IPS\"].split(\",\") if x.strip()]; print(\"yes\" if set(got) == set(want) else json.dumps(got))'" | tr -d '\r\n')
     case "$peer_update_http:$peer_after_state" in
         2*:yes) pass "POST /api/client/<id> updates firewallIps (HTTP $peer_update_http)" ;;
-        *:yes)  pass "POST /api/client/<id> returned HTTP $peer_update_http but firewallIps persisted (ADR-28 read-back path)" ;;
-        *)      fail "family peer firewallIps persisted" "HTTP $peer_update_http, got='${peer_after_state:0:200}'" ;;
+        *:yes) pass "POST /api/client/<id> returned HTTP $peer_update_http but firewallIps persisted (read-back path)" ;;
+        *) fail "family peer firewallIps persisted" "HTTP $peer_update_http, got='${peer_after_state:0:200}'" ;;
     esac
 
     # ------------------------------------------------------------------

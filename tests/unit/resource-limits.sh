@@ -26,9 +26,9 @@ source "$REPO_ROOT/setup.sh"
 set +e
 set +u
 
-log_ok()    { :; }
-log_info()  { :; }
-log_warn()  { :; }
+log_ok() { :; }
+log_info() { :; }
+log_warn() { :; }
 log_error() { :; }
 
 # Override SCRIPT_DIR so generate_override writes to a temp directory
@@ -106,7 +106,8 @@ fi
 
 ALL_SERVICES="jellyfin sonarr radarr jackett qbittorrent flaresolverr seerr unpackerr bazarr homepage portainer npm fail2ban wireguard ddns-updater uptime-kuma beszel beszel-agent autoheal"
 
-compose_services=$(python3 - <<PY
+compose_services=$(
+    python3 - <<PY
 import yaml
 
 with open("$REPO_ROOT/docker-compose.yml") as f:
@@ -118,6 +119,15 @@ PY
 )
 override_services=$(_compose_image_services)
 lock_services=$(awk -F '\t' 'NR > 3 && $1 != "" && $1 !~ /^#/ {print $1}' "$TMPDIR_WORK/docs/operations/image-digests.lock")
+
+# Fail closed: three empty lists diff clean, so a compose parse failure would
+# report both service-list checks green having compared nothing.
+if [[ -n "$compose_services" && -n "$override_services" && -n "$lock_services" ]]; then
+    pass "image service populations are non-empty"
+else
+    fail "image service populations are non-empty" \
+        "compose=$(grep -c . <<<"$compose_services") override=$(grep -c . <<<"$override_services") lock=$(grep -c . <<<"$lock_services")"
+fi
 
 if diff -u <(printf '%s\n' "$compose_services" | sort) <(printf '%s\n' "$override_services" | sort) >/dev/null; then
     pass "stable image service list matches docker-compose.yml"
@@ -259,7 +269,7 @@ for svc in $ALL_SERVICES; do
     swap_raw=$(awk "/^  ${svc}:/{found=1} found && /memswap_limit:/{print \$2; exit}" "$override")
     mem_num="${mem_raw%m}"
     swap_num="${swap_raw%m}"
-    expected_swap=$(( mem_num * 3 / 2 ))
+    expected_swap=$((mem_num * 3 / 2))
     if [[ "$swap_num" -eq "$expected_swap" ]] 2>/dev/null; then
         pass "memswap 1.5x: $svc (${mem_raw} → ${swap_raw})"
     else

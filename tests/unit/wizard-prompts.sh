@@ -2,8 +2,8 @@
 # =============================================================================
 # Unit test — shared wizard prompt SSOT (tests/lib/wizard_prompts.json)
 # =============================================================================
-# The DinD wizard-ui-* scenarios and the maintainer-private bare-metal harness build their
-# PTY steps from ONE prompt definition file via tests/lib/wizard_steps_build.py. This guards
+# The wizard-ui-* scenarios build their PTY steps from ONE prompt definition
+# file via tests/lib/wizard_steps_build.py. This guards
 # that single source of truth:
 #   - the JSON is well-formed and every regex compiles (the flavor wizard_pty.py uses)
 #   - the builder renders SSOT names, @timeout, ENTER and NONE correctly, and rejects bad names
@@ -28,7 +28,8 @@ SSOT="$REPO_ROOT/tests/lib/wizard_prompts.json"
 BUILD="$REPO_ROOT/tests/lib/wizard_steps_build.py"
 
 # 1. SSOT parses + every value is a valid Python regex.
-if out=$(python3 - "$SSOT" <<'PY'
+if out=$(
+    python3 - "$SSOT" <<'PY'
 import json, re, sys
 p = json.load(open(sys.argv[1]))["prompts"]
 assert isinstance(p, dict) and p, "prompts must be a non-empty object"
@@ -44,7 +45,7 @@ fi
 
 # 2. Builder renders the SSOT name, @timeout, ENTER, and NONE forms correctly.
 built=$(python3 "$BUILD" transcode_offer 1 stage2_https_not_ready@30 ENTER stage1_admin_username NONE)
-if BUILT="$built" python3 - "$SSOT" <<'PY'
+if BUILT="$built" python3 - "$SSOT" <<'PY'; then
 import json, os, sys
 steps = json.loads(os.environ["BUILT"])
 P = json.load(open(sys.argv[1]))["prompts"]
@@ -55,7 +56,6 @@ expected = [
 ]
 assert steps == expected, f"{steps!r} != {expected!r}"
 PY
-then
     pass "wizard-prompts: builder renders SSOT name / @timeout / ENTER / NONE"
 else
     fail "wizard-prompts: builder did not render the expected steps-JSON"
@@ -71,8 +71,19 @@ fi
 # 3. Self-scoping: any wizard-ui scenario that BUILDS from the SSOT must not also inline a
 #    prompt regex. (Scenarios that don't call the builder — e.g. recovery, manage-updates, and
 #    the deliberately-dynamic nas-existing-share — are not checked.)
+shopt -s nullglob
+SCENARIOS=("$REPO_ROOT"/tests/scenarios/wizard-ui-*.sh)
+shopt -u nullglob
+# Fail closed: checks 3-5 all iterate this glob, and with no match each of them
+# finds no violation and passes having read nothing.
+if ((${#SCENARIOS[@]} > 0)); then
+    pass "wizard-prompts: scenario population is non-empty (${#SCENARIOS[@]} files)"
+else
+    fail "wizard-prompts: scenario population is non-empty" "tests/scenarios/wizard-ui-*.sh matched no files"
+fi
+
 reinlined=""
-for f in "$REPO_ROOT"/tests/scenarios/wizard-ui-*.sh; do
+for f in "${SCENARIOS[@]}"; do
     if grep -qE 'wizard_(stage[123]|build)_steps ' "$f" && grep -qE '"expect"[[:space:]]*:' "$f"; then
         reinlined="$reinlined $(basename "$f")"
     fi
@@ -84,7 +95,8 @@ else
 fi
 
 # 4. Every prompt name passed to the builder is defined in the SSOT, with even NAME/SEND parity.
-if out=$(python3 - "$SSOT" "$REPO_ROOT"/tests/scenarios/wizard-ui-*.sh <<'PY'
+if out=$(
+    python3 - "$SSOT" "${SCENARIOS[@]}" <<'PY'
 import json, re, sys, os
 ssot = set(json.load(open(sys.argv[1]))["prompts"])
 problems = []
@@ -120,7 +132,8 @@ fi
 #    it, else it dies at runtime ("command not found" -> PTY FileNotFoundError) while checks 1-4
 #    still pass. (A self-contained scenario can be masked in a full run by an earlier scenario
 #    sourcing the lib into the shared shell — this catches it deterministically.)
-if out=$(python3 - "$REPO_ROOT"/tests/scenarios/wizard-ui-*.sh <<'PY'
+if out=$(
+    python3 - "${SCENARIOS[@]}" <<'PY'
 import re, sys, os
 DEFN = {
     "wizard_stage1_steps": ("wizard_stage1_common.sh",),

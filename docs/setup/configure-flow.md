@@ -93,7 +93,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 - WebUI username/password alignment to `JELLYFIN_ADMIN_USER` + `JELLYFIN_ADMIN_PASSWORD` via `setPreferences`. Uses `python3 json.dumps` for credential values.
 - Categories via `POST /api/v2/torrents/createCategory` per entry in `cfg_qbt_categories`, skipped for manual app wiring. If `editCategory` reports failure, configure.sh fetches categories again and treats the category as successful when the live save path matches config.yml.
 
-**Idempotency:** Re-runs authenticate with the shared admin login (tier 1) and proceed to re-apply preferences (idempotent by nature of `setPreferences`) and verify categories. Migration from default `admin`, temporary-password, or legacy `QBT_ADMIN_PASSWORD` paths rotates to the shared login automatically.
+**Idempotency:** Re-runs authenticate with the shared admin login (tier 1) and proceed to re-apply preferences (idempotent by nature of `setPreferences`) and verify categories. Migration from default `admin`, temporary-password, or legacy `QBT_ADMIN_PASSWORD` paths rotates to the shared login automatically. There is no separate "already configured" check beyond re-applying preferences — editing qBittorrent settings in `config.yml` and re-running `configure.sh` re-pushes them from scratch rather than diffing first.
 
 ## Step 2 — Jackett indexers + admin password (`configure_jackett` in `scripts/services/jackett/main.sh`)
 
@@ -103,7 +103,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 **Admin password:** Set via `POST /api/v2.0/server/adminpassword` with a JSON string body (not an object). Jackett hashes it internally with the API key as salt. Skipped if a hash is already present in `ServerConfig.json`.
 
-**Idempotency:** Skip indexers if already configured. Skip + warn if indexer ID isn't available in Jackett. Skip password if already set.
+**Idempotency:** Skip indexers if already configured. Skip + warn if indexer ID isn't available in Jackett — a typo'd indexer ID in `config.yml` produces a warning and continues, so `configure.sh` can complete successfully with no indexers configured. Skip password if already set.
 
 ## Step 3 — Sonarr (`scripts/services/sonarr/main.sh`)
 
@@ -210,7 +210,7 @@ Dedup by name-substring match. Each addition is `POST /api/v3/indexer` with a To
 3. `POST /Startup/User` — name + password.
 4. `POST /Startup/RemoteAccess` — enables remote, disables UPnP.
 5. `POST /Startup/Complete` — marks wizard done.
-6. Verify by authenticating. If auth fails the wizard is declared broken; `return 1` with a recovery message telling the user to delete `config/jellyfin`.
+6. Verify by authenticating. If auth fails the wizard is declared broken; `return 1` with a recovery message telling the user to delete `config/jellyfin`. That recovery path deletes the whole Jellyfin config directory, including the media database — a user with existing watch-state loses it, so it should only be used when Jellyfin genuinely cannot be recovered another way.
 
 ### Path B: wizard already completed
 
@@ -229,7 +229,7 @@ Sets Jellyfin's display name (Dashboard header, browser tab) via `GET`/`POST /Sy
 Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/network` (a different JSON blob from `/System/Configuration` used by streaming). `render/network_policy.py` compares the live JSON with MediaStack's desired policy and emits the skip/drift/apply decision that the shell wrapper logs and posts. Three fields:
 
 - **`AutoDiscovery: true`** — enables UDP 7359 broadcast for LAN device auto-discovery (port exposed in `docker-compose.yml`).
-- **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see ADR-23).
+- **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see the static-octet map in the `mediastack` network block of `docker-compose.yml`).
 - **`PublishedServerUriBySubnet`** — `["internal=http://<HOST_IP>:8096"]` always; adds `"external=https://jellyfin.<DOMAIN>"` only when `REMOTE_WEB_STATE=ready`. Unchecked or skipped remote state stays LAN-only even if `DOMAIN` is real.
 
 **Idempotency:** GET current, compare each field. `log_skip` on match. `log_warn` on drift (non-default values that differ from expected — user changed in UI). POST only when values are at defaults. Writes `JELLYFIN_PUBLISHED_URL` to `.env` via `save_api_key`.
@@ -241,7 +241,7 @@ Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/net
 The longest step — Seerr's bootstrap involves three moving API surfaces (its own, Jellyfin's, and the *arr apps').
 
 1. **Already-initialized check**. If `initialized=True`, log info and continue (no longer short-circuits — library sync and *arr connect are reconciled on re-run).
-2. **`POST /api/v1/auth/jellyfin`** — includes `hostname/port/useSsl/urlBase/serverType:2`. If that fails (partial prior run may have stored hostname already), retry without hostname. Uses a cookie jar for session persistence.
+2. **`POST /api/v1/auth/jellyfin`** — includes `hostname/port/useSsl/urlBase/serverType:2`. If that fails (partial prior run may have stored hostname already), retry without hostname; the retry is silent, so there is no log signal distinguishing a normal first-attempt success from a fallback that masked a real hostname mismatch. Uses a cookie jar for session persistence.
 3. **Session verify** via `GET /api/v1/auth/me` — guards against silent auth-cookie failures.
 4. **Library readiness poll**. Read the Jellyfin API key Seerr generated for itself (from the `apiKey` field in `GET /api/v1/settings/jellyfin`), then poll Jellyfin's `GET /Library/MediaFolders` with it for 60s until the `Movies` and `TV Shows` folders appear. Poll count is 30 x 2s. This is the correct gate — Seerr's sync calls Jellyfin's `/Library/MediaFolders` internally, *not* the refresh task status.
 5. **Library sync** — `GET /api/v1/settings/jellyfin/library?sync=true`. Captures HTTP code + body so real failures (`404 SYNC_ERROR_NO_LIBRARIES`, `501 SYNC_ERROR_GROUPED_FOLDERS`) surface instead of being masked. A previous implementation used `|| echo "[]"` and silently lost errors.
@@ -324,7 +324,7 @@ Admin tools (Sonarr, Radarr, Jackett, qBittorrent) are NOT proxied — they stay
 
 `DOMAIN` still controls infrastructure startup elsewhere: `scripts/setup/stack.sh::_build_profile_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
 
-NPM admin setup, health healing, default-site hardening, the rate-limit step (which only writes the `limit_req_zone` when `rate_limiting.enabled` is true — otherwise it logs a skip; disabled by default, ADR-35), reload checks, and fail2ban jail validation run even when remote state is unchecked, skipped, or failed. Only public proxy hosts, certificate requests, and cert-backed HTTPS publication are inside the ready/attempt gate. `NPM_LE_SERVER` remains part of the ready path so DinD/Pebble can exercise certificate issuance without production Let's Encrypt. Each Stage 2 remote cert attempt writes `config/state/npm-cert-status-last.json` for persistent forensics.
+NPM admin setup, health healing, default-site hardening, the rate-limit step (which only writes the `limit_req_zone` when `rate_limiting.enabled` is true — otherwise it logs a skip; disabled by default — see [`rate_limiting`](configuration-schema.md#rate_limiting)), reload checks, and fail2ban jail validation run even when remote state is unchecked, skipped, or failed. Only public proxy hosts, certificate requests, and cert-backed HTTPS publication are inside the ready/attempt gate. `NPM_LE_SERVER` remains part of the ready path so DinD/Pebble can exercise certificate issuance without production Let's Encrypt. Each Stage 2 remote cert attempt writes `config/state/npm-cert-status-last.json` for persistent forensics.
 
 **Idempotency:** Skip proxy hosts that already exist (checked by domain name match). In skipped/unchecked states, exact current-domain MediaStack-managed hosts are disabled rather than recreated; unrelated manual hosts are left alone. In failed state, rendered cert-backed hosts are preserved while incomplete/certless hosts are disabled, so the next `./setup.sh --remote` can reuse any successful certificate material.
 
@@ -369,13 +369,3 @@ Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; i
 ## Unpackerr restart (end of `main()` in `scripts/configure.sh`)
 
 After the 11 steps, `docker compose up -d unpackerr` recreates the container so it picks up the `SONARR_API_KEY` + `RADARR_API_KEY` env vars that `configure.sh` just wrote to `.env`. A plain `docker compose restart` would not work — it reuses the original (empty) env. `up -d` detects the env change and recreates with the new values.
-
-## Observations / open questions
-
-- **Step 1 qBittorrent has no "already-configured" verification.** Finding no temp password in logs triggers a skip with no check that preferences actually match `config.yml`. Editing `config.yml` qBittorrent settings and re-running does nothing.
-- **Step 1 ratio-action `max_ratio_act=0` is hardcoded**, not from `config.yml` (in the `setPreferences` payload in `configure_qbittorrent`). Because any non-zero breaks *arr connectivity this is deliberate — but `config.yml` doesn't expose it at all, so a future maintainer could set it from a UI thinking config.yml is the source of truth and nothing would push it back.
-- **Step 2 indexer failures are per-indexer warnings, not errors.** A typo in `config.yml` indexer IDs produces a `log_warn` and continues. Arguably fine for public indexers that come and go, but means `configure.sh` can succeed with *no* indexers configured.
-- **Step 5 recovery advice deletes all Jellyfin config** (in the auth-failure branch of `configure_jellyfin`). That trashes the Jellyfin media database — if the user already has watched-state, they lose it. The recovery path should be documented outside of `configure.sh`.
-- **Step 6 retry-without-hostname fallback** (in `configure_seerr`) is silent — the user can't tell whether bootstrap used the correct path or the fallback. That matters if the fallback starts masking a real hostname bug.
-- **Heredoc-stdin hazard** (commented in `configure_seerr` near `lib_ids` extraction) **is a trap.** The code carries a comment warning against it, but someone unfamiliar with the pattern could easily reintroduce it. Could be linted with a shellcheck custom rule.
-- **`js_post` has only one caller today** (Seerr step 6, twice). It lives in `lib/http.sh` because a plan-time decision committed to hoisting it when the refactor landed, but the local abstraction rule would argue for keeping it in the Seerr module until a real second consumer appears. Either keep it and accept the mild speculative-abstraction violation, or fold it back into `services/seerr/main.sh` as a private `_seerr_post_capture`.

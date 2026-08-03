@@ -2,7 +2,7 @@
 # MediaStack Setup — fail2ban log-rotation reload watcher install/uninstall
 # =============================================================================
 # Owns three host systemd units that keep fail2ban following rotated logs so the
-# jail globs never silently go stale (issue #291):
+# jail globs never silently go stale:
 #   1. mediastack-fail2ban-reload.service        — the inotify watcher daemon
 #      (scripts/fail2ban-reload-watcher.sh); reloads fail2ban within seconds of a
 #      service rolling to a new date-stamped log file. Primary, near-zero gap.
@@ -13,7 +13,7 @@
 #      most the timer interval instead of "until someone notices".
 #
 # Sourced by setup.sh (Stage 2 install), mediastack (day-2 remote recovery), and
-# hardening.sh (uninstall). Sources common.sh itself (invariant #11); re-source
+# hardening.sh (uninstall). Sources common.sh itself; re-source
 # safe (plain function/var definitions).
 _F2B_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/common.sh
@@ -120,7 +120,7 @@ f2b_install_reload_watcher() {
 
     log_info "Installing fail2ban log-rotation reload watcher (+ 6h fallback timer)..."
     if ! f2b_watcher_unit_content "$install_user" "$install_group" "$script" \
-            | sudo tee "$MEDIASTACK_F2B_WATCHER_UNIT" >/dev/null; then
+        | sudo tee "$MEDIASTACK_F2B_WATCHER_UNIT" >/dev/null; then
         log_warn "Could not write fail2ban reload watcher unit; skipping"
         return 0
     fi
@@ -128,7 +128,10 @@ f2b_install_reload_watcher() {
         | sudo tee "$MEDIASTACK_F2B_FALLBACK_SERVICE" >/dev/null || true
     f2b_fallback_timer_content | sudo tee "$MEDIASTACK_F2B_FALLBACK_TIMER" >/dev/null || true
 
-    sudo systemctl daemon-reload || { log_warn "systemd daemon-reload failed"; return 0; }
+    sudo systemctl daemon-reload || {
+        log_warn "systemd daemon-reload failed"
+        return 0
+    }
     # enable + restart (NOT enable --now): --now won't restart an already-running
     # old unit, so a unit-content change on re-run wouldn't take effect.
     sudo systemctl enable mediastack-fail2ban-reload.service >/dev/null 2>&1 \
@@ -171,5 +174,5 @@ f2b_uninstall_reload_watcher() {
         sudo systemctl disable mediastack-fail2ban-reload.service 2>/dev/null || rc=1
         sudo rm -f "$MEDIASTACK_F2B_WATCHER_UNIT" || rc=1
     fi
-    return $rc
+    return "$rc"
 }

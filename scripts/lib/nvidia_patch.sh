@@ -52,7 +52,7 @@ _nvidia_patch_origin_ok() {
 
     origin=$(git -C "$patch_dir" remote get-url origin 2>/dev/null || true)
     case "$origin" in
-        "$NVIDIA_PATCH_REPO_URL"|"https://github.com/keylase/nvidia-patch")
+        "$NVIDIA_PATCH_REPO_URL" | "https://github.com/keylase/nvidia-patch")
             return 0
             ;;
     esac

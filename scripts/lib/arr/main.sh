@@ -7,7 +7,7 @@
 # Absolute path to this lib's directory — used to locate render/ and templates/.
 _ARR_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Day-2 rename status channel (issue #71). When the launcher's "Change quality
+# Day-2 rename status channel. When the launcher's "Change quality
 # profile" action drives configure.sh, it sets QP_RENAME_STATUS to a writable
 # file path. We append the app name here whenever an in-place rename FAILS or is
 # REFUSED (live name drifted), so the launcher can report "did not apply" instead
@@ -15,7 +15,7 @@ _ARR_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # never-abort contract — see the header note in scripts/configure.sh). A no-op on
 # normal runs, where QP_RENAME_STATUS is unset.
 _qp_record_rename_failure() {
-    [[ -n "${QP_RENAME_STATUS:-}" ]] && printf '%s\n' "$1" >> "$QP_RENAME_STATUS"
+    [[ -n "${QP_RENAME_STATUS:-}" ]] && printf '%s\n' "$1" >>"$QP_RENAME_STATUS"
     return 0
 }
 
@@ -41,7 +41,7 @@ configure_quality_profile() {
         existing="[]"
     fi
 
-    # Day-2 in-place rename (issue #71). The launcher's "Change quality profile"
+    # Day-2 in-place rename. The launcher's "Change quality profile"
     # action sets QP_RENAME_FROM to the OLD profile name when the user re-picks a
     # cell, so the profile name changes ("1080p Balanced" -> "1080p Large"). The
     # normal path below would find no profile under the NEW name, fall to
@@ -54,8 +54,8 @@ configure_quality_profile() {
     local rename_from="${QP_RENAME_FROM:-}"
     if [[ -n "$rename_from" && "$rename_from" != "$profile_name" ]]; then
         local rename_plan
-        rename_plan=$(echo "$existing" | \
-            OLD_NAME="$rename_from" NEW_NAME="$profile_name" python3 -c '
+        rename_plan=$(echo "$existing" \
+            | OLD_NAME="$rename_from" NEW_NAME="$profile_name" python3 -c '
 import sys, json, os
 old, new = os.environ["OLD_NAME"], os.environ["NEW_NAME"]
 try: profiles = json.load(sys.stdin)
@@ -88,12 +88,12 @@ print(json.dumps(p) if p else "")
                 # apply_cell.py contract). Zero the formatItems scores so the
                 # downstream configure_arr_format_scores re-attaches the new
                 # size's scores via its "empty -> PUT" path in this same run.
-                rendered=$(echo "$old_profile" | \
-                    PROFILE_NAME="$profile_name" \
-                    ENABLED_IDS="$enabled_ids_json" \
-                    CUTOFF_ID="$cutoff_id" \
-                    UPGRADE_ALLOWED="$upgrade" \
-                    python3 "$_ARR_LIB_DIR/render/quality_profile.py" 2>/dev/null)
+                rendered=$(echo "$old_profile" \
+                    | PROFILE_NAME="$profile_name" \
+                        ENABLED_IDS="$enabled_ids_json" \
+                        CUTOFF_ID="$cutoff_id" \
+                        UPGRADE_ALLOWED="$upgrade" \
+                        python3 "$_ARR_LIB_DIR/render/quality_profile.py" 2>/dev/null)
                 renamed_json=$(echo "$rendered" | OLD_PROFILE="$old_profile" python3 -c '
 import sys, json, os
 rendered = json.load(sys.stdin)
@@ -112,7 +112,7 @@ print(json.dumps(merged))
 ' 2>/dev/null)
                 # PUT the rename, then verify it actually landed: the live
                 # profile must show the new name AND every formatItems score at
-                # 0. If a transient dropped write (#171) leaves any managed
+                # 0. If a transient dropped write leaves any managed
                 # score non-zero, the downstream configure_arr_format_scores
                 # sees "drift" and — by design — only warns, so the new size's
                 # scores never attach (e.g. x265 (HD) stuck at 0). Retry until
@@ -121,7 +121,10 @@ print(json.dumps(merged))
                 if [[ -n "$renamed_json" && "$renamed_json" != "null" ]]; then
                     for _rn_attempt in 1 2 3; do
                         api_put "$base/qualityprofile/$old_id" "$key" "$renamed_json" >/dev/null 2>&1 \
-                            || { sleep "$_rn_attempt"; continue; }
+                            || {
+                                sleep "$_rn_attempt"
+                                continue
+                            }
                         if api_get "$base/qualityprofile/$old_id" "$key" 2>/dev/null \
                             | PROFILE_NAME="$profile_name" python3 -c '
 import sys, json, os
@@ -130,7 +133,8 @@ ok = p.get("name") == os.environ["PROFILE_NAME"] \
     and all(fi.get("score", 0) == 0 for fi in p.get("formatItems", []))
 sys.exit(0 if ok else 1)
 ' 2>/dev/null; then
-                            _rn_ok=1; break
+                            _rn_ok=1
+                            break
                         fi
                         sleep "$_rn_attempt"
                     done
@@ -162,12 +166,12 @@ sys.exit(0 if ok else 1)
         esac
     fi
 
-    qp_status=$(echo "$existing" | \
-        PROFILE_NAME="$profile_name" \
-        ENABLED_IDS="$enabled_ids_json" \
-        CUTOFF_ID="$cutoff_id" \
-        UPGRADE_ALLOWED="$upgrade" \
-        python3 -c '
+    qp_status=$(echo "$existing" \
+        | PROFILE_NAME="$profile_name" \
+            ENABLED_IDS="$enabled_ids_json" \
+            CUTOFF_ID="$cutoff_id" \
+            UPGRADE_ALLOWED="$upgrade" \
+            python3 -c '
 import sys, json, os
 name = os.environ["PROFILE_NAME"]
 want_ids = set(json.loads(os.environ["ENABLED_IDS"]))
@@ -228,7 +232,7 @@ print(json.dumps(profiles[0]) if profiles else '{}')
         ENABLED_IDS="$enabled_ids_json" \
         CUTOFF_ID="$cutoff_id" \
         UPGRADE_ALLOWED="$upgrade" \
-        python3 "$_ARR_LIB_DIR/render/quality_profile.py" <<< "$default_profile" 2>/dev/null)
+        python3 "$_ARR_LIB_DIR/render/quality_profile.py" <<<"$default_profile" 2>/dev/null)
 
     if [[ -n "$profile_json" && "$profile_json" != "null" ]]; then
         if api_post "$base/qualityprofile" "$key" "$profile_json" >/dev/null 2>&1; then
@@ -275,7 +279,7 @@ configure_quality_definitions() {
     local plan warn_lines updated=0
     local warn_file
     warn_file="$(mktemp)"
-    plan=$(DESIRED="$desired" python3 "$_ARR_LIB_DIR/render/quality_definitions.py" <<< "$current" 2>"$warn_file" || echo "")
+    plan=$(DESIRED="$desired" python3 "$_ARR_LIB_DIR/render/quality_definitions.py" <<<"$current" 2>"$warn_file" || echo "")
     warn_lines=$(<"$warn_file")
     rm -f "$warn_file"
 
@@ -283,7 +287,7 @@ configure_quality_definitions() {
         while IFS=$'\t' read -r _ name; do
             [[ -z "$name" ]] && continue
             log_warn "Quality '$name' not present in ${app^} - skipped"
-        done <<< "$warn_lines"
+        done <<<"$warn_lines"
     fi
 
     while IFS=$'\t' read -r def_id put_body; do
@@ -293,9 +297,9 @@ configure_quality_definitions() {
         else
             log_warn "Failed to PUT quality definition id=$def_id"
         fi
-    done <<< "$plan"
+    done <<<"$plan"
 
-    if (( updated == 0 )); then
+    if ((updated == 0)); then
         log_skip "Quality definitions already match your settings"
     else
         log_ok "Quality definitions updated ($updated tier(s)) for ${app^}"
@@ -324,10 +328,10 @@ configure_arr_custom_formats() {
     fi
 
     local plan created=0
-    plan=$(echo "$existing" | \
-        FORMATS_FILE="$_ARR_LIB_DIR/custom_formats.yml" \
-        SCORES="$scores" \
-        python3 "$_ARR_LIB_DIR/render/custom_formats.py" 2>/dev/null || echo "")
+    plan=$(echo "$existing" \
+        | FORMATS_FILE="$_ARR_LIB_DIR/custom_formats.yml" \
+            SCORES="$scores" \
+            python3 "$_ARR_LIB_DIR/render/custom_formats.py" 2>/dev/null || echo "")
 
     if [[ -z "$plan" ]]; then
         log_skip "$app_label custom formats already present"
@@ -341,9 +345,9 @@ configure_arr_custom_formats() {
         else
             log_warn "Failed to create custom format '$name' in $app_label"
         fi
-    done <<< "$plan"
+    done <<<"$plan"
 
-    if (( created > 0 )); then
+    if ((created > 0)); then
         log_ok "Custom formats: $created created in $app_label"
     fi
 }
@@ -407,10 +411,10 @@ except Exception:
     fi
 
     local status
-    status=$(echo "$profile_json" | \
-        SCORES="$scores" \
-        FORMAT_MAP="$format_map" \
-        python3 "$_ARR_LIB_DIR/render/format_scores.py" 2>/dev/null)
+    status=$(echo "$profile_json" \
+        | SCORES="$scores" \
+            FORMAT_MAP="$format_map" \
+            python3 "$_ARR_LIB_DIR/render/format_scores.py" 2>/dev/null)
 
     case "${status%%$'\t'*}" in
         match)
@@ -521,14 +525,15 @@ print(json.dumps({
         local attempt rc=1
         for attempt in 1 2; do
             if api_post "$base/indexer?forceSave=true" "$key" "$indexer_json" >/dev/null 2>&1; then
-                rc=0; break
+                rc=0
+                break
             fi
-            (( attempt < 2 )) && sleep 2
+            ((attempt < 2)) && sleep 2
         done
-        if (( rc == 0 )); then
-            echo "ok:$attempt" > "$result_file"
+        if ((rc == 0)); then
+            echo "ok:$attempt" >"$result_file"
         else
-            echo "fail" > "$result_file"
+            echo "fail" >"$result_file"
         fi
     }
 
@@ -543,7 +548,7 @@ print(json.dumps({
 
         if echo "$existing_indexers" | json_has_name "$indexer_id" -i; then
             log_skip "$indexer_id already in ${app^}"
-            (( _already_count++ )) || true
+            ((_already_count++)) || true
             continue
         fi
 
@@ -559,17 +564,20 @@ print(json.dumps({
     # seconds; without streaming the user sees a long silence and assumes the
     # wizard is hung. With streaming, each [OK]/[WARN] line lands as soon as
     # its worker writes its result file.
-    if (( ${#_indexer_order[@]} > 0 )); then
+    if ((${#_indexer_order[@]} > 0)); then
         log_info "Adding ${#_indexer_order[@]} indexers to ${app^} (Sonarr/Radarr fetch caps from each tracker on save; Cloudflare-protected ones can be slow)..."
     fi
 
     local -A _seen=()
     local _emitted=0 _expected=${#_indexer_order[@]} _any_alive
     local _ok_count=0 _fail_count=0
-    while (( _emitted < _expected )); do
+    while ((_emitted < _expected)); do
         _any_alive=0
         for _pid in "${_pids[@]}"; do
-            if kill -0 "$_pid" 2>/dev/null; then _any_alive=1; break; fi
+            if kill -0 "$_pid" 2>/dev/null; then
+                _any_alive=1
+                break
+            fi
         done
 
         local indexer_id
@@ -580,18 +588,27 @@ print(json.dumps({
             local _result
             _result=$(cat "$_result_file" 2>/dev/null || echo "fail")
             case "$_result" in
-                ok:1)   log_ok   "Indexer -> ${app^}: $indexer_id"; (( _ok_count++ ))   || true ;;
-                ok:*)   log_ok   "Indexer -> ${app^}: $indexer_id (attempt ${_result#ok:})"; (( _ok_count++ )) || true ;;
-                *)      log_info "Indexer unavailable, skipped: $indexer_id -> ${app^}"; (( _fail_count++ )) || true ;;
+                ok:1)
+                    log_ok "Indexer -> ${app^}: $indexer_id"
+                    ((_ok_count++)) || true
+                    ;;
+                ok:*)
+                    log_ok "Indexer -> ${app^}: $indexer_id (attempt ${_result#ok:})"
+                    ((_ok_count++)) || true
+                    ;;
+                *)
+                    log_info "Indexer unavailable, skipped: $indexer_id -> ${app^}"
+                    ((_fail_count++)) || true
+                    ;;
             esac
             _seen[$indexer_id]=1
-            (( _emitted++ )) || true
+            ((_emitted++)) || true
         done
 
-        if (( _emitted < _expected )); then
+        if ((_emitted < _expected)); then
             # All workers exited but some result files missing — fall through
             # to the final sweep below to mark them failed.
-            (( _any_alive == 0 )) && break
+            ((_any_alive == 0)) && break
             sleep 0.5
         fi
     done
@@ -601,12 +618,12 @@ print(json.dumps({
     for indexer_id in "${_indexer_order[@]}"; do
         [[ -n "${_seen[$indexer_id]:-}" ]] && continue
         log_info "Indexer unavailable, skipped: $indexer_id -> ${app^}"
-        (( _fail_count++ )) || true
+        ((_fail_count++)) || true
     done
 
     # Only warn if every attempted indexer failed AND none were already present — partial
     # failures on public trackers are normal; if indexers already exist the app is configured.
-    if (( _fail_count > 0 && _ok_count == 0 && _already_count == 0 && _expected > 0 )); then
+    if ((_fail_count > 0 && _ok_count == 0 && _already_count == 0 && _expected > 0)); then
         log_warn "No indexers were added to ${app^} — add them manually via the ${app^} UI (Settings → Indexers)"
     fi
 
@@ -624,7 +641,7 @@ print(json.dumps({
         if [[ "$app" == "sonarr" && "$itype" == "movies" ]]; then continue; fi
         if [[ "$app" == "radarr" && "$itype" == "tv" ]]; then continue; fi
         echo "$iid"
-    done < <(cfg_indexers) | tr '\n' ',' )
+    done < <(cfg_indexers) | tr '\n' ',')
     stale=$(echo "$existing_indexers" | EXPECTED="$app_expected" python3 -c '
 import sys, json, os
 want = {n.strip().lower() for n in os.environ["EXPECTED"].split(",") if n.strip()}
@@ -638,7 +655,7 @@ for n in (i.get("name","") for i in items):
         while IFS= read -r name; do
             [[ -z "$name" ]] && continue
             log_drift "${app^} indexer '$name' exists but is not in config.yml. configure.sh does not remove indexers on re-run. To remove: ${app^} UI -> Settings -> Indexers -> Delete, or rebuild."
-        done <<< "$stale"
+        done <<<"$stale"
     fi
 }
 
@@ -710,7 +727,7 @@ configure_arr_disk_threshold() {
         return 0
     fi
 
-    local min_free_mb=$(( min_free_gb * 1024 ))
+    local min_free_mb=$((min_free_gb * 1024))
 
     local mm_config current_mb
     if ! mm_config=$(api_get "$base/config/mediamanagement" "$key"); then
@@ -935,7 +952,7 @@ print(json.dumps(payload))')
             log_ok "${app^} -> Jellyfin: library update on import"
             return 0
         fi
-        sleep $(( attempt * 3 ))
+        sleep $((attempt * 3))
     done
     if api_post "$base/notification?forceSave=true" "$key" "$notif_json" >/dev/null 2>&1; then
         log_ok "${app^} -> Jellyfin: library update on import"

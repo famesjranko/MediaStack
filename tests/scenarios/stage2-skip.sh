@@ -159,11 +159,14 @@ run_scenario() {
             ok=false
         fi
     done
-    $ok || { dind_exec "docker compose ps"; return 1; }
+    $ok || {
+        dind_exec "docker compose ps"
+        return 1
+    }
 
     stage2_skip_configure || return 1
 
-    # S2-15: skipped HTTPS keeps LAN URLs and no public NPM hosts.
+    # Skipped HTTPS keeps LAN URLs and no public NPM hosts.
     stage2_skip_assert_test03_postconditions
     assert_remote_gating_skipped /tmp/stage2-skip.out
 }

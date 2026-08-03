@@ -59,12 +59,13 @@ print(sum(1 for h in hosts if "limit_req zone=mediastack_ratelimit" in (h.get("a
     dind_exec "seq 1 200 | xargs -P50 -I{} curl -sk -o /dev/null --resolve 'jellyfin.fresh.test:443:127.0.0.1' https://jellyfin.fresh.test/health 2>/dev/null" || true
 
     local rl_ban_waited=0 rl_ban_status=""
-    while (( rl_ban_waited < 30 )); do
+    while ((rl_ban_waited < 30)); do
         rl_ban_status=$(dind_exec "docker exec fail2ban fail2ban-client status npm-ratelimit" | tr -d '\r')
         if echo "$rl_ban_status" | grep -qE "Currently banned:[[:space:]]*[1-9]"; then
             break
         fi
-        sleep 3; rl_ban_waited=$((rl_ban_waited + 3))
+        sleep 3
+        rl_ban_waited=$((rl_ban_waited + 3))
     done
 
     if echo "$rl_ban_status" | grep -qE "Currently banned:[[:space:]]*[1-9]"; then
@@ -82,7 +83,7 @@ print(sum(1 for h in hosts if "limit_req zone=mediastack_ratelimit" in (h.get("a
     fi
 }
 
-# Default state (config.yml rate_limiting.enabled=false, ADR-35): rate limiting is
+# Default state (config.yml rate_limiting.enabled=false): rate limiting is
 # off, so NO limit_req_zone is written, NO proxy host carries limit_req, and the
 # npm-ratelimit jail is not loaded. Static/structural checks only — asserting a
 # "zero 429s under burst" negative would be flaky and prove nothing.

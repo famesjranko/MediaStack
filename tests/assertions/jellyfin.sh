@@ -35,7 +35,7 @@ except Exception: pass' 2>/dev/null | tr -d '\r\n')
         local jf_libs
         jf_libs=$(dind_exec "curl -sf -H 'Authorization: $JF_AUTH_HEADER, Token=\"$JF_TOKEN\"' http://localhost:8096/Library/VirtualFolders")
         assert_contains "$jf_libs" '"Name":"Movies"' "step 5 Jellyfin: Movies library"
-        assert_contains "$jf_libs" '"Name":"TV Shows"'   "step 5 Jellyfin: TV Shows library"
+        assert_contains "$jf_libs" '"Name":"TV Shows"' "step 5 Jellyfin: TV Shows library"
 
         local jf_encoding
         jf_encoding=$(dind_exec "curl -sf -H 'Authorization: $JF_AUTH_HEADER, Token=\"$JF_TOKEN\"' http://localhost:8096/System/Configuration/encoding")

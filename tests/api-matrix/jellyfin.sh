@@ -1,7 +1,7 @@
 # tests/api-matrix/jellyfin.sh — Jellyfin library-config + Sonarr/Radarr
 # notification-connection matrix.
 #
-# Deliberately scoped to "library/notification config states" (#164):
+# Deliberately scoped to "library/notification config states":
 # configure_jellyfin_libraries' match/drift/absent branches, and the exact
 # wiring configure_arr_jellyfin_connection writes into Sonarr/Radarr. Encoding,
 # streaming bitrate, server name, and networking are already covered at their
@@ -20,8 +20,9 @@ _jfm_cfg_libraries() {
     dind_exec "bash -c 'CONFIG_FILE=/tmp/ms-jellyfin-matrix.yml; export CONFIG_FILE; SCRIPT_DIR=\$PWD; export SCRIPT_DIR; source scripts/lib/common.sh; cfg_jf_libraries'"
 }
 
-# Bounded retry budget for the #178 readiness race. Generous on purpose: every
-# poll below exits the instant the subsystem answers, so a larger ceiling costs
+# Bounded retry budget for the readiness race the pollers below guard. Generous
+# on purpose: every poll below exits the instant the subsystem answers, so a
+# larger ceiling costs
 # nothing on a ready service and only helps a slow/contended DinD — where the
 # first-run wizard can confirm "Admin user created" (or an *arr write) tens of
 # seconds before VirtualFolders / the notification list is queryable. ~15 × (up
@@ -30,12 +31,15 @@ _JFM_READY_RETRIES=15
 
 # Bounded retry: the first-run wizard can confirm "Admin user created" a beat
 # before the VirtualFolders subsystem is queryable, especially under DinD
-# resource contention (#178). Retries the whole dind_exec call rather than
+# resource contention. Retries the whole dind_exec call rather than
 # looping inside its sh -c string, so no extra quoting layer is introduced.
 _jfm_libraries() {
     local api_key="$1" out
     for _ in $(seq "$_JFM_READY_RETRIES"); do
-        out=$(dind_exec "curl -sf --max-time 3 -H 'Authorization: MediaBrowser Client=\"ApiMatrix\", Device=\"Test\", DeviceId=\"api-matrix\", Version=\"1.0\", Token=\"$api_key\"' http://localhost:8096/Library/VirtualFolders") && { printf '%s' "$out"; return 0; }
+        out=$(dind_exec "curl -sf --max-time 3 -H 'Authorization: MediaBrowser Client=\"ApiMatrix\", Device=\"Test\", DeviceId=\"api-matrix\", Version=\"1.0\", Token=\"$api_key\"' http://localhost:8096/Library/VirtualFolders") && {
+            printf '%s' "$out"
+            return 0
+        }
         sleep 1
     done
     return 1
@@ -55,13 +59,16 @@ print("absent" if lib is None else (lib.get("Locations") or [""])[0], end="")
 PY
 }
 
-# Bounded retry: same DinD-resource-contention race #178 fixed for
+# Bounded retry: the same DinD-resource-contention race as
 # _jfm_libraries — this hits a different service's API right after a
 # config-mutating apply, with no guarantee the write is queryable instantly.
 _jfm_notification() {
     local base="$1" key="$2" out
     for _ in $(seq "$_JFM_READY_RETRIES"); do
-        out=$(dind_exec "curl -sf --max-time 3 -H 'X-Api-Key: $key' $base/notification") && { printf '%s' "$out"; return 0; }
+        out=$(dind_exec "curl -sf --max-time 3 -H 'X-Api-Key: $key' $base/notification") && {
+            printf '%s' "$out"
+            return 0
+        }
         sleep 1
     done
     return 1
@@ -149,7 +156,11 @@ matrix_jellyfin() {
 
     jf_api_key=$(_jfm_api_key)
     [[ -n "$jf_api_key" ]] && pass "Jellyfin api-matrix: permanent API key saved to .env" \
-        || { fail "Jellyfin api-matrix: permanent API key saved to .env"; skip "Jellyfin api-matrix: all remaining module assertions" "no API key"; return; }
+        || {
+            fail "Jellyfin api-matrix: permanent API key saved to .env"
+            skip "Jellyfin api-matrix: all remaining module assertions" "no API key"
+            return
+        }
     # save_jellyfin_api_key falls back to a transient session token (with only
     # a log_warn) if permanent-key creation fails - that degraded path would
     # still populate .env, so check the log too.
@@ -220,8 +231,14 @@ matrix_jellyfin() {
     # ------------------------------------------------------------------
     local app base key trigger_field
     for app in sonarr radarr; do
-        if [[ "$app" == sonarr ]]; then base="$sonarr_base"; key="$sonarr_key"; trigger_field=onImportComplete
-        else base="$radarr_base"; key="$radarr_key"; trigger_field=onDownload
+        if [[ "$app" == sonarr ]]; then
+            base="$sonarr_base"
+            key="$sonarr_key"
+            trigger_field=onImportComplete
+        else
+            base="$radarr_base"
+            key="$radarr_key"
+            trigger_field=onDownload
         fi
 
         apply_log=$(dind_exec "bash tests/api-matrix/push_jellyfin.sh connect $app '$base' '$key'" 2>&1)

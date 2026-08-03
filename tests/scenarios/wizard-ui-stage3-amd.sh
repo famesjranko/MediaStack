@@ -22,6 +22,6 @@ run_scenario() {
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "AMD VAAPI transcoding configured and verified" "wizard-ui stage3 amd: VAAPI verified message"
-    assert_eq "amd"      "$(env_get JELLYFIN_GPU)"      "wizard-ui stage3 amd: JELLYFIN_GPU=amd"
+    assert_eq "amd" "$(env_get JELLYFIN_GPU)" "wizard-ui stage3 amd: JELLYFIN_GPU=amd"
     assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 amd: STAGE_3_GPU_STATE=complete"
 }

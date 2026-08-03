@@ -31,13 +31,13 @@ detect_gpu() {
 
     for vendor in nvidia amd intel; do
         case "$vendor" in
-            nvidia) grep -qi 'nvidia' <<< "$gpu_lines" && GPU_CANDIDATES+=(nvidia) ;;
-            amd) grep -qEi 'amd|radeon' <<< "$gpu_lines" && GPU_CANDIDATES+=(amd) ;;
-            intel) grep -qi 'intel' <<< "$gpu_lines" && GPU_CANDIDATES+=(intel) ;;
+            nvidia) grep -qi 'nvidia' <<<"$gpu_lines" && GPU_CANDIDATES+=(nvidia) ;;
+            amd) grep -qEi 'amd|radeon' <<<"$gpu_lines" && GPU_CANDIDATES+=(amd) ;;
+            intel) grep -qi 'intel' <<<"$gpu_lines" && GPU_CANDIDATES+=(intel) ;;
         esac
     done
 
-    if (( ${#GPU_CANDIDATES[@]} == 0 )); then
+    if ((${#GPU_CANDIDATES[@]} == 0)); then
         log_info "No dedicated GPU detected - Jellyfin will use software transcoding"
         return
     fi
@@ -47,7 +47,7 @@ detect_gpu() {
         GPU_TYPE="$JELLYFIN_GPU"
     fi
 
-    if (( ${#GPU_CANDIDATES[@]} == 1 )); then
+    if ((${#GPU_CANDIDATES[@]} == 1)); then
         log_ok "$(gpu_brand_label "$GPU_TYPE") GPU detected"
     else
         log_ok "Supported GPUs detected: ${GPU_CANDIDATES[*]}"
@@ -65,10 +65,10 @@ gpu_candidate_available() {
 gpu_brand_label() {
     case "${1:-}" in
         nvidia) printf 'NVIDIA' ;;
-        amd)    printf 'AMD' ;;
-        intel)  printf 'Intel' ;;
-        none|"") printf 'none' ;;
-        *)      printf '%s' "$1" ;;
+        amd) printf 'AMD' ;;
+        intel) printf 'Intel' ;;
+        none | "") printf 'none' ;;
+        *) printf '%s' "$1" ;;
     esac
 }
 
@@ -77,7 +77,7 @@ gpu_render_device_for_vendor() {
     local vendor_id=""
     case "$vendor" in
         intel) vendor_id="0x8086" ;;
-        amd)   vendor_id="0x1002" ;;
+        amd) vendor_id="0x1002" ;;
     esac
 
     local render node sys_vendor found="" saw_vendor_file=false
@@ -112,7 +112,7 @@ gpu_render_device_vendor_matches() {
     local vendor_id=""
     case "$vendor" in
         intel) vendor_id="0x8086" ;;
-        amd)   vendor_id="0x1002" ;;
+        amd) vendor_id="0x1002" ;;
     esac
 
     [[ -n "$vendor_id" ]] || return 0
@@ -318,10 +318,16 @@ _resolve_nvidia_driver() {
 # Debian release identifiers, read in a subshell so /etc/os-release vars don't
 # leak as globals. Small mockable seams keep the apt helpers/tests deterministic.
 _debian_codename() {
-    ( . /etc/os-release 2>/dev/null; printf '%s' "${VERSION_CODENAME:-}" )
+    (
+        . /etc/os-release 2>/dev/null
+        printf '%s' "${VERSION_CODENAME:-}"
+    )
 }
 _debian_version_id() {
-    ( . /etc/os-release 2>/dev/null; printf '%s' "${VERSION_ID:-}" )
+    (
+        . /etc/os-release 2>/dev/null
+        printf '%s' "${VERSION_ID:-}"
+    )
 }
 
 # Echo the apt version of a package, optionally restricted to a release (matched
@@ -340,7 +346,7 @@ _apt_candidate_version() {
         fi
         _ver="${_verfield// /}"
         break
-    done <<< "$_madison"
+    done <<<"$_madison"
     printf '%s' "$_ver"
 }
 
@@ -389,7 +395,7 @@ ensure_debian_nonfree() {
     local _needed_str="${_needed[*]}"
     local _source_line
     printf -v _source_line 'deb http://deb.debian.org/debian %s %s\n' "$_codename" "$_needed_str"
-    if ! sudo tee "$MEDIASTACK_GPU_NONFREE_LIST" >/dev/null <<< "$_source_line"; then
+    if ! sudo tee "$MEDIASTACK_GPU_NONFREE_LIST" >/dev/null <<<"$_source_line"; then
         log_error "Failed to add Debian non-free apt source"
         return 1
     fi
@@ -420,7 +426,7 @@ ensure_debian_backports() {
     fi
     local _source_line
     printf -v _source_line 'deb http://deb.debian.org/debian %s-backports %s\n' "$_codename" "$_components"
-    if ! sudo tee "$MEDIASTACK_GPU_BACKPORTS_LIST" >/dev/null <<< "$_source_line"; then
+    if ! sudo tee "$MEDIASTACK_GPU_BACKPORTS_LIST" >/dev/null <<<"$_source_line"; then
         log_error "Failed to add Debian backports apt source"
         return 1
     fi
@@ -442,7 +448,7 @@ _nvidia_blacklist_nouveau() {
     log_info "Blacklisting nouveau kernel module..."
     local _blacklist
     _blacklist=$'blacklist nouveau\noptions nouveau modeset=0\n'
-    if ! sudo tee /etc/modprobe.d/blacklist-nouveau.conf >/dev/null <<< "$_blacklist"; then
+    if ! sudo tee /etc/modprobe.d/blacklist-nouveau.conf >/dev/null <<<"$_blacklist"; then
         log_error "Failed to write nouveau blacklist"
         return 1
     fi
@@ -520,7 +526,7 @@ install_nvidia_drivers() {
             log_error "Fix one of the following, then re-run setup.sh:"
             log_error "  (a) disable Secure Boot in UEFI firmware settings, OR"
             log_error "  (b) enroll a Machine Owner Key to sign the nvidia module (advanced)."
-            log_warn  "Falling back to software transcoding; GPU acceleration will not be configured."
+            log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
             GPU_TYPE="none"
             return 1
             ;;
@@ -570,11 +576,10 @@ install_nvidia_drivers() {
     # (with it). Cache the .run and reboot instead.
     if nouveau_is_active; then
         log_warn "Nouveau is still bound to the GPU - caching driver for post-reboot install"
-        if ! cat > "$_nvidia_tmp/pending" <<EOF
+        if ! cat >"$_nvidia_tmp/pending" <<EOF; then
 _driver_ver='${_driver_ver}'
 _run_file='${_run_file}'
 EOF
-        then
             log_error "Failed to write NVIDIA post-reboot install marker"
             log_warn "Falling back to software transcoding"
             GPU_TYPE="none"
@@ -634,15 +639,15 @@ _install_nvidia_container_toolkit() {
     else
         log_info "Installing/repairing nvidia-container-toolkit..."
 
-        if ! curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
-            sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg; then
+        if ! curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+            | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg; then
             log_error "Failed to install NVIDIA container toolkit apt key"
             return 1
         fi
 
-        if ! curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-            sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-            sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null; then
+        if ! curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+            | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+            | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null; then
             log_error "Failed to install NVIDIA container toolkit apt source"
             return 1
         fi
@@ -670,7 +675,10 @@ nvidia_driver_source() {
     local _st
     _st=$(dpkg-query -W -f='${Status}' nvidia-driver 2>/dev/null || true)
     case "$_st" in
-        *"install ok installed"*) printf 'debian'; return 0 ;;
+        *"install ok installed"*)
+            printf 'debian'
+            return 0
+            ;;
     esac
     command -v nvidia-smi &>/dev/null && printf 'foreign' || printf 'none'
 }
@@ -806,7 +814,10 @@ install_nvidia_drivers_apt() {
         debian)
             if [[ "$operation" != "repair" ]]; then
                 log_ok "Debian-managed NVIDIA driver already installed: $(nvidia_driver_version 2>/dev/null || echo unknown)"
-                if ! _install_nvidia_container_toolkit; then GPU_TYPE="none"; return 1; fi
+                if ! _install_nvidia_container_toolkit; then
+                    GPU_TYPE="none"
+                    return 1
+                fi
                 NVIDIA_DRIVER_MODE="standard"
                 return 0
             fi
@@ -824,7 +835,7 @@ install_nvidia_drivers_apt() {
         enabled)
             log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
             log_error "Disable Secure Boot in UEFI, or enroll a Machine Owner Key (advanced), then re-run setup.sh."
-            log_warn  "Falling back to software transcoding; GPU acceleration will not be configured."
+            log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
             GPU_TYPE="none"
             return 1
             ;;
@@ -851,7 +862,7 @@ install_nvidia_drivers_apt() {
     if [[ "$operation" == "repair" ]]; then
         local _repair_packages=()
         mapfile -t _repair_packages < <(_nvidia_debian_repair_packages)
-        if (( ${#_repair_packages[@]} == 0 )); then
+        if ((${#_repair_packages[@]} == 0)); then
             log_error "No installed Debian NVIDIA packages were found to repair"
             GPU_TYPE="none"
             return 1
@@ -930,7 +941,7 @@ apply_nvidia_patch() {
     # here), where a bare `_apply_nvidia_patch_impl; _rc=$?` would abort before the
     # marker is touched, leaving a false "patch applied" banner state.
     _apply_nvidia_patch_impl || _rc=$?
-    if (( _rc == 0 )); then rm -f "$_marker"; else touch "$_marker"; fi
+    if ((_rc == 0)); then rm -f "$_marker"; else touch "$_marker"; fi
     return "$_rc"
 }
 
@@ -1061,7 +1072,7 @@ install_amd_drivers() {
 # when nvidia IS present; (2) in the post-install window (a dozen containers just
 # starting on a small box) `docker info` itself is briefly slow or fails, and the
 # lone check had no retry. Either way the wizard silently and permanently fell
-# back to software transcoding on a correctly-configured host (finding F-004).
+# back to software transcoding on a correctly-configured host.
 #
 # Robust approach: capture (no pipe), match the runtime KEY precisely via a
 # keys-only template (not a substring grep of the whole multi-KB blob), and retry
@@ -1074,7 +1085,7 @@ _nvidia_docker_runtime_state() {
             && [[ -n "$keys" ]]; then
             case " $keys " in
                 *" nvidia "*) printf 'registered' ;;
-                *)            printf 'absent' ;;
+                *) printf 'absent' ;;
             esac
             return 0
         fi
@@ -1093,20 +1104,20 @@ verify_gpu_usable() {
             if ! command -v nvidia-smi &>/dev/null || ! nvidia-smi -L &>/dev/null; then
                 log_error "NVIDIA hardware detected but nvidia-smi is not working."
                 log_error "Driver failed to load (Secure Boot blocking the module? DKMS build failure? pending reboot?)."
-                log_warn  "Falling back to software transcoding."
+                log_warn "Falling back to software transcoding."
                 GPU_TYPE="none"
                 return
             fi
             if ! command -v nvidia-container-runtime &>/dev/null; then
                 log_error "nvidia-container-runtime binary not found."
                 log_error "Try: sudo apt-get install --reinstall nvidia-container-toolkit"
-                log_warn  "Falling back to software transcoding."
+                log_warn "Falling back to software transcoding."
                 GPU_TYPE="none"
                 return
             fi
             # Confirm Docker's nvidia runtime is registered — robustly, treating
             # the three states distinctly (never silently fall back on a transient
-            # miss — the F-004 failure):
+            # miss):
             local _rt_state
             _rt_state="$(_nvidia_docker_runtime_state)"
             case "$_rt_state" in
@@ -1128,7 +1139,7 @@ verify_gpu_usable() {
                     else
                         log_error "Docker's NVIDIA runtime could not be registered."
                         log_error "Try: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
-                        log_warn  "Falling back to software transcoding."
+                        log_warn "Falling back to software transcoding."
                         GPU_TYPE="none"
                         return
                     fi
@@ -1150,7 +1161,7 @@ verify_gpu_usable() {
             render_device="$(gpu_persisted_render_device amd || gpu_render_device_for_vendor amd || true)"
             if [[ -z "$render_device" ]]; then
                 log_error "AMD GPU detected but no /dev/dri/renderD* device is available."
-                log_warn  "Falling back to software transcoding."
+                log_warn "Falling back to software transcoding."
                 GPU_TYPE="none"
                 return
             fi
@@ -1165,7 +1176,7 @@ verify_gpu_usable() {
             render_device="$(gpu_persisted_render_device intel || gpu_render_device_for_vendor intel || true)"
             if [[ -z "$render_device" ]]; then
                 log_error "Intel GPU detected but no /dev/dri/renderD* device is available."
-                log_warn  "Falling back to software transcoding."
+                log_warn "Falling back to software transcoding."
                 GPU_TYPE="none"
                 return
             fi

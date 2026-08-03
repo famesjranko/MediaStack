@@ -107,7 +107,8 @@ cache_preload_into_dind() {
     # Compose image tags. Use python3 for robustness over awk/grep (handles
     # quoted strings, variable substitutions we can't evaluate).
     local images
-    images=$(python3 - "$compose" <<'PYEOF'
+    images=$(
+        python3 - "$compose" <<'PYEOF'
 import sys, re, yaml
 with open(sys.argv[1]) as f:
     c = yaml.safe_load(f) or {}
@@ -119,7 +120,7 @@ for svc in (c.get('services') or {}).values():
 for i in sorted(imgs):
     print(i)
 PYEOF
-)
+    )
 
     local loaded=0 skipped=0
     for img in $images; do

@@ -135,7 +135,7 @@ _stage2_install
 
     local log_plain
     log_plain="$(sed -r 's/\x1b\[[0-9;]*m//g' "$log_path" 2>/dev/null || true)"
-    assert_contains "$log_plain" "Remote access is ready: https://jellyfin.gate.test" "S2-13/S2-15: ready summary printed after install"
+    assert_contains "$log_plain" "Remote access is ready: https://jellyfin.gate.test" "ready summary printed after install"
 }
 
 stage2_seed_remote_env() {
@@ -188,7 +188,10 @@ run_scenario() {
             ok=false
         fi
     done
-    $ok || { dind_exec "docker compose ps"; return 1; }
+    $ok || {
+        dind_exec "docker compose ps"
+        return 1
+    }
 
     if pebble_up && pebble_setup_dns; then
         pass "stage2 ready: Pebble ACME server and fixture DNS ready"
@@ -199,7 +202,7 @@ run_scenario() {
 
     dind_exec "grep -q 'jellyfin.gate.test' /etc/hosts || printf '127.0.0.1 jellyfin.gate.test seerr.gate.test\n' >> /etc/hosts"
 
-    # S2-13/S2-14/S2-15: Stage 2 writes unchecked, makes one Pebble-backed
+    # Stage 2 writes unchecked, makes one Pebble-backed
     # publication attempt, probes HTTPS, then promotes ready.
     stage2_run_install || return 1
     assert_remote_gating_ready /tmp/stage2-ready-install.out

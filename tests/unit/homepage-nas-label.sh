@@ -15,9 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$REPO_ROOT/tests/lib/assert.sh"
-source "$REPO_ROOT/scripts/lib/common.sh"          # log_skip/log_ok used by the fn
+source "$REPO_ROOT/scripts/lib/common.sh" # log_skip/log_ok used by the fn
 # shellcheck disable=SC1091
-source "$REPO_ROOT/scripts/services/homepage/main.sh"  # _homepage_apply_nas_label
+source "$REPO_ROOT/scripts/services/homepage/main.sh" # _homepage_apply_nas_label
 
 CURRENT_SCENARIO="homepage-nas-label"
 scenario_begin "$CURRENT_SCENARIO"

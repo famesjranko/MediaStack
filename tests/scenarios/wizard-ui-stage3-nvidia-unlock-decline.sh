@@ -31,5 +31,5 @@ run_scenario() {
     assert_contains "$transcript" "Unlock NVENC limit (advanced)" "wizard-ui stage3 nvidia unlock decline: unlock advisory box shown"
     assert_contains "$transcript" "Leaving the patch unapplied" "wizard-ui stage3 nvidia unlock decline: decline message shown"
     assert_eq "standard" "$(env_get NVIDIA_DRIVER_MODE)" "wizard-ui stage3 nvidia unlock decline: recovered to standard mode"
-    assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)"  "wizard-ui stage3 nvidia unlock decline: STAGE_3_GPU_STATE=complete"
+    assert_eq "complete" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 nvidia unlock decline: STAGE_3_GPU_STATE=complete"
 }

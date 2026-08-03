@@ -1,86 +1,226 @@
-name: CI — Fast Validation
+name: CI
+
+# Each job name below is the required-status-check context GitHub reports.
+# Renaming one leaves branch protection requiring a context that no longer
+# reports, which is unmergeable with no admin bypass.
 
 on:
   push:
     branches: [main]
   pull_request:
 
+# Cancel a superseded run for the same ref, including main: a newer push
+# obsoletes an in-flight check on the commit it replaced either way, and
+# there is no separate deploy job here that a cancelled run could leave
+# half-done.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Baseline is read-only; no job in this workflow needs to write anything
+# (no PR comments, no check-run API calls, no pushes), so none raises it.
 permissions:
   contents: read
 
 jobs:
-  validate:
+  # Standalone job so an OOM or a timeout is attributable to the ShellCheck
+  # sweep specifically, not folded into a generic "unit tier failed". This
+  # sweep alone was measured locally at ~6.2 GB peak / ~290s, dominated by
+  # tests/unit/wizard-flow.sh sourcing setup.sh. Assumed: the older-documented
+  # 2-core/7 GB ubuntu-latest figure (current specs unconfirmable offline
+  # here); this isolated job is insurance if that figure still holds.
+  lint-shellcheck:
+    name: lint-shellcheck
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
     steps:
-      - name: Check out
-        uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      # tests/lint.sh fetches and sha256-verifies the binary itself on a cold
+      # cache, so this cache is a speed optimization, never a trust shortcut.
+      # Without it the runner's older native shellcheck fails the version gate
+      # and the sweep pays a docker pull instead.
+      - name: Cache the shellcheck pin
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/mediastack-tools
+          key: shellcheck-${{ hashFiles('tools.toml') }}
+      - name: Install the shellcheck pin
+        run: ./tests/lint.sh install
+      - name: ShellCheck sweep
+        run: ./tests/check.sh lint
+
+  # The pinned shfmt (tools.toml [shfmt]) over every tracked shell file.
+  # tests/format.sh fetches and sha256-verifies the binary itself on a cold
+  # cache, so this cache is a speed optimization, never a trust shortcut.
+  format-shfmt:
+    name: format-shfmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Cache the shfmt pin
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/mediastack-tools
+          key: shfmt-${{ hashFiles('tools.toml') }}
+      - name: tests/check.sh shfmt
+        run: ./tests/check.sh shfmt
+
+  # The pinned ruff (tools.toml [ruff]): lint, then format --check. Retried on
+  # the same PyPI-transience grounds as type-mypy below.
+  lint-ruff:
+    name: lint-ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Install uv and cache tools
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.31"
+          enable-cache: true
+          cache-dependency-glob: tools.toml
+          cache-suffix: ruff
+      # The retry wraps ONLY the download-only warm-up, so PyPI transience is
+      # absorbed here while a genuine lint failure in the check step below runs
+      # exactly once and reads as exactly what it is.
+      - name: Warm the pinned python tools (retried)
+        run: |
+          for attempt in 1 2 3; do
+            ./tests/check.sh warm-python && exit 0
+            echo "warm-python attempt $attempt failed — retrying" >&2
+            sleep 5
+          done
+          exit 1
+      - name: ruff (tools.toml [ruff] pin)
+        run: ./tests/check.sh ruff
+
+  # The pinned gitleaks (tools.toml [gitleaks]) over the working tree,
+  # reconciled against tests/secret-scan.expected. The history scan is not run
+  # here: it re-reads every commit, so a declared benign finding is reported
+  # once per revision of its file and any edit to one turns CI red. Run
+  # ./tests/check.sh secrets-history before a push that publishes new history.
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Cache the gitleaks pin
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/mediastack-tools
+          key: gitleaks-${{ hashFiles('tools.toml') }}
+      - name: tests/check.sh secrets
+        run: ./tests/check.sh secrets
+
+  # Split from lint-shellcheck for the same attribution reason.
+  type-mypy:
+    name: type-mypy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      # `uv tool run --from mypy==... mypy .` otherwise fetches mypy +
+      # types-PyYAML from PyPI on every run with no cache and no retry, so a
+      # transient PyPI failure reads as an unexplained red gate. setup-uv is
+      # commit-pinned and installs an exact uv version; its cache is keyed on
+      # tools.toml, so a tool pin bump invalidates it automatically. This never
+      # substitutes a fallback mypy — the pinned version still runs.
+      - name: Install uv and cache tools
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.31"
+          enable-cache: true
+          cache-dependency-glob: tools.toml
+          cache-suffix: mypy
+      # Same shape as lint-ruff: retry only the download, run the check once.
+      - name: Warm the pinned python tools (retried)
+        run: |
+          for attempt in 1 2 3; do
+            ./tests/check.sh warm-python && exit 0
+            echo "warm-python attempt $attempt failed — retrying" >&2
+            sleep 5
+          done
+          exit 1
+      - name: mypy (tools.toml [mypy] pin)
+        run: ./tests/check.sh mypy
+
+  # tests/unit.sh is the canonical host tier: shell syntax, python bytecode,
+  # compose render, and every tests/unit/*.sh — including
+  # repository-safety.sh (secret/private-file guard + workflow and config
+  # YAML validity, via tests/lib/repo_guard.py) and secret-scan.sh (the
+  # formal gitleaks scan). Its internal shellcheck (tier 2) and mypy (tier 4)
+  # reruns are skipped here via MS_UNIT_SKIP_*: lint-shellcheck and
+  # type-mypy above already cover those stages and this job is gated on both
+  # (needs:), so skipping does not remove coverage — it removes the double
+  # payment. tests/unit.sh reports a skipped tier as SKIP, never OK.
+  unit-host:
+    name: unit-host
+    needs: [lint-shellcheck, type-mypy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MS_UNIT_SKIP_SHELLCHECK: "1"
+      MS_UNIT_SKIP_MYPY: "1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-yaml ripgrep locales
+          sudo apt-get install -y python3-yaml locales
           # Generate a non-C-collation UTF-8 locale so the ui-box-alignment
           # locale guard actually exercises the LC_ALL=C path (otherwise it
           # skips and the regression could slip through).
           sudo locale-gen en_US.UTF-8 || true
 
-      - name: Secret and private-file guard
-        run: |
-          set -euo pipefail
-          forbidden='(^|/)(\.env($|\.)|\.envrc|tests/\.env\.gcp|private(/|$)|docs/plans(/|$)|\.planning(/|$)|\.tmp(/|$)|CONTEXT\.md$|tests/.*-plan\.md$)'
-          if git ls-files | grep -E "$forbidden" | grep -Ev '(^|/)(\.env\.example|\.env\.gcp\.example)$'; then
-            echo "Forbidden private or planning file is tracked"
-            exit 1
-          fi
-          if git ls-files -z | \
-            grep -zEv '^(\.env\.example$|tests/\.env\.gcp\.example$)' | \
-            xargs -0 rg -n \
-              -e '-----BEGIN (RSA|OPENSSH|EC|DSA)? ?PRIVATE KEY-----|AIza[0-9A-Za-z_-]{35}|ya29\.[0-9A-Za-z_-]+|AKIA[0-9A-Z]{16}|gh[pousr]_[0-9A-Za-z_]{36,}|xox[baprs]-[0-9A-Za-z-]+|client_secret[[:space:]]*[:=][[:space:]]*["'\'']?[^"'\''[:space:]]+|private_key[[:space:]]*[:=][[:space:]]*["'\'']?[^"'\''[:space:]]+'; then
-            echo "Potential secret pattern found"
-            exit 1
-          fi
+      # Pre-warms tests/unit/secret-scan.sh's gitleaks pin so the gate does
+      # not pay its ~22 MB release fetch on every run. install_scanner
+      # (tests/secret-scan.sh) already re-verifies the cached binary's
+      # sha256 against tools.toml on every invocation and re-fetches on any
+      # mismatch, so a stale or poisoned cache entry cannot pass silently —
+      # this is a speed optimization, never a trust shortcut.
+      - name: Cache gitleaks pin
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/mediastack-tools
+          key: gitleaks-${{ hashFiles('tools.toml') }}
 
-      - name: Config and workflow YAML validation
-        # Structural YAML lint for the config template and the workflow files.
-        # The root config.yml is now a gitignored live copy seeded on install from
-        # the tracked template config/examples/config.yml, so lint the template.
-        # Kept as a distinct step because tests/unit.sh does not parse workflow YAML
-        # (its compose render covers docker-compose.yml only).
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import pathlib
-          import yaml
+      - name: tests/check.sh unit
+        run: ./tests/check.sh unit
 
-          for path in ["config/examples/config.yml", *pathlib.Path(".github/workflows").glob("*.yml")]:
-              yaml.safe_load(pathlib.Path(path).read_text())
-          PY
-
-      - name: Static validation + host unit tests
-        # Shell syntax, shellcheck, py_compile, compose render, and the host unit
-        # suite, behind one SSOT runner invoked identically by developers and CI.
-        # See tests/unit.sh.
-        run: ./tests/unit.sh
-
+  # Unchanged in behavior from the previous workflow: the image-free wizard
+  # scenario set (stubbed Docker, MS_TEST_SKIP_PRELOAD=1), no service image
+  # pulls, no live host. Gated behind the two cheap jobs so a broken PR does
+  # not also burn DinD minutes, but kept independent of unit-host so its
+  # runtime does not queue behind that job's slower tier.
   wizard-ui:
-    name: Wizard PTY scenarios (DinD, no service image pulls)
+    name: wizard-ui
+    needs: [lint-shellcheck, type-mypy]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-yaml
 
-      - name: Run image-free scenarios (stubbed Docker, MS_TEST_SKIP_PRELOAD=1)
-        run: |
-          set -uo pipefail
-          # Image-free scenario set is the single source of truth in
-          # tests/ci-scenarios.sh; fail the step if it can't produce a set rather
-          # than let run.sh fall back to its image-pulling default.
-          scenarios=$(bash tests/ci-scenarios.sh) || { echo "ci-scenarios.sh failed" >&2; exit 1; }
-          [[ -n "${scenarios// }" ]] || { echo "ci-scenarios.sh produced no scenarios" >&2; exit 1; }
-          echo "Running: $scenarios"
-          MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $scenarios
+      - name: tests/check.sh wizard
+        run: ./tests/check.sh wizard

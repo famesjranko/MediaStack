@@ -42,7 +42,7 @@ The interactive path is:
 1. Pre-flight validates the host and runs `stash_gpu_type`.
 2. `--full` installs base packages and Docker, validates Docker/Compose, then re-runs `stash_gpu_type` so bare Debian hosts can detect GPUs after `pciutils` is installed.
 3. `run_wizard` executes Stage 1 Core LAN, the optional Hardware Transcoding add-on, then Stage 2 Remote Access.
-4. Hardware transcoding owns vendor driver install, `verify_gpu_usable`, Jellyfin encoder publication, `.nvidia-finalize-pending` marker creation, and FIN-03 NVIDIA post-reboot finalization.
+4. Hardware transcoding owns vendor driver install, `verify_gpu_usable`, Jellyfin encoder publication, `.nvidia-finalize-pending` marker creation, and NVIDIA post-reboot finalization.
 5. NVIDIA reboot prompts are deferred until the final wizard gate after Stage 2 completes or is skipped. `./setup.sh --transcoding` remains a direct recovery route and may prompt immediately.
 6. `scripts/setup/reboot.sh` remains the unchanged scheduling contract. The final reboot gate calls `schedule_post_reboot`, `install_post_reboot_banner`, and `print_reboot_notice` only when `NEEDS_REBOOT=true` and `.nvidia-finalize-pending` exists.
 
@@ -63,7 +63,7 @@ The interactive path is:
 | 9 | GPU runtime check + hardening re-affirm | `verify_gpu_runtime` (always); `setup_hardening` only on a completed re-run (`STAGE_1_COMPLETE=1`) | hardening.sh |
 | 10 | Wizard | `run_stage1`, `run_hardware_transcoding_addon`, `run_stage2`, final reboot gate | wizard.sh, stages/*.sh |
 
-On a **fresh** install, `setup_hardening` runs *inside* Stage 1 (`_stage1_install`, after the wizard collects the `UFW_ENABLED`/`HARDENING_ENABLED` choice and before the stack is started) so the firewall/Docker-port rules are applied before any published port is exposed. `setup_hardening` gates `setup_ufw` on `UFW_ENABLED` and the unattended-upgrades + sysctl steps on `HARDENING_ENABLED`; `verify_gpu_runtime` is independent of both and always runs pre-wizard (Phase 9). See ADR-40.
+On a **fresh** install, `setup_hardening` runs *inside* Stage 1 (`_stage1_install`, after the wizard collects the `UFW_ENABLED`/`HARDENING_ENABLED` choice and before the stack is started) so the firewall/Docker-port rules are applied before any published port is exposed. `setup_hardening` gates `setup_ufw` on `UFW_ENABLED` and the unattended-upgrades + sysctl steps on `HARDENING_ENABLED`; `verify_gpu_runtime` is independent of both and always runs pre-wizard (Phase 9).
 
 Both entry modes converge before the wizard. `--full` installs host prerequisites and Docker, then continues through the same wizard as the default path. GPU reboot/resume only happens through the hardware transcoding engine when `.nvidia-finalize-pending` exists. Day-2 users normally reach the same hardware engine through `./mediastack` → **Manage hardware transcoding (GPU)**, which delegates to `./setup.sh --transcoding`.
 
@@ -90,13 +90,15 @@ State rules stay unchanged across the recovery routes:
 - `check_not_root` — refuse to run as root; `sudo` is used inside specific functions.
 - `check_debian` — refuse non-Debian hosts. Ubuntu is not supported despite apt compatibility (no testing).
 - `check_docker` / `check_compose` — only called in phases 5–6 after `--full` has had a chance to install them.
-- `check_disk_space` — warns if `<50 GB` free at `${DATA_DIR}`.
+- `check_disk_space` — warns if `<50 GB` free at `${DATA_DIR}`. `--full` also calls it inside `main()` after GPU work; on a run where the user has not chosen a data directory yet, that later call can still be checking against `/` instead of the final `${DATA_DIR}`, so the warning reaches the user but not early enough to refuse installation on a cramped host.
 
 ## Base packages and Docker install (phase 2, `--full` only)
 
 `install_base_packages` installs: `curl ca-certificates gnupg lsb-release sudo pciutils python3-yaml python3-bcrypt gettext-base ufw unattended-upgrades git htop bind9-dnsutils smartmontools`. Samba remains optional and is installed only when the wizard enables SMB. `python3-yaml` is needed by `configure.sh`'s YAML helpers. `python3-bcrypt` is retained as a harmless legacy dependency, but wg-easy v15 now hashes `INIT_PASSWORD` internally on first boot. Variable JSON payloads are rendered with Python `json.dumps` or the `json_body` helper; `gettext-base` remains installed for legacy shell-template compatibility, not for JSON substitution. `git` is needed for the pinned nvidia-patch fetch/checkout flow. `htop`, `bind9-dnsutils` (dig), and `smartmontools` (smartctl) are diagnostic tools for common media server troubleshooting.
 
 `install_docker` adds the official Docker apt repo, installs `docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`, and runs `usermod -aG docker "$USER"`. Group membership needs a new session; the script uses `exec sg docker -c "$0 $*"` to re-invoke itself with the group applied immediately.
+
+The `fresh-install` DinD scenario exercises this staged install path with Docker already present. Real GPU driver install, a real NVIDIA reboot, and live hardware-transcode proof still need a VM or bare-metal host with matching hardware — `--full` is not end-to-end tested against real GPU silicon.
 
 ## GPU detection + Hardware Transcoding ownership
 
@@ -116,6 +118,8 @@ If hardware configuration or automatic transcode proof fails before the retry li
 
 NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pending`.
 
+`setup.sh` syncs `JELLYFIN_GPU` in `.env` after `verify_gpu_usable` so a GPU mode switch between installs can't leave a stale encoder configured. The sync is downgrade-only — it fires only when `GPU_TYPE == "none"` (hardware gone or broken) and never overrides the user's CPU-only wizard choice, so the wizard's own selection stays authoritative.
+
 ## GPU helper details
 
 `detect_gpu` — filters exact `VGA compatible controller`, `3D controller`, and `Display controller` PCI classes, then deduplicates NVIDIA, AMD/Radeon, and Intel in fixed priority order. CPU/chipset-only lines do not qualify. Handles missing `lspci` (non-`--full` runs where `pciutils` is absent).
@@ -126,7 +130,7 @@ NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pe
 
 `install_nvidia_drivers` (Unlock mode):
 
-1. Check for a `pending` marker from a pre-reboot cache — if found, verify nouveau is gone and install the cached `.run`. See ADR-19.
+1. Check for a `pending` marker from a pre-reboot cache — if found, verify nouveau is gone and install the cached `.run`.
 2. Check Secure Boot state via `check_secure_boot` — if enabled, fall back to software transcoding (unsigned kernel modules won't load).
 3. Install kernel headers and DKMS build prerequisites.
 4. Blacklist nouveau unconditionally (`/etc/modprobe.d/blacklist-nouveau.conf` + `update-initramfs`). Attempt runtime unload via `try_unload_nouveau()` — stops display manager, unbinds fbcon from vtconsoles, runs `modprobe -r nouveau drm_kms_helper drm`. Checks sysfs PCI binding for success, not just lsmod.
@@ -146,12 +150,14 @@ NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pe
 NVIDIA finalization is marker-based:
 
 1. The hardware step writes `.nvidia-finalize-pending` when NVIDIA setup requires reboot. The marker records the current boot ID.
-2. The FIN-02 prompt is shown only at the final wizard gate, or immediately for `./setup.sh --transcoding`, when `NEEDS_REBOOT=true` and that marker exists.
+2. The reboot prompt is shown only at the final wizard gate, or immediately for `./setup.sh --transcoding`, when `NEEDS_REBOOT=true` and that marker exists.
 3. `scripts/setup/reboot.sh` schedules the existing systemd oneshot unchanged.
 4. On resume, `setup.sh` checks `.nvidia-finalize-pending` before `--remote`, pre-flight prompts, existing-install detection, or the normal wizard. It routes directly to `stage3_finalize_nvidia` only when the current boot ID differs from the marker's creation boot ID.
 5. `stage3_finalize_nvidia` reads the driver mode from the marker (a mode-less schema-1 marker is treated as `unlock`), verifies `nvidia-smi` and Docker runtime, and — **only for `unlock`** — resumes the `.nvidia-tmp/pending` `.run` install and applies the NVIDIA patch (Standard/Existing skip both and clear any stale `.run` cache). It then writes Jellyfin `nvenc`, runs deferred automatic transcode proof, prints the final summary, and removes the marker after persisted completion or fallback.
 
 The older setup-level "install GPU, run wizard, schedule reboot" path is no longer the owner of NVIDIA reboot behavior.
+
+Both "Reboot now" and "Reboot manually later" schedule the same post-reboot unit, so a user who reboots later still lands in `stage3_finalize_nvidia` ahead of the normal wizard once the boot ID changes.
 
 ## Post-reboot service notes
 
@@ -218,6 +224,8 @@ Stage 1 always starts the baseline stack without GPU-specific compose directives
 
 If `.env` exists from an interrupted run, values are sourced as defaults so the user doesn't re-enter everything.
 
+The interactive wizard requires the user to set the admin password directly — there is no default, so a bare Enter is rejected. It is validated (at least 12 characters, no single quote, matching Portainer's floor) and confirmed by re-entry; it is never auto-generated. `print_access_info` shows the chosen password in the one-time install summary so the user can save it, and the re-openable day-2 launcher view masks it behind an opt-in reveal.
+
 ### `DEMO=1` non-interactive mode
 
 `DEMO=1 ./setup.sh ...` bypasses the interactive wizard entirely. This is intended for CI, scripted deploys, and remote-host verification where prompting is a liability, not a feature.
@@ -231,7 +239,7 @@ If `.env` exists from an interrupted run, values are sourced as defaults so the 
 
 ### WireGuard INIT_PASSWORD propagation (v15)
 
-wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only (see ADR-28). WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stages/stage2.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env_gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
+wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only. WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stages/stage2.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env_gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
 
 After `/etc/wireguard/wg-easy.db` exists, `INIT_*` vars are inert. Subsequent wizard re-runs leave the in-container admin password unchanged; rotate it in the wg-easy UI instead. The configurator (`scripts/services/wireguard/main.sh`) detects this on its readiness probe and logs `[SKIP]` for an existing initial peer.
 
@@ -263,9 +271,9 @@ The override is gitignored and regenerated on setup runs. Stage 1 writes resourc
 
 ## Pull and start
 
-`pull_images` runs `docker compose pull` with the active profile args before any containers start. If a pull fails (transient network error, registry timeout), it retries up to 3 times with exponential backoff (10s, 20s, 40s). On exhaustion it warns but continues — cached images and non-failing services will still start. This prevents a single registry timeout (e.g. ghcr.io for FlareSolverr) from silently cascading through `depends_on` chains into skipped configuration (ADR-20).
+`pull_images` runs `docker compose pull` with the active profile args before any containers start. If a pull fails (transient network error, registry timeout), it retries up to 3 times with exponential backoff (10s, 20s, 40s). On exhaustion it warns but continues — cached images and non-failing services will still start. This prevents a single registry timeout (e.g. ghcr.io for FlareSolverr) from silently cascading through `depends_on` chains into skipped configuration.
 
-`start_stack` then runs `docker compose up -d` with profiles determined by `_build_profile_args`: `--profile subtitles` when `BAZARR_ENABLED=true`, `--profile autoheal` by default unless disabled, `--profile proxy` when `DOMAIN` is set, and `--profile remote` when `WG_INIT_PASSWORD` is set (wizard confirmed the admin password for wg-easy unattended setup). `wait_for_healthy` polls `docker compose ps --format json` for up to 120s, parses each service's `Health`/`State` via inline Python, and reports the set still starting. Warns (not fails) if any service is still unhealthy at the timeout — `configure.sh` will retry its own waits.
+`start_stack` then runs `docker compose up -d` with profiles determined by `_build_profile_args`: `--profile subtitles` when `BAZARR_ENABLED=true`, `--profile autoheal` by default unless disabled, `--profile proxy` when `DOMAIN` is set, and `--profile remote` when `WG_INIT_PASSWORD` is set (wizard confirmed the admin password for wg-easy unattended setup). `wait_for_healthy` polls `docker compose ps --format json` for up to 120s, parses each service's `Health`/`State` via inline Python, and reports the set still starting. Warns (not fails) if any service is still unhealthy at the timeout — `configure.sh` will retry its own waits (up to 90s each, in `wait_for_service` from `scripts/lib/http.sh`). On a slow host doing a cold pull of several GB of images, services can still be downloading well past the 120s mark, so `setup.sh` may warn "some services may still be starting" even on a healthy cold install.
 
 ## Running configure.sh
 
@@ -281,13 +289,3 @@ The hardware transcoding engine writes these codec capability vars:
 - `STAGE_3_GPU_ALLOW_HEVC_ENCODING` — enables HEVC output encoding only when the selected backend's HEVC encoder smoke test passes.
 - `STAGE_3_GPU_ALLOW_AV1_ENCODING` — enables AV1 output encoding only when the selected backend's AV1 encoder smoke test passes.
 - `STAGE_3_GPU_RENDER_DEVICE` — selected Intel/AMD render node, e.g. `/dev/dri/renderD129`; used for QSV/VAAPI probes and Jellyfin `QsvDevice`/`VaapiDevice`.
-
-## Observations / open questions
-
-- **Post-reboot interactive path.** The final reboot gate schedules the post-reboot unit for both "Reboot now" and "Reboot manually later". A user who later reboots with `.nvidia-finalize-pending` present will enter `stage3_finalize_nvidia` before the normal wizard because the marker boot ID no longer matches the current boot.
-- **`set -e` during configure.sh call.** `setup.sh` has `-e` active, but `configure.sh` is invoked at top level inside `main()` — a non-zero exit here would abort `setup.sh`. In practice `configure.sh` disables `-e` internally and returns 0 almost always, but an outright parse error (rare) would stop the user from seeing `print_access_info`.
-- **`--full` path is only partially tested end-to-end.** The `fresh-install` scenario exercises the staged install path inside DinD with Docker already available. Real GPU driver install, real NVIDIA reboot, and live hardware transcode proof still need a VM or bare-metal host with matching hardware.
-- **Admin-password UX.** The interactive wizard requires the user to set the admin password — there is no default, so a bare Enter is rejected. It is validated (at least 12 characters and no single quote, matching Portainer's floor) and confirmed by re-entry; it is never auto-generated. `print_access_info` shows the chosen password in the one-time install summary so the user can save it (the re-openable day-2 launcher view masks it behind an opt-in reveal).
-- **~~No idempotence guard across GPU mode switches.~~** Fixed: `setup.sh` syncs `JELLYFIN_GPU` in `.env` after `verify_gpu_usable` (downgrade-only — never overrides user's CPU-only wizard choice). The wizard's choice is authoritative; the sync only fires when `GPU_TYPE == "none"` (hardware gone/broken).
-- **Disk-space check runs after `--full` work.** `check_disk_space` is called inside `main()` after GPU work, but only against `$DATA_DIR`; pre-GPU-install it may run against `/` before the user has picked their data dir. The warning reaches the user, but not early enough to refuse installation on a cramped host.
-- **Hardcoded 120-second health timeout.** `wait_for_healthy` gives up at 120s. On a slow host doing a cold pull of 5 GB of images, services can still be downloading well beyond that. `configure.sh` retries its own per-service waits up to 90s each (in `wait_for_service` from `scripts/lib/http.sh`), but the UX is that `setup.sh` warns "some services may still be starting" even on a healthy cold install.

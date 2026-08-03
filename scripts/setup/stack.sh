@@ -106,14 +106,14 @@ ensure_mediastack_network_config() {
         python3 "$_STACK_MODULE_DIR/render/network_selector.py" "$routes_file" "$addrs_file" "$docker_file" "$mediastack_file") || selector_rc=$?
     rm -rf "$tmp_dir"
 
-    if (( selector_rc != 0 )); then
+    if ((selector_rc != 0)); then
         while IFS= read -r line; do
             case "$line" in
                 ERROR:*) log_error "${line#ERROR: }" ;;
-                INFO:*)  log_info "${line#INFO: }" ;;
-                *)       [[ -n "$line" ]] && log_info "$line" ;;
+                INFO:*) log_info "${line#INFO: }" ;;
+                *) [[ -n "$line" ]] && log_info "$line" ;;
             esac
-        done <<< "$selector_output"
+        done <<<"$selector_output"
         return 1
     fi
 
@@ -125,7 +125,7 @@ ensure_mediastack_network_config() {
             MEDIASTACK_GATEWAY) gateway="$value" ;;
             MEDIASTACK_NPM_IP) npm_ip="$value" ;;
         esac
-    done <<< "$selector_output"
+    done <<<"$selector_output"
 
     if [[ -z "$prefix" || -z "$subnet" || -z "$gateway" || -z "$npm_ip" ]]; then
         log_error "Could not determine MediaStack Docker subnet."
@@ -161,11 +161,11 @@ pull_images() {
             | grep -c ok || true)
     fi
 
-    if (( total > 0 && present == total )); then
+    if ((total > 0 && present == total)); then
         log_ok "All ${total} images already present locally - skipping pull"
         log_info "To check for and apply image updates later, run ./mediastack -> Manage updates."
         return 0
-    elif (( present > 0 && present < total )); then
+    elif ((present > 0 && present < total)); then
         log_info "Pulling ${image_channel} channel container images (${present}/${total} already present, fetching $((total - present)) new)..."
     else
         log_info "Pulling ${image_channel} channel container images..."
@@ -173,16 +173,16 @@ pull_images() {
 
     local attempt max_attempts="$STACK_PULL_MAX_ATTEMPTS"
     local backoff="$STACK_PULL_INITIAL_BACKOFF_SECONDS"
-    for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    for ((attempt = 1; attempt <= max_attempts; attempt++)); do
         if docker compose "${profiles[@]}" pull --policy missing 2>&1; then
             log_ok "All images pulled successfully"
             return 0
         fi
 
-        if (( attempt < max_attempts )); then
+        if ((attempt < max_attempts)); then
             log_warn "Image pull failed (attempt ${attempt}/${max_attempts}). Retrying in ${backoff}s..."
             sleep "$backoff"
-            backoff=$(( backoff * 2 ))
+            backoff=$((backoff * 2))
         fi
     done
 
@@ -231,8 +231,8 @@ create_data_dirs() {
 
     if [[ "${STORAGE_MODE:-local}" == "nas" ]]; then
         for d in "${sudo_created[@]}"; do
-            sudo chown "${puid}:${pgid}" "$d" 2>/dev/null || \
-                log_warn "Could not chown NAS directory $d (NFS root-squash may block chown; continuing)"
+            sudo chown "${puid}:${pgid}" "$d" 2>/dev/null \
+                || log_warn "Could not chown NAS directory $d (NFS root-squash may block chown; continuing)"
         done
     else
         sudo chown -R "${puid}:${pgid}" "${data_dir}"
@@ -276,7 +276,8 @@ clear_qbittorrent_managed_seed_for_manual_storage() {
         } | sort -u
     )
 
-    if ! changed=$(QBT_CONF="$qbt_conf" QBT_CATEGORIES="$qbt_categories" MANAGED_PATHS="$managed_paths" python3 - <<'PY'
+    if ! changed=$(
+        QBT_CONF="$qbt_conf" QBT_CATEGORIES="$qbt_categories" MANAGED_PATHS="$managed_paths" python3 - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -346,7 +347,7 @@ if cats_path.exists():
 if changed:
     print("changed")
 PY
-); then
+    ); then
         log_warn "Could not inspect qBittorrent seed paths for manual app wiring"
         return 0
     fi
@@ -370,7 +371,10 @@ seed_config_from_templates() {
     local f dest
     while IFS= read -r -d '' f; do
         dest="$SCRIPT_DIR/config/${f#"$tpl_root/"}"
-        [[ -f "$dest" ]] || { mkdir -p "$(dirname "$dest")"; cp "$f" "$dest"; }
+        [[ -f "$dest" ]] || {
+            mkdir -p "$(dirname "$dest")"
+            cp "$f" "$dest"
+        }
     done < <(find "$tpl_root" -type f -print0)
 }
 
@@ -485,7 +489,7 @@ wait_all_healthy() {
     local profiles=()
     _build_profile_args profiles
     local expected_services
-    if (( $# > 0 )); then
+    if (($# > 0)); then
         expected_services=$(printf '%s\n' "$@")
     else
         expected_services=$(docker compose "${profiles[@]}" ps --all --services 2>/dev/null || true)
@@ -493,10 +497,10 @@ wait_all_healthy() {
 
     local _spin_i=0 _fc=${#_G_SPIN[@]}
 
-    while (( elapsed < timeout )); do
+    while ((elapsed < timeout)); do
         local status_report failed waiting restarting no_health missing
-        status_report=$(docker compose "${profiles[@]}" ps --all --format json 2>/dev/null | \
-            EXPECTED_SERVICES="$expected_services" python3 -c "
+        status_report=$(docker compose "${profiles[@]}" ps --all --format json 2>/dev/null \
+            | EXPECTED_SERVICES="$expected_services" python3 -c "
 import json
 import os
 import sys
@@ -566,13 +570,13 @@ print('missing\\t' + ' '.join(missing))
         missing=""
         while IFS=$'\t' read -r key value; do
             case "$key" in
-                failed)     failed="$value" ;;
-                waiting)    waiting="$value" ;;
+                failed) failed="$value" ;;
+                waiting) waiting="$value" ;;
                 restarting) restarting="$value" ;;
-                no_health)  no_health="$value" ;;
-                missing)    missing="$value" ;;
+                no_health) no_health="$value" ;;
+                missing) missing="$value" ;;
             esac
-        done <<< "$status_report"
+        done <<<"$status_report"
 
         if [[ -n "$failed" || -n "$missing" ]]; then
             echo -ne "\r\033[K"
@@ -599,13 +603,13 @@ print('missing\\t' + ' '.join(missing))
 
         # Animate spinner during the poll interval.
         local _fmt="${waiting// / · }"
-        local _ticks=$(( interval * 1000 / STACK_HEALTH_SPINNER_FRAME_MS ))
-        for (( _t=0; _t < _ticks; _t++ )); do
-            echo -ne "\r  ${_UI_CYAN}${_G_SPIN[$(( _spin_i % _fc ))]}${_UI_RESET}  Waiting for services (${elapsed}s/${timeout}s) — ${_fmt}\033[K"
-            (( _spin_i = _spin_i + 1 ))
+        local _ticks=$((interval * 1000 / STACK_HEALTH_SPINNER_FRAME_MS))
+        for ((_t = 0; _t < _ticks; _t++)); do
+            echo -ne "\r  ${_UI_CYAN}${_G_SPIN[$((_spin_i % _fc))]}${_UI_RESET}  Waiting for services (${elapsed}s/${timeout}s) — ${_fmt}\033[K"
+            ((_spin_i = _spin_i + 1))
             sleep "$STACK_HEALTH_SPINNER_SLEEP_SECONDS"
         done
-        (( elapsed += interval ))
+        ((elapsed += interval))
     done
 
     echo -ne "\r\033[K"
@@ -621,7 +625,7 @@ remote_state_label() {
         ready) printf 'ready' ;;
         skipped) printf 'skipped - choose Features & settings -> Add remote access to retry' ;;
         failed) printf 'failed - choose Features & settings -> Add remote access to retry' ;;
-        unchecked|"") printf 'not configured' ;;
+        unchecked | "") printf 'not configured' ;;
         *) printf 'not configured' ;;
     esac
 }

@@ -1,4 +1,4 @@
-# tests/scenarios/ddns-offline.sh — ephemeral verify degrade path (epic #234, #237).
+# tests/scenarios/ddns-offline.sh — ephemeral verify degrade path.
 #
 # When docker or the ddns-updater image is unavailable mid-wizard (an offline
 # install), ddns_verify_via_container (scripts/lib/network.sh) must DEGRADE to

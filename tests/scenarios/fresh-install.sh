@@ -80,7 +80,8 @@ PYEOF
     # ------------------------------------------------------------------
     # 1. Bring up the default profile (with Pebble ACME override for NPM).
     # ------------------------------------------------------------------
-    local _strip; _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
+    local _strip
+    _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
     local compose_cmd="docker compose --profile proxy --profile autoheal up -d"
     if [[ "$_strip" != *" npm "* ]]; then
         npm_acme_override
@@ -90,7 +91,7 @@ PYEOF
     local up_rc
     dind_exec "$compose_cmd" >/dev/null 2>&1
     up_rc=$?
-    if (( up_rc != 0 )); then
+    if ((up_rc != 0)); then
         fail "docker compose up -d" "exit $up_rc"
         dind_exec "docker compose ps"
         return 1
@@ -128,7 +129,10 @@ PYEOF
         fi
     done
 
-    $ok || { dind_exec "docker compose ps"; return 1; }
+    $ok || {
+        dind_exec "docker compose ps"
+        return 1
+    }
 
     # ------------------------------------------------------------------
     # 2b. Verify resource limits are applied to running containers.

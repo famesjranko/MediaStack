@@ -32,8 +32,8 @@ except Exception as e:
     npm_default_http=$(dind_exec "curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:81/api/tokens \
         -H 'Content-Type: application/json' -d '{\"identity\":\"admin@example.com\",\"secret\":\"changeme\"}'" | tr -d '\r\n')
     case "$npm_default_http" in
-        400|401) pass "step 9 NPM: defaults rejected (HTTP $npm_default_http)" ;;
-        *)       fail "step 9 NPM: defaults rejected" "HTTP $npm_default_http" ;;
+        400 | 401) pass "step 9 NPM: defaults rejected (HTTP $npm_default_http)" ;;
+        *) fail "step 9 NPM: defaults rejected" "HTTP $npm_default_http" ;;
     esac
 
     if [[ -n "$NPM_TOKEN" ]]; then
@@ -188,9 +188,9 @@ for h in hosts:
         # the live response to prove CSP + HSTS + nosniff reach the client.
         local emit_headers emit_ok=0
         emit_headers=$(dind_exec "curl -sk -o /dev/null -D - --resolve 'jellyfin.fresh.test:443:127.0.0.1' https://jellyfin.fresh.test/System/Info/Public")
-        grep -qi '^content-security-policy:'   <<<"$emit_headers" && emit_ok=$((emit_ok+1)) || true
-        grep -qi '^strict-transport-security:' <<<"$emit_headers" && emit_ok=$((emit_ok+1)) || true
-        grep -qi '^x-content-type-options:'    <<<"$emit_headers" && emit_ok=$((emit_ok+1)) || true
+        grep -qi '^content-security-policy:' <<<"$emit_headers" && emit_ok=$((emit_ok + 1)) || true
+        grep -qi '^strict-transport-security:' <<<"$emit_headers" && emit_ok=$((emit_ok + 1)) || true
+        grep -qi '^x-content-type-options:' <<<"$emit_headers" && emit_ok=$((emit_ok + 1)) || true
         if [[ "$emit_ok" -eq 3 ]]; then
             pass "step 9 NPM: security headers emit on live jellyfin responses (CSP + HSTS + nosniff)"
         else

@@ -3,7 +3,7 @@
 # =============================================================================
 # Single source of truth for the resolution → size selection. Both the setup
 # wizard (scripts/setup/stages/stage1.sh) and the day-2 launcher (./mediastack,
-# the "Change quality profile" action — issue #71) source this file and call the
+# the "Change quality profile" action) source this file and call the
 # one function, so the two surfaces can never drift in which axes/labels they
 # present (the same reason apply_indexers_only is shared).
 #
@@ -11,7 +11,7 @@
 # `wizard_apply.py --list-axes` (TSV) — adding a resolution/size is data-only,
 # no edit here. The size menu's GB/movie hint is a (resolution x size) CELL value,
 # so the size LABELS are built AFTER the resolution is chosen — 720p shows 720p
-# sizes, not 1080p (#96). Both ui_choose prompts set UI_CHOOSE_DEFAULT_INDEX so the
+# sizes, not 1080p. Both ui_choose prompts set UI_CHOOSE_DEFAULT_INDEX so the
 # non-TTY/DEMO path returns the default deterministically (never a re-prompt
 # loop, which would hang the PTY harness).
 #
@@ -47,7 +47,7 @@ quality_select_pick() {
 
     # Parse the menu once. Resolution labels are final here; size LABELS are
     # DEFERRED (built after the resolution pick below) so each GB hint matches the
-    # chosen resolution (#96). HINT rows feed a (size|res) -> hint lookup.
+    # chosen resolution. HINT rows feed a (size|res) -> hint lookup.
     local -a _qsp_rkeys=() _qsp_rlabels=() _qsp_skeys=() _qsp_sdisp=() _qsp_sdesc=() _qsp_slabels=()
     local -A _qsp_hint_map=()
     local _qsp_axis _qsp_key _qsp_disp _qsp_desc _qsp_label
@@ -57,10 +57,13 @@ quality_select_pick() {
             RESOLUTION)
                 _qsp_label="$_qsp_disp"
                 [[ -n "$_qsp_desc" ]] && _qsp_label="$_qsp_disp - $_qsp_desc"
-                _qsp_rkeys+=("$_qsp_key"); _qsp_rlabels+=("$_qsp_label")
+                _qsp_rkeys+=("$_qsp_key")
+                _qsp_rlabels+=("$_qsp_label")
                 ;;
             SIZE)
-                _qsp_skeys+=("$_qsp_key"); _qsp_sdisp+=("$_qsp_disp"); _qsp_sdesc+=("$_qsp_desc")
+                _qsp_skeys+=("$_qsp_key")
+                _qsp_sdisp+=("$_qsp_disp")
+                _qsp_sdesc+=("$_qsp_desc")
                 ;;
             HINT)
                 # HINT<TAB>size_key<TAB>res_key<TAB>hint — the hint is the 4th
@@ -70,9 +73,9 @@ quality_select_pick() {
                 _qsp_hint_map["${_qsp_key}|${_qsp_disp}"]="$_qsp_desc"
                 ;;
         esac
-    done <<< "$_qsp_tsv"
+    done <<<"$_qsp_tsv"
 
-    if (( ${#_qsp_rkeys[@]} == 0 || ${#_qsp_skeys[@]} == 0 )); then
+    if ((${#_qsp_rkeys[@]} == 0 || ${#_qsp_skeys[@]} == 0)); then
         log_error "Quality menu is empty (no resolutions/sizes in presets.yml)."
         return 1
     fi
@@ -117,6 +120,6 @@ quality_select_pick() {
 
     # Explicit success — the trailing `for`/`[[ ]]` above would otherwise leave a
     # non-zero exit status, breaking the documented "non-zero only on failure"
-    # contract the call sites (and #71) rely on.
+    # contract the call sites rely on.
     return 0
 }

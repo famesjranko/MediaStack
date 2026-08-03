@@ -64,9 +64,9 @@ cfg_bazarr_languages() {
 }
 
 python3() {
-    if [[ "${BAZARR_FAIL_CONFIG_WRITE:-}" == "1" \
-        && "${1:-}" == "-c" \
-        && "${2:-}" == *"with open(config_path, 'w')"* ]]; then
+    if [[ "${BAZARR_FAIL_CONFIG_WRITE:-}" == "1" &&
+        "${1:-}" == "-c" &&
+        "${2:-}" == *"with open(config_path, 'w')"* ]]; then
         return 1
     fi
     command python3 "$@"
@@ -86,11 +86,11 @@ reset_fixture() {
         "radarr: {}" \
         "general:" \
         "  use_sonarr: false" \
-        > "$SCRIPT_DIR/config/bazarr/config/config.yaml"
+        >"$SCRIPT_DIR/config/bazarr/config/config.yaml"
     printf '%s\n' "<Config><ApiKey>sonarr-api-key</ApiKey></Config>" \
-        > "$SCRIPT_DIR/config/sonarr/config.xml"
+        >"$SCRIPT_DIR/config/sonarr/config.xml"
     printf '%s\n' "<Config><ApiKey>radarr-api-key</ApiKey></Config>" \
-        > "$SCRIPT_DIR/config/radarr/config.xml"
+        >"$SCRIPT_DIR/config/radarr/config.xml"
     OK_MESSAGES=()
     WARN_MESSAGES=()
     SKIP_MESSAGES=()
@@ -110,7 +110,8 @@ assert_contains "$ok_log" "General settings applied" "Bazarr logs general settin
 assert_eq "compose restart bazarr" "${DOCKER_COMMANDS[0]:-}" "Bazarr restarts after successful config write"
 assert_contains "${WAIT_MESSAGES[*]:-}" "Bazarr http://localhost:6767" "Bazarr waits after restart"
 
-config_summary=$(python3 - "$SCRIPT_DIR/config/bazarr/config/config.yaml" <<'PY'
+config_summary=$(
+    python3 - "$SCRIPT_DIR/config/bazarr/config/config.yaml" <<'PY'
 import sys, yaml
 
 with open(sys.argv[1], encoding="utf-8") as fh:
@@ -120,7 +121,7 @@ print(data["radarr"]["apikey"])
 print(data["general"]["use_sonarr"])
 PY
 )
-mapfile -t config_lines <<< "$config_summary"
+mapfile -t config_lines <<<"$config_summary"
 assert_eq "sonarr-api-key" "${config_lines[0]:-}" "Bazarr writes Sonarr API key to config"
 assert_eq "radarr-api-key" "${config_lines[1]:-}" "Bazarr writes Radarr API key to config"
 assert_eq "True" "${config_lines[2]:-}" "Bazarr writes general use_sonarr setting"

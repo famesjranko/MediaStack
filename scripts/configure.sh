@@ -27,7 +27,9 @@ cd "$SCRIPT_DIR" || exit 1
 
 # Load .env
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
-    set -a; source "$SCRIPT_DIR/.env"; set +a
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
 fi
 
 CONFIG_FILE="$SCRIPT_DIR/config.yml"
@@ -76,9 +78,18 @@ fi
 ONLY_SERVICES=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --only) ONLY_SERVICES="$2"; shift 2 ;;
-        --only=*) ONLY_SERVICES="${1#--only=}"; shift ;;
-        *) echo "Unknown argument: $1" >&2; exit 2 ;;
+        --only)
+            ONLY_SERVICES="$2"
+            shift 2
+            ;;
+        --only=*)
+            ONLY_SERVICES="${1#--only=}"
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            exit 2
+            ;;
     esac
 done
 
@@ -93,7 +104,7 @@ _CONFIGURE_WARN=()
 
 _record_configure_result() {
     local _label="${1%%|*}" _flag="${1##*|}" _w0="$2" _forced_warn="${3:-0}"
-    if (( _forced_warn || _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )); then
+    if ((_forced_warn || _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0)); then
         _CONFIGURE_WARN+=("$_label|$_flag")
     else
         _CONFIGURE_OK+=("$_label")
@@ -108,11 +119,12 @@ _record_configure_result() {
 # uncounted and never affects the badge.
 # Usage: _run_configure "Label|--only-flag" configure_fn [args...]
 _run_configure() {
-    local _service="$1"; shift
-    local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
+    local _service="$1"
+    shift
+    local _w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR))
     local _rc=0
     "$@" || _rc=$?
-    _record_configure_result "$_service" "$_w0" "$(( _rc != 0 ))"
+    _record_configure_result "$_service" "$_w0" "$((_rc != 0))"
     return "$_rc"
 }
 
@@ -135,27 +147,27 @@ main() {
         log_info "Targeted run: ${ONLY_SERVICES}"
     fi
     _should_configure qbittorrent && wait_for_service "qBittorrent" "$(service_local_url qbittorrent)"
-    _should_configure jackett     && wait_for_service "Jackett"     "$(service_local_url jackett)"
-    _should_configure sonarr      && wait_for_service "Sonarr"      "$(service_local_url sonarr)"
-    _should_configure radarr      && wait_for_service "Radarr"      "$(service_local_url radarr)"
-    _should_configure jellyfin    && wait_for_service "Jellyfin"    "$(service_local_url jellyfin)"
-    _should_configure seerr       && wait_for_service "Seerr"       "$(service_local_url seerr)"
-    _should_configure portainer   && wait_for_service "Portainer"   "$(service_local_url portainer)"
-    _should_configure homepage    && wait_for_service "Homepage"    "$(service_local_url homepage)"
+    _should_configure jackett && wait_for_service "Jackett" "$(service_local_url jackett)"
+    _should_configure sonarr && wait_for_service "Sonarr" "$(service_local_url sonarr)"
+    _should_configure radarr && wait_for_service "Radarr" "$(service_local_url radarr)"
+    _should_configure jellyfin && wait_for_service "Jellyfin" "$(service_local_url jellyfin)"
+    _should_configure seerr && wait_for_service "Seerr" "$(service_local_url seerr)"
+    _should_configure portainer && wait_for_service "Portainer" "$(service_local_url portainer)"
+    _should_configure homepage && wait_for_service "Homepage" "$(service_local_url homepage)"
 
     # Portainer first: it has a 5-minute admin creation timeout from first
     # start. Running it before the slower services (indexer adds, Jellyfin
     # library scan) maximises the chance of hitting that window.
-    _should_configure portainer   && _run_configure "Portainer|portainer"     configure_portainer
+    _should_configure portainer && _run_configure "Portainer|portainer" configure_portainer
 
     _should_configure qbittorrent && _run_configure "qBittorrent|qbittorrent" configure_qbittorrent
-    _should_configure jackett     && _run_configure "Jackett|jackett"         configure_jackett
-    local _sonarr_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR )) _sonarr_warn=0
+    _should_configure jackett && _run_configure "Jackett|jackett" configure_jackett
+    local _sonarr_w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR)) _sonarr_warn=0
     if _should_configure sonarr; then configure_sonarr || _sonarr_warn=1; fi
-    (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _sonarr_w0 )) && _sonarr_warn=1
-    local _radarr_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR )) _radarr_warn=0
+    ((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _sonarr_w0)) && _sonarr_warn=1
+    local _radarr_w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR)) _radarr_warn=0
     if _should_configure radarr; then configure_radarr || _radarr_warn=1; fi
-    (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _radarr_w0 )) && _radarr_warn=1
+    ((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _radarr_w0)) && _radarr_warn=1
 
     # Indexer phase — Sonarr and Radarr add the same Jackett-fronted trackers,
     # and on save each *arr synchronously fetches caps through Jackett to the
@@ -171,18 +183,24 @@ main() {
         echo -e "${BOLD}Adding Sonarr + Radarr indexers (in parallel)...${NC}"
         local _ix_pids=() _ix_apps=()
         if _should_configure sonarr && [[ -n "${SONARR_API_KEY:-}" ]]; then
-            local tv_cats; tv_cats=$(cfg_field "categories.tv")
-            ( local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ));
-              configure_arr_indexers "sonarr" "$(service_local_url sonarr)/api/v3" "${SONARR_API_KEY}" "$tv_cats"
-              (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0 )) ) &
+            local tv_cats
+            tv_cats=$(cfg_field "categories.tv")
+            (
+                local _w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR))
+                configure_arr_indexers "sonarr" "$(service_local_url sonarr)/api/v3" "${SONARR_API_KEY}" "$tv_cats"
+                ((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0))
+            ) &
             _ix_pids+=($!)
             _ix_apps+=(sonarr)
         fi
         if _should_configure radarr && [[ -n "${RADARR_API_KEY:-}" ]]; then
-            local movie_cats; movie_cats=$(cfg_field "categories.movies")
-            ( local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ));
-              configure_arr_indexers "radarr" "$(service_local_url radarr)/api/v3" "${RADARR_API_KEY}" "$movie_cats"
-              (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0 )) ) &
+            local movie_cats
+            movie_cats=$(cfg_field "categories.movies")
+            (
+                local _w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR))
+                configure_arr_indexers "radarr" "$(service_local_url radarr)/api/v3" "${RADARR_API_KEY}" "$movie_cats"
+                ((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR == _w0))
+            ) &
             _ix_pids+=($!)
             _ix_apps+=(radarr)
         fi
@@ -207,20 +225,20 @@ main() {
         log_skip "Sonarr/Radarr Jellyfin notifications skipped (manual app wiring)"
     else
         if _should_configure sonarr; then
-            local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
+            local _w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR))
             configure_arr_jellyfin_connection "sonarr" "$(service_local_url sonarr)/api/v3" "${SONARR_API_KEY:-}"
-            (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )) && _sonarr_warn=1
+            ((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0)) && _sonarr_warn=1
         fi
         if _should_configure radarr; then
-            local _w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
+            local _w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR))
             configure_arr_jellyfin_connection "radarr" "$(service_local_url radarr)/api/v3" "${RADARR_API_KEY:-}"
-            (( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0 )) && _radarr_warn=1
+            ((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR > _w0)) && _radarr_warn=1
         fi
     fi
 
-    _sonarr_warn=$(( _sonarr_warn || ${_ix_warn[sonarr]:-0} ))
-    _radarr_warn=$(( _radarr_warn || ${_ix_warn[radarr]:-0} ))
-    local _result_w0=$(( _LOG_COUNTS_WARN + _LOG_COUNTS_ERROR ))
+    _sonarr_warn=$((_sonarr_warn || ${_ix_warn[sonarr]:-0}))
+    _radarr_warn=$((_radarr_warn || ${_ix_warn[radarr]:-0}))
+    local _result_w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR))
     _should_configure sonarr && _record_configure_result "Sonarr|sonarr" "$_result_w0" "$_sonarr_warn"
     _should_configure radarr && _record_configure_result "Radarr|radarr" "$_result_w0" "$_radarr_warn"
 
@@ -228,7 +246,7 @@ main() {
         if storage_is_manual; then
             log_skip "Seerr setup skipped (manual app wiring)"
         else
-            sleep 3  # Jellyfin may have just restarted - let auth endpoints stabilise
+            sleep 3 # Jellyfin may have just restarted - let auth endpoints stabilise
             _run_configure "Seerr|seerr" configure_seerr
         fi
     fi
@@ -282,15 +300,15 @@ main() {
         # Note: iptables chains are created at jail start (actionstart_on_demand=false
         # in mediastack.conf) and survive reload, so no chain repair is needed here.
         if container_running fail2ban; then
-            docker exec fail2ban fail2ban-client reload >/dev/null 2>&1 && \
-                log_ok "fail2ban reloaded (jails watching real log files)" || \
-                log_warn "Could not reload fail2ban"
+            docker exec fail2ban fail2ban-client reload >/dev/null 2>&1 \
+                && log_ok "fail2ban reloaded (jails watching real log files)" \
+                || log_warn "Could not reload fail2ban"
         fi
     fi
 
     echo ""
     echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
-    if (( ${#_CONFIGURE_WARN[@]} == 0 )); then
+    if ((${#_CONFIGURE_WARN[@]} == 0)); then
         echo -e "${GREEN}${BOLD}  Auto-configuration complete!${NC}"
     else
         echo -e "${YELLOW}${BOLD}  Auto-configuration complete (with warnings)${NC}"
@@ -298,7 +316,7 @@ main() {
     echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
     echo ""
     local _svc _wlabel
-    for _svc in "${_CONFIGURE_OK[@]}";   do
+    for _svc in "${_CONFIGURE_OK[@]}"; do
         echo -e "  ${GREEN}$(_ui_status_token ok)${NC}  $_svc"
     done
     for _svc in "${_CONFIGURE_WARN[@]}"; do
@@ -315,7 +333,7 @@ main() {
     local _issues_file="$SCRIPT_DIR/.configure_issues"
     rm -f "$_issues_file"
     for _svc in "${_CONFIGURE_WARN[@]}"; do
-        printf '%s\n' "$_svc" >> "$_issues_file"
+        printf '%s\n' "$_svc" >>"$_issues_file"
     done
 }
 

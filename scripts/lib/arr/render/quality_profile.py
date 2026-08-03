@@ -12,6 +12,7 @@ Inputs (env vars):
 
 Output: profile JSON on stdout.
 """
+
 import json
 import os
 import sys

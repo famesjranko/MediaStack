@@ -121,7 +121,10 @@ run_scenario() {
     # Honor a candidate-image override (this NPM is launched outside compose, so
     # dind_override_images can't reach it — resolve the tag explicitly).
     local npm_image
-    npm_image=$(ms_test_image npm jc21/nginx-proxy-manager:2) || { fail "smoke: resolve NPM image override"; return 1; }
+    npm_image=$(ms_test_image npm jc21/nginx-proxy-manager:2) || {
+        fail "smoke: resolve NPM image override"
+        return 1
+    }
     dind_exec "docker run -d --name $smoke_npm \
         -p 18181:81 -p 18180:80 -p 18443:443 \
         -v /tmp/smoke-npm/data:/data \
@@ -171,8 +174,8 @@ run_scenario() {
         -H 'Content-Type: application/json' \
         -d '{\"identity\":\"admin@example.com\",\"secret\":\"changeme\"}'" | tr -d '\r\n')
     case "$defaults_http" in
-        400|401) pass "NPM defaults never active (HTTP $defaults_http)" ;;
-        *)       fail "NPM defaults never active" "got HTTP $defaults_http" ;;
+        400 | 401) pass "NPM defaults never active (HTTP $defaults_http)" ;;
+        *) fail "NPM defaults never active" "got HTTP $defaults_http" ;;
     esac
 
     # ------------------------------------------------------------------

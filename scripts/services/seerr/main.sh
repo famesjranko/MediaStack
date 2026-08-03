@@ -52,8 +52,8 @@ configure_seerr() {
         fi
         sleep 3
     done
-    [[ -z "$_seerr_ready" ]] && \
-        log_warn "Seerr API did not return valid JSON after 60s - auth may fail"
+    [[ -z "$_seerr_ready" ]] \
+        && log_warn "Seerr API did not return valid JSON after 60s - auth may fail"
 
     local cookiejar auth_http auth_resp auth_msg me_resp
     cookiejar="$(mktemp)"
@@ -123,7 +123,8 @@ print(json.dumps({
     done
 
     if [[ "$auth_http" != "200" ]]; then
-        auth_msg=$(python3 - "$auth_resp" <<'PY' 2>/dev/null || true
+        auth_msg=$(
+            python3 - "$auth_resp" <<'PY' 2>/dev/null || true
 import json,sys
 p=sys.argv[1]
 try:
@@ -133,7 +134,7 @@ try:
 except Exception:
     pass
 PY
-)
+        )
         if [[ -n "$auth_msg" ]]; then
             log_warn "Could not sign in to Seerr ($auth_http: $auth_msg) - configure manually"
         else
@@ -187,7 +188,7 @@ try:
     names = {it.get("Name") for it in items}
     print("yes" if {"Movies", "TV Shows"}.issubset(names) else "")
 except Exception:
-    pass' < "$mf_resp" 2>/dev/null)
+    pass' <"$mf_resp" 2>/dev/null)
                 [[ -n "$mf_ok" ]] && break
             fi
             sleep 2
@@ -255,8 +256,8 @@ except Exception:
         -c "$cookiejar" -b "$cookiejar" \
         >/dev/null 2>&1; then
 
-        initialized=$(curl -fsS "$seerr_url/api/v1/settings/public" 2>/dev/null | \
-            json_get initialized False)
+        initialized=$(curl -fsS "$seerr_url/api/v1/settings/public" 2>/dev/null \
+            | json_get initialized False)
 
         if [[ "$initialized" == "True" ]]; then
             log_ok "Seerr setup complete"
@@ -364,8 +365,8 @@ print(json.dumps(body))
         if ! docker compose restart seerr >/dev/null 2>&1; then
             log_warn "Failed to restart Seerr - view logs from the menu: Manage stack -> Tail logs (live)"
         else
-            post_restart_wait "$seerr_url/api/v1/settings/public" || \
-                log_warn "Seerr did not become healthy within 60s after restart - check 'docker logs seerr'"
+            post_restart_wait "$seerr_url/api/v1/settings/public" \
+                || log_warn "Seerr did not become healthy within 60s after restart - check 'docker logs seerr'"
         fi
     fi
 

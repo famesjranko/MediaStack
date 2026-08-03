@@ -2,7 +2,7 @@
 # tests/unit/launcher-quality.sh
 #
 # Launcher coverage for the day-2 "Change quality profile (resolution & size)"
-# action (#71): re-pick resolution x size post-install, rewrite ONLY the quality
+# action: re-pick resolution x size post-install, rewrite ONLY the quality
 # sections of config.yml, then re-push to Sonarr/Radarr renaming the profile in
 # place (no orphan). Verifies:
 #   1. submenu_features renders the new option and routes it to the handler.
@@ -54,7 +54,7 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
 assert_contains "$render_out" "Change quality profile:" \
-  "features: change-quality option is listed"
+    "features: change-quality option is listed"
 
 dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -67,7 +67,7 @@ dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   submenu_features 2>&1
 ' 2>&1)
 assert_contains "$dispatch_out" "DISPATCH_QUALITY" \
-  "features: change-quality label routes to action_change_quality"
+    "features: change-quality label routes to action_change_quality"
 
 # ---------------------------------------------------------------------------
 # 2. Apply wiring — sandbox SCRIPT_DIR with REAL wizard_apply.py (symlinked) on a
@@ -76,8 +76,8 @@ assert_contains "$dispatch_out" "DISPATCH_QUALITY" \
 #   -> "=== NAME ===" recomposed config name, "=== CAP ===" captured configure call.
 # ---------------------------------------------------------------------------
 run_quality() {
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" \
-  PICK_RES="$1" PICK_SIZE="$2" SEED_RES="$3" SEED_SIZE="$4" bash -c '
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" \
+        PICK_RES="$1" PICK_SIZE="$2" SEED_RES="$3" SEED_SIZE="$4" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     mkdir -p "$tmp/scripts/setup"
@@ -113,27 +113,27 @@ STUB
 # OLD name as QP_RENAME_FROM (the no-orphan signal) and the right --only set.
 applied=$(run_quality 720p large 1080p balanced)
 assert_contains "$applied" "720p Large" \
-  "apply: config.yml quality_profile recomposed to the chosen cell"
+    "apply: config.yml quality_profile recomposed to the chosen cell"
 assert_contains "$applied" "QP_RENAME_FROM=[1080p Balanced]" \
-  "apply: configure.sh receives the OLD profile name as QP_RENAME_FROM (no orphan)"
+    "apply: configure.sh receives the OLD profile name as QP_RENAME_FROM (no orphan)"
 assert_contains "$applied" "ARGS=--only sonarr,radarr" \
-  "apply: re-push scoped to sonarr,radarr"
+    "apply: re-push scoped to sonarr,radarr"
 assert_contains "$applied" "RESULT rc=0" \
-  "apply: success reported"
+    "apply: success reported"
 
 # 3. No change: re-pick the seeded cell -> short-circuit, no configure.sh call.
 nochg=$(run_quality 1080p balanced 1080p balanced)
 if grep -q "CONFIGURE" <<<"$nochg"; then
-  fail "no-change: re-picking the current cell skips the re-push entirely"
+    fail "no-change: re-picking the current cell skips the re-push entirely"
 else
-  pass "no-change: re-picking the current cell skips the re-push entirely"
+    pass "no-change: re-picking the current cell skips the re-push entirely"
 fi
 
 # ---------------------------------------------------------------------------
 # 4. Guards: Docker unreachable / an *arr not running -> warn, no apply.
 # ---------------------------------------------------------------------------
 run_guard() {
-  MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GUARD="$1" bash -c '
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GUARD="$1" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     eval "$GUARD"
@@ -146,15 +146,15 @@ run_guard() {
 }
 guard_docker=$(run_guard '_docker_reachable(){ return 1; }; _service_is_running(){ return 0; }')
 if grep -q "PICKER_RAN" <<<"$guard_docker"; then
-  fail "guard: Docker unreachable bails before the picker"
+    fail "guard: Docker unreachable bails before the picker"
 else
-  pass "guard: Docker unreachable bails before the picker"
+    pass "guard: Docker unreachable bails before the picker"
 fi
 guard_arr=$(run_guard '_docker_reachable(){ return 0; }; _service_is_running(){ [[ "$1" == sonarr ]] && return 0 || return 1; }')
 if grep -q "PICKER_RAN" <<<"$guard_arr"; then
-  fail "guard: Radarr not running bails before the picker"
+    fail "guard: Radarr not running bails before the picker"
 else
-  pass "guard: Radarr not running bails before the picker"
+    pass "guard: Radarr not running bails before the picker"
 fi
 
 # ---------------------------------------------------------------------------
@@ -188,11 +188,11 @@ STUB
   echo "RETURNED"; cat "$CAPTURE"; rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$demo_out" "RETURNED" \
-  "non-TTY no-change: handler terminates deterministically (no hang)"
+    "non-TTY no-change: handler terminates deterministically (no hang)"
 if grep -q "CONFIGURE_CALLED" <<<"$demo_out"; then
-  fail "non-TTY no-change: current cell pre-selected -> no re-push"
+    fail "non-TTY no-change: current cell pre-selected -> no re-push"
 else
-  pass "non-TTY no-change: current cell pre-selected -> no re-push"
+    pass "non-TTY no-change: current cell pre-selected -> no re-push"
 fi
 
 # ---------------------------------------------------------------------------
@@ -225,11 +225,11 @@ STUB
   echo "RETURNED"; cat "$CAPTURE"; rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$demo_confirm" "RETURNED" \
-  "non-TTY confirm: handler terminates deterministically (no hang)"
+    "non-TTY confirm: handler terminates deterministically (no hang)"
 if grep -q "CONFIGURE_CALLED" <<<"$demo_confirm"; then
-  fail "non-TTY confirm: default-no ui_confirm declines -> no re-push"
+    fail "non-TTY confirm: default-no ui_confirm declines -> no re-push"
 else
-  pass "non-TTY confirm: default-no ui_confirm declines -> no re-push"
+    pass "non-TTY confirm: default-no ui_confirm declines -> no re-push"
 fi
 
 # ---------------------------------------------------------------------------
@@ -264,11 +264,11 @@ STUB
   rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$fail_out" "did NOT apply to: radarr" \
-  "honest-failure: recorded rename failure is surfaced to the user"
+    "honest-failure: recorded rename failure is surfaced to the user"
 if grep -q "completed successfully" <<<"$fail_out"; then
-  fail "honest-failure: a failed rename is NOT reported as success"
+    fail "honest-failure: a failed rename is NOT reported as success"
 else
-  pass "honest-failure: a failed rename is NOT reported as success"
+    pass "honest-failure: a failed rename is NOT reported as success"
 fi
 
 # ---------------------------------------------------------------------------
@@ -288,9 +288,9 @@ noname_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   cat "$CAPTURE"; rm -rf "$tmp"
 ' 2>&1)
 if grep -q "PICKER_RAN" <<<"$noname_out"; then
-  fail "guard: unreadable current profile name bails before the picker"
+    fail "guard: unreadable current profile name bails before the picker"
 else
-  pass "guard: unreadable current profile name bails before the picker"
+    pass "guard: unreadable current profile name bails before the picker"
 fi
 
 # ---------------------------------------------------------------------------
@@ -323,11 +323,11 @@ STUB
   rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$mktemp_fail" "verify the result" \
-  "mktemp-failure: handler under-claims (couldn't verify) instead of false success"
+    "mktemp-failure: handler under-claims (couldn't verify) instead of false success"
 if grep -q "completed successfully" <<<"$mktemp_fail"; then
-  fail "mktemp-failure: no false 'completed successfully'"
+    fail "mktemp-failure: no false 'completed successfully'"
 else
-  pass "mktemp-failure: no false 'completed successfully'"
+    pass "mktemp-failure: no false 'completed successfully'"
 fi
 
 scenario_end "$CURRENT_SCENARIO"

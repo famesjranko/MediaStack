@@ -68,7 +68,8 @@ run_scenario() {
 
     # Strip removed services from the override too — generate_override writes
     # limits for all 19 services but stripped ones have no image definition.
-    local _strip; _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
+    local _strip
+    _strip=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
     if [[ "$_strip" != "  " ]]; then
         dind_exec "python3 -c \"
 import yaml
@@ -138,9 +139,9 @@ except Exception: pass" 2>/dev/null
     local sonarr_base="http://localhost:8989/api/v3"
 
     # 4-SD. SD-floor name→id confirmation (Sonarr).
-    assert_eq "1"  "$(_live_quality_id "$sonarr_base" "$sonarr_key" SDTV)"        "wizard: Sonarr SDTV id=1"
-    assert_eq "2"  "$(_live_quality_id "$sonarr_base" "$sonarr_key" DVD)"         "wizard: Sonarr DVD id=2"
-    assert_eq "8"  "$(_live_quality_id "$sonarr_base" "$sonarr_key" WEBDL-480p)"  "wizard: Sonarr WEBDL-480p id=8"
+    assert_eq "1" "$(_live_quality_id "$sonarr_base" "$sonarr_key" SDTV)" "wizard: Sonarr SDTV id=1"
+    assert_eq "2" "$(_live_quality_id "$sonarr_base" "$sonarr_key" DVD)" "wizard: Sonarr DVD id=2"
+    assert_eq "8" "$(_live_quality_id "$sonarr_base" "$sonarr_key" WEBDL-480p)" "wizard: Sonarr WEBDL-480p id=8"
     assert_eq "12" "$(_live_quality_id "$sonarr_base" "$sonarr_key" WEBRip-480p)" "wizard: Sonarr WEBRip-480p id=12"
     assert_eq "13" "$(_live_quality_id "$sonarr_base" "$sonarr_key" Bluray-480p)" "wizard: Sonarr Bluray-480p id=13"
 
@@ -176,7 +177,7 @@ print(','.join(str(i) for i in sorted(ids)))" 2>/dev/null)
 
         # 4c. Cutoff — WEB 720p group; sits ABOVE the SD floor, so SD is a
         # fallback that upgrades away (render preserves the app's worst→best
-        # order; it only flips `allowed`). See ADR-34.
+        # order; it only flips `allowed`).
         local sonarr_cutoff
         sonarr_cutoff=$(dind_exec "curl -sf -H 'X-Api-Key: $sonarr_key' $sonarr_base/qualityprofile/$sonarr_qp_id" \
             | python3 -c "import sys, json; print(json.load(sys.stdin).get('cutoff',''))" 2>/dev/null)
@@ -205,9 +206,9 @@ except Exception: pass" 2>/dev/null)
     local radarr_base="http://localhost:7878/api/v3"
 
     # 5-SD. SD-floor name→id confirmation (Radarr — WEBRip-480p differs from Sonarr).
-    assert_eq "1"  "$(_live_quality_id "$radarr_base" "$radarr_key" SDTV)"        "wizard: Radarr SDTV id=1"
-    assert_eq "2"  "$(_live_quality_id "$radarr_base" "$radarr_key" DVD)"         "wizard: Radarr DVD id=2"
-    assert_eq "8"  "$(_live_quality_id "$radarr_base" "$radarr_key" WEBDL-480p)"  "wizard: Radarr WEBDL-480p id=8"
+    assert_eq "1" "$(_live_quality_id "$radarr_base" "$radarr_key" SDTV)" "wizard: Radarr SDTV id=1"
+    assert_eq "2" "$(_live_quality_id "$radarr_base" "$radarr_key" DVD)" "wizard: Radarr DVD id=2"
+    assert_eq "8" "$(_live_quality_id "$radarr_base" "$radarr_key" WEBDL-480p)" "wizard: Radarr WEBDL-480p id=8"
     assert_eq "12" "$(_live_quality_id "$radarr_base" "$radarr_key" WEBRip-480p)" "wizard: Radarr WEBRip-480p id=12"
     assert_eq "20" "$(_live_quality_id "$radarr_base" "$radarr_key" Bluray-480p)" "wizard: Radarr Bluray-480p id=20"
 

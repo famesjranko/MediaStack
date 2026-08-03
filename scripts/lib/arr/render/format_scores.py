@@ -14,6 +14,7 @@ Stdout: one status line:
     empty\t<put-body>    — no non-zero live scores yet; put-body has them populated.
     drift\t<details>     — a managed format's live score differs; no reconcile.
 """
+
 import json
 import os
 import sys

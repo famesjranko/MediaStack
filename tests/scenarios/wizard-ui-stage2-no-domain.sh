@@ -1,7 +1,7 @@
 # tests/scenarios/wizard-ui-stage2-no-domain.sh — Stage 2 "No, I don't have a
-# domain" branch (#256).
+# domain" branch.
 #
-# #250 made the "[1/5] Domain" step provider-agnostic: the has-domain "No" answer
+# The "[1/5] Domain" step is provider-agnostic: the has-domain "No" answer
 # prints provider-neutral free-hostname guidance and routes straight into the
 # 6-provider picker (skipping the static/dynamic question), replacing the old
 # Dynu-only walkthrough. install-ready drives the "Yes" answer; tell-me-more
@@ -53,7 +53,7 @@ run_scenario() {
     assert_contains "$transcript" "accepted the update" "wizard-ui stage2 no domain: ephemeral verify accepted (dyndns2 tier message)"
     assert_contains "$transcript" "Remote access is ready" "wizard-ui stage2 no domain: LE-ready success message"
 
-    assert_eq "ready"           "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 no domain: REMOTE_WEB_STATE=ready"
-    assert_eq "demo.mywire.org" "$(env_get DOMAIN)"           "wizard-ui stage2 no domain: DOMAIN persisted"
-    assert_eq "dynu"            "$(env_get DDNS_PROVIDER)"     "wizard-ui stage2 no domain: DDNS provider persisted to .env"
+    assert_eq "ready" "$(env_get REMOTE_WEB_STATE)" "wizard-ui stage2 no domain: REMOTE_WEB_STATE=ready"
+    assert_eq "demo.mywire.org" "$(env_get DOMAIN)" "wizard-ui stage2 no domain: DOMAIN persisted"
+    assert_eq "dynu" "$(env_get DDNS_PROVIDER)" "wizard-ui stage2 no domain: DDNS provider persisted to .env"
 }

@@ -5,13 +5,17 @@
 # Args: <service> [timeout_seconds (default 300)]
 wait_healthy() {
     local svc="$1" timeout="${2:-300}" waited=0 status
-    while (( waited < timeout )); do
+    while ((waited < timeout)); do
         status=$(dind_exec "docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $svc 2>/dev/null" | tr -d '\r\n' || echo "")
         case "$status" in
-            healthy|running) return 0 ;;
-            unhealthy)       echo "  $svc → unhealthy"; return 1 ;;
+            healthy | running) return 0 ;;
+            unhealthy)
+                echo "  $svc → unhealthy"
+                return 1
+                ;;
         esac
-        sleep 3; waited=$((waited + 3))
+        sleep 3
+        waited=$((waited + 3))
     done
     echo "  $svc → $status (timeout after ${timeout}s)"
     return 1
@@ -133,7 +137,8 @@ chown -R 1000:1000 config/seerr
 
 # Is this service stripped via MS_TEST_STRIP_SERVICES?
 svc_stripped() {
-    local _s; _s=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
+    local _s
+    _s=" $(echo "${MS_TEST_STRIP_SERVICES:-}" | tr ',' ' ') "
     [[ "$_s" == *" $1 "* ]]
 }
 
@@ -170,11 +175,11 @@ EOF'
 
 # Ensure an image is present in DinD, retrying a cold pull; inspect-first so a
 # registry blip can't fail a scenario whose image is already cached (GHCR/pebble).
-dind_pull_retry() {  # <image>
+dind_pull_retry() { # <image>
     local img="$1" attempt
     for attempt in 1 2 3; do
         dind_exec "docker image inspect $img >/dev/null 2>&1 || docker pull $img >/dev/null 2>&1" && return 0
-        (( attempt < 3 )) && sleep $(( attempt * 5 ))
+        ((attempt < 3)) && sleep $((attempt * 5))
     done
     return 1
 }
@@ -185,26 +190,33 @@ dind_pull_retry() {  # <image>
 pebble_up() {
     echo -e "${BLUE}[pebble]${NC} starting pebble-challtestsrv"
     dind_pull_retry ghcr.io/letsencrypt/pebble-challtestsrv \
-        || { echo -e "${BLUE}[pebble]${NC} challtestsrv image pull failed after retries"; return 1; }
+        || {
+            echo -e "${BLUE}[pebble]${NC} challtestsrv image pull failed after retries"
+            return 1
+        }
     dind_exec 'docker run -d --name pebble-challtestsrv --network mediastack \
         ghcr.io/letsencrypt/pebble-challtestsrv >/dev/null'
 
     local waited=0
-    while (( waited < 30 )); do
+    while ((waited < 30)); do
         if dind_exec 'curl -s -o /dev/null -w "%{http_code}" http://$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" pebble-challtestsrv):8055/' 2>/dev/null | grep -qE '^[0-9]+$'; then
             echo -e "${BLUE}[pebble]${NC} challtestsrv ready (${waited}s)"
             break
         fi
-        sleep 2; waited=$((waited + 2))
+        sleep 2
+        waited=$((waited + 2))
     done
-    if (( waited >= 30 )); then
+    if ((waited >= 30)); then
         echo -e "${BLUE}[pebble]${NC} challtestsrv did not become ready within 30s"
         return 1
     fi
 
     echo -e "${BLUE}[pebble]${NC} starting pebble"
     dind_pull_retry ghcr.io/letsencrypt/pebble \
-        || { echo -e "${BLUE}[pebble]${NC} pebble image pull failed after retries"; return 1; }
+        || {
+            echo -e "${BLUE}[pebble]${NC} pebble image pull failed after retries"
+            return 1
+        }
     dind_exec 'cat > /tmp/pebble-config.json <<PEBBLECFG
 {
   "pebble": {
@@ -229,12 +241,13 @@ PEBBLECFG'
         -dnsserver pebble-challtestsrv:8053 >/dev/null'
 
     waited=0
-    while (( waited < 30 )); do
+    while ((waited < 30)); do
         if dind_exec 'curl -sk https://$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" pebble):14000/dir' >/dev/null 2>&1; then
             echo -e "${BLUE}[pebble]${NC} pebble ready (${waited}s)"
             return 0
         fi
-        sleep 2; waited=$((waited + 2))
+        sleep 2
+        waited=$((waited + 2))
     done
     echo -e "${BLUE}[pebble]${NC} pebble did not become ready within 30s"
     return 1

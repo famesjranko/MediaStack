@@ -18,11 +18,11 @@ assert_qbittorrent_configured() {
                 parsed=1
                 ;;
         esac
-    done <<< "$live_out"
+    done <<<"$live_out"
 
-    if (( parsed == 0 )); then
+    if ((parsed == 0)); then
         fail "step 1 qBittorrent: live assertion script produced structured output" "$live_out"
-    elif (( live_rc != 0 && saw_fail == 0 )); then
+    elif ((live_rc != 0 && saw_fail == 0)); then
         fail "step 1 qBittorrent: live assertion script exited cleanly" "exit $live_rc"
     fi
 }

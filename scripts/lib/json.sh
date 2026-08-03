@@ -37,10 +37,22 @@ json_has_name() {
     local value="" field="name" nested_key="" insensitive=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --field) field="$2"; shift 2 ;;
-            --key)   nested_key="$2"; shift 2 ;;
-            -i)      insensitive="1"; shift ;;
-            *)       value="$1"; shift ;;
+            --field)
+                field="$2"
+                shift 2
+                ;;
+            --key)
+                nested_key="$2"
+                shift 2
+                ;;
+            -i)
+                insensitive="1"
+                shift
+                ;;
+            *)
+                value="$1"
+                shift
+                ;;
         esac
     done
     python3 -c "

@@ -1,6 +1,7 @@
 # Secrets
 .env
 .env.gcp
+.env.lan-host
 tests/gcp-mediastack-plan.md
 
 # NVIDIA patch repo + driver download scratch (cloned/used by setup.sh)

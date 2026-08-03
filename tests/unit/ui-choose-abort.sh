@@ -39,15 +39,22 @@ _render_log() { :; }
 # hanging to the 300s unit timeout.
 CALL_FILE=$(mktemp)
 trap 'rm -f "$CALL_FILE"' EXIT
-printf '0\n' > "$CALL_FILE"
+printf '0\n' >"$CALL_FILE"
 _render_choose() {
-    local n; n=$(cat "$CALL_FILE"); n=$((n + 1)); printf '%s\n' "$n" > "$CALL_FILE"
-    (( n > 3 )) && { echo "REGRESSED-DID-NOT-ABORT"; return 0; }
+    local n
+    n=$(cat "$CALL_FILE")
+    n=$((n + 1))
+    printf '%s\n' "$n" >"$CALL_FILE"
+    ((n > 3)) && {
+        echo "REGRESSED-DID-NOT-ABORT"
+        return 0
+    }
     return 130
 }
 
 # ui_choose runs in a command substitution exactly like every real call site.
-out=$(ui_choose "What would you like to do?" "View access" "Manage stack" "Quit"); rc=$?
+out=$(ui_choose "What would you like to do?" "View access" "Manage stack" "Quit")
+rc=$?
 calls=$(cat "$CALL_FILE")
 
 assert_eq "130" "$rc" "ui_choose: gum Ctrl-C (backend 130) propagates 130, does not reprompt-loop"

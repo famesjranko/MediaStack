@@ -13,18 +13,27 @@ requests each have a template, so pick whichever fits when you open the issue.
 Small things like typos and one-line corrections can go straight to a pull
 request.
 
+Filing an issue does not commit you to writing the code — the feature-request
+template has a checkbox for saying which you mean. If you want to implement it,
+comment to claim it; a claimed issue is yours until it goes quiet for a couple
+of weeks. If you only want to report it, someone else may pick it up.
+
+Create a short-lived feature branch and open a pull request into `main` for
+every change. `main` is the protected integration and release branch as well as
+the repository's only long-lived branch.
+
 ## Running the checks
 
-The whole host test tier runs in one shot, and is the exact gate CI runs on
-every pull request:
+The default check runs the same coverage as the full pull-request gate:
 
 ```
-./tests/unit.sh    # shell syntax, shellcheck, py_compile, compose render, and every tests/unit/*.sh
+./tests/check.sh
 ```
 
-`tests/unit.sh` needs the Docker CLI (for the compose render and the pinned
-shellcheck image). Without Docker, you can still run the individual pure-bash
-unit tests directly:
+It includes formatting, lint, type, secret, compose, host-unit, and image-free
+wizard checks serially; CI spreads that coverage across parallel jobs. It needs
+Docker and `uv`. Without Docker, you can still run relevant individual
+pure-bash units directly, but that is not the complete PR gate:
 
 ```
 ./tests/unit/gpu-branching.sh
@@ -32,15 +41,15 @@ unit tests directly:
 
 `tests/README.md` documents the full test surface. The DinD end-to-end battery
 is optional for most changes, and the live-host proofs (real DNS, Let's Encrypt,
-WAN firewall) are maintainer-only.
+WAN firewall) are explicit operator-run checks and never run in CI.
 
 ## Pull request checklist
 
 Before opening a pull request:
 
 1. Run `bash -n` on changed shell scripts.
-2. Run `./tests/unit.sh` (or the relevant `tests/unit/*.sh` if you cannot run Docker).
-3. Confirm compose still validates; `./tests/unit.sh` renders it with a generated `.env`.
+2. Run `./tests/check.sh` (or clearly state which narrower checks you could run).
+3. Confirm compose still validates; the default check renders it with `.env.example`.
 4. Update docs when commands, service behavior, config keys, or test surfaces change.
 
 Public tracker/indexer changes must stay opt-in and must not make legal
@@ -48,6 +57,16 @@ assumptions for users. NVIDIA driver patching must also remain opt-in.
 
 Please don't commit `.env`, live service config under `config/<service>/`, or
 the generated NVIDIA patch/download trees.
+
+Keep the branch tidy: one coherent change per commit, with a message that
+explains it for a reviewer. Fold fixup and review-tweak commits into the commit
+they belong to before pushing, and force-push a rewritten branch with
+`--force-with-lease`, never a bare `--force`.
+
+## Review
+
+A maintainer reviews each pull request and may ask you to split a large change
+into smaller pieces. A request for changes is about the code, not about you.
 
 ## Contribution licensing
 
@@ -61,7 +80,7 @@ or third-party material that would prevent MediaStack from being distributed
 under the PolyForm Noncommercial License 1.0.0.
 
 MediaStack is source-available for non-commercial use. Commercial use requires
-prior written permission from Andrew Mcdonald.
+prior written permission from the licensor.
 
 If your contribution includes third-party material, clearly identify it in the
 pull request and include its licence and source.

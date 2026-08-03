@@ -20,6 +20,6 @@ run_scenario() {
     local transcript
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "no supported GPU detected" "wizard-ui stage3 no gpu: auto-skip message shown"
-    assert_eq "none"    "$(env_get JELLYFIN_GPU)"      "wizard-ui stage3 no gpu: JELLYFIN_GPU=none"
+    assert_eq "none" "$(env_get JELLYFIN_GPU)" "wizard-ui stage3 no gpu: JELLYFIN_GPU=none"
     assert_eq "skipped" "$(env_get STAGE_3_GPU_STATE)" "wizard-ui stage3 no gpu: STAGE_3_GPU_STATE=skipped"
 }

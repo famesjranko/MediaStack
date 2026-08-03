@@ -13,7 +13,7 @@
 #
 # Usage: ./mediastack
 # =============================================================================
-set -uo pipefail   # NOT -e: a failed diagnostic must not kill the loop.
+set -uo pipefail # NOT -e: a failed diagnostic must not kill the loop.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
@@ -105,7 +105,7 @@ is_installed() {
 # =============================================================================
 
 _cached_public_ip() {
-    if (( _MS_PUBLIC_IP_CHECKED == 0 )); then
+    if ((_MS_PUBLIC_IP_CHECKED == 0)); then
         if net_detect_public_ip 2>/dev/null; then
             _MS_PUBLIC_IP="$_NET_PUBLIC_IP"
         else
@@ -152,10 +152,19 @@ _resolve_ddns_ip() {
 #   ok:<ip>      — resolves to the current WAN IP (healthy — the record is confirmed)
 _ddns_status() {
     local wan="${1:-}" ip
-    _ddns_configured || { printf 'off'; return 0; }
-    _service_is_running ddns-updater || { printf 'stopped'; return 0; }
+    _ddns_configured || {
+        printf 'off'
+        return 0
+    }
+    _service_is_running ddns-updater || {
+        printf 'stopped'
+        return 0
+    }
     ip=$(_resolve_ddns_ip)
-    [[ -z "$ip" ]] && { printf 'unresolved'; return 0; }
+    [[ -z "$ip" ]] && {
+        printf 'unresolved'
+        return 0
+    }
     if [[ -n "$wan" && "$ip" == "$wan" ]]; then
         printf 'ok:%s' "$ip"
     else
@@ -204,7 +213,7 @@ render_banner() {
     local lan_ip gateway net_lines=()
     lan_ip=$(_detect_lan_ip)
     gateway=$(_detect_gateway)
-    [[ -n "$lan_ip" ]]  && net_lines+=("LAN IP:      ${lan_ip}")
+    [[ -n "$lan_ip" ]] && net_lines+=("LAN IP:      ${lan_ip}")
     [[ -n "$gateway" ]] && net_lines+=("Router:      ${gateway}")
     net_lines+=("Public IP:   ${public_ip:-not detected}")
 
@@ -220,22 +229,26 @@ render_banner() {
     # box measures visible width by stripping REAL escape bytes, so derive real-ESC
     # colours via printf %b (the $GREEN/$NC literals would inflate the width math and
     # mis-pad the box); both go empty when colour is disabled.
-    if (( _dockup )); then
+    if ((_dockup)); then
         local _rgn="" _ryl="" _rnc=""
-        [[ -n "${GREEN:-}" ]] && { printf -v _rgn '%b' "$GREEN"; printf -v _ryl '%b' "${YELLOW:-}"; printf -v _rnc '%b' "${NC:-}"; }
+        [[ -n "${GREEN:-}" ]] && {
+            printf -v _rgn '%b' "$GREEN"
+            printf -v _ryl '%b' "${YELLOW:-}"
+            printf -v _rnc '%b' "${NC:-}"
+        }
         local _dst
         _dst=$(_ddns_status "$public_ip")
         case "$_dst" in
-            ok:*)       net_lines+=("DDNS:        ${_rgn}${_dst#ok:}${_rnc}") ;;
-            stale:*)    net_lines+=("DDNS:        ${_ryl}${_dst#stale:}${_rnc} (propagating?)") ;;
+            ok:*) net_lines+=("DDNS:        ${_rgn}${_dst#ok:}${_rnc}") ;;
+            stale:*) net_lines+=("DDNS:        ${_ryl}${_dst#stale:}${_rnc} (propagating?)") ;;
             unresolved) net_lines+=("DDNS:        ${DOMAIN:-domain} not resolving yet") ;;
-            *)          ;;  # off / stopped -> no DDNS line
+            *) ;; # off / stopped -> no DDNS line
         esac
     fi
 
     local lines=()
     if is_installed; then
-        if (( _dockup )); then
+        if ((_dockup)); then
             local summary
             if summary=$(_compose_running_summary); then
                 lines+=("Status:      Running   ${summary} containers")
@@ -275,13 +288,13 @@ diag_readiness() {
     echo ""
 
     # Each check exits 1 on hard failure; subshell isolates that exit.
-    ( check_disk_floor ) || true
-    ( check_internet_reachability ) || true
-    ( check_ram_warn ) || true
+    (check_disk_floor) || true
+    (check_internet_reachability) || true
+    (check_ram_warn) || true
 
     # GPU detection sets a global; we want the user to see what was detected
     # but don't need to keep the value (post-install reads from .env instead).
-    ( detect_gpu ) || true
+    (detect_gpu) || true
 
     # Sudo: don't prompt — just probe. prompt_sudo_cache would block on a
     # password input which is wrong for a readiness check.
@@ -418,7 +431,7 @@ diag_test_port() {
     echo ""
     local port
     port=$(ui_input "TCP port to test (1-65535)" "")
-    if ! [[ "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || ((port < 1 || port > 65535)); then
         ui_log error "Invalid port: '${port}' - enter a number from 1 to 65535."
         return 0
     fi
@@ -429,12 +442,15 @@ diag_test_port() {
     local pip="$_NET_PUBLIC_IP"
     echo ""
     ui_log info "Probing TCP ${port} on ${pip} (sudo may prompt to bind privileged ports)..."
-    case $(net_check_tcp_port_external "$port"; echo "rc:$?") in
-        rc:0) ui_log ok    "TCP ${port} - reachable, lands on this host" ;;
+    case $(
+        net_check_tcp_port_external "$port"
+        echo "rc:$?"
+    ) in
+        rc:0) ui_log ok "TCP ${port} - reachable, lands on this host" ;;
         rc:1) ui_log error "TCP ${port} - no response (closed / not forwarded)" ;;
         rc:3) ui_log error "TCP ${port} - forwarded to another device" ;;
-        rc:4) ui_log warn  "TCP ${port} - a service is already bound (partial check)" ;;
-        *)    ui_log warn  "TCP ${port} - probe unavailable (couldn't bind or external service down)" ;;
+        rc:4) ui_log warn "TCP ${port} - a service is already bound (partial check)" ;;
+        *) ui_log warn "TCP ${port} - probe unavailable (couldn't bind or external service down)" ;;
     esac
 }
 
@@ -479,13 +495,14 @@ _stack_system_lines() {
     case "$_gpu" in
         nvidia)
             _tc="NVIDIA NVENC"
-            local _drv; _drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+            local _drv
+            _drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
             [[ -n "$_drv" ]] && _tc+=" — driver ${_drv}"
             [[ -n "${NVIDIA_DRIVER_MODE:-}" ]] && _tc+=" (${NVIDIA_DRIVER_MODE})"
             ;;
         intel) _tc="Intel QSV" ;;
-        amd)   _tc="AMD VAAPI" ;;
-        *)     _tc="Software (no GPU acceleration)" ;;
+        amd) _tc="AMD VAAPI" ;;
+        *) _tc="Software (no GPU acceleration)" ;;
     esac
     ui_kv "Transcoding" "$_tc"
     local _remote
@@ -495,7 +512,7 @@ _stack_system_lines() {
             [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]] && _remote+=" — ${DOMAIN}"
             ;;
         skipped) _remote="LAN only (remote skipped)" ;;
-        *)       _remote="LAN only" ;;
+        *) _remote="LAN only" ;;
     esac
     ui_kv "Remote access" "$_remote"
     if _ddns_configured; then
@@ -504,11 +521,11 @@ _stack_system_lines() {
         # out rather than re-resolving, so this box digs the record once, not twice.
         _dstat=$(_ddns_status "$(_cached_public_ip)")
         case "$_dstat" in
-            ok:*)       _dval="${_dprov} · ${_dstat#ok:} (up to date)" ;;
-            stale:*)    _dval="${_dprov} · ${_dstat#stale:} (propagating?)" ;;
+            ok:*) _dval="${_dprov} · ${_dstat#ok:} (up to date)" ;;
+            stale:*) _dval="${_dprov} · ${_dstat#stale:} (propagating?)" ;;
             unresolved) _dval="${_dprov} · not resolving yet" ;;
-            stopped)    _dval="${_dprov} · updater stopped" ;;
-            *)          _dval="${_dprov}" ;;
+            stopped) _dval="${_dprov} · updater stopped" ;;
+            *) _dval="${_dprov}" ;;
         esac
         ui_kv "DDNS" "$_dval"
     fi
@@ -591,7 +608,7 @@ for r in rows:
     # the uptime column. \x1f preserves empty fields.
     local maxn=0 _n
     while IFS=$'\x1f' read -r _n _ _ _ _; do
-        (( ${#_n} > maxn )) && maxn=${#_n}
+        ((${#_n} > maxn)) && maxn=${#_n}
     done <<<"$rows"
 
     # Pad the status glyph to a fixed visible width so the status/uptime/ports
@@ -602,10 +619,22 @@ for r in rows:
     [[ "$_G_UNICODE" == 1 ]] || gw=7
     while IFS=$'\x1f' read -r name cls st up pt; do
         case "$cls" in
-            ok)   tok=ok;    color="$GREEN" ;;
-            warn) tok=warn;  color="$YELLOW" ;;
-            err)  tok=error; color="$RED" ;;
-            *)    tok=info;  color="$GRAY" ;;
+            ok)
+                tok=ok
+                color="$GREEN"
+                ;;
+            warn)
+                tok=warn
+                color="$YELLOW"
+                ;;
+            err)
+                tok=error
+                color="$RED"
+                ;;
+            *)
+                tok=info
+                color="$GRAY"
+                ;;
         esac
         glyph="$(_ui_status_token "$tok")"
         up_disp=""
@@ -630,7 +659,8 @@ action_access_info() {
     type print_access_info &>/dev/null || source "$SCRIPT_DIR/scripts/setup/stack.sh"
     print_access_info mask
 
-    local pw; pw=$(_access_admin_pw)
+    local pw
+    pw=$(_access_admin_pw)
     if [[ -n "$pw" ]]; then
         echo ""
         # Flush any buffered type-ahead first so a stray pre-typed keystroke can't
@@ -670,15 +700,15 @@ _show_action_result() {
     local rc="$1" label="$2" outcome="${3:-}" strict="${4:-0}"
     echo ""
     case "$outcome" in
-        completed)      ui_log ok    "${label} completed successfully." ;;
-        reboot-pending) ui_log warn  "Reboot to finish — hardware transcoding activates after you reboot." ;;
-        aborted)        ui_log info  "${label} aborted — no changes were made." ;;
-        unchanged)      ui_log info  "No changes were made." ;;
-        failed)         ui_log error "${label} did not complete. Review the errors above and retry." ;;
+        completed) ui_log ok "${label} completed successfully." ;;
+        reboot-pending) ui_log warn "Reboot to finish — hardware transcoding activates after you reboot." ;;
+        aborted) ui_log info "${label} aborted — no changes were made." ;;
+        unchanged) ui_log info "No changes were made." ;;
+        failed) ui_log error "${label} did not complete. Review the errors above and retry." ;;
         *)
-            if (( rc != 0 )); then
+            if ((rc != 0)); then
                 ui_log error "${label} exited with code ${rc}."
-            elif (( strict )); then
+            elif ((strict)); then
                 ui_log warn "${label} did not complete — nothing was finished. Re-run when you're ready."
             else
                 ui_log ok "${label} completed successfully."
@@ -700,7 +730,8 @@ _show_action_result() {
 # <strict>=1 for actions whose ONLY good outcome is a finished install (install /
 # wipe); =0 for add-on actions where a bare exit 0 genuinely means success.
 _run_setup_return() {
-    local strict="$1" label="$2"; shift 2
+    local strict="$1" label="$2"
+    shift 2
     local rc=0 outcome="" result_file=""
     # setup.sh reports its real outcome (completed / aborted / unchanged) by
     # writing a one-word token to this file; without it the launcher can only
@@ -720,7 +751,7 @@ _run_setup_return() {
     exec "$SCRIPT_DIR/mediastack"
 }
 
-action_install()    {
+action_install() {
     ui_confirm "Run the full installer now (~5-10 min, uses sudo)?" no || return 0
     _run_setup_return 1 "Install"
 }
@@ -729,14 +760,14 @@ action_install_gum() {
     ui_log info "Installing GUM for enhanced arrow-key menus..."
     sudo -v
     local ok=true
-    sudo mkdir -p /etc/apt/keyrings                                                  || ok=false
-    $ok && sudo apt-get install -y -qq gnupg                                         || ok=false
+    sudo mkdir -p /etc/apt/keyrings || ok=false
+    $ok && sudo apt-get install -y -qq gnupg || ok=false
     $ok && curl -fsSL https://repo.charm.sh/apt/gpg.key \
-         | sudo gpg --yes --dearmor -o /etc/apt/keyrings/charm.gpg                  || ok=false
+        | sudo gpg --yes --dearmor -o /etc/apt/keyrings/charm.gpg || ok=false
     $ok && echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
-         | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null                   || ok=false
-    $ok && ui_spin "Updating package lists..." sudo apt-get update -qq               || ok=false
-    $ok && ui_spin "Installing GUM..."        sudo apt-get install -y -qq gum        || ok=false
+        | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null || ok=false
+    $ok && ui_spin "Updating package lists..." sudo apt-get update -qq || ok=false
+    $ok && ui_spin "Installing GUM..." sudo apt-get install -y -qq gum || ok=false
     if $ok; then
         ui_log ok "GUM installed — restarting with enhanced menus..."
         sleep 1
@@ -746,14 +777,14 @@ action_install_gum() {
         pause_for_menu
     fi
 }
-action_remote()     { _run_setup_return 0 "Add remote access" --remote; }
-action_transcode()  { _run_setup_return 0 "Hardware transcoding" --transcoding; }
+action_remote() { _run_setup_return 0 "Add remote access" --remote; }
+action_transcode() { _run_setup_return 0 "Hardware transcoding" --transcoding; }
 # Uninstall wipes config/, .env, Docker volumes, and MediaStack host changes
 # (media in DATA_DIR is preserved), then drops back to the pre-install menu. That
 # makes a "reinstall" simply Uninstall -> Install, so there is no separate
 # reinstall/wipe action to maintain. Strict: the only honest "success" is a
 # finished uninstall, affirmed by setup.sh.
-action_uninstall()  { _run_setup_return 1 "Uninstall" --uninstall; }
+action_uninstall() { _run_setup_return 1 "Uninstall" --uninstall; }
 
 action_port_check() {
     # port-check.sh prints its own self-contained verdict (pass/skip/fail counts,
@@ -785,7 +816,7 @@ action_configure() {
             missing+=("$svc")
         fi
     done
-    if (( ${#missing[@]} > 0 )); then
+    if ((${#missing[@]} > 0)); then
         ui_log warn "Stack is not fully running - configure.sh would wait 90s per missing service."
         ui_log info "Not running: ${missing[*]}"
         ui_log info "Start the stack first:  Manage stack -> Start all services"
@@ -817,9 +848,10 @@ action_service_stop() {
     echo ""
     local svcs=()
     mapfile -t svcs < <(docker compose ps --filter status=running --format '{{.Name}}' 2>/dev/null || true)
-    if (( ${#svcs[@]} == 0 )); then
+    if ((${#svcs[@]} == 0)); then
         ui_log info "No services are running."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     svcs+=("Back")
     local choice rc=0
@@ -834,9 +866,10 @@ action_service_start() {
     echo ""
     local svcs=()
     mapfile -t svcs < <(docker compose ps --filter status=exited --format '{{.Name}}' 2>/dev/null || true)
-    if (( ${#svcs[@]} == 0 )); then
+    if ((${#svcs[@]} == 0)); then
         ui_log info "No stopped services."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     svcs+=("Back")
     local choice rc=0
@@ -945,9 +978,9 @@ submenu_features() {
         clear
         local _remote
         case "${REMOTE_WEB_STATE:-}" in
-            ready)   _remote="ready (${DOMAIN:-configured})" ;;
+            ready) _remote="ready (${DOMAIN:-configured})" ;;
             skipped) _remote="LAN only (skipped)" ;;
-            *)       _remote="LAN only" ;;
+            *) _remote="LAN only" ;;
         esac
         ui_box "MediaStack - Features & Settings" "$(ui_kv 'Remote access' "$_remote")"
         echo ""
@@ -955,7 +988,8 @@ submenu_features() {
 
         local _qp_name _dl _ul
         _qp_name=$(CONFIG_FILE="$SCRIPT_DIR/config.yml" cfg_field "quality_profile.name" 2>/dev/null)
-        _dl="${QBT_DL_LIMIT:-0}"; _ul="${QBT_UL_LIMIT:-0}"
+        _dl="${QBT_DL_LIMIT:-0}"
+        _ul="${QBT_UL_LIMIT:-0}"
         [[ "$_dl" == "0" ]] && _dl="unlimited" || _dl="${_dl} MB/s"
         [[ "$_ul" == "0" ]] && _ul="unlimited" || _ul="${_ul} MB/s"
 
@@ -985,17 +1019,17 @@ submenu_features() {
         choice=$(ui_choose "Manage features & settings:" "${options[@]}")
 
         case "$choice" in
-            "Add remote access"*)        action_remote ;;
-            "Subtitles (Bazarr):"*)      action_toggle_bazarr ;;
-            "File sharing (SMB):"*)      action_toggle_smb ;;
-            "Search indexers:"*)         action_toggle_indexers ;;
-            "Firewall (UFW):"*)          action_toggle_ufw ;;
-            "System hardening:"*)        action_toggle_hardening ;;
-            "NAS storage watchdog:"*)    action_toggle_watchdog ;;
-            "Change quality profile"*)   action_change_quality ;;
-            "Adjust bandwidth"*)         action_adjust_bandwidth ;;
-            "Update DDNS provider"*)     action_change_ddns ;;
-            *)                           return 0 ;;
+            "Add remote access"*) action_remote ;;
+            "Subtitles (Bazarr):"*) action_toggle_bazarr ;;
+            "File sharing (SMB):"*) action_toggle_smb ;;
+            "Search indexers:"*) action_toggle_indexers ;;
+            "Firewall (UFW):"*) action_toggle_ufw ;;
+            "System hardening:"*) action_toggle_hardening ;;
+            "NAS storage watchdog:"*) action_toggle_watchdog ;;
+            "Change quality profile"*) action_change_quality ;;
+            "Adjust bandwidth"*) action_adjust_bandwidth ;;
+            "Update DDNS provider"*) action_change_ddns ;;
+            *) return 0 ;;
         esac
     done
 }
@@ -1009,12 +1043,16 @@ action_toggle_bazarr() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     local rc=0
     if [[ "${BAZARR_ENABLED:-false}" == "true" ]]; then
         ui_confirm "Turn OFF subtitles (Bazarr)? Your subtitle settings are kept." no || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var BAZARR_ENABLED false
         _reload_env
         ui_log info "Stopping Bazarr (its ./config/bazarr settings are preserved)..."
@@ -1025,7 +1063,10 @@ action_toggle_bazarr() {
         _show_action_result "$rc" "Disable subtitles (Bazarr)"
     else
         ui_confirm "Turn ON subtitles (Bazarr) for automatic subtitle downloads?" yes || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var BAZARR_ENABLED true
         _reload_env
         ui_log info "Enabling Bazarr..."
@@ -1033,7 +1074,7 @@ action_toggle_bazarr() {
         local profiles=()
         _build_profile_args profiles
         docker compose "${profiles[@]}" up -d bazarr 2>&1 || rc=$?
-        if (( rc == 0 )); then
+        if ((rc == 0)); then
             "$SCRIPT_DIR/scripts/configure.sh" --only bazarr || rc=$?
         fi
         _show_action_result "$rc" "Enable subtitles (Bazarr)"
@@ -1046,7 +1087,10 @@ action_toggle_smb() {
     local rc=0
     if [[ "${SMB_ENABLED:-false}" == "true" ]]; then
         ui_confirm "Turn OFF the host file share (SMB)? Your files are NOT deleted." no || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var SMB_ENABLED false
         _reload_env
         ui_log info "Removing the MediaStack SMB share (uses sudo; your files are untouched)..."
@@ -1063,9 +1107,13 @@ action_toggle_smb() {
             "Cancel")
         local scope=""
         case "$scope_choice" in
-            "Media only"*)  scope="data" ;;
+            "Media only"*) scope="data" ;;
             "Full system"*) scope="system" ;;
-            *)              ui_log info "No change."; pause_for_menu; return 0 ;;
+            *)
+                ui_log info "No change."
+                pause_for_menu
+                return 0
+                ;;
         esac
         _set_env_var SMB_ENABLED true
         _set_env_var SMB_SHARE_SCOPE "$scope"
@@ -1084,7 +1132,10 @@ action_toggle_watchdog() {
     local rc=0
     if [[ "${STORAGE_WATCHDOG:-true}" == "true" ]]; then
         ui_confirm "Turn OFF the NAS storage watchdog? Data services will no longer be protected if the NAS drops." no || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var STORAGE_WATCHDOG false
         _reload_env
         ui_log info "Stopping the NAS storage watchdog (uses sudo)..."
@@ -1092,7 +1143,10 @@ action_toggle_watchdog() {
         _show_action_result "$rc" "Disable NAS storage watchdog"
     else
         ui_confirm "Turn ON the NAS storage watchdog? Recommended - it protects data services if the NAS disconnects." yes || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var STORAGE_WATCHDOG true
         _reload_env
         ui_log info "Installing the NAS storage watchdog (uses sudo)..."
@@ -1109,7 +1163,10 @@ action_toggle_ufw() {
     local rc=0
     if [[ "${UFW_ENABLED:-true}" == "true" ]]; then
         ui_confirm "Turn OFF the UFW firewall? Rules you added yourself are kept." no || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var UFW_ENABLED false
         _reload_env
         ui_log info "Removing MediaStack firewall rules (uses sudo)..."
@@ -1133,21 +1190,26 @@ action_toggle_ufw() {
     else
         if ! _docker_reachable; then
             ui_log warn "Docker isn't reachable - start the stack first (the firewall restricts Docker's published ports)."
-            pause_for_menu; return 0
+            pause_for_menu
+            return 0
         fi
         if ! validate_install_state; then
             ui_log warn "No valid install ledger found - run a full install/repair before enabling the firewall."
-            pause_for_menu; return 0
+            pause_for_menu
+            return 0
         fi
         ui_confirm "Turn ON the UFW firewall (default-deny inbound; LAN, SSH and web stay open)?" yes || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var UFW_ENABLED true
         _reload_env
         ui_log info "Configuring the UFW firewall (uses sudo)..."
         setup_ufw || rc=$?
         # Reopen the configurable service ports only when remote access is set up
         # (a real domain); LAN-only installs never opened them.
-        if (( rc == 0 )) && [[ "${DOMAIN:-example.com}" != "example.com" ]]; then
+        if ((rc == 0)) && [[ "${DOMAIN:-example.com}" != "example.com" ]]; then
             setup_ufw_service_ports || rc=$?
         fi
         _show_action_result "$rc" "Enable UFW firewall"
@@ -1162,7 +1224,10 @@ action_toggle_hardening() {
     local rc=0
     if [[ "${HARDENING_ENABLED:-true}" == "true" ]]; then
         ui_confirm "Turn OFF system hardening (auto security updates + kernel sysctl)?" no || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var HARDENING_ENABLED false
         _reload_env
         ui_log info "Reverting kernel hardening and the auto-update policy (uses sudo)..."
@@ -1172,10 +1237,14 @@ action_toggle_hardening() {
     else
         if ! validate_install_state; then
             ui_log warn "No valid install ledger found - run a full install/repair before enabling hardening."
-            pause_for_menu; return 0
+            pause_for_menu
+            return 0
         fi
         ui_confirm "Turn ON system hardening (automatic security updates + kernel network hardening)?" yes || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var HARDENING_ENABLED true
         _reload_env
         ui_log info "Applying system hardening (uses sudo)..."
@@ -1190,13 +1259,17 @@ action_toggle_indexers() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     local rc=0
     local wiz="$SCRIPT_DIR/scripts/setup/wizard_apply.py"
     if [[ "${PUBLIC_INDEXERS_ENABLED:-false}" == "true" ]]; then
         ui_confirm "Stop configuring public indexers? Existing ones stay in Jackett." no || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var PUBLIC_INDEXERS_ENABLED false
         _reload_env
         python3 "$wiz" --indexers-only false --config "$SCRIPT_DIR/config.yml" || rc=$?
@@ -1207,12 +1280,15 @@ action_toggle_indexers() {
         ui_log info "This sets your indexer list to the bundled example preset"
         ui_log info "(any indexers you added yourself will be overwritten)."
         ui_confirm "Add the example public search indexers so Sonarr/Radarr can find releases?" yes || {
-            ui_log info "No change."; pause_for_menu; return 0; }
+            ui_log info "No change."
+            pause_for_menu
+            return 0
+        }
         _set_env_var PUBLIC_INDEXERS_ENABLED true
         _reload_env
         ui_log info "Adding public indexers to your settings..."
         python3 "$wiz" --indexers-only true --config "$SCRIPT_DIR/config.yml" || rc=$?
-        if (( rc == 0 )); then
+        if ((rc == 0)); then
             ui_log info "Wiring indexers into Jackett, Sonarr and Radarr..."
             "$SCRIPT_DIR/scripts/configure.sh" --only jackett,sonarr,radarr || rc=$?
         fi
@@ -1234,11 +1310,13 @@ action_adjust_bandwidth() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     if ! _service_is_running qbittorrent; then
         ui_log warn "qBittorrent isn't running - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
 
     # A hand-edited .env can hold a non-numeric value; ${x:-0} only defaults on
@@ -1246,8 +1324,14 @@ action_adjust_bandwidth() {
     # EOF would re-prompt forever (the default never validates). Sanitize to a
     # valid number first, and say so.
     local cur_dl="${QBT_DL_LIMIT:-0}" cur_ul="${QBT_UL_LIMIT:-0}"
-    validate_mb_per_sec "$cur_dl" 2>/dev/null || { ui_log warn "Stored download limit '${cur_dl}' isn't a valid MB/s number; using 0 (unlimited)."; cur_dl=0; }
-    validate_mb_per_sec "$cur_ul" 2>/dev/null || { ui_log warn "Stored upload limit '${cur_ul}' isn't a valid MB/s number; using 0 (unlimited)."; cur_ul=0; }
+    validate_mb_per_sec "$cur_dl" 2>/dev/null || {
+        ui_log warn "Stored download limit '${cur_dl}' isn't a valid MB/s number; using 0 (unlimited)."
+        cur_dl=0
+    }
+    validate_mb_per_sec "$cur_ul" 2>/dev/null || {
+        ui_log warn "Stored upload limit '${cur_ul}' isn't a valid MB/s number; using 0 (unlimited)."
+        cur_ul=0
+    }
     ui_log info "qBittorrent speed limits in MB/s (0 = unlimited). Press Enter to keep a value."
     ui_log info "Current: download ${cur_dl} MB/s, upload ${cur_ul} MB/s."
 
@@ -1256,10 +1340,15 @@ action_adjust_bandwidth() {
     new_ul=$(ui_input_validated "Upload limit (MB/s, 0 = unlimited)" "$cur_ul" validate_mb_per_sec)
 
     if [[ "$new_dl" == "$cur_dl" && "$new_ul" == "$cur_ul" ]]; then
-        ui_log info "No change."; pause_for_menu; return 0
+        ui_log info "No change."
+        pause_for_menu
+        return 0
     fi
     ui_confirm "Apply download ${new_dl} MB/s / upload ${new_ul} MB/s to qBittorrent now?" yes || {
-        ui_log info "No change."; pause_for_menu; return 0; }
+        ui_log info "No change."
+        pause_for_menu
+        return 0
+    }
 
     # Source the product's qBittorrent module on demand (the launcher does not load
     # it at startup); the guard makes a repeat visit idempotent.
@@ -1268,7 +1357,7 @@ action_adjust_bandwidth() {
     ui_log info "Applying new speed limits to qBittorrent..."
     local rc=0
     qbt_set_speed_limits "$new_dl" "$new_ul" || rc=$?
-    if (( rc == 0 )); then
+    if ((rc == 0)); then
         # Persist only after the live apply succeeds, so .env stays in lock-step
         # with the running daemon (a future configure run trusts these values).
         _set_env_var QBT_DL_LIMIT "$new_dl"
@@ -1294,10 +1383,12 @@ _DDNS_LIVE_MUTATED=0
 _ddns_write_live_config() {
     local payload="$1" live="$SCRIPT_DIR/config/ddns-updater/config.json"
     _DDNS_LIVE_MUTATED=0
-    local dir; dir="$(dirname "$live")"
+    local dir
+    dir="$(dirname "$live")"
     _ddns_prepare_config_dir "$dir" || return 1
-    local tmp; tmp=$(mktemp "$SCRIPT_DIR/.ddns-updater-config.XXXXXX") || return 1
-    if printf '%s\n' "$payload" > "$tmp" \
+    local tmp
+    tmp=$(mktemp "$SCRIPT_DIR/.ddns-updater-config.XXXXXX") || return 1
+    if printf '%s\n' "$payload" >"$tmp" \
         && { mv -f "$tmp" "$live" 2>/dev/null || sudo mv -f "$tmp" "$live"; }; then
         _DDNS_LIVE_MUTATED=1
         repair_ddns_updater_config_permissions
@@ -1324,7 +1415,7 @@ _ddns_restart_and_check() {
     return 0
 }
 
-# Day-2 "Update DDNS provider / credentials" (issue #238, #254). Swap the dynamic-DNS
+# Day-2 "Update DDNS provider / credentials". Swap the dynamic-DNS
 # provider and/or re-enter its credentials AFTER install, reusing the EXACT three
 # shared functions the setup wizard uses — ddns_provider_pick / ddns_render_config_json
 # / ddns_verify_via_container — so the two surfaces can never drift (adding a 7th
@@ -1337,22 +1428,25 @@ _ddns_restart_and_check() {
 # kept as-is: this action only re-does the provider/credentials on the CURRENT
 # domain. A switch that would need a new hostname (any free-hostname provider — see
 # the category route below) can't manage the kept domain, so it hands off to "Add
-# remote access", which owns the full domain -> NPM/certs/WireGuard cascade (#254).
+# remote access", which owns the full domain -> NPM/certs/WireGuard cascade.
 action_change_ddns() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     # The row is already gated on "remote ready AND ddns configured"; this guard is
     # the safety net for a stale/direct call and routes to "Add remote access".
     if recovery_menu_remote_available || ! _ddns_configured; then
         ui_log info "No DDNS provider is set up yet - use 'Add remote access' to configure remote access first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     if ! _service_is_running ddns-updater; then
         ui_log warn "ddns-updater isn't running - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
 
     # The shared DDNS registry/renderer + config-write helpers live in env_gen.sh
@@ -1363,7 +1457,8 @@ action_change_ddns() {
     local domain="${DOMAIN:-}"
     if [[ -z "$domain" ]]; then
         ui_log warn "No domain on record - use 'Add remote access' to set the domain first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
 
     ui_log info "Current DDNS provider: ${DDNS_PROVIDER:-unknown}  (domain: ${domain})"
@@ -1373,7 +1468,9 @@ action_change_ddns() {
     local new_provider
     new_provider=$(ddns_provider_pick "${DDNS_PROVIDER:-}")
     if [[ -z "$new_provider" || "$new_provider" == "${_DDNS_SKIP:-__skip__}" ]]; then
-        ui_log info "No change."; pause_for_menu; return 0
+        ui_log info "No change."
+        pause_for_menu
+        return 0
     fi
 
     # A provider switch KEEPS the shared media domain, which only works when the new
@@ -1412,58 +1509,73 @@ action_change_ddns() {
         local -A _ddns_new_fields=()
         local spec name validator val
         for spec in $fields_spec; do
-            name="${spec%%:*}"; validator="${spec##*:}"
+            name="${spec%%:*}"
+            validator="${spec##*:}"
             val=$(ui_input_validated "Enter ${name//_/ }" "" "$validator")
             # The validators tolerate surrounding whitespace (a dashboard paste
             # often carries a trailing newline/space); ui_input_validated returns
             # the raw entry, so trim here before storing so the written config is
             # clean. Same trim + validator contract as the wizard's field loop.
-            val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+            val="${val#"${val%%[![:space:]]*}"}"
+            val="${val%"${val##*[![:space:]]}"}"
             _ddns_new_fields["$name"]="$val"
         done
         _ddns_new_fields[domain]="$domain"
 
         if ! payload=$(ddns_render_config_json "$new_provider" _ddns_new_fields); then
             ui_log warn "Couldn't build the DDNS config from those entries - no change made."
-            pause_for_menu; return 0
+            pause_for_menu
+            return 0
         fi
 
         local vtmp vbody verify_rc=2
         vtmp=$(mktemp "$SCRIPT_DIR/.ddns-verify.XXXXXX" 2>/dev/null) || vtmp=""
         vbody=$(mktemp 2>/dev/null) || vbody=""
-        if [[ -n "$vtmp" ]] && printf '%s\n' "$payload" > "$vtmp"; then
+        if [[ -n "$vtmp" ]] && printf '%s\n' "$payload" >"$vtmp"; then
             ui_spin "Testing your ${new_provider} credentials..." \
                 ddns_verify_via_container "$vtmp" "$vbody"
             verify_rc=$?
         fi
         [[ -n "$vtmp" ]] && rm -f "$vtmp"
 
-        if (( verify_rc == 0 )); then
+        if ((verify_rc == 0)); then
             [[ -n "$vbody" ]] && rm -f "$vbody"
             break
         fi
-        if (( verify_rc == 1 )); then
+        if ((verify_rc == 1)); then
             [[ -n "$vbody" && -s "$vbody" ]] && ui_log warn "Provider rejected the credentials: $(cat "$vbody")"
             [[ -n "$vbody" ]] && rm -f "$vbody"
-            if (( attempt < 3 )); then
+            if ((attempt < 3)); then
                 ui_confirm "Those credentials were rejected. Re-enter them?" yes || {
-                    ui_log info "No change."; pause_for_menu; return 0; }
+                    ui_log info "No change."
+                    pause_for_menu
+                    return 0
+                }
                 continue
             fi
             ui_log warn "Still rejected after ${attempt} attempts - no change made."
-            pause_for_menu; return 0
+            pause_for_menu
+            return 0
         fi
         # verify_rc == 2 -> degrade (docker/pull/timeout). Never restart a working
         # live service on unverified creds; leave the current provider untouched.
         [[ -n "$vbody" ]] && rm -f "$vbody"
         ui_log warn "Couldn't verify the new credentials (Docker or network issue) - no change made."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     done
-    [[ -z "$payload" ]] && { ui_log info "No change."; pause_for_menu; return 0; }
+    [[ -z "$payload" ]] && {
+        ui_log info "No change."
+        pause_for_menu
+        return 0
+    }
 
     # WARN + CONFIRM the disruptive part (the live restart).
     ui_confirm "Switch DDNS to '${new_provider}' and restart the updater now? Your current config is backed up and restored if it fails to start." no || {
-        ui_log info "No change."; pause_for_menu; return 0; }
+        ui_log info "No change."
+        pause_for_menu
+        return 0
+    }
 
     # APPLY (verify-first). Snapshot the current config into a variable for rollback
     # (the live file is chmod 600 owned by 1000:1000, so a cross-owner backup FILE is
@@ -1474,7 +1586,8 @@ action_change_ddns() {
     [[ -z "$old_payload" ]] && old_payload=$(sudo -n cat "$live" 2>/dev/null)
     if [[ -z "$old_payload" ]]; then
         ui_log warn "Couldn't read the current DDNS config to make a rollback point - no change made."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
 
     ui_log info "Switching DDNS provider to '${new_provider}'..."
@@ -1484,7 +1597,7 @@ action_change_ddns() {
         _reload_env
         # No cache to invalidate: the banner re-resolves the DDNS record every render,
         # so it will honestly read "propagating" until the new record propagates.
-        # Honest verify tier (#248), matching the wizard: a token provider's verify
+        # Honest verify tier, matching the wizard: a token provider's verify
         # 202 is genuine (the token IS the account key, it cannot mask), but a
         # dyndns2 provider (Dynu) server-side no-ops on an UNCHANGED IP without
         # checking the password — and this row is only reachable when the record
@@ -1496,7 +1609,7 @@ action_change_ddns() {
             ui_log warn "'${new_provider}' couldn't be fully re-verified — it reports success without re-checking the password when your IP hasn't changed. The day-2 Health check flags a wrong login on your next IP change."
         fi
         _show_action_result 0 "Update DDNS provider / credentials"
-    elif (( ! _DDNS_LIVE_MUTATED )); then
+    elif ((!_DDNS_LIVE_MUTATED)); then
         # The forward write never landed (e.g. no write access / no sudo) — the live
         # config.json is untouched and still matches .env, so there's nothing to roll
         # back and nothing is inconsistent. Report the no-op plainly.
@@ -1542,7 +1655,7 @@ for rk in (m.get("resolutions") or {}):
 ' 2>/dev/null
 }
 
-# Day-2 "Change quality profile" (issue #71). Re-pick resolution x size after
+# Day-2 "Change quality profile". Re-pick resolution x size after
 # install: rewrite ONLY the quality sections of config.yml, then re-push to
 # Sonarr/Radarr, renaming the existing profile IN PLACE (no orphan — existing
 # library items follow). Mirrors action_adjust_bandwidth's guided shape:
@@ -1555,11 +1668,13 @@ action_change_quality() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     if ! _service_is_running sonarr || ! _service_is_running radarr; then
         ui_log warn "Sonarr and Radarr both need to be running - start the stack first."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
 
     # Shared two-axis picker — the SAME one the setup wizard uses, so the two
@@ -1573,7 +1688,8 @@ action_change_quality() {
         # rename (QP_RENAME_FROM would match nothing, and configure.sh would
         # refuse rather than orphan). Bail with a clear message instead.
         ui_log warn "Couldn't read the current quality profile from your settings - can't change it safely. No change."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     ui_log info "Current quality profile: ${cur_name}"
     ui_log info "Re-pick the resolution ceiling and file-size envelope. This rewrites only"
@@ -1582,12 +1698,13 @@ action_change_quality() {
     # Pre-select the current cell when its name maps to a known (res, size).
     local keys def_res="" def_size=""
     keys=$(_quality_keys_for_name "$cur_name")
-    read -r def_res def_size <<< "$keys"
+    read -r def_res def_size <<<"$keys"
 
     local new_res new_size
     if ! quality_select_pick new_res new_size "$def_res" "$def_size"; then
         ui_log warn "Could not read the quality menu - no change."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
 
     # Compose the target name from the product (no duplicated naming logic).
@@ -1601,18 +1718,23 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
 ' 2>/dev/null)
     if [[ -z "$new_name" ]]; then
         ui_log warn "Could not compose the chosen quality cell - no change."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     if [[ "$new_name" == "$cur_name" ]]; then
         ui_log info "Already on '${new_name}'. No change."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
 
     ui_log warn "Changing to '${new_name}' makes Sonarr/Radarr re-search and upgrade"
     ui_log warn "existing media toward the new ceiling - expect extra downloads and disk use."
     ui_log info "Your existing profile is renamed in place ('${cur_name}' -> '${new_name}') - no duplicate profile is created."
     ui_confirm "Apply '${new_name}' to Sonarr and Radarr now?" no || {
-        ui_log info "No change."; pause_for_menu; return 0; }
+        ui_log info "No change."
+        pause_for_menu
+        return 0
+    }
 
     ui_log info "Rewriting quality settings..."
     local rc=0 rename_failed="" qp_status_file="" _qa_out _qa_line
@@ -1621,8 +1743,8 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
         --config "$SCRIPT_DIR/config.yml") || rc=$?
     while IFS= read -r _qa_line; do
         [[ -n "$_qa_line" ]] && ui_log ok "$_qa_line"
-    done <<< "$_qa_out"
-    if (( rc == 0 )); then
+    done <<<"$_qa_out"
+    if ((rc == 0)); then
         ui_log info "Re-pushing '${new_name}' to Sonarr and Radarr (renaming in place, no orphan)..."
         # QP_RENAME_FROM tells configure_quality_profile to PUT the new render
         # onto the OLD profile's id instead of POSTing a duplicate. configure.sh
@@ -1634,11 +1756,11 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
         QP_RENAME_FROM="$cur_name" QP_RENAME_STATUS="$qp_status_file" \
             "$SCRIPT_DIR/scripts/configure.sh" --only sonarr,radarr || rc=$?
         if [[ -n "$qp_status_file" ]]; then
-            [[ -s "$qp_status_file" ]] && rename_failed=$(tr '\n' ' ' < "$qp_status_file" | sed 's/ *$//')
+            [[ -s "$qp_status_file" ]] && rename_failed=$(tr '\n' ' ' <"$qp_status_file" | sed 's/ *$//')
             rm -f "$qp_status_file"
         fi
     fi
-    if (( rc != 0 )); then
+    if ((rc != 0)); then
         _show_action_result "$rc" "Change quality profile"
     elif [[ -n "$rename_failed" ]]; then
         echo ""
@@ -1683,12 +1805,12 @@ submenu_manage_stack() {
             "Back")
 
         case "$choice" in
-            "Stop a service"*)     action_service_stop ;;
-            "Start a service"*)    action_service_start ;;
-            "Stop all services"*)  action_stack_stop ;;
+            "Stop a service"*) action_service_stop ;;
+            "Start a service"*) action_service_start ;;
+            "Stop all services"*) action_stack_stop ;;
             "Start all services"*) action_stack_start ;;
-            "Tail logs"*)          action_stack_logs ;;
-            *)                     return 0 ;;
+            "Tail logs"*) action_stack_logs ;;
+            *) return 0 ;;
         esac
     done
 }
@@ -1697,7 +1819,8 @@ submenu_port_forwarding() {
     while true; do
         clear
         local _lan _gw
-        _lan=$(_detect_lan_ip); _gw=$(_detect_gateway)
+        _lan=$(_detect_lan_ip)
+        _gw=$(_detect_gateway)
         ui_box "MediaStack - Test Port Forwarding" \
             "$(ui_kv 'This server (LAN IP)' "${_lan:-unknown}")" \
             "$(ui_kv 'Router (gateway)' "${_gw:-unknown}")" \
@@ -1710,9 +1833,12 @@ submenu_port_forwarding() {
             "Back")
 
         case "$choice" in
-            "Test the required"*)    action_port_check ;;
-            "Test a specific port"*) diag_test_port; pause_for_menu ;;
-            *)                       return 0 ;;
+            "Test the required"*) action_port_check ;;
+            "Test a specific port"*)
+                diag_test_port
+                pause_for_menu
+                ;;
+            *) return 0 ;;
         esac
     done
 }
@@ -1723,9 +1849,9 @@ submenu_diagnostics() {
         local _dom _remote _pip
         if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "example.com" ]]; then _dom="$DOMAIN"; else _dom="none (LAN only)"; fi
         case "${REMOTE_WEB_STATE:-}" in
-            ready)   _remote="ready" ;;
+            ready) _remote="ready" ;;
             skipped) _remote="not set up (skipped)" ;;
-            *)       _remote="not set up" ;;
+            *) _remote="not set up" ;;
         esac
         _pip=$(_cached_public_ip)
         ui_box "MediaStack - Diagnostics" \
@@ -1743,10 +1869,19 @@ submenu_diagnostics() {
 
         case "$choice" in
             "Test port forwarding"*) submenu_port_forwarding ;;
-            "Check domain DNS"*)  diag_dns_check; pause_for_menu ;;
-            "System readiness"*)  diag_readiness; pause_for_menu ;;
-            "Run speed test"*)    diag_speedtest; pause_for_menu ;;
-            *)                    return 0 ;;
+            "Check domain DNS"*)
+                diag_dns_check
+                pause_for_menu
+                ;;
+            "System readiness"*)
+                diag_readiness
+                pause_for_menu
+                ;;
+            "Run speed test"*)
+                diag_speedtest
+                pause_for_menu
+                ;;
+            *) return 0 ;;
         esac
     done
 }
@@ -1764,8 +1899,10 @@ _health_prime_sudo() {
 # present the verdict. Mirrors _mu_scan: the wrapped fn writes to a temp file so the
 # spinner doesn't swallow its output; we present after it returns.
 _health_present_spin() {
-    local label="$1"; shift
-    local _hc_vf; _hc_vf=$(mktemp)
+    local label="$1"
+    shift
+    local _hc_vf
+    _hc_vf=$(mktemp)
     _hc_spin_run() { "$@" >"$_hc_vf" 2>/dev/null; }
     ui_spin "$label" _hc_spin_run "$@"
     unset -f _hc_spin_run
@@ -1816,25 +1953,34 @@ submenu_health() {
                 _render_service_list
                 echo ""
                 _health_run_all_spin
-                pause_for_menu ;;
+                pause_for_menu
+                ;;
             "fail2ban"*)
                 _health_present_spin "Checking fail2ban jails..." health_fail2ban_jails
                 _health_present_spin "Checking fail2ban jellyfin filter (~15s)..." health_fail2ban_regex jellyfin
                 _health_present_spin "Checking fail2ban seerr filter (~15s)..." health_fail2ban_regex seerr
                 _health_present_spin "Checking fail2ban jellyfin log watch..." health_fail2ban_watching jellyfin
-                pause_for_menu ;;
+                pause_for_menu
+                ;;
             "TLS certificate"*)
                 _health_prime_sudo
-                _health_present_spin "Checking TLS certificate..." health_cert_expiry; pause_for_menu ;;
+                _health_present_spin "Checking TLS certificate..." health_cert_expiry
+                pause_for_menu
+                ;;
             "DNS"*)
-                _health_present_spin "Checking DNS / public IP (~5s)..." health_dns_drift; pause_for_menu ;;
+                _health_present_spin "Checking DNS / public IP (~5s)..." health_dns_drift
+                pause_for_menu
+                ;;
             "Disk"*)
-                _health_present_spin "Checking disk space..." health_disk_pct; pause_for_menu ;;
+                _health_present_spin "Checking disk space..." health_disk_pct
+                pause_for_menu
+                ;;
             "Firewall"*)
                 _health_prime_sudo
                 _health_present_spin "Checking UFW firewall..." health_ufw_active
                 _health_present_spin "Checking Docker port lock..." health_docker_user_restrict
-                pause_for_menu ;;
+                pause_for_menu
+                ;;
             *) return 0 ;;
         esac
     done
@@ -1877,11 +2023,15 @@ _f2b_banned_now_summary() {
     pairs=$(_f2b_banned_pairs)
     while IFS= read -r ip; do [[ -n "$ip" ]] && ips+=("$ip"); done < <(cut -f2 <<<"$pairs" | sort -u)
     n=${#ips[@]}
-    (( n == 0 )) && { printf 'none'; return 0; }
+    ((n == 0)) && {
+        printf 'none'
+        return 0
+    }
     tally=$(awk -F'\t' '
         NF==2 { if (!($1 in seen)) { seen[$1]=1; order[++c]=$1 } t[$1]++ }
         END   { sep=""; for (i=1;i<=c;i++) { printf "%s%s %d", sep, order[i], t[order[i]]; sep=", " } }' <<<"$pairs")
-    plural=s; (( n == 1 )) && plural=""
+    plural=s
+    ((n == 1)) && plural=""
     printf '%d IP%s  (%s)' "$n" "$plural" "$tally"
 }
 
@@ -1890,15 +2040,19 @@ _f2b_banned_now_summary() {
 # both counts; an unreadable file yields "? ?" so a count never lies with 0. Split
 # glob-safe (read -ra, no pathname expansion) so a hand-added '10.*' token counts
 # verbatim, not expanded against CWD - mirrors f2b_whitelist_apply.
-_f2b_wl_counts() {                          # echoes "<defaults> <custom>"
+_f2b_wl_counts() { # echoes "<defaults> <custom>"
     local jail_file="$SCRIPT_DIR/config/fail2ban/jail.d/mediastack.conf"
     local content line tok toks=() d=0 c=0
-    content=$(cat "$jail_file" 2>/dev/null); [[ -z "$content" ]] && content=$(sudo -n cat "$jail_file" 2>/dev/null)
-    [[ -z "$content" ]] && { printf '? ?\n'; return 0; }
+    content=$(cat "$jail_file" 2>/dev/null)
+    [[ -z "$content" ]] && content=$(sudo -n cat "$jail_file" 2>/dev/null)
+    [[ -z "$content" ]] && {
+        printf '? ?\n'
+        return 0
+    }
     line=$(grep -m1 '^ignoreip[[:space:]]*=' <<<"$content")
     read -ra toks <<<"${line#*=}"
     for tok in "${toks[@]+"${toks[@]}"}"; do
-        if _f2b_wl_is_default "$tok"; then d=$(( d + 1 )); else c=$(( c + 1 )); fi
+        if _f2b_wl_is_default "$tok"; then d=$((d + 1)); else c=$((c + 1)); fi
     done
     printf '%d %d\n' "$d" "$c"
 }
@@ -1909,18 +2063,23 @@ submenu_fail2ban() {
         source "$SCRIPT_DIR/scripts/lib/health.sh"
     fi
     if ! _docker_reachable; then
-        echo ""; ui_log warn "Docker isn't reachable - start the stack first."; pause_for_menu; return 0
+        echo ""
+        ui_log warn "Docker isn't reachable - start the stack first."
+        pause_for_menu
+        return 0
     fi
     if ! _health_f2b_running; then
         echo ""
         ui_log info "fail2ban isn't running. It only runs when you have a domain / remote access set up; LAN-only installs don't expose services to the internet, so there's nothing to protect."
-        pause_for_menu; return 0
+        pause_for_menu
+        return 0
     fi
     while true; do
         clear
         # Live quick-stats, recomputed each loop like the Manage Stack / Diagnostics
         # banners - the banner is the whole 1 + J exec budget (_f2b_banned_now_summary).
-        local wl_def wl_cus; read -r wl_def wl_cus < <(_f2b_wl_counts)
+        local wl_def wl_cus
+        read -r wl_def wl_cus < <(_f2b_wl_counts)
         ui_box "MediaStack - Manage fail2ban" \
             "$(ui_kv 'Protects' 'Jellyfin, NPM and Seerr logins from brute force')" \
             "$(ui_kv 'Banned now' "$(_f2b_banned_now_summary)")" \
@@ -1934,9 +2093,9 @@ submenu_fail2ban() {
             "Back")
         case "$choice" in
             "Banned IPs"*) f2b_banned_menu ;;
-            "Whitelist"*)  f2b_whitelist_menu ;;
+            "Whitelist"*) f2b_whitelist_menu ;;
             "Jail stats"*) f2b_stats_menu ;;
-            *)             return 0 ;;
+            *) return 0 ;;
         esac
     done
 }
@@ -1957,53 +2116,57 @@ f2b_banned_menu() {
             "$(ui_kv 'Banned now' "$count")" \
             "$(ui_kv 'Note' 'a ban blocks ALL services, not just the jail that fired')"
         echo ""
-        if (( count == 0 )); then
+        if ((count == 0)); then
             ui_log info "No IPs are currently banned."
             echo ""
             ui_choose "Banned IPs:" "Back" >/dev/null
             return 0
         fi
         # Clamp the page in case unbans shrank the list since the last draw.
-        (( page * PAGE >= count )) && page=0
-        local start=$(( page * PAGE )) end=$(( page * PAGE + PAGE ))
-        (( end > count )) && end=$count
+        ((page * PAGE >= count)) && page=0
+        local start=$((page * PAGE)) end=$((page * PAGE + PAGE))
+        ((end > count)) && end=$count
         local rows=() i jl
-        for (( i = start; i < end; i++ )); do
+        for ((i = start; i < end; i++)); do
             # Join this IP's jails from the pairs (an attacker banned in jellyfin+npm
             # is ONE row, jails listed together).
             jl=$(awk -v t="${ips[$i]}" '$2==t{printf "%s%s", sep, $1; sep=", "}' <<<"$pairs")
             rows+=("${ips[$i]}  ($jl)")
         done
-        local remaining=$(( count - end ))
-        (( remaining > 0 )) && rows+=("Show more ($remaining remaining)")
-        (( page > 0 ))      && rows+=("Back to first page")
+        local remaining=$((count - end))
+        ((remaining > 0)) && rows+=("Show more ($remaining remaining)")
+        ((page > 0)) && rows+=("Back to first page")
         # Bulk release for the scanner-storm case (40 one-at-a-time picks is not a
         # UI). Only offered when there's more than one IP - with a single ban the
         # per-IP actions already cover it. Every page carries the item.
-        (( count > 1 )) && rows+=("Unban all ($count IPs)")
+        ((count > 1)) && rows+=("Unban all ($count IPs)")
         rows+=("Back")
         local prompt="Pick an IP to act on"
-        (( count > PAGE )) && prompt+="  (showing $(( start + 1 ))–$end of $count)"
+        ((count > PAGE)) && prompt+="  (showing $((start + 1))–$end of $count)"
         local choice
         choice=$(ui_choose "$prompt:" "${rows[@]}")
         # The usual bare "Back"* glob would swallow "Back to first page"; match the
         # paging/bulk arms (and plain Back exactly) BEFORE any glob could.
         case "$choice" in
-            "Show more"*)         page=$(( page + 1 )) ;;
+            "Show more"*) page=$((page + 1)) ;;
             "Back to first page") page=0 ;;
             "Unban all"*)
                 if ui_confirm "Unban all $count IPs? (each can be re-banned on its next failed login)" "no"; then
                     local out rc
-                    out=$(docker exec fail2ban fail2ban-client unban --all 2>&1); rc=$?
-                    if (( rc == 0 )); then _show_action_result 0 "Unban all ($count IPs)"
-                    else ui_log warn "Couldn't unban all: ${out:-fail2ban error}"
+                    out=$(docker exec fail2ban fail2ban-client unban --all 2>&1)
+                    rc=$?
+                    if ((rc == 0)); then
+                        _show_action_result 0 "Unban all ($count IPs)"
+                    else
+                        ui_log warn "Couldn't unban all: ${out:-fail2ban error}"
                     fi
                 else
                     ui_log info "Cancelled - nothing changed."
                 fi
-                pause_for_menu ;;
-            "Back")               return 0 ;;
-            *)                    f2b_ip_actions "${choice%%  (*}" ;;
+                pause_for_menu
+                ;;
+            "Back") return 0 ;;
+            *) f2b_ip_actions "${choice%%  (*}" ;;
         esac
     done
 }
@@ -2034,9 +2197,12 @@ f2b_ip_actions() {
     case "$choice" in
         "Unban + always"*)
             f2b_whitelist_apply add "$ip" "$SCRIPT_DIR/config/fail2ban/jail.d/mediastack.conf"
-            pause_for_menu ;;
+            pause_for_menu
+            ;;
         "Unban ("*)
-            f2b_do_unban "$ip"; pause_for_menu ;;
+            f2b_do_unban "$ip"
+            pause_for_menu
+            ;;
         *) return 0 ;;
     esac
 }
@@ -2050,17 +2216,24 @@ f2b_stats_menu() {
         clear
         local status jails
         status=$(docker exec fail2ban fail2ban-client status 2>/dev/null | tr -d '\r')
-        [[ -z "$status" ]] && { echo ""; ui_log warn "Couldn't read fail2ban status - is the container up?"; pause_for_menu; return 0; }
+        [[ -z "$status" ]] && {
+            echo ""
+            ui_log warn "Couldn't read fail2ban status - is the container up?"
+            pause_for_menu
+            return 0
+        }
         jails=$(sed -n 's/.*Jail list:[[:space:]]*//p' <<<"$status" | tr ',' ' ')
         local j lines=() all_ips=() all_total=0 jail_csv="" ip
         for j in $jails; do
             local jstat now tot iplist
             jstat=$(docker exec fail2ban fail2ban-client status "$j" 2>/dev/null | tr -d '\r')
-            now=$(sed -n 's/.*Currently banned:[[:space:]]*//p' <<<"$jstat" | head -1); [[ "$now" =~ ^[0-9]+$ ]] || now=0
-            tot=$(sed -n 's/.*Total banned:[[:space:]]*//p'    <<<"$jstat" | head -1); [[ "$tot" =~ ^[0-9]+$ ]] || tot=0
+            now=$(sed -n 's/.*Currently banned:[[:space:]]*//p' <<<"$jstat" | head -1)
+            [[ "$now" =~ ^[0-9]+$ ]] || now=0
+            tot=$(sed -n 's/.*Total banned:[[:space:]]*//p' <<<"$jstat" | head -1)
+            [[ "$tot" =~ ^[0-9]+$ ]] || tot=0
             iplist=$(sed -n 's/.*Banned IP list:[[:space:]]*//p' <<<"$jstat" | head -1)
             lines+=("$j: $now banned now ($tot total)")
-            all_total=$(( all_total + tot ))
+            all_total=$((all_total + tot))
             for ip in $iplist; do all_ips+=("$ip"); done
             jail_csv+="${jail_csv:+, }$j"
         done
@@ -2079,9 +2252,12 @@ f2b_stats_menu() {
         local choice
         choice=$(ui_choose "View a jail in detail?" $jails "Recent ban history" "Back")
         case "$choice" in
-            "Recent ban history"*) f2b_show_recent; pause_for_menu ;;
-            "Back")                return 0 ;;
-            *)                     f2b_jail_detail "$choice" ;;
+            "Recent ban history"*)
+                f2b_show_recent
+                pause_for_menu
+                ;;
+            "Back") return 0 ;;
+            *) f2b_jail_detail "$choice" ;;
         esac
     done
 }
@@ -2098,14 +2274,21 @@ f2b_jail_detail() {
         local jstat
         jstat=$(docker exec fail2ban fail2ban-client status "$jail" 2>/dev/null | tr -d '\r')
         if [[ -z "$jstat" ]]; then
-            echo ""; ui_log warn "Couldn't read status for $jail."; pause_for_menu; return 0
+            echo ""
+            ui_log warn "Couldn't read status for $jail."
+            pause_for_menu
+            return 0
         fi
         local now tot fnow ftot files iplist
-        now=$(sed -n 's/.*Currently banned:[[:space:]]*//p' <<<"$jstat" | head -1); [[ "$now" =~ ^[0-9]+$ ]] || now=0
-        tot=$(sed -n 's/.*Total banned:[[:space:]]*//p'    <<<"$jstat" | head -1); [[ "$tot" =~ ^[0-9]+$ ]] || tot=0
-        fnow=$(sed -n 's/.*Currently failed:[[:space:]]*//p' <<<"$jstat" | head -1); [[ "$fnow" =~ ^[0-9]+$ ]] || fnow=0
-        ftot=$(sed -n 's/.*Total failed:[[:space:]]*//p'    <<<"$jstat" | head -1); [[ "$ftot" =~ ^[0-9]+$ ]] || ftot=0
-        files=$(sed -n 's/.*File list:[[:space:]]*//p'     <<<"$jstat" | head -1)
+        now=$(sed -n 's/.*Currently banned:[[:space:]]*//p' <<<"$jstat" | head -1)
+        [[ "$now" =~ ^[0-9]+$ ]] || now=0
+        tot=$(sed -n 's/.*Total banned:[[:space:]]*//p' <<<"$jstat" | head -1)
+        [[ "$tot" =~ ^[0-9]+$ ]] || tot=0
+        fnow=$(sed -n 's/.*Currently failed:[[:space:]]*//p' <<<"$jstat" | head -1)
+        [[ "$fnow" =~ ^[0-9]+$ ]] || fnow=0
+        ftot=$(sed -n 's/.*Total failed:[[:space:]]*//p' <<<"$jstat" | head -1)
+        [[ "$ftot" =~ ^[0-9]+$ ]] || ftot=0
+        files=$(sed -n 's/.*File list:[[:space:]]*//p' <<<"$jstat" | head -1)
         iplist=$(sed -n 's/.*Banned IP list:[[:space:]]*//p' <<<"$jstat" | head -1)
         ui_box "MediaStack - Jail detail: $jail" \
             "$(ui_kv 'Banned now' "$now")" \
@@ -2115,7 +2298,7 @@ f2b_jail_detail() {
         echo ""
         local ips=() ip
         for ip in $iplist; do ips+=("$ip"); done
-        if (( ${#ips[@]} == 0 )); then
+        if ((${#ips[@]} == 0)); then
             ui_log info "No IPs banned by this jail right now."
         else
             ui_log info "Banned IPs (pick to act):"
@@ -2125,7 +2308,7 @@ f2b_jail_detail() {
         choice=$(ui_choose "$jail:" "${ips[@]+"${ips[@]}"}" "Back")
         case "$choice" in
             "Back") return 0 ;;
-            *)      f2b_ip_actions "$choice" ;;
+            *) f2b_ip_actions "$choice" ;;
         esac
     done
 }
@@ -2139,7 +2322,7 @@ f2b_jail_detail() {
 # treats / as a boundary and would wrongly lock a bare user-added 10.0.0.0.
 _f2b_wl_is_default() {
     case "$1" in
-        127.0.0.0/8|10.0.0.0/8|172.16.0.0/12|192.168.0.0/16) return 0 ;;
+        127.0.0.0/8 | 10.0.0.0/8 | 172.16.0.0/12 | 192.168.0.0/16) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -2149,14 +2332,17 @@ f2b_whitelist_menu() {
     while true; do
         clear
         local content line tok toks=() opts=() removable=() wl_def wl_cus
-        content=$(cat "$jail_file" 2>/dev/null); [[ -z "$content" ]] && content=$(sudo -n cat "$jail_file" 2>/dev/null)
+        content=$(cat "$jail_file" 2>/dev/null)
+        [[ -z "$content" ]] && content=$(sudo -n cat "$jail_file" 2>/dev/null)
         read -r wl_def wl_cus < <(_f2b_wl_counts)
         ui_box "MediaStack - Whitelist (always allow)" \
             "$(ui_kv 'Always-allow' 'these IPs/ranges are never banned')" \
             "$(ui_kv 'Entries' "$wl_def defaults (locked) + $wl_cus custom")"
         echo ""
         if [[ -z "$content" ]]; then
-            ui_log warn "Couldn't read $jail_file - whitelist can't be shown."; pause_for_menu; return 0
+            ui_log warn "Couldn't read $jail_file - whitelist can't be shown."
+            pause_for_menu
+            return 0
         fi
         line=$(grep -m1 '^ignoreip[[:space:]]*=' <<<"$content")
         # Classify each token by EXACT equality against the defaults; render the
@@ -2168,18 +2354,25 @@ f2b_whitelist_menu() {
             if _f2b_wl_is_default "$tok"; then
                 ui_log info "$tok  (default - locked)"
             else
-                opts+=("Remove $tok"); removable+=("$tok")
+                opts+=("Remove $tok")
+                removable+=("$tok")
             fi
         done
-        (( ${#removable[@]} == 0 )) && ui_log info "No user-added IPs yet."
+        ((${#removable[@]} == 0)) && ui_log info "No user-added IPs yet."
         echo ""
         opts+=("Add an IP" "Back")
         local choice
         choice=$(ui_choose "Whitelist:" "${opts[@]}")
         case "$choice" in
-            "Add an IP"*) f2b_whitelist_add "$jail_file"; pause_for_menu ;;
-            "Remove "*)   f2b_whitelist_remove "${choice#Remove }" "$jail_file"; pause_for_menu ;;
-            *)            return 0 ;;
+            "Add an IP"*)
+                f2b_whitelist_add "$jail_file"
+                pause_for_menu
+                ;;
+            "Remove "*)
+                f2b_whitelist_remove "${choice#Remove }" "$jail_file"
+                pause_for_menu
+                ;;
+            *) return 0 ;;
         esac
     done
 }
@@ -2201,8 +2394,12 @@ f2b_whitelist_add() {
             # loop can't be cleanly cancelled and death-loops on blank. Blank
             # Enter cancels; ui_input returns the empty default on non-TTY EOF too.
             ip=$(ui_input "IP address to always allow (blank to cancel)" "")
-            [[ -z "$ip" ]] && { ui_log info "Cancelled - nothing changed."; return 0; }
-            validate_ip "$ip" || return 0 ;;   # validator emits its own ui_log warn
+            [[ -z "$ip" ]] && {
+                ui_log info "Cancelled - nothing changed."
+                return 0
+            }
+            validate_ip "$ip" || return 0
+            ;; # validator emits its own ui_log warn
         *) ip="$choice" ;;
     esac
     f2b_whitelist_apply add "$ip" "$jail_file"
@@ -2229,15 +2426,25 @@ f2b_whitelist_remove() {
 #      it, and it lands via tmp+mv so a mid-write ENOSPC/EIO leaves the live file whole.
 # jail-file is a PARAMETER, not an in-scope global: under set -u an unset expansion
 # would abort the whole launcher if a caller forgot to set it.
-f2b_whitelist_apply() {                     # $1=add|remove  $2=ip  $3=jail-file path
+f2b_whitelist_apply() { # $1=add|remove  $2=ip  $3=jail-file path
     local op="$1" ip="$2" jail_file="$3" content line new_list new_content rc label toks tmp
     # Defensive: every caller feeds a validated, non-empty IP, but an empty $ip would
     # make grep -Fqw "" match anything (false dedup) and unban "" a no-op - guard once.
-    [[ -z "$ip" ]] && { ui_log warn "No IP given - whitelist not changed."; return 0; }
-    content=$(cat "$jail_file" 2>/dev/null); [[ -z "$content" ]] && content=$(sudo -n cat "$jail_file" 2>/dev/null)
-    [[ -z "$content" ]] && { ui_log warn "Couldn't read $jail_file - whitelist not changed."; return 0; }   # rule 1
+    [[ -z "$ip" ]] && {
+        ui_log warn "No IP given - whitelist not changed."
+        return 0
+    }
+    content=$(cat "$jail_file" 2>/dev/null)
+    [[ -z "$content" ]] && content=$(sudo -n cat "$jail_file" 2>/dev/null)
+    [[ -z "$content" ]] && {
+        ui_log warn "Couldn't read $jail_file - whitelist not changed."
+        return 0
+    } # rule 1
     line=$(grep -m1 '^ignoreip[[:space:]]*=' <<<"$content")
-    [[ -z "$line" ]] && { ui_log warn "No ignoreip line in $jail_file - whitelist not changed."; return 0; } # rule 3
+    [[ -z "$line" ]] && {
+        ui_log warn "No ignoreip line in $jail_file - whitelist not changed."
+        return 0
+    } # rule 3
     new_list=${line#*=}
     if [[ "$op" == add ]]; then
         # De-dup: -F literal, -w boundary (won't match inside a longer IP). Still
@@ -2253,7 +2460,7 @@ f2b_whitelist_apply() {                     # $1=add|remove  $2=ip  $3=jail-file
         fi
         new_list="$new_list $ip"
         label="Whitelist $ip"
-    else                                    # exact-token removal - no $ip-interpolated regex
+    else # exact-token removal - no $ip-interpolated regex
         # Split glob-safe (read -ra, quoted expansion) BEFORE grep: the old unquoted
         # `printf '%s\n' $new_list` pathname-expanded a hand-added '10.*' token against
         # CWD, corrupting the line. The add path + the collapse below already guard this.
@@ -2264,39 +2471,49 @@ f2b_whitelist_apply() {                     # $1=add|remove  $2=ip  $3=jail-file
     # Collapse/trim whitespace WITHOUT glob expansion (a hand-added '10.*' token must
     # survive verbatim, not expand to CWD filenames): read -ra word-splits with no
     # pathname expansion. toks=() first so an emptied line leaves ${toks[*]} safe under set -u.
-    toks=(); read -ra toks <<<"$new_list"; new_list="${toks[*]}"
-    ui_confirm "$label?" "no" || { ui_log info "Cancelled - nothing changed."; return 0; }
+    toks=()
+    read -ra toks <<<"$new_list"
+    new_list="${toks[*]}"
+    ui_confirm "$label?" "no" || {
+        ui_log info "Cancelled - nothing changed."
+        return 0
+    }
     # Rewrite ONLY the first ignoreip line, passing the new line VERBATIM via ENVIRON
     # (never awk -v, which processes backslash escapes) so no #/&/\/glob byte in the data
     # can corrupt or truncate. $new_content stays the WHOLE FILE (rule 2).
     new_content=$(NEW_LINE="ignoreip = $new_list" awk '
         !done && /^ignoreip[[:space:]]*=/ { print ENVIRON["NEW_LINE"]; done=1; next }
         { print }' <<<"$content")
-    [[ -z "$new_content" ]] && { ui_log warn "Rebuilt whitelist came out empty - $jail_file not changed."; return 0; }  # rule 4
+    [[ -z "$new_content" ]] && {
+        ui_log warn "Rebuilt whitelist came out empty - $jail_file not changed."
+        return 0
+    } # rule 4
     # Atomic write: build a sibling .tmp then mv over the live file, so a mid-write
     # ENOSPC/EIO can't half-truncate it. Every failure path removes the tmp and leaves
     # the live file untouched.
     tmp="$jail_file.tmp"
-    if { printf '%s\n' "$new_content" > "$tmp" 2>/dev/null \
-         || printf '%s\n' "$new_content" | sudo -n tee "$tmp" >/dev/null 2>&1; } \
-       && { mv -f "$tmp" "$jail_file" 2>/dev/null || sudo -n mv -f "$tmp" "$jail_file" 2>/dev/null; }; then
+    if { printf '%s\n' "$new_content" >"$tmp" 2>/dev/null \
+        || printf '%s\n' "$new_content" | sudo -n tee "$tmp" >/dev/null 2>&1; } \
+        && { mv -f "$tmp" "$jail_file" 2>/dev/null || sudo -n mv -f "$tmp" "$jail_file" 2>/dev/null; }; then
         :
     else
         rm -f "$tmp" 2>/dev/null || sudo -n rm -f "$tmp" >/dev/null 2>&1 || true
-        ui_log warn "Couldn't write $jail_file (permission denied) - whitelist not changed."; return 0
+        ui_log warn "Couldn't write $jail_file (permission denied) - whitelist not changed."
+        return 0
     fi
-    docker exec fail2ban fail2ban-client reload >/dev/null 2>&1; rc=$?
+    docker exec fail2ban fail2ban-client reload >/dev/null 2>&1
+    rc=$?
     # Best-effort, add only: free the IP the moment it's whitelisted - reload alone
     # doesn't drop a live ban (ignoreip is enforced at ban time).
     [[ "$op" == add ]] && docker exec fail2ban fail2ban-client unban "$ip" >/dev/null 2>&1 || true
-    if (( rc == 0 )); then
+    if ((rc == 0)); then
         _show_action_result 0 "$label"
         [[ "$op" == add ]] && ui_log info "Note: a full rebuild (clean reinstall) resets the whitelist - re-add $ip if you ever do that."
     else
         # NOT _show_action_result 1 (its rc!=0 branch prints a false "exited with code 1"); the warn is accurate.
         ui_log warn "$label saved but fail2ban didn't reload - run 'docker compose restart fail2ban'."
     fi
-    return 0                                # explicit: remove's last branch is falsey; the function rc must not lie
+    return 0 # explicit: remove's last branch is falsey; the function rc must not lie
 }
 
 # Unban clears the IP from EVERY jail (the all-jails `fail2ban-client unban <ip>`
@@ -2304,14 +2521,17 @@ f2b_whitelist_apply() {                     # $1=add|remove  $2=ip  $3=jail-file
 # reload, and a single unban restores access across every service at once.
 f2b_do_unban() {
     local ip="$1" out rc
-    out=$(docker exec fail2ban fail2ban-client unban "$ip" 2>&1); rc=$?
+    out=$(docker exec fail2ban fail2ban-client unban "$ip" 2>&1)
+    rc=$?
     # Live-verified against crazymax/fail2ban 1.1.0: `unban <ip>` always exits 0
     # and prints the count of jails the IP was cleared from - "0" means it wasn't
     # banned anywhere. The 'not banned' text match stays for other client versions.
-    if   [[ "$out" == "0" ]] || grep -qi 'not banned' <<<"$out"; then
+    if [[ "$out" == "0" ]] || grep -qi 'not banned' <<<"$out"; then
         ui_log info "$ip wasn't banned in any jail - nothing to do."
-    elif (( rc == 0 )); then _show_action_result 0 "Unban $ip"
-    else                     ui_log warn "Couldn't unban $ip: ${out:-fail2ban error}"
+    elif ((rc == 0)); then
+        _show_action_result 0 "Unban $ip"
+    else
+        ui_log warn "Couldn't unban $ip: ${out:-fail2ban error}"
     fi
 }
 
@@ -2360,16 +2580,16 @@ _hw_transcoding_info() {
             fi
             ;;
         intel) lines+=("$(ui_kv 'GPU' 'Intel')" "$(ui_kv 'Encoder' 'QSV')") ;;
-        amd)   lines+=("$(ui_kv 'GPU' 'AMD')" "$(ui_kv 'Encoder' 'VAAPI')") ;;
-        *)     lines+=("$(ui_kv 'GPU' 'none (software transcoding)')") ;;
+        amd) lines+=("$(ui_kv 'GPU' 'AMD')" "$(ui_kv 'Encoder' 'VAAPI')") ;;
+        *) lines+=("$(ui_kv 'GPU' 'none (software transcoding)')") ;;
     esac
     local state_label
     case "$state" in
         complete) state_label="active" ;;
-        pending)  state_label="pending reboot to finalize" ;;
+        pending) state_label="pending reboot to finalize" ;;
         fallback) state_label="software fallback (GPU not active)" ;;
-        skipped)  state_label="skipped (software)" ;;
-        *)        state_label="${state:-not configured}" ;;
+        skipped) state_label="skipped (software)" ;;
+        *) state_label="${state:-not configured}" ;;
     esac
     lines+=("$(ui_kv 'State' "$state_label")")
     ui_box "MediaStack - Hardware Transcoding" "${lines[@]}"
@@ -2495,16 +2715,16 @@ submenu_storage() {
     done
 }
 
-# --- Manage updates (per-service image updates; ADR-30) ---------------------
+# --- Manage updates (per-service image updates) -----------------------------
 
 # Echo the `--profile X` flag a service needs for compose to target it (or "").
 _service_profile_flag() {
     case "$1" in
-        bazarr)                     echo "--profile subtitles" ;;
-        npm|fail2ban|ddns-updater)  echo "--profile proxy" ;;
-        wireguard)                  echo "--profile remote" ;;
-        autoheal)                   echo "--profile autoheal" ;;
-        *)                          echo "" ;;
+        bazarr) echo "--profile subtitles" ;;
+        npm | fail2ban | ddns-updater) echo "--profile proxy" ;;
+        wireguard) echo "--profile remote" ;;
+        autoheal) echo "--profile autoheal" ;;
+        *) echo "" ;;
     esac
 }
 
@@ -2521,9 +2741,9 @@ _regenerate_override() {
 _image_policy_state_file() { printf '%s\n' "$SCRIPT_DIR/config/state/image-policy.tsv"; }
 
 _image_policy_header() {
-    echo "# MediaStack per-service image policy - managed by 'Manage updates' (ADR-30)."
+    echo "# MediaStack per-service image policy - managed by 'Manage updates'."
     echo "# Format: service<TAB>stable|latest|<image>@sha256:<digest>. A digest value pins"
-    echo "# the service to its installed image (#208). Absent row = follow global IMAGE_CHANNEL."
+    echo "# the service to its installed image. Absent row = follow global IMAGE_CHANNEL."
 }
 
 # Set (or replace) a service's policy row.
@@ -2537,7 +2757,7 @@ _set_service_policy() {
         [[ -f "$file" ]] && awk -F '\t' -v s="$svc" \
             '$1 !~ /^#/ && NF >= 2 && $1 != s { print $1 "\t" $2 }' "$file"
         printf '%s\t%s\n' "$svc" "$pol"
-    } > "$tmp"
+    } >"$tmp"
     mv "$tmp" "$file"
 }
 
@@ -2551,13 +2771,13 @@ _clear_service_policy() {
         _image_policy_header
         awk -F '\t' -v s="$svc" \
             '$1 !~ /^#/ && NF >= 2 && $1 != s { print $1 "\t" $2 }' "$file"
-    } > "$tmp"
+    } >"$tmp"
     mv "$tmp" "$file"
 }
 
 # The image@digest a service was installed running, from the gitignored
 # config/state/image-install.tsv (service<TAB>image<TAB>digest), or nothing if it
-# was never recorded. This is the channel-independent "Revert" target (#208).
+# was never recorded. This is the channel-independent "Revert" target.
 _install_image_ref() {
     local svc="$1" file="$SCRIPT_DIR/config/state/image-install.tsv"
     [[ -f "$file" ]] || return 0
@@ -2618,17 +2838,21 @@ _reload_env() {
 _wait_service_running() {
     local svc="$1" i=0 max=60 state health
     echo -ne "  Waiting for ${svc}..."
-    while (( i < max )); do
+    while ((i < max)); do
         state=$(docker inspect --format '{{.State.Status}}' "$svc" 2>/dev/null || echo "")
         if [[ "$state" == "running" ]]; then
             health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$svc" 2>/dev/null || echo "")
             if [[ -z "$health" || "$health" == "healthy" ]]; then
-                echo -e " ${GREEN}ready${NC}"; return 0
+                echo -e " ${GREEN}ready${NC}"
+                return 0
             elif [[ "$health" == "unhealthy" ]]; then
-                echo -e " ${RED}unhealthy${NC}"; return 1
+                echo -e " ${RED}unhealthy${NC}"
+                return 1
             fi
         fi
-        sleep 2; (( i += 2 )); echo -ne "."
+        sleep 2
+        ((i += 2))
+        echo -ne "."
     done
     echo -e " ${YELLOW}still starting${NC}"
     return 0
@@ -2649,7 +2873,7 @@ _recreate_service() {
     # word-splitting hazard of an unquoted $pflag. read -ra on an empty string
     # yields an empty array, so a profile-less service passes no extra args.
     local pflag=()
-    read -ra pflag <<< "$(_service_profile_flag "$svc")"
+    read -ra pflag <<<"$(_service_profile_flag "$svc")"
     # Record whether the pull actually fetched a fresh image. On failure we fall
     # back to the cached (old) image, so the caller must NOT then claim the
     # service is up to date. _MU_PULL_OK is read by _apply_service_update's flip
@@ -2681,7 +2905,7 @@ _recreate_service() {
 _apply_service_update() {
     local svc="$1" skip_confirm="${2:-}"
     # A service is "on the image it was installed with" when it is stable-effective
-    # (still on its lock/tag) OR has a digest pin (was reverted, #208); updating
+    # (still on its lock/tag) OR has a digest pin (was reverted); updating
     # either floats it to its upstream tag and needs consent.
     local is_float=0
     if [[ "$(_effective_channel "$svc")" == "stable" || -n "$(_service_pin "$svc")" ]]; then
@@ -2690,20 +2914,26 @@ _apply_service_update() {
     if [[ "$svc" == "wireguard" ]]; then
         ui_log warn "Updating WireGuard restarts remote access and may disconnect VPN clients."
         ui_log info "Run this from your LAN / local console if you rely on WireGuard for access."
-        (( is_float )) && ui_log warn "It also moves WireGuard to its upstream tag, off the image it was installed with."
-        ui_confirm "Update WireGuard now?" no || { ui_log info "Skipped WireGuard."; return 0; }
+        ((is_float)) && ui_log warn "It also moves WireGuard to its upstream tag, off the image it was installed with."
+        ui_confirm "Update WireGuard now?" no || {
+            ui_log info "Skipped WireGuard."
+            return 0
+        }
         # That single confirm already covers the float consent for WireGuard, so
         # don't re-prompt in the float branch below.
         skip_confirm=1
     fi
-    if (( is_float )); then
+    if ((is_float)); then
         # Floating drops this service off the image it was installed with, so
         # confirm first - unless the caller already gathered consent (the "Update
         # all" path, and the WireGuard branch above, pass skip_confirm to avoid a
         # double-prompt).
         if [[ "$skip_confirm" != "1" ]]; then
             ui_log warn "This moves ${svc} to its upstream tag, off the image it was installed with."
-            ui_confirm "Update ${svc} to the newest upstream image?" no || { ui_log info "Left ${svc} unchanged."; return 0; }
+            ui_confirm "Update ${svc} to the newest upstream image?" no || {
+                ui_log info "Left ${svc} unchanged."
+                return 0
+            }
         fi
         ui_log info "${svc}: now tracking its upstream tag - off the image it was installed with."
     fi
@@ -2713,7 +2943,10 @@ _apply_service_update() {
     # pull so consent is sticky across a transient pull failure - the next apply (or
     # ./scripts/update.sh) still pulls it forward.
     _set_service_policy "$svc" latest
-    _regenerate_override || { ui_log error "Could not regenerate compose override."; return 1; }
+    _regenerate_override || {
+        ui_log error "Could not regenerate compose override."
+        return 1
+    }
     storage_guard_before_start || return 1
     ui_log info "Pulling ${svc}..."
     _recreate_service "$svc" "${svc} updated." || return 1
@@ -2731,7 +2964,7 @@ _apply_service_update() {
     # the "Update all" batch, skip_confirm=1, runs one aggregate check at the end).
     if [[ "$skip_confirm" != "1" ]] && _service_is_running "$svc"; then
         case "$svc" in
-            jellyfin|seerr)
+            jellyfin | seerr)
                 declare -F health_fail2ban_regex >/dev/null 2>&1 || source "$SCRIPT_DIR/scripts/lib/health.sh"
                 if _health_f2b_running && ui_confirm "Verify fail2ban still protects ${svc} after this update?" no; then
                     _health_present_spin "Checking fail2ban ${svc} filter (~15s)..." health_fail2ban_regex "$svc"
@@ -2743,7 +2976,7 @@ _apply_service_update() {
 }
 
 # Re-pin a service to the digest it was installed running and recreate it onto that
-# image - works on any channel (#208). Reads the recorded install digest from
+# image - works on any channel. Reads the recorded install digest from
 # image-install.tsv and writes it as a per-service pin. If the install digest was
 # never recorded (installed before this feature), falls back to clearing the
 # override. Failure-safe: if the recreate fails (e.g. the install digest was GC'd
@@ -2761,7 +2994,10 @@ _reset_service_to_default() {
         _set_service_policy "$svc" "$install_ref"
     fi
     ui_log info "${svc}: reverting to the image it was installed with..."
-    _regenerate_override || { ui_log error "Could not regenerate compose override."; return 1; }
+    _regenerate_override || {
+        ui_log error "Could not regenerate compose override."
+        return 1
+    }
     storage_guard_before_start || return 1
     if _recreate_service "$svc" "${svc} reverted to its installed image."; then
         return 0
@@ -2772,7 +3008,10 @@ _reset_service_to_default() {
     if [[ -n "$install_ref" ]]; then
         ui_log warn "${svc}: revert failed (the installed image may no longer be available); restoring its previous image."
         _restore_service_policy_row "$svc" "$prior"
-        _regenerate_override || { ui_log error "Could not regenerate compose override."; return 1; }
+        _regenerate_override || {
+            ui_log error "Could not regenerate compose override."
+            return 1
+        }
         _recreate_service "$svc" "${svc} restored to its previous image." || return 1
     fi
     return 1
@@ -2793,20 +3032,23 @@ _render_update_table() {
             stable) label="Pinned" ;;
             latest) label="Tracking tag" ;;
             pinned) label="Pinned (install)" ;;
-            *)      label="$pol" ;;
+            *) label="$pol" ;;
         esac
         # A pinned service is held on its installed image - the opposite of the `*`
         # footnote ("tracking its upstream tag"), so pins get no star.
-        if [[ "$override" == "manual" && "$pol" != "pinned" ]]; then label="${label} *"; has_manual=1; fi
+        if [[ "$override" == "manual" && "$pol" != "pinned" ]]; then
+            label="${label} *"
+            has_manual=1
+        fi
         case "$status" in
-            "Up to date")                        color="$GREEN" ;;
-            "Update available")                  color="$YELLOW" ;;
-            "Not installed"|"Unknown (offline)"|"Unknown local digest") color="$CYAN" ;;
-            *)                                   color="$NC" ;;
+            "Up to date") color="$GREEN" ;;
+            "Update available") color="$YELLOW" ;;
+            "Not installed" | "Unknown (offline)" | "Unknown local digest") color="$CYAN" ;;
+            *) color="$NC" ;;
         esac
         printf '  %-13s %-18s %b%s%b\n' "$svc" "$label" "$color" "$status" "$NC"
     done <<<"$tsv"
-    (( has_manual )) && printf '  %s\n' "* manual override - tracking its upstream tag, not the image it was installed with"
+    ((has_manual)) && printf '  %s\n' "* manual override - tracking its upstream tag, not the image it was installed with"
 }
 
 # Run the registry scan under a spinner into the caller's $tsv (dynamic scope -
@@ -2815,10 +3057,11 @@ _render_update_table() {
 _mu_scan() {
     local _tmp _out
     _tmp=$(mktemp)
-    _mu_scan_to_file() { _update_status_scan > "$_tmp"; }
+    _mu_scan_to_file() { _update_status_scan >"$_tmp"; }
     ui_spin "Checking each image against its registry..." _mu_scan_to_file
     unset -f _mu_scan_to_file
-    _out=$(cat "$_tmp"); rm -f "$_tmp"
+    _out=$(cat "$_tmp")
+    rm -f "$_tmp"
     [[ -z "$_out" ]] && return 1
     tsv=$_out
     return 0
@@ -2838,8 +3081,12 @@ _mu_flip_row() {
         [[ -z "$f_svc" ]] && continue
         if [[ "$f_svc" == "$svc" ]]; then
             newpol="$(_service_policy "$svc")"
-            [[ "$newpol" == "latest" ]] && { pol="latest"; override="manual"; }
-            status="Up to date"; upd="false"
+            [[ "$newpol" == "latest" ]] && {
+                pol="latest"
+                override="manual"
+            }
+            status="Up to date"
+            upd="false"
         fi
         printf '%s\t%s\t%s\t%s\t%s\n' "$f_svc" "$pol" "$override" "$status" "$upd"
     done <<<"$tsv"
@@ -2852,7 +3099,7 @@ _menu_update_selected() {
         [[ "$upd" == "true" ]] || continue
         labels+=("${svc}  (${status})")
     done <<<"$tsv"
-    if (( ${#labels[@]} == 0 )); then
+    if ((${#labels[@]} == 0)); then
         ui_log info "No services have an available update."
         pause_for_menu
         return 0
@@ -2872,11 +3119,14 @@ _menu_update_all() {
     # and force-confirms, so it's updated explicitly via "Update a service".
     while IFS=$'\t' read -r svc pol override status upd; do
         [[ "$upd" == "true" ]] || continue
-        if [[ "$svc" == "wireguard" ]]; then wg_updatable=1; continue; fi
+        if [[ "$svc" == "wireguard" ]]; then
+            wg_updatable=1
+            continue
+        fi
         svcs+=("$svc")
     done <<<"$tsv"
-    if (( ${#svcs[@]} == 0 )); then
-        if (( wg_updatable )); then
+    if ((${#svcs[@]} == 0)); then
+        if ((wg_updatable)); then
             ui_log info "Only WireGuard has an update - use 'Update a service' to update it explicitly."
         else
             ui_log info "No updates available."
@@ -2887,8 +3137,12 @@ _menu_update_all() {
     ui_log warn "About to update ${#svcs[@]} service(s) to the newest upstream image."
     ui_log info "This moves them off the images they were installed with."
     ui_log info "Services: ${svcs[*]}"
-    (( wg_updatable )) && ui_log info "WireGuard is excluded (remote access) - update it explicitly if needed."
-    ui_confirm "Proceed?" no || { ui_log info "Cancelled."; pause_for_menu; return 0; }
+    ((wg_updatable)) && ui_log info "WireGuard is excluded (remote access) - update it explicitly if needed."
+    ui_confirm "Proceed?" no || {
+        ui_log info "Cancelled."
+        pause_for_menu
+        return 0
+    }
     local s
     for s in "${svcs[@]}"; do
         # skip_confirm=1: the bulk "Proceed?" above already covered these floats,
@@ -2916,7 +3170,7 @@ _menu_reset_default() {
         [[ "$status" == "Not installed" ]] && continue
         labels+=("${svc}  (${status})")
     done <<<"$tsv"
-    if (( ${#labels[@]} == 0 )); then
+    if ((${#labels[@]} == 0)); then
         ui_log info "No services have an update to revert."
         pause_for_menu
         return 1
@@ -2975,21 +3229,24 @@ submenu_manage_updates() {
             "Back")
 
         case "$choice" in
-            "Update a service"*)          _menu_update_selected "$tsv" ;;
-            "Update all"*)                _menu_update_all "$tsv" ;;
+            "Update a service"*) _menu_update_selected "$tsv" ;;
+            "Update all"*) _menu_update_all "$tsv" ;;
             # Revert re-pins a service to its installed image, so a real revert needs
             # a registry comparison to re-derive the status - rescan. But a no-op
             # (nothing to revert, or Back) returns non-zero, so skip the rescan then.
-            "Revert a service"*)          _menu_reset_default "$tsv" && _mu_rescan=1 ;;
-            "Re-check for updates now"*)  _mu_rescan=1 ;;
-            *)                            return 0 ;;
+            "Revert a service"*) _menu_reset_default "$tsv" && _mu_rescan=1 ;;
+            "Re-check for updates now"*) _mu_rescan=1 ;;
+            *) return 0 ;;
         esac
 
         # Refresh the cached table for the next render. Services updated onto their
         # upstream tag flip locally (no rescan); the explicit re-check and revert
         # rescan the registry.
-        if (( _mu_rescan )); then
-            _mu_scan || { ui_log warn "Could not refresh update status; showing last known."; pause_for_menu; }
+        if ((_mu_rescan)); then
+            _mu_scan || {
+                ui_log warn "Could not refresh update status; showing last known."
+                pause_for_menu
+            }
         else
             local _s
             for _s in "${_MU_APPLIED[@]}"; do
@@ -3024,14 +3281,24 @@ menu_pre() {
     choice=$(ui_choose "What would you like to do?" "${options[@]}")
 
     case "$choice" in
-        "Install MediaStack"*)          action_install ;;
-        "System readiness check"*)      diag_readiness; pause_for_menu ;;
-        "Test port forwarding"*)        action_port_check ;;
-        "Check domain DNS"*)            diag_dns_check; pause_for_menu ;;
-        "Get enhanced menus"*)          action_install_gum ;;
-        "Uninstall MediaStack"*)        action_uninstall ;;
-        "Quit"*)                        echo; echo "  Goodbye."; exit 0 ;;
-        *)                              ;;  # unrecognized choice - re-render menu
+        "Install MediaStack"*) action_install ;;
+        "System readiness check"*)
+            diag_readiness
+            pause_for_menu
+            ;;
+        "Test port forwarding"*) action_port_check ;;
+        "Check domain DNS"*)
+            diag_dns_check
+            pause_for_menu
+            ;;
+        "Get enhanced menus"*) action_install_gum ;;
+        "Uninstall MediaStack"*) action_uninstall ;;
+        "Quit"*)
+            echo
+            echo "  Goodbye."
+            exit 0
+            ;;
+        *) ;; # unrecognized choice - re-render menu
     esac
 }
 
@@ -3086,25 +3353,32 @@ menu_post() {
     choice=$(ui_choose "What would you like to do?" "${options[@]}")
 
     case "$choice" in
-        "View access info"*)      action_access_info; pause_for_menu ;;
-        "View storage"*)          submenu_storage ;;
-        "Manage updates"*)        submenu_manage_updates ;;
-        "Health & security"*)     submenu_health ;;
-        "Manage fail2ban"*)       submenu_fail2ban ;;
+        "View access info"*)
+            action_access_info
+            pause_for_menu
+            ;;
+        "View storage"*) submenu_storage ;;
+        "Manage updates"*) submenu_manage_updates ;;
+        "Health & security"*) submenu_health ;;
+        "Manage fail2ban"*) submenu_fail2ban ;;
         "Manage hardware transcoding"*) submenu_manage_hardware ;;
         # "Re-run configuration"*)  action_configure ;;
-        "Diagnostics"*)           submenu_diagnostics ;;
+        "Diagnostics"*) submenu_diagnostics ;;
         # Invalidate the session public-IP cache so the next banner render re-detects it
         # (e.g. after a WAN-IP change). The DDNS record is re-resolved every render anyway,
         # so a fresh public IP is all Refresh needs to re-classify DDNS ok/stale. No pause:
         # fall through and the while-loop redraws immediately.
-        "Refresh status"*)        _MS_PUBLIC_IP_CHECKED=0 ;;
-        "Features"*)              submenu_features ;;
-        "Manage stack"*)          submenu_manage_stack ;;
-        "Get enhanced menus"*)    action_install_gum ;;
-        "Uninstall"*)             action_uninstall ;;
-        "Quit"*)                  echo; echo "  Goodbye."; exit 0 ;;
-        *)                        ;;  # unrecognized choice - re-render menu
+        "Refresh status"*) _MS_PUBLIC_IP_CHECKED=0 ;;
+        "Features"*) submenu_features ;;
+        "Manage stack"*) submenu_manage_stack ;;
+        "Get enhanced menus"*) action_install_gum ;;
+        "Uninstall"*) action_uninstall ;;
+        "Quit"*)
+            echo
+            echo "  Goodbye."
+            exit 0
+            ;;
+        *) ;; # unrecognized choice - re-render menu
     esac
 }
 

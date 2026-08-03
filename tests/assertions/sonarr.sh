@@ -55,9 +55,9 @@ else:
     bad = [str(r.get('id')) for r in results if not r.get('isValid')]
     print('ok' if not bad else 'invalid:' + ','.join(bad))" 2>/dev/null)
     case "$sonarr_dc_test" in
-        ok)     pass "step 3 Sonarr: download client reachable (testall connects to qBittorrent)" ;;
-        empty)  fail "step 3 Sonarr: download client test-connection" "testall returned no results" ;;
-        *)      fail "step 3 Sonarr: download client test-connection" "$sonarr_dc_test" ;;
+        ok) pass "step 3 Sonarr: download client reachable (testall connects to qBittorrent)" ;;
+        empty) fail "step 3 Sonarr: download client test-connection" "testall returned no results" ;;
+        *) fail "step 3 Sonarr: download client test-connection" "$sonarr_dc_test" ;;
     esac
 
     local sonarr_qp_id sonarr_qp_check
@@ -110,9 +110,9 @@ else:
     print('OK|%d formats scored correctly' % len(expected))
 " 2>/dev/null)
         case "$sonarr_score_check" in
-            OK*)  pass "step 3 Sonarr: format scores match config.yml (${sonarr_score_check#OK|})" ;;
+            OK*) pass "step 3 Sonarr: format scores match config.yml (${sonarr_score_check#OK|})" ;;
             FAIL*) fail "step 3 Sonarr: format scores match config.yml" "${sonarr_score_check#FAIL|}" ;;
-            *)    fail "step 3 Sonarr: format scores match config.yml" "parse error" ;;
+            *) fail "step 3 Sonarr: format scores match config.yml" "parse error" ;;
         esac
     fi
 
@@ -139,8 +139,8 @@ with open('config.yml') as f:
 n = sum(1 for i in (c.get('indexers') or []) if i.get('type') in ('general','tv'))
 print(n)
 " 2>/dev/null)
-    sonarr_ix_floor=$(( sonarr_ix_total - sonarr_ix_warned ))
-    if (( sonarr_ix_count >= sonarr_ix_floor )); then
+    sonarr_ix_floor=$((sonarr_ix_total - sonarr_ix_warned))
+    if ((sonarr_ix_count >= sonarr_ix_floor)); then
         pass "step 3 Sonarr: $sonarr_ix_count/${sonarr_ix_total} indexers configured${sonarr_ix_warned:+ ($sonarr_ix_warned upstream-blocked, floor=$sonarr_ix_floor)}"
     else
         fail "step 3 Sonarr: $sonarr_ix_floor indexers expected (floor)" "got '$sonarr_ix_count' (warned=$sonarr_ix_warned, total=$sonarr_ix_total)"
@@ -173,10 +173,10 @@ else:
     print('OK|%d indexers checked' % len(indexers))
 " 2>/dev/null)
     case "$sonarr_seed_check" in
-        OK*)   pass "step 3 Sonarr: indexer seed criteria (ratio=1.0, time=24h, season=48h) (${sonarr_seed_check#OK|})" ;;
+        OK*) pass "step 3 Sonarr: indexer seed criteria (ratio=1.0, time=24h, season=48h) (${sonarr_seed_check#OK|})" ;;
         SKIP*) skip "step 3 Sonarr: indexer seed criteria" "${sonarr_seed_check#SKIP|}" ;;
         FAIL*) fail "step 3 Sonarr: indexer seed criteria" "${sonarr_seed_check#FAIL|}" ;;
-        *)     fail "step 3 Sonarr: indexer seed criteria" "parse error" ;;
+        *) fail "step 3 Sonarr: indexer seed criteria" "parse error" ;;
     esac
 
     local sonarr_qd_pref
@@ -189,9 +189,8 @@ try:
             print(d.get('preferredSize', ''))
             break
 except Exception: pass" 2>/dev/null)
-    # config.yml ships HDTV-720p preferred=30.0 (was 67.5 before ADR-25);
-    # tightened from Sonarr's default of 95 MB/min to deliver real 1080p WEB-DL
-    # sizes per the recalibration in ADR-25.
+    # config.yml ships HDTV-720p preferred=30.0, tightened from Sonarr's default
+    # of 95 MB/min to deliver real 1080p WEB-DL sizes (docs/reference/quality-bounds.md).
     if [[ "$sonarr_qd_pref" == "30" || "$sonarr_qd_pref" == "30.0" ]]; then
         pass "step 3 Sonarr: HDTV-720p preferredSize tightened to 30"
     else
@@ -218,9 +217,9 @@ else:
         print('misconfigured: updateLibrary=%s onImportComplete=%s' % (update, on_import))
 " 2>/dev/null)
     case "$sonarr_jf_conn" in
-        ok)      pass "step 3 Sonarr: Jellyfin connection (library update on import)" ;;
-        absent)  fail "step 3 Sonarr: Jellyfin connection" "not configured" ;;
-        *)       fail "step 3 Sonarr: Jellyfin connection" "$sonarr_jf_conn" ;;
+        ok) pass "step 3 Sonarr: Jellyfin connection (library update on import)" ;;
+        absent) fail "step 3 Sonarr: Jellyfin connection" "not configured" ;;
+        *) fail "step 3 Sonarr: Jellyfin connection" "$sonarr_jf_conn" ;;
     esac
 
     # Forms authentication
