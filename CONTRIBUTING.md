@@ -13,6 +13,11 @@ requests each have a template, so pick whichever fits when you open the issue.
 Small things like typos and one-line corrections can go straight to a pull
 request.
 
+Filing an issue does not commit you to writing the code — the feature-request
+template has a checkbox for saying which you mean. If you want to implement it,
+comment to claim it; a claimed issue is yours until it goes quiet for a couple
+of weeks. If you only want to report it, someone else may pick it up.
+
 Create a short-lived feature branch and open a pull request into `main` for
 every change. `main` is the protected integration and release branch as well as
 the repository's only long-lived branch.
@@ -52,6 +57,16 @@ assumptions for users. NVIDIA driver patching must also remain opt-in.
 
 Please don't commit `.env`, live service config under `config/<service>/`, or
 the generated NVIDIA patch/download trees.
+
+Keep the branch tidy: one coherent change per commit, with a message that
+explains it for a reviewer. Fold fixup and review-tweak commits into the commit
+they belong to before pushing, and force-push a rewritten branch with
+`--force-with-lease`, never a bare `--force`.
+
+## Review
+
+A maintainer reviews each pull request and may ask you to split a large change
+into smaller pieces. A request for changes is about the code, not about you.
 
 ## Contribution licensing
 
