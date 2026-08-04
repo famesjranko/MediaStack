@@ -23,6 +23,8 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable, Sequence
+from typing import Optional, TypedDict, TypeVar
 
 try:
     import yaml
@@ -34,7 +36,7 @@ except ImportError as exc:  # fail closed: no YAML rule can run without it
 class GuardError(Exception):
     """Raised for any condition that must fail the guard rather than pass it."""
 
-    def __init__(self, path, detail):
+    def __init__(self, path: str, detail: str) -> None:
         super().__init__(detail)
         self.path = path
         self.detail = detail
@@ -172,16 +174,28 @@ WORKFLOW_DIR = ".github/workflows"
 # Populations
 # ---------------------------------------------------------------------------
 
+T = TypeVar("T")
+RuleFinding = tuple[str, str]
+Finding = tuple[str, str, str]
+RuleCheck = Callable[["ScanContext"], list[RuleFinding]]
+
+
+class ScanContext(TypedDict):
+    root: str
+    tracked: list[str]
+    tracked_set: set[str]
+    worktree: list[str]
+
 
 # Every rule input passes through here: a list that silently empties turns
 # its rule into a loop that iterates zero times and always passes.
-def require_nonempty(label, seq):
+def require_nonempty(label: str, seq: list[T]) -> list[T]:
     if not seq:
         raise GuardError("-", f"empty rule input: {label}")
     return seq
 
 
-def tracked_paths(root):
+def tracked_paths(root: str) -> list[str]:
     try:
         proc = subprocess.run(
             ["git", "-C", root, "ls-files", "-z"],
@@ -196,7 +210,7 @@ def tracked_paths(root):
     return require_nonempty("tracked population", sorted(names))
 
 
-def worktree_paths(root):
+def worktree_paths(root: str) -> list[str]:
     """Every file and directory under root except .git — the index cannot see
     a gitignored .ua/, and that is exactly what the analyzer-cache rule must
     reject. Directories carry a trailing slash and are emitted without being
@@ -215,11 +229,11 @@ def worktree_paths(root):
 
 
 # os.walk swallows errors by default, which would shrink the population.
-def _walk_error(exc):
+def _walk_error(exc: OSError) -> None:
     raise GuardError(getattr(exc, "filename", "-") or "-", f"walk failed: {exc}")
 
 
-def read_text(root, rel):
+def read_text(root: str, rel: str) -> str:
     try:
         with open(os.path.join(root, rel), "rb") as handle:
             return handle.read().decode("utf-8", "replace")
@@ -232,7 +246,7 @@ def read_text(root, rel):
 # ---------------------------------------------------------------------------
 
 
-def rule_forbidden_tracked_path(ctx):
+def rule_forbidden_tracked_path(ctx: ScanContext) -> list[RuleFinding]:
     forbidden = re.compile(CI_FORBIDDEN_TRACKED)
     allowed = re.compile(CI_PATH_ALLOWLIST)
     return [
@@ -244,7 +258,7 @@ def rule_forbidden_tracked_path(ctx):
 
 # Index-only on purpose: a live install legitimately carries these files
 # untracked, so a worktree scan here would fire on every developer.
-def rule_host_artifact(ctx):
+def rule_host_artifact(ctx: ScanContext) -> list[RuleFinding]:
     pats = [re.compile(p) for p in require_nonempty("HOST-ARTIFACTS", HOST_ARTIFACTS)]
     return [
         (p, "artifact=generated-host-file")
@@ -258,14 +272,14 @@ def rule_host_artifact(ctx):
 # clone), so worktree rules that would otherwise fire on every live install
 # skip them. Tracked, they are still a HOST-ARTIFACT finding — the exemption
 # cannot widen without widening that rule too.
-def live_runtime(path):
+def live_runtime(path: str) -> bool:
     pats = require_nonempty("HOST-ARTIFACTS", HOST_ARTIFACTS)
     return any(re.search(p, path) for p in pats)
 
 
 # Worktree-scanned: an untracked private key can be git add-ed later, exactly
 # the argument that puts .scratch/ on the worktree population.
-def rule_secret_file(ctx):
+def rule_secret_file(ctx: ScanContext) -> list[RuleFinding]:
     globs = require_nonempty("SECRET_FILE_GLOBS", SECRET_FILE_GLOBS)
     allowed = re.compile(CI_PATH_ALLOWLIST)
     out = []
@@ -284,7 +298,7 @@ def rule_secret_file(ctx):
 # allowlist, which is anchored differently from its path allowlist.
 # Index-only, unlike SECRET-FILE: reading every untracked byte on a live
 # install is a cost question the file-class rule does not have.
-def rule_secret_pattern(ctx):
+def rule_secret_pattern(ctx: ScanContext) -> list[RuleFinding]:
     pats = [
         (name, re.compile(rx)) for name, rx in require_nonempty("SECRET_PATTERNS", SECRET_PATTERNS)
     ]
@@ -300,8 +314,8 @@ def rule_secret_pattern(ctx):
     return out
 
 
-def _worktree_rule(rule_id, exempt=None):
-    def check(ctx):
+def _worktree_rule(rule_id: str, exempt: Optional[Callable[[str], bool]] = None) -> RuleCheck:
+    def check(ctx: ScanContext) -> list[RuleFinding]:
         pats = [re.compile(p) for p in require_nonempty(rule_id, WORKTREE_RULE_PATTERNS[rule_id])]
         return [
             (p, f"rule={rule_id.lower()}")
@@ -312,7 +326,7 @@ def _worktree_rule(rule_id, exempt=None):
     return check
 
 
-def _yaml_findings(ctx, paths, detail):
+def _yaml_findings(ctx: ScanContext, paths: Sequence[str], detail: str) -> list[RuleFinding]:
     out = []
     for rel in paths:
         try:
@@ -322,13 +336,13 @@ def _yaml_findings(ctx, paths, detail):
     return out
 
 
-def rule_yaml_config(ctx):
+def rule_yaml_config(ctx: ScanContext) -> list[RuleFinding]:
     if REQUIRED_YAML_CONFIG not in ctx["tracked_set"]:
         return [(REQUIRED_YAML_CONFIG, "yaml=missing-config-template")]
     return _yaml_findings(ctx, [REQUIRED_YAML_CONFIG], "yaml=unparseable")
 
 
-def rule_yaml_workflow(ctx):
+def rule_yaml_workflow(ctx: ScanContext) -> list[RuleFinding]:
     paths = sorted(
         p for p in ctx["tracked"] if p.startswith(WORKFLOW_DIR + "/") and p.endswith(".yml")
     )
@@ -337,7 +351,7 @@ def rule_yaml_workflow(ctx):
     return _yaml_findings(ctx, paths, "yaml=unparseable")
 
 
-RULES = [
+RULES: list[tuple[str, RuleCheck]] = [
     ("FORBIDDEN-TRACKED-PATH", rule_forbidden_tracked_path),
     ("HOST-ARTIFACT", rule_host_artifact),
     ("SECRET-FILE", rule_secret_file),
@@ -352,16 +366,17 @@ RULES = [
 ]
 
 
-def scan(root):
+def scan(root: str) -> list[Finding]:
     require_nonempty("rule registry", RULES)
     tracked = tracked_paths(root)
-    ctx = {
+    ctx: ScanContext = {
         "root": root,
         "tracked": tracked,
         "tracked_set": set(tracked),
         "worktree": worktree_paths(root),
     }
-    findings, executed = [], []
+    findings: list[Finding] = []
+    executed: list[str] = []
     for rule_id, check in RULES:
         for path, detail in check(ctx):
             findings.append((rule_id, path, detail))
@@ -371,7 +386,7 @@ def scan(root):
     return findings
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     require_nonempty("rule registry", RULES)
     if len(argv) == 2 and argv[1] == "--list-rules":
         for rule_id, _ in RULES:
