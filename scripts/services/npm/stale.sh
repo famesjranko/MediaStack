@@ -1,5 +1,5 @@
-# Owns NPM stale-managed-host detection and warning-only drift reporting.
-# Sources main.sh for logging helpers; it performs no mutation and has no hidden inputs.
+# Owns: NPM stale-managed-host detection and warning-only drift reporting.
+# Sources: main.sh for logging helpers; it performs no mutation and has no hidden inputs.
 
 _npm_warn_stale_managed_hosts() {
     local _npm_token="$1" _npm_api="$2" _domain="$3" _existing_hosts="$4"

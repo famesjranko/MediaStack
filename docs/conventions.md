@@ -57,14 +57,22 @@ the entry may be removed), and the file may not grow past its recorded count;
 an entry for a missing file or a file now at or under the cap is stale and fails
 the gate. Remove entries as files are brought under the cap.
 
-The source-to-unit naming rule is 1:1: a source module's unit suite is
-`tests/unit/<name>.sh`, using the source file's basename, and a unit suite names
-the source module it covers. Service modules use one fixed shape:
+The source-to-unit naming rule is that a unit suite names the source module it
+covers, in one of three shapes: `tests/unit/<name>.sh` (the source basename),
+`tests/unit/<area>-<name>.sh` where the basename alone is ambiguous (e.g.
+`launcher-ddns.sh`, `stage2-ddns.sh`), or a mirrored directory
+`tests/unit/<area>/<name>.sh` (e.g. `tests/unit/gpu/`, `tests/unit/hardening/`).
+Submodules split out of a covered module (e.g. `scripts/services/npm/*.sh`,
+`scripts/lib/arr/*.sh`) may stay covered by that module's existing suite rather
+than gaining one file each. Service modules use one fixed shape:
 `scripts/services/<name>/main.sh` is required, with `render/` and `templates/`
 optional for Python renderers and static templates.
 
-Every new shell file starts with this two-line header contract immediately
-after its shebang (or as its first two lines when it has no shebang):
+Every new shell module under `scripts/` starts with this two-line header
+contract immediately after its shebang (or as its first two lines when it has
+no shebang). Two exemptions: `scripts/services/<name>/main.sh` keeps the
+numbered banner shape its peers use, and test files under `tests/` carry no
+header contract:
 
 ```bash
 # Owns: <the responsibility this file owns>.

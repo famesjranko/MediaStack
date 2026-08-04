@@ -1,5 +1,5 @@
-# Owns NPM public-domain proxy publication and certificate-backed host setup.
-# Sources main.sh/certs.sh/rendered.sh/stale.sh; globals: SCRIPT_DIR, DOMAIN, REMOTE_WEB_STATE, MEDIASTACK_NPM_ATTEMPT_REMOTE, NPM_*; hidden caller locals: npm_api, npm_token, rate_enabled, rate_burst, http_top_created.
+# Owns: NPM public-domain proxy publication and certificate-backed host setup.
+# Sources: main.sh/certs.sh/rendered.sh/stale.sh; globals: SCRIPT_DIR, DOMAIN, REMOTE_WEB_STATE, MEDIASTACK_NPM_ATTEMPT_REMOTE, NPM_*; hidden caller locals: npm_api, npm_token, rate_enabled, rate_burst, http_top_created.
 
 # shellcheck disable=SC2154
 _npm_configure_publication() {

@@ -1,5 +1,5 @@
-# Owns NPM rendered proxy state, host rollback, and idle checks.
-# Sources main.sh for SCRIPT_DIR/NPM_* globals and npm_remote.sh for disk truth; no hidden inputs.
+# Owns: NPM rendered proxy state, host rollback, and idle checks.
+# Sources: main.sh for SCRIPT_DIR/NPM_* globals and npm_remote.sh for disk truth; no hidden inputs.
 
 # --- Proxy-host rendered-state truth -------------------------------------
 #
