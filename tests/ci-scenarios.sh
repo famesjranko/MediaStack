@@ -17,14 +17,18 @@
 # is empty, so a caller can't fall back to run.sh's image-pulling default (smoke).
 #
 # Only scenarios with NO service-image pulls AND no extra handling belong here.
+# Every caller of this set runs it under tests/run.sh --reset-between (see
+# tests/README.md "DinD state between scenarios"), so a scenario is not
+# excluded merely for rewriting config.yml/.env/scripts/configure.sh — the
+# runner restores a pristine repo copy before each scenario regardless.
 # Image-free scenarios deliberately NOT included, and why:
 #   - nas-storage             needs kernel NFS (a real mount inside DinD) —
 #                             unreliable on hosted runners; runs in the local battery.
 #   - image-override          needs MS_TEST_IMAGE_OVERRIDES and its own DinD (it
 #                             rewrites the whole compose) — cannot share a run.
-#   - demo-lan,               run a stubbed `main --full` that rewrites config.yml
-#     existing-install-nuke   and .env; the shared CI run has no reset between
-#                             scenarios, so they would bleed into the others.
+#   - demo-lan,               run a stubbed `main --full` with heavier/slower
+#     existing-install-nuke   side effects than this fast image-free tier wants;
+#                             run in the local battery instead.
 # See tests/README.md for the full scenario classification.
 
 set -uo pipefail

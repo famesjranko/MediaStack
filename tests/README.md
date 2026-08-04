@@ -817,6 +817,44 @@ shares one DinD via `run.sh --reset-between` — images sideloaded once, state
 alone on its own DinD. Discovery is by glob, so a new scenario file is picked
 up without editing the runner.
 
+### DinD state between scenarios
+
+Any multi-scenario run that passes `--reset-between` to `tests/run.sh`
+(`tests/battery.sh`'s main run, and `tests/check.sh`'s `default`/`wizard`
+tiers over `tests/ci-scenarios.sh`) restores a pristine DinD before every
+scenario after the first: `dind_reset` (`tests/lib/dind.sh`) removes every
+container, prunes anonymous volumes and custom networks, and re-copies the
+repo from the host tree — undoing anything a prior scenario stubbed
+(`scripts/configure.sh`, via `tests/lib/wizard_stub_common.sh`) or rewrote
+(`config.yml`, `.env`, any other file under the repo copy) — then re-applies
+image overrides/strips so those survive the reset too.
+
+That guarantee is what lets a scenario be written without worrying about
+what an *earlier* scenario in the same battery left behind. It does not cover:
+
+- **A scenario's own runtime state within its run.** Starting/stopping a
+  background process it launched (e.g. `contract-mock`'s mock server) is
+  still that scenario's job.
+- **Preconditions that were never part of the pristine repo copy.** e.g.
+  `config.yml`/`.env` don't exist until a scenario copies them from their
+  `config/examples/`/`.env.example` templates — a scenario still seeds those
+  itself; the reset only guarantees they're back to that pristine (absent or
+  template) state, not populated.
+- **Runs without `--reset-between`.** A bare `tests/run.sh a b c` (no flag)
+  shares one DinD with no reset, matching the historical behavior — pick this
+  only when the scenarios are known not to mutate shared state.
+  `tests/ci-scenarios.sh`'s header documents scenarios it deliberately
+  excludes from the shared image-free run for this reason (`demo-lan`,
+  `existing-install-nuke`, `nas-storage`, `image-override`).
+
+A scenario that mutates `scripts/configure.sh`, `config.yml`, `.env`, or other
+repo-copy state must NOT carry its own defensive docker-cp/restore logic —
+that duplicates what the runner already guarantees under `--reset-between`
+and silently masks a reset regression instead of failing loudly. Rely on the
+runner reset and make sure the scenario only runs in a `--reset-between`
+battery (`tests/battery.sh`'s glob-discovered `MAIN` set, or
+`tests/check.sh`'s wizard tier via `tests/ci-scenarios.sh`).
+
 ## Focused staged-setup scenarios
 
 Use these when changing staged setup, recovery hooks, demo mode, destructive reinstall, or fail2ban filters:

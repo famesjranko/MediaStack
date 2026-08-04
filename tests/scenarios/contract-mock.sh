@@ -53,13 +53,13 @@ XML"
 
 run_scenario() {
     create_config_dirs_in_dind
-    # Earlier scenarios in a shared battery mutate the DinD copy: wizard
-    # scenarios overwrite scripts/configure.sh with a no-op stub
-    # (tests/lib/wizard_stub_common.sh) and rewrite config.yml. Restore the
-    # real configurator from the host tree and reseed config.yml from its
-    # template so this scenario always exercises fresh-install paths.
-    docker cp "$(pwd)/scripts/configure.sh" "$DIND_NAME:/root/MediaStack/scripts/configure.sh"
-    dind_exec "chmod +x scripts/configure.sh"
+    # The runner (tests/run.sh --reset-between, wired into every caller of this
+    # scenario) restores a pristine repo copy — including scripts/configure.sh —
+    # before this scenario runs, so no defensive docker-cp restore is needed
+    # here even after a wizard scenario stubbed configure.sh earlier in the
+    # same battery. See tests/README.md "DinD state between scenarios". This
+    # scenario still seeds its own preconditions: config.yml/.env don't exist
+    # in a pristine repo copy (only the templates do).
     dind_exec "cp config/examples/config.yml config.yml"
     dind_exec "cp .env.example .env"
     env_set TZ Etc/UTC
