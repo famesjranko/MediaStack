@@ -13,7 +13,7 @@ Top-level source of truth for service configuration. `scripts/configure.sh` read
 List of Jackett indexers. Public releases default this to `[]`; add entries only for indexers you are legally allowed to use, or apply the optional preset from `config/examples/public-indexers.yml`. Each entry has `id` (Jackett's internal indexer ID) and `type` — one of `general`, `tv`, `movies`. Consumed by:
 
 - Step 2 Jackett (`cfg_indexers` in `scripts/lib/common.sh`) — adds to Jackett.
-- `configure_arr_indexers` (`scripts/lib/arr/main.sh`) — filters by type: Sonarr gets `general`+`tv`, Radarr gets `general`+`movies`. Each add is retried up to 3× with 8s backoff to absorb FlareSolverr cold-start timeouts during first-run setup.
+- `configure_arr_indexers` (`scripts/lib/arr/indexers.sh`, loaded by `main.sh`) — filters by type: Sonarr gets `general`+`tv`, Radarr gets `general`+`movies`. Each add is retried up to 3× with 8s backoff to absorb FlareSolverr cold-start timeouts during first-run setup.
 
 An empty list is valid. Jackett still receives its admin password and FlareSolverr URL, while Sonarr/Radarr skip Torznab wiring.
 
@@ -24,7 +24,7 @@ Fallback Torznab category IDs for Sonarr/Radarr indexer registration.
 - `tv: "5000,5030,5040"` — TV, TV/SD, TV/HD.
 - `movies: "2000,2030,2040"` — Movies, Movies/SD, Movies/HD.
 
-`configure_arr_indexers` (`scripts/lib/arr/main.sh`, delegating to `scripts/lib/arr/render/torznab_caps.py`) **auto-discovers categories from each indexer's Torznab caps** first. Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Many trackers use native 100xxx IDs that standard Torznab doesn't cover — without them, the *arr app's add-time test rejects the indexer. These `config.yml` values are the fallback when caps discovery fails.
+`configure_arr_indexers` (`scripts/lib/arr/indexers.sh`, delegating to `scripts/lib/arr/render/torznab_caps.py`) **auto-discovers categories from each indexer's Torznab caps** first. Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Many trackers use native 100xxx IDs that standard Torznab doesn't cover — without them, the *arr app's add-time test rejects the indexer. These `config.yml` values are the fallback when caps discovery fails.
 
 Stored as a stringified comma-list (`"5000,5030,5040"`), parsed via inline Python split in `configure_arr_indexers`; that keeps the shared-helper contract a single string field instead of a YAML list of integers.
 
@@ -51,7 +51,7 @@ Each cell enables every tier from the **SD floor** (SDTV/DVD/480p) up to the res
 
 Remux-1080p (ID 30) is deliberately excluded across all presets — see [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for rationale.
 
-Consumed by `configure_quality_profile` (`scripts/lib/arr/main.sh`, with Python profile transform at `scripts/lib/arr/render/quality_profile.py`) and the Seerr *arr connection helpers (`scripts/services/seerr/main.sh`) which look up the profile by name.
+Consumed by `configure_quality_profile` (`scripts/lib/arr/quality.sh`, with Python profile transform at `scripts/lib/arr/render/quality_profile.py`) and the Seerr *arr connection helpers (`scripts/services/seerr/main.sh`) which look up the profile by name.
 
 ### `quality_definitions`
 
@@ -75,7 +75,7 @@ quality_definitions:
     Bluray-1080p: { min: 10.0, preferred: 65.0, max: 90.0 }
 ```
 
-Consumed by `configure_quality_definitions` (`scripts/lib/arr/main.sh`, with diff helper at `scripts/lib/arr/render/quality_definitions.py`) during steps 3 and 4, after `configure_quality_profile`. Idempotent — reads the live set via `GET /api/v3/qualitydefinition`, compares with a small float tolerance, `PUT`s only the tiers that differ.
+Consumed by `configure_quality_definitions` (`scripts/lib/arr/quality.sh`, with diff helper at `scripts/lib/arr/render/quality_definitions.py`) during steps 3 and 4, after `configure_quality_profile`. Idempotent — reads the live set via `GET /api/v3/qualitydefinition`, compares with a small float tolerance, `PUT`s only the tiers that differ.
 
 ### `custom_formats`
 
@@ -95,7 +95,7 @@ custom_formats:
   "Obfuscated":     -10
 ```
 
-Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/main.sh`) during steps 3 and 4. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
+Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/formats.sh`) during steps 3 and 4. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
 
 The setup wizard writes size-appropriate scores via `wizard_apply.py`. Per-size values are defined in `scripts/setup/presets.yml` under each size's `custom_format_scores` key.
 
@@ -109,7 +109,7 @@ Minimum free disk space (in GB) before Sonarr and Radarr stop importing and grab
 | Default | `20` (= 20480 MB) |
 | Disable | Set to `0` (restores the upstream 100 MB default) |
 
-Consumed by `configure_arr_disk_threshold` (`scripts/lib/arr/main.sh`) during steps 3 and 4. Only applied on first run (when the value is the API default of 100 MB). If the user has changed the value in the UI, configure.sh warns on drift but does not reconcile.
+Consumed by `configure_arr_disk_threshold` (`scripts/lib/arr/storage.sh`) during steps 3 and 4. Only applied on first run (when the value is the API default of 100 MB). If the user has changed the value in the UI, configure.sh warns on drift but does not reconcile.
 
 ### `qbittorrent`
 

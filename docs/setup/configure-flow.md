@@ -113,7 +113,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 - Root folder — delegates to shared `configure_arr_root_folder` (see below).
 - Download client — delegates to shared `configure_arr_download_client` with `tvCategory` (see below). Payload template at `scripts/services/sonarr/templates/download-client.json`.
-- Quality profile — delegates to shared `configure_quality_profile` in `scripts/lib/arr/main.sh` (see below).
+- Quality profile — delegates to shared `configure_quality_profile` in `scripts/lib/arr/quality.sh` (loaded by the `arr/main.sh` entry point; see below).
 - Quality definitions — delegates to shared `configure_quality_definitions` (see below).
 - Custom formats — delegates to shared `configure_arr_custom_formats` (see below). Creates curated format definitions from `scripts/lib/arr/custom_formats.yml`.
 - Format scores — delegates to shared `configure_arr_format_scores` (see below). Attaches scores to the quality profile.
@@ -135,7 +135,7 @@ Structural mirror of Sonarr — both delegate to the same shared helpers (includ
 
 **Writeback:** `save_api_key "RADARR_API_KEY" "$radarr_key"`.
 
-## Shared *arr helpers (`scripts/lib/arr/main.sh` + `render/*.py` + `templates/*.json`)
+## Shared *arr helpers (`scripts/lib/arr/main.sh` + topical modules + `render/*.py` + `templates/*.json`)
 
 ### `configure_arr_root_folder APP BASE KEY`
 

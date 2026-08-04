@@ -15,18 +15,11 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage2-wireguard"
 scenario_begin "$CURRENT_SCENARIO"
 
-[[ -f "$REPO_ROOT/scripts/lib/network.sh" ]] && source "$REPO_ROOT/scripts/lib/network.sh"
-[[ -f "$REPO_ROOT/scripts/setup/stages/stage2.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
+source "$REPO_ROOT/scripts/lib/network.sh"
+source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
 
 set +e
 set +u
-
-if ! type stage2_wireguard_access_tier_env >/dev/null 2>&1; then
-    stage2_wireguard_access_tier_env() { printf '__not_implemented__'; }
-fi
-if ! type wg_firewall_ips_for_tier >/dev/null 2>&1; then
-    wg_firewall_ips_for_tier() { printf '__not_implemented__'; }
-fi
 
 # -----------------------------------------------------------------------------
 # stage2_wireguard_access_tier_env — env-line emission per tier

@@ -64,7 +64,8 @@ scripts/
     health.sh                       Day-2 silent-failure health checks (fail2ban drift, cert renewal, DDNS drift, disk, UFW, Docker)
     http.sh                         wait_for_service, js_post (cookie-session)
     json.sh                         json_get, json_path, json_has_name, json_array_nonempty
-    network.sh                      Public IP detection, speed test, TCP port probing (shared by wizard.sh + port-check.sh)
+    network.sh                      Compatibility entry point and source-time state for shared network helpers
+    network/                        Public IP, DNS, DDNS, port-gate, and WireGuard access helpers
     npm_remote.sh                   Shared NPM remote-readiness checks, sourceable without the full npm/main.sh
     nvidia_patch.sh                 Shared nvidia-patch pinning and verified execution helpers
     profiles.sh                     Single source of truth for compose profile args, derived from `.env` (installer + launcher)
@@ -73,7 +74,12 @@ scripts/
     ui.sh + ui_render_fallback.sh + ui_render_gum.sh + ui_demo.sh   Interactive prompts: public API/orchestration, pure-bash backend, gum backend, demo-mode walkthrough
     validators.sh                   Stage 1 input-contract validators
     arr/                            Shared Sonarr/Radarr helpers
-      main.sh                       Quality profiles, definitions, custom formats, indexer wiring
+      main.sh                       Compatibility entry point for shared Sonarr/Radarr helpers
+      quality.sh                    Quality profiles and definitions
+      formats.sh                    Custom formats and profile scores
+      indexers.sh                   Jackett indexer discovery and wiring
+      storage.sh                    Root folders, disk thresholds, and download clients
+      connections.sh                Arr authentication and Jellyfin notifications
       custom_formats.yml            Curated TRaSH Guides format definitions (developer-managed)
       render/*.py                   JSON/XML transforms (stdlib; PyYAML where needed)
   services/<svc>/                   Per-service configurators (14 services; Seerr is services/seerr/)

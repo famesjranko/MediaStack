@@ -14,7 +14,7 @@ endpoints:
     path: /qualityprofile
     sends: []
     reads: [id, name, items[].quality.id]
-    callers: [scripts/lib/arr/main.sh]
+    callers: [scripts/lib/arr/quality.sh]
 ```
 
 `openapi` is optional. It is present when an upstream specification is

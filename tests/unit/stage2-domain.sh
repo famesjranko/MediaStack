@@ -13,7 +13,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage2-domain"
 scenario_begin "$CURRENT_SCENARIO"
 
-[[ -f "$REPO_ROOT/scripts/lib/network.sh" ]] && source "$REPO_ROOT/scripts/lib/network.sh"
+source "$REPO_ROOT/scripts/lib/network.sh"
 [[ -f "$REPO_ROOT/scripts/lib/validators.sh" ]] && source "$REPO_ROOT/scripts/lib/validators.sh"
 [[ -f "$REPO_ROOT/scripts/setup/stages/stage2.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
 

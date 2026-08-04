@@ -1,6 +1,4 @@
-scripts/lib/arr/main.sh	962
 scripts/lib/common.sh	506
-scripts/lib/network.sh	899
 scripts/lib/validators.sh	719
 scripts/services/jellyfin/main.sh	636
 scripts/setup/checks.sh	528
