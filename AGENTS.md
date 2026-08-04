@@ -43,14 +43,14 @@ and low maintenance.
 | You changed | Run | Why |
 |---|---|---|
 | Nothing yet (first run on this machine) | `./tests/check.sh install` | Fetches the pinned dev tools (ShellCheck, shfmt, gitleaks) into the local cache — the fast tier then needs no Docker |
-| Any shell | `./tests/check.sh fast` | ShellCheck, shfmt, ruff, mypy, secrets — no containers |
+| Any shell | `./tests/check.sh fast` | ShellCheck, line cap, shfmt, ruff, mypy, secrets — no containers |
 | Any Python | `./tests/check.sh ruff && ./tests/check.sh mypy` | Lint/format and types, isolated stages |
 | Compose / config templates | `./tests/check.sh` | Adds compose render + unit + wizard scenarios |
 | Setup/wizard flows | `./tests/check.sh` | Wizard scenarios run image-free here |
 | Anything, before a PR | `./tests/check.sh` | Same coverage as the CI gate |
 | Container behaviour | `./tests/check.sh full` | Complete DinD battery — slow, needs Docker |
 
-Single-stage selectors (lint, shfmt, ruff, mypy, secrets, unit, wizard) are
+Single-stage selectors (lint, line-cap, shfmt, ruff, mypy, secrets, unit, wizard) are
 documented in the usage header of [tests/check.sh](tests/check.sh).
 
 ## Build

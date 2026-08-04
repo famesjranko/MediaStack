@@ -48,11 +48,35 @@ may be tracked. `tests/lib/repo_guard.py` is the guard;
 [`../tests/unit/repository-safety.sh`](../tests/unit/repository-safety.sh) proves it
 against one clean and one targeted bad fixture per rule.
 
+### Shell structure
+
+Every tracked shell file (`*.sh` and the `mediastack` launcher) is capped at 500 lines. The fast-tier line-cap gate
+uses `tests/shell-line-cap.allowlist` for today's existing offenders. An
+allowlist entry is `<path>\t<line-count>`. Recorded counts may only shrink (or
+the entry may be removed), and the file may not grow past its recorded count;
+an entry for a missing file or a file now at or under the cap is stale and fails
+the gate. Remove entries as files are brought under the cap.
+
+The source-to-unit naming rule is 1:1: a source module's unit suite is
+`tests/unit/<name>.sh`, using the source file's basename, and a unit suite names
+the source module it covers. Service modules use one fixed shape:
+`scripts/services/<name>/main.sh` is required, with `render/` and `templates/`
+optional for Python renderers and static templates.
+
+Every new shell file starts with this two-line header contract immediately
+after its shebang (or as its first two lines when it has no shebang):
+
+```bash
+# Owns: <the responsibility this file owns>.
+# Sources: <the files, functions, or environment it depends on>.
+```
+
 ## Enforcement
 
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
+| Tracked shell file is at or under 500 lines, with an allowlist ratchet for existing offenders | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check | `./tests/check.sh ruff` | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
@@ -107,6 +131,13 @@ automated, arriving without context.
 
 These are conventions, judgement calls, or documented workflows that no test,
 lint rule, or CI job checks. Follow them; do not mistake them for gates.
+
+- **Unit-test naming.** The 1:1 source-to-`tests/unit/<name>.sh` basename rule
+  is a convention; no checker currently verifies the correspondence.
+- **Service-module shape.** The required `main.sh` with optional `render/` and
+  `templates/` layout is a convention; no checker currently verifies it.
+- **New-file header contract.** The two-line `Owns`/`Sources` header is a
+  convention; no checker currently verifies it.
 
 - **The "Adding a New Service" checklist** in `project/structure.md`. Nothing
   verifies that the tree section, the `config.yml` section, or the

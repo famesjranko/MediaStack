@@ -50,6 +50,8 @@ jobs:
         run: ./tests/lint.sh install
       - name: ShellCheck sweep
         run: ./tests/check.sh lint
+      - name: Shell file line cap
+        run: ./tests/check.sh line-cap
 
   # The pinned shfmt (tools.toml [shfmt]) over every tracked shell file.
   # tests/format.sh fetches and sha256-verifies the binary itself on a cold
