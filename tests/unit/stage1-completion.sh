@@ -27,12 +27,19 @@ JELLYFIN_ADMIN_PASSWORD='GeneratedPassword123'
 DOMAIN=example.com
 EOF
 
+# Fixtures consumed by print_access_info in scripts/setup/stack/summary.sh.
+# shellcheck disable=SC2034 # read by print_access_info in scripts/setup/stack/summary.sh
 JELLYFIN_ADMIN_USER="mediaadmin"
+# shellcheck disable=SC2034 # read by print_access_info in scripts/setup/stack/summary.sh
 NPM_ADMIN_EMAIL="owner@home.test"
+# shellcheck disable=SC2034 # read by print_access_info in scripts/setup/stack/summary.sh
 TORRENT_PORT="6881"
+# shellcheck disable=SC2034 # read by print_access_info in scripts/setup/stack/summary.sh
 WG_PORT="51820"
 GPU_TYPE="none"
+# shellcheck disable=SC2034 # read by print_access_info in scripts/setup/stack/summary.sh
 SMB_ENABLED="false"
+# shellcheck disable=SC2034 # read by print_access_info in scripts/setup/stack/summary.sh
 BAZARR_ENABLED="false"
 unset REMOTE_WEB_STATE
 
