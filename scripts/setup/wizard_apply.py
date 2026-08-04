@@ -9,17 +9,18 @@ import argparse
 import os
 import re
 import sys
+from typing import Any, Optional
 
 import yaml
 
 
-def load_quality_model(presets_path):
+def load_quality_model(presets_path: str) -> dict[str, Any]:
     """Load the resolution x size quality model (quality_ids/resolutions/sizes)."""
     with open(presets_path) as f:
         return yaml.safe_load(f)
 
 
-def compose_cell(model, resolution_key, size_key):
+def compose_cell(model: dict[str, Any], resolution_key: str, size_key: str) -> dict[str, Any]:
     """Compose a (resolution x size) cell into a flat preset-equivalent dict.
 
     Returns the exact keys the render_* functions consume (profile_name,
@@ -42,7 +43,7 @@ def compose_cell(model, resolution_key, size_key):
     size = sizes[size_key]
     tiers = res.get("tiers") or []
 
-    def ids_for(app):
+    def ids_for(app: str) -> list[Any]:
         app_ids = quality_ids.get(app) or {}
         out = []
         for name in tiers:
@@ -54,7 +55,7 @@ def compose_cell(model, resolution_key, size_key):
             out.append(app_ids[name])
         return out
 
-    def defs_for(app):
+    def defs_for(app: str) -> dict[str, Any]:
         app_bounds = (size.get("bounds") or {}).get(app) or {}
         # Mask the (full) size bounds table down to this resolution's tiers,
         # preserving the resolution's floor→ceiling tier order.
@@ -74,7 +75,7 @@ def compose_cell(model, resolution_key, size_key):
     }
 
 
-def list_axes(model):
+def list_axes(model: dict[str, Any]) -> str:
     """Emit the resolution/size menu metadata for the shell picker as TSV.
 
     Row types (authoring order in presets.yml is preserved = menu order):
@@ -123,14 +124,14 @@ def list_axes(model):
     return "\n".join(lines)
 
 
-def load_public_indexers(indexers_path):
+def load_public_indexers(indexers_path: str) -> list[dict[str, Any]]:
     """Load the canonical public-tracker indexer list (id/type entries)."""
     with open(indexers_path) as f:
         data = yaml.safe_load(f) or {}
     return data.get("indexers") or []
 
 
-def render_quality_profile(preset):
+def render_quality_profile(preset: dict[str, Any]) -> str:
     """Render the quality_profile YAML section from a preset dict."""
     lines = [
         "quality_profile:",
@@ -147,7 +148,7 @@ def render_quality_profile(preset):
     return "\n".join(lines)
 
 
-def render_quality_definitions(preset):
+def render_quality_definitions(preset: dict[str, Any]) -> str:
     """Render the quality_definitions YAML section from a preset dict."""
     lines = ["quality_definitions:"]
     for app in ("sonarr", "radarr"):
@@ -165,7 +166,7 @@ def render_quality_definitions(preset):
     return "\n".join(lines)
 
 
-def render_custom_formats(preset):
+def render_custom_formats(preset: dict[str, Any]) -> Optional[str]:
     """Render the custom_formats YAML section from a preset dict."""
     scores = preset.get("custom_format_scores", {})
     if not scores:
@@ -176,7 +177,7 @@ def render_custom_formats(preset):
     return "\n".join(lines)
 
 
-def render_bazarr(languages):
+def render_bazarr(languages: list[str]) -> str:
     """Render the bazarr YAML section from a language list."""
     lines = ["bazarr:", "  languages:"]
     for lang in languages:
@@ -184,7 +185,7 @@ def render_bazarr(languages):
     return "\n".join(lines)
 
 
-def render_indexers(enabled, indexers):
+def render_indexers(enabled: bool, indexers: list[dict[str, Any]]) -> str:
     """Render the Jackett indexer section from the canonical list.
 
     Emits bare id/type entries; per-indexer descriptions live in the source
@@ -205,7 +206,7 @@ def render_indexers(enabled, indexers):
 #   # Section Title
 #   # ---------------------------------------------------------------------------
 # We match the title line to find where each section starts.
-SECTION_PATTERNS = {
+SECTION_PATTERNS: dict[str, re.Pattern[str]] = {
     "indexers": re.compile(r"^# Jackett", re.MULTILINE),
     "quality_profile": re.compile(r"^# Quality Profile\s*$", re.MULTILINE),
     "quality_definitions": re.compile(r"^# Quality Definitions", re.MULTILINE),
@@ -215,10 +216,10 @@ SECTION_PATTERNS = {
 
 # Each section ends at the next divider block (line starting with # followed
 # by a row of dashes) or end-of-file.
-DIVIDER_RE = re.compile(r"^# -{10,}", re.MULTILINE)
+DIVIDER_RE: re.Pattern[str] = re.compile(r"^# -{10,}", re.MULTILINE)
 
 
-def find_section_span(text, section_key):
+def find_section_span(text: str, section_key: str) -> Optional[tuple[int, int]]:
     """Return (start, end) byte offsets for a config.yml section.
 
     'start' is the first # of the divider header; 'end' is the first # of
@@ -247,7 +248,7 @@ def find_section_span(text, section_key):
     return (section_start, section_end)
 
 
-def rebuild_section(header_title, header_comment, body):
+def rebuild_section(header_title: str, header_comment: list[str], body: str) -> str:
     """Rebuild a full section with divider + comment + body."""
     divider = "# " + "-" * 75
     lines = [divider, f"# {header_title}", divider]
@@ -289,7 +290,13 @@ CUSTOM_FORMATS_SECTION_COMMENT = [
 ]
 
 
-def apply_preset(config_text, preset, languages, public_indexers_enabled, public_indexers):
+def apply_preset(
+    config_text: str,
+    preset: dict[str, Any],
+    languages: list[str],
+    public_indexers_enabled: bool,
+    public_indexers: list[dict[str, Any]],
+) -> str:
     """Replace wizard-controlled sections."""
     cf_body = render_custom_formats(preset)
 
@@ -342,7 +349,7 @@ def apply_preset(config_text, preset, languages, public_indexers_enabled, public
     return config_text
 
 
-def apply_indexers_only(config_text, enabled, indexers):
+def apply_indexers_only(config_text: str, enabled: bool, indexers: list[dict[str, Any]]) -> str:
     """Rewrite ONLY the Jackett indexers section of config.yml.
 
     Unlike apply_preset (which rewrites indexers + quality + custom-formats +
@@ -362,7 +369,7 @@ def apply_indexers_only(config_text, enabled, indexers):
     return config_text[: span[0]] + replacement + config_text[span[1] :]
 
 
-def apply_quality_only(config_text, preset):
+def apply_quality_only(config_text: str, preset: dict[str, Any]) -> str:
     """Rewrite ONLY the three quality sections of config.yml (quality_profile,
     quality_definitions, custom_formats) from a composed cell.
 
@@ -413,7 +420,7 @@ def apply_quality_only(config_text, preset):
     return config_text
 
 
-def resolve_public_indexers(file_arg):
+def resolve_public_indexers(file_arg: Optional[str]) -> list[dict[str, Any]]:
     """Resolve and load the canonical public-indexer list; exit on error."""
     indexers_file = file_arg
     if indexers_file is None:
@@ -438,7 +445,7 @@ def resolve_public_indexers(file_arg):
     return indexers
 
 
-def _mbps_decimal(value):
+def _mbps_decimal(value: str) -> str:
     """argparse type for --bitrate-limit: same grammar as the wizard's
     validate_mbps_decimal (whole or fractional Mbps; 0 = unlimited). Kept as a
     string so '7' stays '7' and '3.5' stays '3.5' — float() would rewrite '7'
@@ -450,7 +457,7 @@ def _mbps_decimal(value):
     return value
 
 
-def apply_bitrate_limit(config_text, limit):
+def apply_bitrate_limit(config_text: str, limit: Optional[str]) -> str:
     if limit is None:
         return config_text
     jf_match = re.search(r"^jellyfin:\s*\n", config_text, re.MULTILINE)
@@ -483,7 +490,7 @@ def apply_bitrate_limit(config_text, limit):
     )
 
 
-def add_wizard_marker(config_text):
+def add_wizard_marker(config_text: str) -> str:
     """Add wizard_completed: true if not already present."""
     if "wizard_completed:" in config_text:
         config_text = re.sub(
@@ -497,7 +504,76 @@ def add_wizard_marker(config_text):
     return config_text
 
 
-def main():
+def resolve_preset(presets_file: str, resolution: str, size: str) -> dict[str, Any]:
+    """Load and compose the selected resolution/size cell."""
+    model = load_quality_model(presets_file)
+    try:
+        return compose_cell(model, resolution, size)
+    except KeyError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def apply_indexers_only_file(
+    config_path: str, enabled: bool, public_indexers_file: Optional[str]
+) -> None:
+    """Apply the day-2 indexer toggle to a config file."""
+    indexers = resolve_public_indexers(public_indexers_file) if enabled else []
+    with open(config_path) as f:
+        config_text = f.read()
+    config_text = apply_indexers_only(config_text, enabled, indexers)
+    with open(config_path, "w") as f:
+        f.write(config_text)
+
+
+def apply_quality_only_file(config_path: str, preset: dict[str, Any]) -> None:
+    """Apply a composed quality cell to a config file."""
+    with open(config_path) as f:
+        config_text = f.read()
+    config_text = apply_quality_only(config_text, preset)
+    with open(config_path, "w") as f:
+        f.write(config_text)
+
+
+def parse_languages(languages_arg: str) -> list[str]:
+    """Parse the CLI subtitle language list, retaining its fallback."""
+    languages = [lang.strip() for lang in languages_arg.split(",") if lang.strip()]
+    if not languages:
+        languages = ["english"]
+    return languages
+
+
+def apply_full_file(
+    config_path: str,
+    preset: dict[str, Any],
+    languages: list[str],
+    bitrate_limit: Optional[str],
+    public_indexers_enabled: bool,
+    public_indexers_file: Optional[str],
+) -> None:
+    """Apply the complete wizard configuration to a config file."""
+    with open(config_path) as f:
+        config_text = f.read()
+
+    public_indexers = []
+    if public_indexers_enabled:
+        public_indexers = resolve_public_indexers(public_indexers_file)
+
+    config_text = apply_preset(
+        config_text,
+        preset,
+        languages,
+        public_indexers_enabled,
+        public_indexers,
+    )
+    config_text = apply_bitrate_limit(config_text, bitrate_limit)
+    config_text = add_wizard_marker(config_text)
+
+    with open(config_path, "w") as f:
+        f.write(config_text)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="Apply a quality preset to config.yml")
     parser.add_argument(
         "--resolution",
@@ -580,12 +656,7 @@ def main():
     # rewrites those alongside indexers).
     if args.indexers_only is not None:
         enabled = args.indexers_only == "true"
-        indexers = resolve_public_indexers(args.public_indexers_file) if enabled else []
-        with open(args.config) as f:
-            config_text = f.read()
-        config_text = apply_indexers_only(config_text, enabled, indexers)
-        with open(args.config, "w") as f:
-            f.write(config_text)
+        apply_indexers_only_file(args.config, enabled, args.public_indexers_file)
         print(f"Public indexer preset: {'enabled' if enabled else 'disabled'} (indexers only)")
         return
 
@@ -596,17 +667,8 @@ def main():
     if args.quality_only:
         if args.resolution is None or args.size is None:
             parser.error("--quality-only requires --resolution and --size")
-        model = load_quality_model(presets_file)
-        try:
-            preset = compose_cell(model, args.resolution, args.size)
-        except KeyError as e:
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(1)
-        with open(args.config) as f:
-            config_text = f.read()
-        config_text = apply_quality_only(config_text, preset)
-        with open(args.config, "w") as f:
-            f.write(config_text)
+        preset = resolve_preset(presets_file, args.resolution, args.size)
+        apply_quality_only_file(args.config, preset)
         print(
             f"Applied quality profile '{preset['profile_name']}' "
             f"({args.resolution} x {args.size}) — quality sections only"
@@ -618,37 +680,17 @@ def main():
             "--resolution and --size are required unless --indexers-only or --list-axes is given"
         )
 
-    model = load_quality_model(presets_file)
-    try:
-        preset = compose_cell(model, args.resolution, args.size)
-    except KeyError as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    languages = [lang.strip() for lang in args.languages.split(",") if lang.strip()]
-    if not languages:
-        languages = ["english"]
-
-    with open(args.config) as f:
-        config_text = f.read()
-
+    preset = resolve_preset(presets_file, args.resolution, args.size)
+    languages = parse_languages(args.languages)
     public_indexers_enabled = args.public_indexers == "true"
-    public_indexers = []
-    if public_indexers_enabled:
-        public_indexers = resolve_public_indexers(args.public_indexers_file)
-
-    config_text = apply_preset(
-        config_text,
+    apply_full_file(
+        args.config,
         preset,
         languages,
+        args.bitrate_limit,
         public_indexers_enabled,
-        public_indexers,
+        args.public_indexers_file,
     )
-    config_text = apply_bitrate_limit(config_text, args.bitrate_limit)
-    config_text = add_wizard_marker(config_text)
-
-    with open(args.config, "w") as f:
-        f.write(config_text)
 
     print(f"Applied quality profile '{preset['profile_name']}' ({args.resolution} x {args.size})")
     if languages:
