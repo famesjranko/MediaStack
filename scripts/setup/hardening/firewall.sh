@@ -21,7 +21,6 @@ _ms_ufw_allow() {
 # UFW firewall
 # ---------------------------------------------------------------------------
 
-
 setup_ufw() {
     if ! command -v ufw &>/dev/null; then
         ui_spin "Installing ufw..." sudo apt-get install -y -qq ufw

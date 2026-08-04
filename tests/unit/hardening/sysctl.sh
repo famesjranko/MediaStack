@@ -77,4 +77,3 @@ assert_eq "true" "$found_sysctl" "setup_sysctl_hardening: fresh — calls sysctl
 
 rm -rf "$SYSCTL_TMPDIR"
 unset -f sudo
-

@@ -420,4 +420,3 @@ unset SMB_SHARE_SCOPE
 
 unset -f sudo smbpasswd id getent
 rm -rf "$SAMBA_TMP"
-
