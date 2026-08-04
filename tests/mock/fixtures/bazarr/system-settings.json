@@ -1,0 +1,8 @@
+{
+    "status": 200,
+    "body": {
+        "sonarr": {"apikey": "mock-sonarr-key"},
+        "radarr": {"apikey": "mock-radarr-key"},
+        "general": {"use_sonarr": true}
+    }
+}
