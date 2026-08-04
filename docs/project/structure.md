@@ -46,9 +46,12 @@ scripts/
     wizard.sh                       Interactive setup wizard (quality tier, GPU, subtitles)
     recovery.sh                     Stage re-entry routing and existing-install add-stage menu
     stages/
-      stage1.sh                     Stage 1 Core LAN controller and install path
-      stage2.sh                     Stage 2 remote-access collection/install controller
-      stage3.sh                     Internal hardware transcoding controller, NVIDIA finalize marker helpers, post-reboot finalize helper
+      stage1.sh                     Stage 1 Core LAN flow ordering and marker routing
+      stage2.sh                     Stage 2 remote-access flow ordering and marker routing
+      stage3.sh                     Hardware transcoding flow ordering (run_stage3, run_hardware_transcoding_addon)
+    stage1/                         Stage 1 concern implementations (sourced by stages/stage1.sh)
+    stage2/                         Stage 2 remote-access concern implementations (sourced by stages/stage2.sh)
+    stage3/                         Hardware transcoding concern implementations (sourced by stages/stage3.sh)
     wizard_apply.py                 Apply wizard preset to config.yml (preserves comments)
     presets.yml                     Quality model: resolution × size axes (composed at apply time)
     reboot.sh                       Post-reboot systemd service scheduling + cleanup

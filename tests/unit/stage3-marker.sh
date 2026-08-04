@@ -12,7 +12,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage3-marker"
 scenario_begin "$CURRENT_SCENARIO"
 
-[[ -f "$REPO_ROOT/scripts/setup/stages/stage3.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 
 set +e
 set +u
@@ -134,7 +134,7 @@ else
     pass "marker removal deletes pending file"
 fi
 
-stage3_source="$(cat "$REPO_ROOT/scripts/setup/stages/stage3.sh")"
+stage3_source="$(cat "$REPO_ROOT/scripts/setup/stages/stage3.sh" "$REPO_ROOT"/scripts/setup/stage3/*.sh)"
 assert_contains "$stage3_source" "Reboot needed to finish NVIDIA transcoding" "reboot prompt title is the expected copy verbatim"
 assert_contains "$stage3_source" "MediaStack has prepared the NVIDIA driver setup." "reboot prompt setup copy"
 assert_contains "$stage3_source" "After reboot, setup will resume automatically." "reboot prompt resume copy"

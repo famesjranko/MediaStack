@@ -21,4 +21,4 @@ endpoints:
   - {id: server-config-update, method: POST, path: /System/Configuration, sends: [ServerName, RemoteClientBitrateLimit], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: network-config-get, method: GET, path: /System/Configuration/network, sends: [], reads: [KnownProxies,EnableRemoteAccess,EnableAutomaticPortMapping,AutoDiscoveryTracing,PublishedServerUriBySubnet], callers: [scripts/services/jellyfin/main.sh]}
   - {id: network-config-update, method: POST, path: /System/Configuration/network, sends: [KnownProxies,EnableRemoteAccess,EnableAutomaticPortMapping,AutoDiscoveryTracing,PublishedServerUriBySubnet], reads: [], callers: [scripts/services/jellyfin/main.sh]}
-  - {id: health, method: GET, path: /health, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh, scripts/setup/gpu/compose.sh, scripts/setup/stages/stage1.sh]}
+  - {id: health, method: GET, path: /health, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh, scripts/setup/gpu/compose.sh, scripts/setup/stage1/install.sh]}
