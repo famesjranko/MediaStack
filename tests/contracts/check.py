@@ -11,7 +11,6 @@ from typing import Any
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_DIR = Path(__file__).resolve().parent
 CALL_RE = re.compile(
@@ -174,51 +173,72 @@ def _services_for_call(
     return []
 
 
+# Callers whose unmatched routes are coverage errors rather than noise: the
+# service configurators plus the shared helpers that speak to services.
+_CONTRACT_REQUIRED_CALLERS = {
+    "scripts/lib/arr/main.sh",
+    "scripts/lib/health.sh",
+    "scripts/lib/http.sh",
+    "scripts/lib/npm_remote.sh",
+}
+
+
+def _direct_call_route(args: str, prefixes: dict[str, str]) -> tuple[str, bool] | None:
+    tokens = [item.group("value") for item in QUOTED_RE.finditer(args)]
+    tokens += [item for item in args.split() if "/" in item]
+    for token in tokens:
+        candidate = _path_from_token(token, prefixes)
+        likely_url = (
+            VARIABLE_RE.search(token)
+            or "service_local_url" in token
+            or re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", token)
+        )
+        if candidate and likely_url:
+            return candidate
+    return None
+
+
+def _record_route(
+    relative: str,
+    method: str,
+    route: tuple[str, bool],
+    contracts: dict[str, dict[str, Any]],
+    sink: tuple[list[Call], list[str], list[str]],
+    require_contract: bool,
+) -> None:
+    calls, findings, errors = sink
+    path_value, dynamic = route
+    matches = _services_for_call(relative, method, path_value, contracts)
+    if not matches:
+        if require_contract and (
+            relative.startswith("scripts/services/") or relative in _CONTRACT_REQUIRED_CALLERS
+        ):
+            errors.append(f"missing contract: {relative} {method} {path_value}")
+        return
+    if dynamic:
+        findings.append(f"{relative}: {method} {path_value} uses path substitution")
+    for service, endpoint_path in matches:
+        calls.append(Call(service, method, endpoint_path, relative, dynamic))
+
+
 def _find_calls(
     contracts: dict[str, dict[str, Any]],
 ) -> tuple[list[Call], list[str], list[str]]:
     calls: list[Call] = []
     findings: list[str] = []
     errors: list[str] = []
+    sink = (calls, findings, errors)
     for path in sorted((ROOT / "scripts").rglob("*.sh")):
         relative = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8")
         normalized = text.replace("\\\n", " ")
         prefixes = _variable_prefixes(normalized)
         for match in CALL_RE.finditer(normalized):
-            function = match.group("function")
             args = match.group("args")
-            method = _method(function, args)
-            tokens = [item.group("value") for item in QUOTED_RE.finditer(args)]
-            tokens += [item for item in args.split() if "/" in item]
-            route: tuple[str, bool] | None = None
-            for token in tokens:
-                candidate = _path_from_token(token, prefixes)
-                likely_url = (
-                    VARIABLE_RE.search(token)
-                    or "service_local_url" in token
-                    or re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", token)
-                )
-                if candidate and likely_url:
-                    route = candidate
-                    break
-            if route is None:
-                continue
-            path_value, dynamic = route
-            matches = _services_for_call(relative, method, path_value, contracts)
-            if not matches:
-                if relative.startswith("scripts/services/") or relative in {
-                    "scripts/lib/arr/main.sh",
-                    "scripts/lib/health.sh",
-                    "scripts/lib/http.sh",
-                    "scripts/lib/npm_remote.sh",
-                }:
-                    errors.append(f"missing contract: {relative} {method} {path_value}")
-                continue
-            if dynamic:
-                findings.append(f"{relative}: {method} {path_value} uses path substitution")
-            for service, endpoint_path in matches:
-                calls.append(Call(service, method, endpoint_path, relative, dynamic))
+            method = _method(match.group("function"), args)
+            route = _direct_call_route(args, prefixes)
+            if route is not None:
+                _record_route(relative, method, route, contracts, sink, require_contract=True)
         for assignment in ASSIGN_RE.finditer(normalized):
             if not assignment.group("name").endswith("curl_args"):
                 continue
@@ -226,31 +246,15 @@ def _find_calls(
             method = _method("curl", args)
             for token_match in QUOTED_RE.finditer(args):
                 route = _path_from_token(token_match.group("value"), prefixes)
-                if route is None:
-                    continue
-                path_value, dynamic = route
-                matches = _services_for_call(relative, method, path_value, contracts)
-                if not matches:
-                    continue
-                if dynamic:
-                    findings.append(f"{relative}: {method} {path_value} uses path substitution")
-                for service, endpoint_path in matches:
-                    calls.append(Call(service, method, endpoint_path, relative, dynamic))
-        for assignment in ARRAY_RE.finditer(normalized):
-            args = assignment.group("args")
+                if route is not None:
+                    _record_route(relative, method, route, contracts, sink, require_contract=False)
+        for array_match in ARRAY_RE.finditer(normalized):
+            args = array_match.group("args")
             method = _method("curl", args)
             for token_match in QUOTED_RE.finditer(args):
                 route = _path_from_token(token_match.group("value"), prefixes)
-                if route is None:
-                    continue
-                path_value, dynamic = route
-                matches = _services_for_call(relative, method, path_value, contracts)
-                if not matches:
-                    continue
-                if dynamic:
-                    findings.append(f"{relative}: {method} {path_value} uses path substitution")
-                for service, endpoint_path in matches:
-                    calls.append(Call(service, method, endpoint_path, relative, dynamic))
+                if route is not None:
+                    _record_route(relative, method, route, contracts, sink, require_contract=False)
     return calls, sorted(set(findings)), errors
 
 
@@ -260,7 +264,7 @@ def _contract_calls(contracts: dict[str, dict[str, Any]]) -> dict[tuple[str, str
         for endpoint in contract.get("endpoints", []):
             item = _as_mapping(endpoint, f"{service} endpoint")
             key = (service, str(item.get("method")), str(item.get("path")))
-            expected[key] = set(str(caller) for caller in item.get("callers", []))
+            expected[key] = {str(caller) for caller in item.get("callers", [])}
     return expected
 
 
@@ -278,7 +282,9 @@ def main() -> int:
 
     for key, callers in sorted(actual.items()):
         if key not in expected:
-            errors.append(f"missing contract: {key[0]} {key[1]} {key[2]} (callers: {sorted(callers)})")
+            errors.append(
+                f"missing contract: {key[0]} {key[1]} {key[2]} (callers: {sorted(callers)})"
+            )
     for key, callers in sorted(expected.items()):
         if key not in actual:
             errors.append(f"dead contract entry: {key[0]} {key[1]} {key[2]}")
