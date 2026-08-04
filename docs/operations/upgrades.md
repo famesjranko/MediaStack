@@ -51,6 +51,17 @@ MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.s
 `MS_TEST_IMAGE_OVERRIDES` takes `svc=ref` pairs (comma/space separated); a typo (unknown service,
 empty ref) aborts the run. See the "Bumping a Service Version" playbook in `docs/project/structure.md`.
 
+**Sonarr/Radarr also get a contract-drift check.** `./tests/run.sh contract-drift` brings both up
+(reusing `api-matrix`'s bring-up) and replays their contracts (`tests/contracts/sonarr.yml`,
+`tests/contracts/radarr.yml`) against the live API: `tests/contracts/replay.py live` diffs the
+declared `reads` fields of every safe (`GET`, no `{id}`) endpoint, and
+`python3 tests/contracts/replay.py spec` separately checks every declared endpoint's method+path
+still exists in the upstream OpenAPI spec (works offline against a local cache; a fresh spec fetch
+needs network). A contract-drift failure on a bump is resolved in the bump PR itself — update the
+contract (and any caller) alongside the pin change, the same way an accepted-digest update already
+travels with the bump. Neither replay mode runs in the PR gate; see `tests/README.md` "Contract
+mocks and drift replay" for what each mode does and does not cover.
+
 **Caveat:** preflight only checks API **shape** via the service's scenario/assertions oracle (most
 use `tests/assertions/<svc>.sh`; wireguard and npm assert inline; ddns-updater and beszel-agent are
 start+healthcheck / running-state only). It does **not** catch config-time / env-contract breaks (e.g. the wg-easy
