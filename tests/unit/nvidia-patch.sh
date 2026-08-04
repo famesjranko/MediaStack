@@ -117,7 +117,7 @@ fi
 readme_url=$(nvidia_patch_readme_url)
 assert_contains "$readme_url" "$NVIDIA_PATCH_REPO_COMMIT" "nvidia_patch_readme_url: uses pinned commit"
 
-gpu_source=$(cat "$REPO_ROOT/scripts/setup/gpu.sh")
+gpu_source=$(cat "$REPO_ROOT/scripts/setup/gpu.sh" "$REPO_ROOT"/scripts/setup/gpu/*.sh)
 repatch_source=$(cat "$REPO_ROOT/scripts/nvidia-repatch.sh")
 assert_contains "$gpu_source" "nvidia_patch_prepare_repo" "setup GPU path uses shared verifier"
 assert_contains "$repatch_source" "nvidia_patch_prepare_repo" "day-2 repatch path uses shared verifier"
