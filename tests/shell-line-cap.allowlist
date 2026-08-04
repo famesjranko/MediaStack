@@ -1,4 +1,3 @@
-mediastack	3433
 scripts/lib/arr/main.sh	962
 scripts/lib/common.sh	506
 scripts/lib/network.sh	899
@@ -19,8 +18,6 @@ tests/unit/checks.sh	988
 tests/unit/gpu-branching.sh	1172
 tests/unit/hardening.sh	1267
 tests/unit/image-drift.sh	530
-tests/unit/launcher-fail2ban.sh	888
-tests/unit/manage-updates.sh	502
 tests/unit/recovery-routing.sh	707
 tests/unit/repository-safety.sh	665
 tests/unit/stage2-flow.sh	736

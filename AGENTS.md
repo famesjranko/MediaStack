@@ -29,6 +29,7 @@ and low maintenance.
 |---|---|---|
 | Anything (first visit) | [docs/conventions.md](docs/conventions.md) | What is enforced, what is deliberately not, file placement |
 | Services / compose | [docs/project/stack.md](docs/project/stack.md), [docs/project/structure.md](docs/project/structure.md) | Runtime model; where a new service's files go |
+| Day-2 launcher | [docs/project/structure.md](docs/project/structure.md) | Feature seams under scripts/launcher/; mediastack remains the dispatcher |
 | `setup.sh` | [docs/setup/setup-flow.md](docs/setup/setup-flow.md) | Phase ordering that re-run safety depends on |
 | Service configurators | [docs/setup/configure-flow.md](docs/setup/configure-flow.md) | Per-service wiring; skip/warn semantics |
 | `config.yml` / `.env` keys | [docs/setup/configuration-schema.md](docs/setup/configuration-schema.md) | Full key reference; adding a key touches both |
