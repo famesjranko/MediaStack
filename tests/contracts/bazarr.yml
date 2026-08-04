@@ -1,0 +1,5 @@
+service: bazarr
+base_path: /api
+auth: {type: header, name: X-API-KEY}
+endpoints:
+  - {id: system-settings, method: GET, path: /system/settings, sends: [], reads: [sonarr.apikey, radarr.apikey, general.use_sonarr], callers: [scripts/services/bazarr/main.sh]}

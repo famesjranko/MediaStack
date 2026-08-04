@@ -726,7 +726,7 @@ command by hand:
 
 ```bash
 ./tests/check.sh          # default: fast + tests/unit.sh + image-free wizard scenarios
-./tests/check.sh fast     # static tier: shellcheck, shfmt, ruff, mypy, secrets.
+./tests/check.sh fast     # static tier: shellcheck, shfmt, ruff, mypy, contracts, secrets.
 ./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
 ./tests/check.sh install  # one-time per machine: fetch + verify every pinned dev
                           # tool (shellcheck, shfmt, gitleaks) into the local cache

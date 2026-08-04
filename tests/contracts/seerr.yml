@@ -1,0 +1,17 @@
+service: seerr
+base_path: /api/v1
+auth: {type: cookie, name: connect.sid}
+endpoints:
+  - {id: public-settings, method: GET, path: /settings/public, sends: [], reads: [mediaServerType, initialized], callers: [scripts/services/seerr/main.sh]}
+  - {id: jellyfin-auth, method: POST, path: /auth/jellyfin, sends: [username, password, hostname, port, useSsl, urlBase, serverType], reads: [], callers: [scripts/services/seerr/main.sh]}
+  - {id: local-auth-probe, method: POST, path: /auth/local, sends: [email, password], reads: [], callers: [scripts/lib/health.sh]}
+  - {id: current-user, method: GET, path: /auth/me, sends: [], reads: [id, email], callers: [scripts/services/seerr/main.sh]}
+  - {id: jellyfin-settings, method: GET, path: /settings/jellyfin, sends: [], reads: [apiKey], callers: [scripts/services/seerr/main.sh]}
+  - {id: jellyfin-library, method: GET, path: /settings/jellyfin/library, sends: [sync, enable], reads: [id], callers: [scripts/services/seerr/main.sh]}
+  - {id: initialization, method: POST, path: /settings/initialize, sends: [], reads: [], callers: [scripts/services/seerr/main.sh]}
+  - {id: main-settings-get, method: GET, path: /settings/main, sends: [], reads: [apiKey, defaultPermissions, defaultQuotas.movie.quotaLimit, defaultQuotas.tv.quotaLimit], callers: [scripts/services/seerr/main.sh]}
+  - {id: main-settings-update, method: POST, path: /settings/main, sends: [defaultPermissions, defaultQuotas], reads: [], callers: [scripts/services/seerr/main.sh]}
+  - {id: network-settings-get, method: GET, path: /settings/network, sends: [], reads: [trustProxy], callers: [scripts/services/seerr/main.sh]}
+  - {id: network-settings-update, method: POST, path: /settings/network, sends: [trustProxy], reads: [], callers: [scripts/services/seerr/main.sh]}
+  - {id: arr-settings-get, method: GET, path: "/settings/{id}", sends: [], reads: [], callers: [scripts/services/seerr/arr_connect.sh]}
+  - {id: arr-settings-update, method: POST, path: "/settings/{id}", sends: [name, hostname, port, useSsl, urlBase, serverType, apiKey, activeProfileId, activeProfileName, activeDirectory, is4k, isDefault, syncEnabled, preventSearch, activeLanguageProfileId, enableSeasonFolders, minimumAvailability], reads: [], callers: [scripts/services/seerr/arr_connect.sh]}
