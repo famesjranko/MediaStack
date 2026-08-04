@@ -131,9 +131,8 @@ class Journal:
 
     def append(self, record: dict[str, Any]) -> None:
         line = json.dumps(record, sort_keys=True)
-        with self._lock:
-            with self._path.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
+        with self._lock, self._path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
 
 
 class ResponseCursor:
@@ -277,7 +276,7 @@ class MockHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         self._handle("DELETE")
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
+    def log_message(self, format: str, *args: Any) -> None:
         return  # the journal is the record; stay quiet on stderr
 
 

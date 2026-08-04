@@ -1,7 +1,10 @@
 service: jellyfin
 base_path: /
 auth: {type: header, name: Authorization}
-openapi: https://api.jellyfin.org/openapi/jellyfin-openapi-stable.json
+# live-replay-only: the upstream stable OpenAPI omits five endpoints we use
+# and verify live (System/Configuration/{encoding,network}, /health) — found
+# by replay.py spec mode 2026-08-04. Restore an openapi: URL if upstream
+# documents them.
 endpoints:
   - {id: startup-configuration-get, method: GET, path: /Startup/Configuration, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: startup-configuration-update, method: POST, path: /Startup/Configuration, sends: [UICulture, MetadataCountry, PreferredMetadataLanguage], reads: [], callers: [scripts/services/jellyfin/main.sh]}

@@ -78,7 +78,7 @@ def _fetch_spec(url: str, cache_dir: Path) -> tuple[dict[str, Any] | None, str]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / (re.sub(r"[^A-Za-z0-9_.-]", "_", url) + ".json")
     try:
-        with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT) as response:  # noqa: S310
+        with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT) as response:
             raw = response.read()
         cache_path.write_bytes(raw)
         source = "network"
@@ -136,7 +136,8 @@ def run_spec_mode(services: list[str] | None, cache_dir: Path) -> int:
             id_variant = f"{full_path}/{{id}}"
             if (method, full_path) not in routes and (method, id_variant) not in routes:
                 errors.append(
-                    f"{service} {endpoint.get('id')}: {method} {full_path} not found in {openapi_url} ({note})"
+                    f"{service} {endpoint.get('id')}: {method} {full_path} "
+                    f"not found in {openapi_url} ({note})"
                 )
     for skip in skips:
         print(f"replay: spec: SKIP {skip}", file=sys.stderr)
@@ -206,9 +207,9 @@ def run_live_mode(targets: list[tuple[str, str, str]]) -> int:
                 continue  # mutating / caller-scoped endpoints: spec mode only
             checked += 1
             url = base_url.rstrip("/") + _join_path(base_path, path)
-            request = urllib.request.Request(url, headers=_auth_header(auth, api_key))  # noqa: S310
+            request = urllib.request.Request(url, headers=_auth_header(auth, api_key))
             try:
-                with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:  # noqa: S310
+                with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:
                     body = json.loads(response.read())
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
                 errors.append(f"{service} {endpoint.get('id')}: {method} {url} failed: {exc}")
@@ -216,7 +217,9 @@ def run_live_mode(targets: list[tuple[str, str, str]]) -> int:
             for field in endpoint.get("reads", []):
                 present, _ = _get_dotted(body, str(field).split("."))
                 if not present:
-                    errors.append(f"{service} {endpoint.get('id')}: reads field '{field}' missing live")
+                    errors.append(
+                        f"{service} {endpoint.get('id')}: reads field '{field}' missing live"
+                    )
     for skip in skips:
         print(f"replay: live: SKIP {skip}", file=sys.stderr)
     for error in errors:
@@ -228,10 +231,14 @@ def run_live_mode(targets: list[tuple[str, str, str]]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest="mode", required=True)
 
-    spec_parser = sub.add_parser("spec", help="validate contracts against cached/fetched OpenAPI specs")
+    spec_parser = sub.add_parser(
+        "spec", help="validate contracts against cached/fetched OpenAPI specs"
+    )
     spec_parser.add_argument("--service", dest="services", action="append", default=None)
     spec_parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
 
