@@ -48,6 +48,7 @@
 # named in the paired `[SKIP]` line was not run, not as a precise inventory of
 # what was skipped.
 
+source tests/api-matrix/bringup.sh
 source tests/api-matrix/quality.sh
 source tests/api-matrix/quality-rename.sh
 source tests/api-matrix/qbittorrent.sh
@@ -57,66 +58,12 @@ source tests/api-matrix/seerr.sh
 
 run_scenario() {
     # ------------------------------------------------------------------
-    # 0. Prep: data dirs, config dirs, .env
+    # 0-2. Prep, bring-up, and API keys — shared with contract-drift.sh
+    # (tests/api-matrix/bringup.sh), so this scenario and the drift replayer
+    # never grow two bring-up implementations.
     # ------------------------------------------------------------------
-    dind_exec "mkdir -p /tmp/ms-data/media/tv /tmp/ms-data/media/movies /tmp/ms-data/media/music /tmp/ms-data/torrents && chown -R 1000:1000 /tmp/ms-data"
-    create_config_dirs_in_dind
-    dind_exec "cp .env.example .env"
-
-    env_set TZ Etc/UTC
-    env_set PUID 1000
-    env_set PGID 1000
-    env_set DATA_DIR /tmp/ms-data
-    env_set HOST_ADDRESS 127.0.0.1
-    env_set JELLYFIN_ADMIN_USER matrix-admin
-    env_set JELLYFIN_ADMIN_PASSWORD ApiMatrixQbtPassword123
-    env_set JELLYFIN_GPU none
-    env_set BAZARR_ENABLED false
-    # Empty overrides exercise config.yml first; the qBittorrent module then
-    # writes distinct values to prove .env precedence before its day-2 action.
-    env_set QBT_DL_LIMIT "''"
-    env_set QBT_UL_LIMIT "''"
-
-    # ------------------------------------------------------------------
-    # 1. Bring up only the API-bearing services required by the loaded modules.
-    # ------------------------------------------------------------------
-    # `up`'s implicit pull has no retry — a transient registry EOF fails all six
-    # services, burning six 360s health waits. Pull first with retry; fail-fast.
-    local api_svcs="sonarr radarr qbittorrent jackett jellyfin seerr"
-    local pull_ok=0 attempt
-    for attempt in 1 2 3; do
-        dind_exec "docker compose pull --policy missing $api_svcs" && {
-            pull_ok=1
-            break
-        }
-        ((attempt < 3)) && sleep $((attempt * 5))
-    done
-    if ((!pull_ok)); then
-        fail "api-matrix: compose pull $api_svcs" "registry unreachable after 3 attempts"
-        return 1
-    fi
-
-    if dind_exec "docker compose up -d $api_svcs"; then
-        pass "api-matrix: compose up $api_svcs"
-    else
-        fail "api-matrix: compose up $api_svcs"
-        return 1
-    fi
-
-    for svc in $api_svcs; do
-        wait_healthy "$svc" 360 \
-            && pass "api-matrix: $svc healthy" \
-            || fail "api-matrix: $svc healthy"
-    done
-
-    # ------------------------------------------------------------------
-    # 2. API keys (written by each app on first start)
-    # ------------------------------------------------------------------
-    local sonarr_key radarr_key
-    sonarr_key=$(get_api_key_from_xml "config/sonarr/config.xml")
-    radarr_key=$(get_api_key_from_xml "config/radarr/config.xml")
-    [[ -n "$sonarr_key" ]] && pass "api-matrix: Sonarr API key" || fail "api-matrix: Sonarr API key"
-    [[ -n "$radarr_key" ]] && pass "api-matrix: Radarr API key" || fail "api-matrix: Radarr API key"
+    api_matrix_bring_up || return 1
+    local sonarr_key="$API_MATRIX_SONARR_KEY" radarr_key="$API_MATRIX_RADARR_KEY"
 
     # ------------------------------------------------------------------
     # 3. Module test-1: quality profiles (Sonarr + Radarr)

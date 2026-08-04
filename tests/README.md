@@ -375,6 +375,56 @@ and asserts with `pass`/`fail`/`assert_eq`; `source` it and call it from
 render/config helpers rather than re-implementing request payloads. Each new
 day-2 action that mutates a service API should ship with a matrix module here.
 
+### Contract mocks and drift replay
+
+```bash
+./tests/run.sh --no-preload contract-mock   # image-free, PR gate
+./tests/run.sh contract-drift               # image-backed, preflight-only
+python3 tests/contracts/replay.py spec      # offline-friendly, run anywhere
+```
+
+Ticket 17's `tests/contracts/<service>.yml` files (schema:
+`tests/contracts/README.md`) are the single source of truth for what
+MediaStack calls; two consumers keep them honest without ever reimplementing
+service behavior:
+
+- **`tests/mock/serve.py`** — one generic, stdlib-only (`http.server` +
+  PyYAML) contract-driven mock. Zero per-service branches: it loads a
+  contract, matches each request to a declared endpoint, shape-checks the
+  declared auth (header/cookie/bearer/basic/query/form present — never a
+  simulated token dance), and answers from
+  `tests/mock/fixtures/<service>/<endpoint-id>.json`. A missing fixture
+  falls back to a minimal placeholder built from the endpoint's `reads`
+  fields. Stateless by design: every request is also appended to a JSONL
+  journal so a scenario can assert on the request sequence, and the only
+  per-fixture ordering is an optional `responses:` list consumed one entry
+  per call (the whole retry/failure-injection mechanism — see
+  `tests/mock/README.md`). `tests/scenarios/contract-mock.sh` binds it to
+  the exact fixed ports `service_local_url()` always resolves
+  (`localhost:8989` sonarr, `localhost:7878` radarr) and runs
+  `scripts/configure.sh --only sonarr,radarr` unmodified against it — no
+  test hook in `scripts/`. Image-free; joins the `wizard-ui-*` PR-gate set.
+- **`tests/contracts/replay.py`** — the drift replayer. `spec` mode checks
+  every endpoint of a contract with an `openapi:` URL still exists in the
+  upstream spec (cached locally; offline is a reported SKIP, never a
+  failure). `live` mode replays a contract's safe (`GET`, no `{id}`)
+  endpoints against a real running container and diffs only the declared
+  `reads` fields — mutating endpoints are covered by `spec` mode's
+  method+path check instead, so a drift run never mutates a preflight
+  container. `tests/scenarios/contract-drift.sh` reuses
+  `tests/api-matrix/bringup.sh` (the same bring-up `api-matrix.sh` uses — one
+  bring-up, not duplicated) and runs `live` mode against Sonarr/Radarr.
+  Image-backed; runs in the image-bump preflight
+  (`docs/operations/upgrades.md`), never the PR gate.
+
+Division of labor is a hard constraint (TARGET.md "API contracts and
+mocks"): contracts declare data only, the mock proves our scripts speak the
+contract, drift proves the contract still matches reality, and
+`tests/api-matrix/` keeps proving live behavior none of the above can (auth
+dances, seeding, retries, day-2 effects). Logic in a contract, a
+per-service branch in `serve.py`, or a mock asserting service-side behavior
+is a redesign, not a patch.
+
 ### Stage 1 wizard UI scenarios
 
 The `wizard-ui-stage1-*` scenarios drive real Stage 1 wizard prompts through a

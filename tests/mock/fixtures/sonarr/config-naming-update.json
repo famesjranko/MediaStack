@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "body": {
+    "renameEpisodes": true,
+    "replaceIllegalCharacters": true,
+    "multiEpisodeStyle": 5
+  }
+}
