@@ -131,6 +131,63 @@ _resolve_debian_nvidia_driver() {
     printf '%s' "$_pkg_args"
 }
 
+# Derive the Debian kernel-flavor suffix from `uname -r` (e.g. "6.1.0-51-cloud-amd64"
+# → "cloud-amd64", "6.1.0-18-amd64" → "amd64"). Debian kernel releases are
+# "<upstream-version>-<abi>-<flavor>"; a release with no ABI segment (custom kernel,
+# not a Debian package build) has no derivable flavor and fails.
+_nvidia_headers_flavor() {
+    local _rel="$1"
+    [[ "$_rel" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(.+)$ ]] || return 1
+    printf '%s' "${BASH_REMATCH[1]}"
+}
+
+# Resolve an installable linux-headers package for the given `uname -r` value.
+# Prefers the exact per-build package (matches the running kernel precisely);
+# falls back to the flavor meta-package apt tracks automatically across kernel
+# bumps. Fails (no output) when neither resolves to an apt candidate.
+_nvidia_headers_candidate() {
+    local _running="$1"
+    if [[ -n "$(_apt_candidate_version "linux-headers-${_running}" "")" ]]; then
+        printf 'linux-headers-%s' "$_running"
+        return 0
+    fi
+    local _flavor
+    _flavor=$(_nvidia_headers_flavor "$_running") || return 1
+    if [[ -n "$(_apt_candidate_version "linux-headers-${_flavor}" "")" ]]; then
+        printf 'linux-headers-%s' "$_flavor"
+        return 0
+    fi
+    return 1
+}
+
+# Preflight for the silent-DKMS-skip failure mode: nvidia-driver installs fine
+# via apt but DKMS quietly skips the module build when no headers match the
+# running kernel, and the gap only surfaces later at verify time. Echoes a
+# headers package to append to the driver install transaction, or nothing if
+# headers for the running kernel are already installed. Returns 1 (caller
+# falls back to software transcoding) when no headers package is resolvable.
+_nvidia_preflight_kernel_headers() {
+    local _running
+    _running=$(uname -r)
+
+    local _st
+    _st=$(dpkg-query -W -f='${Status}' "linux-headers-${_running}" 2>/dev/null || true)
+    if [[ "$_st" == *"install ok installed"* ]]; then
+        return 0
+    fi
+
+    local _hdr_pkg
+    if _hdr_pkg=$(_nvidia_headers_candidate "$_running"); then
+        printf '%s' "$_hdr_pkg"
+        return 0
+    fi
+
+    local _flavor=""
+    _flavor=$(_nvidia_headers_flavor "$_running") || _flavor=""
+    log_error "No kernel headers package available for running kernel ${_running} (looked for linux-headers-${_running}${_flavor:+, linux-headers-${_flavor}})"
+    return 1
+}
+
 # Standard mode: install the Debian-packaged NVIDIA driver (NO nvidia-patch).
 # Distro-managed, survives apt upgrade, official NVENC session limits. On any
 # failure sets GPU_TYPE="none" and returns 1 (caller falls back to software).
@@ -226,8 +283,30 @@ install_nvidia_drivers_apt() {
         fi
     fi
 
+    # DKMS silently skips the module build with no matching kernel headers, so
+    # the driver install "succeeds" and the failure only surfaces later. Resolve
+    # headers for the running kernel before touching the driver package.
+    local _headers_pkg
+    if ! _headers_pkg=$(_nvidia_preflight_kernel_headers); then
+        log_warn "Falling back to software transcoding"
+        GPU_TYPE="none"
+        return 1
+    fi
+
     local _install_args
     _install_args=$(_resolve_debian_nvidia_driver)
+    if [[ -n "$_headers_pkg" ]]; then
+        # "-t <release>" scopes every package in the transaction to backports,
+        # which could swap the flavor meta-package for headers matching a kernel
+        # other than the running one. Pin the preflight-validated candidate so
+        # the headers DKMS builds against are exactly the ones verified.
+        if [[ "$_install_args" == "-t "* ]]; then
+            local _hdr_ver
+            _hdr_ver=$(_apt_candidate_version "$_headers_pkg" "")
+            [[ -n "$_hdr_ver" ]] && _headers_pkg="${_headers_pkg}=${_hdr_ver}"
+        fi
+        _install_args="$_install_args $_headers_pkg"
+    fi
     # shellcheck disable=SC2086  # _install_args is a controlled arg list (may include "-t <release>")
     if ! ui_spin "Installing Debian NVIDIA driver via apt (${_install_args})..." \
         sudo apt-get install -y -qq $_install_args; then

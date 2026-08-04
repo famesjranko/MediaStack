@@ -59,6 +59,13 @@ unset PATCH_CALLED rc
 # --- install_nvidia_drivers_apt: fresh install → standard + reboot, no patch ---
 command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac }
 dpkg-query() { return 1; }
+uname() { [[ "${1:-}" == "-r" ]] && printf '6.1.0-18-amd64\n' || builtin uname "$@"; }
+apt-cache() {
+    [[ "${1:-}" == "madison" ]] || return 0
+    case "${2:-}" in
+        linux-headers-amd64) printf ' linux-headers-amd64 | 6.1.0-18 | http://deb.debian.org/debian bookworm/main amd64 Packages\n' ;;
+    esac
+}
 check_secure_boot() { printf 'disabled'; }
 ensure_debian_nonfree() { return 0; }
 _resolve_debian_nvidia_driver() { printf 'nvidia-driver firmware-misc-nonfree'; }
@@ -66,7 +73,13 @@ _install_nvidia_container_toolkit() { return 0; }
 nouveau_is_active() { return 0; } # forces a reboot
 PATCH_CALLED=0
 apply_nvidia_patch() { PATCH_CALLED=1; }
-sudo() { return 0; }
+INSTALL_ARGS=""
+sudo() {
+    case "${1:-}:${2:-}" in
+        apt-get:install) INSTALL_ARGS="$*" ;;
+    esac
+    return 0
+}
 GPU_TYPE=nvidia
 NEEDS_REBOOT=false
 NVIDIA_DRIVER_MODE=""
@@ -76,9 +89,131 @@ assert_eq "0" "$rc" "install_nvidia_drivers_apt: fresh apt install → success"
 assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt: fresh apt install → mode standard"
 assert_eq "true" "$NEEDS_REBOOT" "install_nvidia_drivers_apt: fresh install with nouveau active → reboot required"
 assert_eq "0" "$PATCH_CALLED" "install_nvidia_drivers_apt: fresh Standard install never patches"
+assert_contains "$INSTALL_ARGS" "linux-headers-amd64" "install_nvidia_drivers_apt: fresh install appends resolved headers package"
 unset -f command check_secure_boot ensure_debian_nonfree _resolve_debian_nvidia_driver \
-    _install_nvidia_container_toolkit nouveau_is_active apply_nvidia_patch sudo dpkg-query
-unset PATCH_CALLED rc NEEDS_REBOOT
+    _install_nvidia_container_toolkit nouveau_is_active apply_nvidia_patch sudo dpkg-query uname apt-cache
+unset PATCH_CALLED rc NEEDS_REBOOT INSTALL_ARGS
+
+# --- _nvidia_headers_flavor: derive the meta-package suffix from uname -r ---
+assert_eq "amd64" "$(_nvidia_headers_flavor '6.1.0-18-amd64')" \
+    "_nvidia_headers_flavor: stock amd64"
+assert_eq "cloud-amd64" "$(_nvidia_headers_flavor '6.1.0-51-cloud-amd64')" \
+    "_nvidia_headers_flavor: cloud-amd64"
+assert_eq "rt-amd64" "$(_nvidia_headers_flavor '6.1.0-18-rt-amd64')" \
+    "_nvidia_headers_flavor: rt-amd64"
+assert_eq "arm64" "$(_nvidia_headers_flavor '6.1.0-18-arm64')" \
+    "_nvidia_headers_flavor: arm64"
+if _nvidia_headers_flavor '6.5.0-custom' >/dev/null 2>&1; then
+    fail "_nvidia_headers_flavor: custom kernel with no ABI segment has no derivable flavor"
+else
+    pass "_nvidia_headers_flavor: custom kernel with no ABI segment has no derivable flavor"
+fi
+
+# --- _nvidia_preflight_kernel_headers: headers already installed → pass, no install ---
+uname() { [[ "${1:-}" == "-r" ]] && printf '6.1.0-18-amd64\n' || builtin uname "$@"; }
+dpkg-query() { printf 'install ok installed'; }
+apt-cache() { fail "_nvidia_preflight_kernel_headers: must not query apt-cache when headers are already installed"; }
+_hdr_out=$(_nvidia_preflight_kernel_headers)
+_hdr_rc=$?
+assert_eq "0" "$_hdr_rc" "_nvidia_preflight_kernel_headers: headers already installed → pass"
+assert_eq "" "$_hdr_out" "_nvidia_preflight_kernel_headers: headers already installed → nothing to append"
+unset -f uname dpkg-query apt-cache
+unset _hdr_out _hdr_rc
+
+# --- _nvidia_preflight_kernel_headers: resolvable meta-package → appended ---
+uname() { [[ "${1:-}" == "-r" ]] && printf '6.1.0-51-cloud-amd64\n' || builtin uname "$@"; }
+dpkg-query() { return 1; } # exact per-build package not installed
+apt-cache() {
+    [[ "${1:-}" == "madison" ]] || return 0
+    case "${2:-}" in
+        linux-headers-cloud-amd64) printf ' linux-headers-cloud-amd64 | 6.1.0-51 | http://deb.debian.org/debian bookworm/main amd64 Packages\n' ;;
+    esac
+}
+_hdr_out=$(_nvidia_preflight_kernel_headers)
+_hdr_rc=$?
+assert_eq "0" "$_hdr_rc" "_nvidia_preflight_kernel_headers: resolvable meta-package → pass"
+assert_eq "linux-headers-cloud-amd64" "$_hdr_out" "_nvidia_preflight_kernel_headers: resolvable meta-package → echoed for the caller to append"
+unset -f uname dpkg-query apt-cache
+unset _hdr_out _hdr_rc
+
+# --- _nvidia_preflight_kernel_headers: unresolvable → fails, names kernel + packages looked for ---
+uname() { [[ "${1:-}" == "-r" ]] && printf '6.5.0-custom\n' || builtin uname "$@"; }
+dpkg-query() { return 1; }
+apt-cache() { [[ "${1:-}" == "madison" ]] || return 0; }
+_err_cap=$(mktemp)
+log_error() { printf '%s' "$1" >"$_err_cap"; }
+_hdr_out=$(_nvidia_preflight_kernel_headers)
+_hdr_rc=$?
+_logged_error=$(cat "$_err_cap")
+rm -f "$_err_cap"
+assert_eq "1" "$_hdr_rc" "_nvidia_preflight_kernel_headers: unresolvable → fails"
+assert_eq "" "$_hdr_out" "_nvidia_preflight_kernel_headers: unresolvable → nothing to append"
+assert_contains "$_logged_error" "6.5.0-custom" "_nvidia_preflight_kernel_headers: error names the running kernel"
+assert_contains "$_logged_error" "linux-headers-6.5.0-custom" "_nvidia_preflight_kernel_headers: error names the exact package looked for"
+unset -f uname dpkg-query apt-cache log_error
+unset _hdr_out _hdr_rc _err_cap _logged_error
+log_error() { :; }
+
+# --- install_nvidia_drivers_apt: headers unresolvable → fallback, no driver install attempted ---
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac }
+dpkg-query() { return 1; }
+uname() { [[ "${1:-}" == "-r" ]] && printf '6.5.0-custom\n' || builtin uname "$@"; }
+apt-cache() { [[ "${1:-}" == "madison" ]] || return 0; }
+check_secure_boot() { printf 'disabled'; }
+ensure_debian_nonfree() { return 0; }
+INSTALL_CALLED=0
+sudo() {
+    case "${1:-}:${2:-}" in
+        apt-get:install) INSTALL_CALLED=1 ;;
+    esac
+    return 0
+}
+GPU_TYPE=nvidia
+NVIDIA_DRIVER_MODE=""
+rc=0
+install_nvidia_drivers_apt || rc=$?
+assert_eq "1" "$rc" "install_nvidia_drivers_apt: unresolvable headers → falls back"
+assert_eq "none" "$GPU_TYPE" "install_nvidia_drivers_apt: unresolvable headers → GPU_TYPE=none"
+assert_eq "0" "$INSTALL_CALLED" "install_nvidia_drivers_apt: unresolvable headers → no half-install of the driver"
+unset -f command check_secure_boot ensure_debian_nonfree sudo dpkg-query uname apt-cache
+unset INSTALL_CALLED rc GPU_TYPE NVIDIA_DRIVER_MODE
+
+# --- install_nvidia_drivers_apt: backports "-t" + flavor meta headers → version-pinned ---
+# "-t <release>" scopes every package to backports; the flavor meta could then
+# resolve to headers for a kernel other than the running one. The transaction
+# must pin the preflight-validated candidate.
+command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin command "$@" ;; esac }
+dpkg-query() { return 1; }
+uname() { [[ "${1:-}" == "-r" ]] && printf '6.1.0-51-cloud-amd64\n' || builtin uname "$@"; }
+apt-cache() {
+    [[ "${1:-}" == "madison" ]] || return 0
+    case "${2:-}" in
+        linux-headers-cloud-amd64) printf ' linux-headers-cloud-amd64 | 6.1.85-1 | http://deb.debian.org/debian bookworm/main amd64 Packages\n' ;;
+    esac
+}
+check_secure_boot() { printf 'disabled'; }
+ensure_debian_nonfree() { return 0; }
+_resolve_debian_nvidia_driver() { printf -- '-t bookworm-backports nvidia-driver firmware-misc-nonfree'; }
+_install_nvidia_container_toolkit() { return 0; }
+nouveau_is_active() { return 0; }
+INSTALL_ARGS=""
+sudo() {
+    case "${1:-}:${2:-}" in
+        apt-get:install) INSTALL_ARGS="$*" ;;
+    esac
+    return 0
+}
+GPU_TYPE=nvidia
+NEEDS_REBOOT=false
+NVIDIA_DRIVER_MODE=""
+rc=0
+install_nvidia_drivers_apt || rc=$?
+assert_eq "0" "$rc" "install_nvidia_drivers_apt: backports install with meta headers → success"
+assert_contains "$INSTALL_ARGS" "linux-headers-cloud-amd64=6.1.85-1" \
+    "install_nvidia_drivers_apt: backports \"-t\" pins the headers meta to the preflight-validated version"
+unset -f command check_secure_boot ensure_debian_nonfree _resolve_debian_nvidia_driver \
+    _install_nvidia_container_toolkit nouveau_is_active sudo dpkg-query uname apt-cache
+unset INSTALL_ARGS rc GPU_TYPE NEEDS_REBOOT NVIDIA_DRIVER_MODE
 
 # --- install_nvidia_drivers_apt repair: one reinstall, no toolkit package transaction ---
 nvidia_driver_source() { printf 'debian'; }
