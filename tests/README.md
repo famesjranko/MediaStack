@@ -505,7 +505,7 @@ installed natively or cached via `./tests/lint.sh install`) and `uv` for mypy.
 
 Current units:
 
-- **gpu-branching** — exercises `detect_gpu`, `check_secure_boot`, `verify_gpu_usable` from `scripts/setup/gpu.sh` by shimming `lspci`/`mokutil`/`nvidia-smi`/`docker` and render-device helpers as in-shell functions. Catches regressions in GPU selection logic, including no-GPU `set -e` behavior and vendor-aware Intel/AMD render-node routing, without needing real hardware.
+- **gpu-branching** — exercises the split GPU helpers under `scripts/setup/gpu/` (through the `scripts/setup/gpu.sh` entry) by shimming `lspci`/`mokutil`/`nvidia-smi`/`docker` and render-device helpers as in-shell functions. Catches regressions in GPU selection logic, including no-GPU `set -e` behavior and vendor-aware Intel/AMD render-node routing, without needing real hardware.
 - **qbittorrent** — checks qBittorrent login form encoding, first-run temp-password handling, shared-admin credential alignment, manual-storage behavior, and the reusable live assertion parser.
 - **portainer** — checks Portainer auth drift handling, including a warning when admin auth returns no JWT and the normal endpoint/API-token setup path when auth succeeds.
 - **bazarr** — checks Bazarr config-file write success/failure handling without needing a running Bazarr container.

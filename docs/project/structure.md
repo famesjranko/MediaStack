@@ -37,8 +37,9 @@ scripts/
   setup/                            Setup modules sourced by setup.sh
     checks.sh                       Prerequisite checks (root, debian, docker, compose, disk)
     packages.sh                     Base package + Docker installation (--full only)
-    gpu.sh                          GPU detection, driver install, nvidia-patch, verification
-    override.sh                     Host memory detection, compute limits, generate override
+    gpu.sh                          GPU entry wiring; concern implementations live under gpu/
+    gpu/                             Detection, NVIDIA phases, Intel/AMD, verification, Compose output
+    override.sh                     Host memory detection, image policy, and helper loading for Compose output
     env_gen.sh                      Interactive .env generation
     fail2ban.sh                     Installs/uninstalls the fail2ban log-rotation reload watcher systemd units
     storage.sh                      Storage mode helpers, NAS preflight, watchdog install

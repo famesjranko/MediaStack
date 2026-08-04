@@ -5,7 +5,6 @@ scripts/lib/validators.sh	719
 scripts/services/jellyfin/main.sh	636
 scripts/setup/checks.sh	528
 scripts/setup/env_gen.sh	626
-scripts/setup/gpu.sh	1150
 scripts/setup/stack.sh	951
 scripts/setup/stages/stage1.sh	1290
 scripts/setup/stages/stage2.sh	1476
@@ -13,7 +12,6 @@ scripts/setup/stages/stage3.sh	1718
 scripts/setup/storage.sh	598
 tests/secret-scan.sh	543
 tests/unit/checks.sh	988
-tests/unit/gpu-branching.sh	1172
 tests/unit/image-drift.sh	530
 tests/unit/recovery-routing.sh	707
 tests/unit/repository-safety.sh	665
