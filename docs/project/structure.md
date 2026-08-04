@@ -55,6 +55,7 @@ scripts/
     render/*.py                     Setup-time pure render/selector helpers
   lib/
     common.sh                       Logging, cfg_* YAML readers, api_get/api_post, key mgmt
+    render-device.sh                Shared internal GPU render-device resolution helpers
     ddns_providers.sh               DDNS provider registry + config.json renderer (6 providers; shared wizard/day-2)
     dry_run.sh                      `--dry-run` UI explorer: walks the real wizard/launcher with side effects neutralised
     health.sh                       Day-2 silent-failure health checks (fail2ban drift, cert renewal, DDNS drift, disk, UFW, Docker)
