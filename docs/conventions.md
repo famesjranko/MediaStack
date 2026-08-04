@@ -172,7 +172,7 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **README menu screenshot freshness.** The PNGs under `docs/assets/` are
   manually refreshed snapshots. This repository has no capture generator or
   freshness gate, so review them when launcher menus change.
-- **The admin-port list in `scripts/setup/hardening.sh`.** Nothing checks that
+- **The admin-port list in `scripts/setup/hardening/firewall.sh`.** Nothing checks that
   the `MEDIASTACK-DOCKER-RESTRICT` multiport rules still cover every admin port
   published by `docker-compose.yml`. A new admin service whose port is not added
   there is exposed on a hardened host and lints clean. See
@@ -180,7 +180,7 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **The uninstall teardown of `MEDIASTACK-DOCKER-RESTRICT`.**
   `tests/unit/uninstall-system-cleanup.sh` drives `_uninstall_ufw`, but its `sudo`
   stub fails every `iptables` call, so the delete/flush/delete-chain block in
-  `scripts/setup/hardening.sh` is never observed. Deleting that block leaves every
+  `scripts/setup/hardening/firewall.sh` is never observed. Deleting that block leaves every
   host unit suite green while an uninstalled or firewall-disabled host keeps a
   live chain DROPping 16 ports.
 - **Lint suppressions.** Nothing inventories the inline `# shellcheck disable=`,

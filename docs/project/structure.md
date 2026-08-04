@@ -51,7 +51,8 @@ scripts/
     wizard_apply.py                 Apply wizard preset to config.yml (preserves comments)
     presets.yml                     Quality model: resolution × size axes (composed at apply time)
     reboot.sh                       Post-reboot systemd service scheduling + cleanup
-    hardening.sh                    OS hardening (UFW, sysctl, auto-updates) + optional SMB
+    hardening.sh                    Hardening entry wiring, ledger, and orchestration
+    hardening/                      Per-concern modules: SSH, firewall, ports, updates, sysctl, GPU runtime, Samba
     stack.sh                        Data/config dirs, compose up, health wait, access info
     render/*.py                     Setup-time pure render/selector helpers
   lib/

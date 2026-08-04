@@ -31,6 +31,7 @@ and low maintenance.
 | Services / compose | [docs/project/stack.md](docs/project/stack.md), [docs/project/structure.md](docs/project/structure.md) | Runtime model; where a new service's files go |
 | Day-2 launcher | [docs/project/structure.md](docs/project/structure.md) | Feature seams under scripts/launcher/; mediastack remains the dispatcher |
 | `setup.sh` | [docs/setup/setup-flow.md](docs/setup/setup-flow.md) | Phase ordering that re-run safety depends on |
+| Hardening concerns | [docs/setup/setup-flow.md](docs/setup/setup-flow.md), [docs/project/structure.md](docs/project/structure.md) | Per-concern modules under `scripts/setup/hardening/`; preserve host-state ownership and skip/warn semantics |
 | Service configurators | [docs/setup/configure-flow.md](docs/setup/configure-flow.md) | Per-service wiring; skip/warn semantics |
 | `config.yml` / `.env` keys | [docs/setup/configuration-schema.md](docs/setup/configuration-schema.md) | Full key reference; adding a key touches both |
 | Storage paths | [docs/setup/storage.md](docs/setup/storage.md) | Local/NAS/manual modes constrain path handling |
