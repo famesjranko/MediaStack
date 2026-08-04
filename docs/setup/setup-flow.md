@@ -17,8 +17,8 @@ Entry point for the entire project. Common modes:
 |--------|-----------|----------------|
 | `scripts/setup/checks.sh` | `check_not_root`, `check_debian`, `check_docker`, `check_compose`, `check_disk_space` | Prerequisite validation |
 | `scripts/setup/packages.sh` | `install_base_packages`, `install_docker` | Base packages + Docker (--full) |
-| `scripts/setup/gpu.sh` | `detect_gpu`, `check_secure_boot`, `nvidia_driver_source`, `ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches used by hardware transcoding |
-| `scripts/setup/override.sh` | `detect_host_memory`, `compute_mem_limit`, `generate_override` | Host memory + compose override |
+| `scripts/setup/gpu.sh` + `scripts/setup/gpu/*` | `detect_gpu`, `check_secure_boot`, `nvidia_driver_source`, `ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches, verification, and generated Compose GPU wiring |
+| `scripts/setup/override.sh` + `scripts/setup/gpu/compose.sh` | `detect_host_memory`, `compute_mem_limit`, `generate_override` | Host memory, image policy, and Compose override |
 | `scripts/setup/env_gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
 | `scripts/setup/storage.sh` | `storage_preflight_nas`, `storage_guard_before_start`, `storage_install_watchdog` | Storage mode state, NFS guard, NAS watchdog installation |
 | `scripts/setup/wizard.sh` | `run_wizard` | Core LAN, hardware transcoding add-on, remote access flow (`DEMO=1` non-interactive mode) |
@@ -256,7 +256,7 @@ The default cell is **`1080p Balanced`**, which matches the shipped `config.yml`
 
 ## Override generation
 
-`generate_override` writes `docker-compose.override.yml` based on `IMAGE_CHANNEL`, `$GPU_TYPE`, and
+`generate_override` in `scripts/setup/gpu/compose.sh` writes `docker-compose.override.yml` based on `IMAGE_CHANNEL`, `$GPU_TYPE`, and
 host memory. Stable (the default) adds `image: tag@sha256:digest` entries from
 `docs/operations/image-digests.lock`; Latest omits image overrides and uses the tags in `docker-compose.yml`.
 It then computes proportional memory limits for all 19 services using `compute_mem_limit`
