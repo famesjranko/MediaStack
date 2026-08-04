@@ -134,6 +134,18 @@ policy_out=$(printf '%s' '{"AutoDiscovery":true,"KnownProxies":[],"PublishedServ
 assert_eq "172.28.0.10" "$(policy_json_field "$policy_out" '"|".join(data.get("KnownProxies", []))')" \
     "Jellyfin network policy: empty NPM_PROXY_IP falls back to default"
 
+policy_out=$(printf '%s' '{"AutoDiscovery":true,"KnownProxies":"npm","PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096"]}' \
+    | policy_env false)
+assert_eq "APPLY" "$(printf '%s\n' "$policy_out" | sed -n '1p')" \
+    "Jellyfin network policy: non-list KnownProxies is normalized"
+assert_eq "" "$(policy_json_field "$policy_out" '"|".join(data.get("KnownProxies", []))')" \
+    "Jellyfin network policy: non-list KnownProxies becomes empty"
+
+policy_out=$(printf '%s' '{"AutoDiscovery":true,"KnownProxies":[],"PublishedServerUriBySubnet":["custom=https://example.test"]}' \
+    | policy_env false)
+assert_eq $'DRIFT\nPublishedServerUriBySubnet is ['"'"'custom=https://example.test'"'"'] (expected ['"'"'internal=http://192.168.1.50:8096'"'"'])' "$policy_out" \
+    "Jellyfin network policy: user published URL remains drift-only"
+
 reset_logs
 MOCK_CURL_RC=0
 configure_jellyfin_libraries "http://localhost:8096" "token"

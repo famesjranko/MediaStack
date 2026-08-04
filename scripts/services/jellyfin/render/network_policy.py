@@ -9,98 +9,169 @@ protocol consumed by configure_jellyfin_networking:
     APPLY_WITH_DRIFT + warning lines + --- + JSON body
 """
 
+from __future__ import annotations
+
+import dataclasses
 import json
 import os
 import sys
+from collections.abc import Iterable
+from enum import Enum
+from typing import cast
+
+_AUTO_DISCOVERY = "AutoDiscovery"
+_KNOWN_PROXIES = "KnownProxies"
+_PUBLISHED_SERVER_URI_BY_SUBNET = "PublishedServerUriBySubnet"
+_INTERNAL_PUBLISHED_PREFIX = "internal=http://"
+_EXTERNAL_PUBLISHED_PREFIX = "external=https://jellyfin."
+_JELLYFIN_HTTP_PORT = ":8096"
+_MANAGED_PROXY_NAME = "npm"
+_LEGACY_PROXY_IP = "172.28.0.10"
+_DEFAULT_PROXY_IP = _LEGACY_PROXY_IP
+_POLICY_SEPARATOR = "---"
+_REMOTE_READY_VALUE = "true"
+
+
+class _PolicyAction(str, Enum):
+    SKIP = "SKIP"
+    DRIFT = "DRIFT"
+    APPLY = "APPLY"
+    APPLY_WITH_DRIFT = "APPLY_WITH_DRIFT"
+
+
+@dataclasses.dataclass
+class _DesiredPolicy:
+    auto_discovery: bool
+    known_proxies: list[object]
+    published_uris: list[str]
+
+
+@dataclasses.dataclass
+class _PolicyPlan:
+    action: _PolicyAction
+    changes: dict[str, object]
+    drift: list[str]
+
+
+def _desired_known_proxies(current: object, remote_ready: bool, npm_proxy_ip: str) -> list[object]:
+    if not isinstance(current, list):
+        current = []
+    managed_proxy_values = {_MANAGED_PROXY_NAME, _LEGACY_PROXY_IP, npm_proxy_ip}
+    out: list[object] = []
+    managed_added = False
+    for entry in current:
+        if entry in managed_proxy_values:
+            if remote_ready and not managed_added:
+                out.append(npm_proxy_ip)
+                managed_added = True
+            continue
+        out.append(entry)
+    if remote_ready and not managed_added:
+        out.append(npm_proxy_ip)
+    return out
+
+
+def _desired_published_uris(host: str, domain: str, remote_ready: bool) -> list[str]:
+    want_published = [f"{_INTERNAL_PUBLISHED_PREFIX}{host}{_JELLYFIN_HTTP_PORT}"]
+    if remote_ready:
+        want_published.append(f"{_EXTERNAL_PUBLISHED_PREFIX}{domain}")
+    return want_published
+
+
+def _desired_policy(
+    host: str,
+    domain: str,
+    remote_ready: bool,
+    npm_proxy_ip: str,
+    config: dict[str, object],
+) -> _DesiredPolicy:
+    return _DesiredPolicy(
+        auto_discovery=True,
+        known_proxies=_desired_known_proxies(
+            config.get(_KNOWN_PROXIES, []), remote_ready, npm_proxy_ip
+        ),
+        published_uris=_desired_published_uris(host, domain, remote_ready),
+    )
+
+
+def _is_our_published_entry(entry: str) -> bool:
+    if entry.startswith(_INTERNAL_PUBLISHED_PREFIX) and entry.endswith(_JELLYFIN_HTTP_PORT):
+        published_host = entry[len(_INTERNAL_PUBLISHED_PREFIX) : -len(_JELLYFIN_HTTP_PORT)]
+        if published_host == "localhost":
+            return True
+        return all(char.isdigit() or char == "." for char in published_host) and (
+            published_host.count(".") == 3
+        )
+    return entry.startswith(_EXTERNAL_PUBLISHED_PREFIX)
+
+
+def _assess_policy(config: dict[str, object], desired: _DesiredPolicy) -> _PolicyPlan:
+    current_auto = config.get(_AUTO_DISCOVERY, True)
+    current_proxies = config.get(_KNOWN_PROXIES, [])
+    current_published = config.get(_PUBLISHED_SERVER_URI_BY_SUBNET, [])
+
+    changes: dict[str, object] = {}
+    drift: list[str] = []
+
+    if current_auto == desired.auto_discovery:
+        pass
+    elif current_auto is not True:
+        drift.append(f"{_AUTO_DISCOVERY} is {current_auto} (expected {desired.auto_discovery})")
+
+    if current_proxies != desired.known_proxies:
+        changes[_KNOWN_PROXIES] = desired.known_proxies
+
+    if current_published == desired.published_uris:
+        pass
+    elif not current_published or all(
+        _is_our_published_entry(entry) for entry in cast(Iterable[str], current_published)
+    ):
+        changes[_PUBLISHED_SERVER_URI_BY_SUBNET] = desired.published_uris
+    else:
+        drift.append(
+            f"{_PUBLISHED_SERVER_URI_BY_SUBNET} is {current_published} "
+            f"(expected {desired.published_uris})"
+        )
+
+    if drift and not changes:
+        action = _PolicyAction.DRIFT
+    elif not changes:
+        action = _PolicyAction.SKIP
+    elif drift:
+        action = _PolicyAction.APPLY_WITH_DRIFT
+    else:
+        action = _PolicyAction.APPLY
+    return _PolicyPlan(action=action, changes=changes, drift=drift)
+
+
+def _emit_plan(config: dict[str, object], plan: _PolicyPlan) -> None:
+    if plan.action is _PolicyAction.DRIFT:
+        print(plan.action.value)
+        for item in plan.drift:
+            print(item)
+        return
+    if plan.action is _PolicyAction.SKIP:
+        print(plan.action.value)
+        return
+
+    for key, value in plan.changes.items():
+        config[key] = value
+    print(plan.action.value)
+    if plan.action is _PolicyAction.APPLY_WITH_DRIFT:
+        for item in plan.drift:
+            print(item)
+        print(_POLICY_SEPARATOR)
+    print(json.dumps(config))
 
 
 def main() -> int:
-    config = json.load(sys.stdin)
-    remote_ready = os.environ["REMOTE_READY"] == "true"
+    config: dict[str, object] = json.load(sys.stdin)
+    remote_ready = os.environ["REMOTE_READY"] == _REMOTE_READY_VALUE
     host = os.environ["HOST_ADDR"]
     domain = os.environ["DOMAIN_VAL"]
-
-    want_auto = True
-    npm_proxy_ip = os.environ.get("NPM_PROXY_IP") or "172.28.0.10"
-    want_published = [f"internal=http://{host}:8096"]
-    if remote_ready:
-        want_published.append(f"external=https://jellyfin.{domain}")
-
-    cur_auto = config.get("AutoDiscovery", True)
-    cur_proxies = config.get("KnownProxies", [])
-    cur_published = config.get("PublishedServerUriBySubnet", [])
-
-    managed_proxy_values = {"npm", "172.28.0.10", npm_proxy_ip}
-
-    def desired_known_proxies(current):
-        if not isinstance(current, list):
-            current = []
-        out = []
-        managed_added = False
-        for entry in current:
-            if entry in managed_proxy_values:
-                if remote_ready and not managed_added:
-                    out.append(npm_proxy_ip)
-                    managed_added = True
-                continue
-            out.append(entry)
-        if remote_ready and not managed_added:
-            out.append(npm_proxy_ip)
-        return out
-
-    want_proxies = desired_known_proxies(cur_proxies)
-
-    def is_our_published_entry(entry):
-        if entry.startswith("internal=http://") and entry.endswith(":8096"):
-            published_host = entry[len("internal=http://") : -len(":8096")]
-            if published_host == "localhost":
-                return True
-            return (
-                all(char.isdigit() or char == "." for char in published_host)
-                and published_host.count(".") == 3
-            )
-        return entry.startswith("external=https://jellyfin.")
-
-    changes = {}
-    drift = []
-    skip_all = True
-
-    if cur_auto == want_auto:
-        pass
-    elif cur_auto is not True:
-        drift.append(f"AutoDiscovery is {cur_auto} (expected {want_auto})")
-
-    if cur_proxies == want_proxies:
-        pass
-    else:
-        changes["KnownProxies"] = want_proxies
-        skip_all = False
-
-    if cur_published == want_published:
-        pass
-    elif not cur_published or all(is_our_published_entry(entry) for entry in cur_published):
-        changes["PublishedServerUriBySubnet"] = want_published
-        skip_all = False
-    else:
-        drift.append(f"PublishedServerUriBySubnet is {cur_published} (expected {want_published})")
-
-    if drift and not changes:
-        print("DRIFT")
-        for item in drift:
-            print(item)
-    elif skip_all and not changes:
-        print("SKIP")
-    else:
-        for key, value in changes.items():
-            config[key] = value
-        if drift:
-            print("APPLY_WITH_DRIFT")
-            for item in drift:
-                print(item)
-            print("---")
-        else:
-            print("APPLY")
-        print(json.dumps(config))
+    npm_proxy_ip = os.environ.get("NPM_PROXY_IP") or _DEFAULT_PROXY_IP
+    desired = _desired_policy(host, domain, remote_ready, npm_proxy_ip, config)
+    _emit_plan(config, _assess_policy(config, desired))
     return 0
 
 
