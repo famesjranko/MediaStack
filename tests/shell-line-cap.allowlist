@@ -4,7 +4,6 @@ scripts/services/jellyfin/main.sh	636
 scripts/setup/checks.sh	528
 scripts/setup/env_gen.sh	626
 scripts/setup/stack.sh	951
-scripts/setup/stages/stage2.sh	1476
 scripts/setup/stages/stage3.sh	1718
 scripts/setup/storage.sh	598
 tests/secret-scan.sh	543
@@ -12,7 +11,6 @@ tests/unit/checks.sh	988
 tests/unit/image-drift.sh	530
 tests/unit/recovery-routing.sh	707
 tests/unit/repository-safety.sh	665
-tests/unit/stage2-flow.sh	736
 tests/unit/stage3-flow.sh	1187
 tests/unit/storage.sh	1013
 tests/unit/validators.sh	704

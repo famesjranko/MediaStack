@@ -15,7 +15,7 @@ scenario_begin "$CURRENT_SCENARIO"
 
 source "$REPO_ROOT/scripts/lib/network.sh"
 [[ -f "$REPO_ROOT/scripts/lib/validators.sh" ]] && source "$REPO_ROOT/scripts/lib/validators.sh"
-[[ -f "$REPO_ROOT/scripts/setup/stages/stage2.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
+source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
 
 set +e
 set +u
