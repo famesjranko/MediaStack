@@ -29,7 +29,7 @@ Entry point for the entire project. Common modes:
 | `scripts/setup/wizard_apply.py` | *(CLI)* | Apply wizard preset to config.yml (section-targeted replacement) |
 | `scripts/setup/presets.yml` | *(data)* | Quality model — `quality_ids` / `resolutions` / `sizes` axes |
 | `scripts/setup/reboot.sh` | `schedule_post_reboot`, `cleanup_post_reboot` | Systemd oneshot for post-reboot resume |
-| `scripts/setup/hardening.sh` | `setup_hardening` (gated by `UFW_ENABLED`/`HARDENING_ENABLED`), `setup_ufw`, `setup_ufw_docker_rules`, `setup_unattended_upgrades`, `setup_sysctl_hardening`, `verify_gpu_runtime` (always), `setup_samba` | OS hardening (opt-in) + optional SMB |
+| `scripts/setup/hardening.sh` + `scripts/setup/hardening/*` | `setup_hardening` (gated by `UFW_ENABLED`/`HARDENING_ENABLED`), concern implementations, `verify_gpu_runtime` (always), `setup_samba` | OS hardening (opt-in) + optional SMB |
 | `scripts/setup/stack.sh` | `create_data_dirs`, `create_config_dirs`, `start_stack`, `wait_for_healthy`, `print_access_info`, `print_final_summary` | Data/config dirs, stack lifecycle, setup summary |
 | `scripts/setup/render/network_selector.py` | *(CLI)* | Select a non-conflicting Docker subnet from host route/address and Docker network snapshots |
 
@@ -60,7 +60,7 @@ The interactive path is:
 | 6 | Docker/base validation | `check_docker`, `check_compose`, `check_disk_space` | checks.sh |
 | 7 | Host detection | `detect_host_memory`, `detect_env`, `stash_gpu_type` | override.sh, env_gen.sh, gpu.sh |
 | 8 | *(--full only)* Base packages + Docker | `install_base_packages`, `install_docker` | packages.sh |
-| 9 | GPU runtime check + hardening re-affirm | `verify_gpu_runtime` (always); `setup_hardening` only on a completed re-run (`STAGE_1_COMPLETE=1`) | hardening.sh |
+| 9 | GPU runtime check + hardening re-affirm | `verify_gpu_runtime` (always); `setup_hardening` only on a completed re-run (`STAGE_1_COMPLETE=1`) | hardening.sh + hardening/* |
 | 10 | Wizard | `run_stage1`, `run_hardware_transcoding_addon`, `run_stage2`, final reboot gate | wizard.sh, stages/*.sh |
 
 On a **fresh** install, `setup_hardening` runs *inside* Stage 1 (`_stage1_install`, after the wizard collects the `UFW_ENABLED`/`HARDENING_ENABLED` choice and before the stack is started) so the firewall/Docker-port rules are applied before any published port is exposed. `setup_hardening` gates `setup_ufw` on `UFW_ENABLED` and the unattended-upgrades + sysctl steps on `HARDENING_ENABLED`; `verify_gpu_runtime` is independent of both and always runs pre-wizard (Phase 9).
@@ -171,7 +171,7 @@ On next boot:
 
 ## OS hardening
 
-`setup_hardening` (in `scripts/setup/hardening.sh`) runs before the wizard since it has no `.env` dependencies. It orchestrates four sub-functions, all idempotent (check-then-apply, `log_skip` if already done):
+`setup_hardening` (in `scripts/setup/hardening.sh`) runs before the wizard since it has no `.env` dependencies. It orchestrates the concern modules under `scripts/setup/hardening/`, all idempotent (check-then-apply, `log_skip` if already done):
 
 - **`setup_ufw`** — records UFW state in `/etc/mediastack/install-state`, preserves existing rules, applies deny-incoming/allow-outgoing defaults, and adds uniquely tagged `MediaStack:*` rules for SSH, HTTP/HTTPS, Beszel, torrent, WireGuard, and SMB traffic. `setup_ufw_docker_rules` owns an explicitly delimited block in `/etc/ufw/after.rules` and the matching live `MEDIASTACK-DOCKER-RESTRICT` chain. `setup_ufw_docker_dedup_hook` additionally installs a marker-delimited block in `/etc/ufw/after.init` that trims the DOCKER-USER → `MEDIASTACK-DOCKER-RESTRICT` jump back to a single copy after each UFW load (`after.rules` re-appends it on every reload). Re-runs skip matching state and warn on default-policy drift; they never reset UFW.
 - **`setup_unattended_upgrades`** — installs automatic security-only updates through MediaStack-owned `21mediastack-auto-upgrades` and `51mediastack-unattended-upgrades` drop-ins. Existing package files are never overwritten; effective settings are checked through `apt-config dump`.

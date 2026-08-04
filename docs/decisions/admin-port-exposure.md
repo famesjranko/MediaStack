@@ -19,7 +19,7 @@ purpose.
 Publish admin ports on all interfaces, and confine them with a MediaStack-owned
 iptables chain installed by host hardening.
 
-`setup_ufw_docker_rules` in `scripts/setup/hardening.sh` writes a
+`setup_ufw_docker_rules` in `scripts/setup/hardening/firewall.sh` writes a
 `MEDIASTACK-DOCKER-RESTRICT` chain into `/etc/ufw/after.rules`, jumped to from
 `DOCKER-USER`. The chain `RETURN`s traffic from `127.0.0.0/8`, `10.0.0.0/8`,
 `172.16.0.0/12` and `192.168.0.0/16`, then `DROP`s the admin-port list —
@@ -62,7 +62,7 @@ published ports and gets convention only: the router must not forward them.
   chain. The day-2 *Health & security* menu therefore checks that the chain is
   still present and jumped to, and that check exists because losing it is silent.
 - The admin-port list lives in two places that must agree: the multiport rules in
-  `hardening.sh` and the host-port table in `docs/design/architecture.md`. A new
+  `hardening/firewall.sh` and the host-port table in `docs/design/architecture.md`. A new
   admin service needs an entry in both.
 
 ## Reopen condition
@@ -73,7 +73,7 @@ Reopen when any is true:
   hardcoding a host IP (for example, a Docker network mode that resolves the LAN
   interface at start). Then bind directly and keep the chain as defence in depth.
 - The published admin-port set grows past what the `-m multiport` rules can
-  express (15 ports each, a kernel limit already noted in `hardening.sh`, which
+  express (15 ports each, a kernel limit already noted in `hardening/firewall.sh`, which
   splits the current 16 ports across two rules). Needing a third rule means the
   admin surface has roughly doubled, which is the moment to re-derive the model
   rather than append to it.
@@ -84,7 +84,7 @@ Reopen when any is true:
 
 Partial, and deliberately named as such:
 
-- `tests/unit/hardening.sh` proves `setup_ufw_docker_rules` writes the chain and
+- `tests/unit/hardening/firewall.sh` proves `setup_ufw_docker_rules` writes the chain and
   the `DOCKER-USER` jump into the after.rules text, and that
   `setup_ufw_docker_dedup_hook` injects an after.init block carrying the
   `iptables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT` trim. Both are
@@ -99,10 +99,10 @@ Partial, and deliberately named as such:
 
 Two gaps, both listed under "Not enforced" in `docs/conventions.md`:
 
-- Nothing checks that the multiport list in `hardening.sh` still covers every
+- Nothing checks that the multiport list in `hardening/firewall.sh` still covers every
   admin port published by `docker-compose.yml`. Adding an admin service without
   adding its port leaves that port exposed on a hardened host.
 - Nothing observes the uninstall teardown. `tests/unit/uninstall-system-cleanup.sh`
   drives `_uninstall_ufw`, but its `sudo` stub returns non-zero for every
-  `iptables` call, so the delete/flush/delete-chain block in `hardening.sh` is
+  `iptables` call, so the delete/flush/delete-chain block in `hardening/firewall.sh` is
   never exercised.

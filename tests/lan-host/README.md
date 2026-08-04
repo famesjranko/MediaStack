@@ -215,7 +215,7 @@ The container-health check counts only genuinely-up containers (healthy **or** n
 the `LANHOST_*` toggles and only asserts services the install actually deployed: **fail2ban** is
 checked only with `LANHOST_REMOTE=1` (profile-gated), **jackett** only with `LANHOST_INDEXERS=1` (no
 API key otherwise → 302), the host **SMB share** only with `LANHOST_SMB=1` (host samba via
-`hardening.sh:setup_samba`, **not** a container — the probe asserts `SMB_ENABLED`/`SMB_SHARE_SCOPE` in
+`hardening/samba.sh:setup_samba`, **not** a container — the probe asserts `SMB_ENABLED`/`SMB_SHARE_SCOPE` in
 `.env`, `smbd` active, and — unambiguously even where a `[Media]` share pre-exists — the
 **MediaStack-managed include** `/etc/samba/smb.conf.d/mediastack.conf` defines `[Media]` at `DATA_DIR`
 and is wired into `smb.conf` via the `# MEDIASTACK include` marker), and a **GPU-passthrough** block
