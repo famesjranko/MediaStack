@@ -226,4 +226,3 @@ _net_probe_via_external() {
     # All three returned non-2xx, timed out, or unparseable
     printf 2
 }
-

@@ -48,4 +48,3 @@ net_check_port_status() {
             ;;
     esac
 }
-
