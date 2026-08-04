@@ -30,12 +30,26 @@ make_fixture() {
             printf '%s\n' \
                 '[tool.mypy]' \
                 'python_version = "3.9"' \
-                'check_untyped_defs = true' >"$FIXTURE_ROOT/pyproject.toml"
+                'check_untyped_defs = true' \
+                'disallow_untyped_defs = true' >"$FIXTURE_ROOT/pyproject.toml"
             ;;
         missing-check-untyped)
             printf '%s\n' \
                 '[tool.mypy]' \
                 'python_version = "3.9"' >"$FIXTURE_ROOT/pyproject.toml"
+            ;;
+        missing-disallow-untyped)
+            printf '%s\n' \
+                '[tool.mypy]' \
+                'python_version = "3.9"' \
+                'check_untyped_defs = true' >"$FIXTURE_ROOT/pyproject.toml"
+            ;;
+        weakened-disallow-untyped)
+            printf '%s\n' \
+                '[tool.mypy]' \
+                'python_version = "3.9"' \
+                'check_untyped_defs = true' \
+                'disallow_untyped_defs = false' >"$FIXTURE_ROOT/pyproject.toml"
             ;;
     esac
 
@@ -117,6 +131,19 @@ else
 fi
 assert_contains "$SELECTOR_OUT" "config missing check_untyped_defs" "mypy explains the config-contract failure"
 assert_eq "" "$(cat "$UV_LOG")" "mypy rejects weakened config before invoking uv"
+
+for config_mode in missing-disallow-untyped weakened-disallow-untyped; do
+    make_fixture "$config_mode" "$config_mode"
+    add_python_file
+    run_selector mypy
+    if ((SELECTOR_RC != 0)); then
+        pass "mypy rejects $config_mode"
+    else
+        fail "mypy rejects $config_mode" "exit 0: $SELECTOR_OUT"
+    fi
+    assert_contains "$SELECTOR_OUT" "config missing disallow_untyped_defs" "$config_mode explains the strict config-contract failure"
+    assert_eq "" "$(cat "$UV_LOG")" "$config_mode never reaches uv"
+done
 
 make_fixture missing-pin
 add_python_file
