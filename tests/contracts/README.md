@@ -24,6 +24,21 @@ describes the service's normal request authentication shape. The inventory is
 per service, and helpers under `scripts/lib/` are attributed to the service
 whose API they call.
 
+`auth.type` is one of `header`, `bearer`, `cookie`, `query`, or `none` (the
+default when the block is absent) — `tests/contracts/replay.py`'s live mode
+reads this generically, never with a per-service branch. `header` sets header
+`auth.name` to the caller's credential verbatim, unless `auth.format` is also
+given: a literal header-value template with the substring `{key}` replaced by
+the credential, for a service whose real header value is structured (e.g.
+Jellyfin's `MediaBrowser Client="...", Token="{key}"` scheme — see
+`jellyfin.yml`). `bearer` sends `auth.name: Bearer <credential>`. `cookie`
+sends a `Cookie: <auth.name>=<credential>` header. `query` appends
+`<auth.name>=<credential>` to the request URL. A service whose live session
+needs a *second*, supplementary cookie alongside its primary credential (e.g.
+Jackett: an `apikey` query param plus a separate UI session cookie the API
+alone doesn't carry) takes that second cookie via replay.py's `--cookie
+NAME:RAW_COOKIE_HEADER` flag rather than a new auth type.
+
 Endpoint `id` values are kebab-case and unique within a service. `method` is
 the HTTP method and `path` is the route after `base_path`; query strings are
 not part of the path. A path may contain `{id}` for one caller-substituted

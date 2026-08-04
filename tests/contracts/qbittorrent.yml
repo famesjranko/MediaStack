@@ -1,6 +1,11 @@
 service: qbittorrent
 base_path: /api/v2
-auth: {type: cookie, name: SID}
+# `QBT_SID_8080` corrected 2026-08-05 by replay.py live mode: current
+# qBittorrent WebUI (5.x) names its session cookie `QBT_SID_<port>`, not the
+# plain `SID` of older releases — this stack always runs qBittorrent's WebUI
+# on the fixed port 8080 (docker-compose.yml), so the cookie name is fixed
+# too, not actually port-dynamic for us.
+auth: {type: cookie, name: QBT_SID_8080}
 endpoints:
   - {id: auth-login, method: POST, path: /auth/login, sends: [username, password], reads: [], callers: [scripts/services/qbittorrent/main.sh]}
   - {id: preferences-update, method: POST, path: /app/setPreferences, sends: [web_ui_username, web_ui_password, max_ratio, max_seeding_time, max_seeding_time_enabled, dl_limit, up_limit, max_connec, max_connec_per_torrent, max_uploads, max_uploads_per_torrent, queueing_enabled, max_active_downloads, max_active_uploads, max_active_torrents, upnp, preallocate_all, bypass_auth_subnet_whitelist], reads: [], callers: [scripts/services/qbittorrent/main.sh]}
