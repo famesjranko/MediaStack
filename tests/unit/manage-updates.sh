@@ -481,7 +481,6 @@ compat_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$compat_out" "RC=0" "revert-compat: no install digest recorded -> succeeds"
 assert_contains "$compat_out" "AFTER=[0]" \
     "revert-compat: falls back to clearing the override (no unresolvable pin written)"
-
 # The status table renders a digest-pinned service as 'Pinned (install)' with no
 # '*' (a pin is the opposite of "tracking its upstream tag"), while a floated row keeps
 # its star. The POLICY column arrives already normalized to the 'pinned' token.
@@ -497,6 +496,5 @@ else
     pass "table: a pinned row must not carry the manual-override star"
 fi
 assert_contains "$table_out" "Tracking tag *" "table: a floated row still carries its star"
-
 scenario_end "$CURRENT_SCENARIO"
 summary
