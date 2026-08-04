@@ -453,5 +453,37 @@ else
     pass "quality-only: errors without --resolution/--size"
 fi
 
+# =========================================================================
+# CLI characterization — preserve output ordering, diagnostics, and invalid-input
+# behavior. The apply assertions above observe parsed YAML, but not these exact
+# process-level details.
+# =========================================================================
+config="$TMP_DIR/cli-characterization.yml"
+cp "$CONFIG_SRC" "$config"
+cli_output=""
+cli_rc=0
+cli_output=$(python3 "$WIZARD" --resolution 720p --size compact --config "$config") || cli_rc=$?
+assert_eq "0" "$cli_rc" "CLI characterization: full apply exits zero"
+expected_output=$(printf '%s\n' \
+    "Applied quality profile '720p Compact' (720p x compact)" \
+    "Subtitle languages: english" \
+    "Public indexer preset: disabled")
+assert_eq "$expected_output" \
+    "$cli_output" "CLI characterization: full apply output ordering"
+
+cp "$config" "$TMP_DIR/cli-before-invalid.yml"
+cli_output=""
+cli_rc=0
+cli_output=$(python3 "$WIZARD" --resolution nonexistent --size balanced --config "$config" 2>&1) || cli_rc=$?
+assert_eq "1" "$cli_rc" "CLI characterization: invalid resolution exits 1"
+assert_eq "error: \"unknown resolution 'nonexistent'. Available: 720p, 1080p\"" \
+    "$cli_output" "CLI characterization: invalid resolution diagnostic"
+if cmp -s "$TMP_DIR/cli-before-invalid.yml" "$config"; then
+    pass "CLI characterization: invalid resolution does not mutate config"
+else
+    fail "CLI characterization: invalid resolution does not mutate config" \
+        "config.yml changed after rejected selection"
+fi
+
 scenario_end "$CURRENT_SCENARIO"
 summary

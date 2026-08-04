@@ -25,15 +25,30 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from typing import Any, Optional
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "scripts", "setup"))
 import wizard_apply  # noqa: E402  (product composition — reused, not duplicated)
 
-RENDER = os.path.join(REPO, "scripts", "lib", "arr", "render")
+RENDER: str = os.path.join(REPO, "scripts", "lib", "arr", "render")
 
 
-def api(method, url, key, body=None):
+def load_cell(resolution: str, size: str) -> dict[str, Any]:
+    """Load and compose one product quality cell."""
+    model = wizard_apply.load_quality_model(os.path.join(REPO, "scripts", "setup", "presets.yml"))
+    return wizard_apply.compose_cell(model, resolution, size)
+
+
+def select_template(profiles: list[dict[str, Any]], profile_id: Optional[str]) -> dict[str, Any]:
+    """Select the requested live profile, retaining the adapter's fallback."""
+    fallback = profiles[0]
+    if profile_id:
+        return next((p for p in profiles if str(p.get("id")) == str(profile_id)), fallback)
+    return fallback
+
+
+def api(method: str, url: str, key: str, body: Optional[dict[str, Any]] = None) -> Any:
     # Sonarr/Radarr can transiently 409 a profile/definition PUT fired right
     # after a prior mutation to the same resource (still settling internally).
     # An unretried 409 here used to drop the PUT silently: the live profile
@@ -60,7 +75,9 @@ def api(method, url, key, body=None):
     return None
 
 
-def render_profile(template, name, enabled_ids, cutoff):
+def render_profile(
+    template: dict[str, Any], name: str, enabled_ids: list[Any], cutoff: Any
+) -> dict[str, Any]:
     """Reuse render/quality_profile.py: flip `allowed` on the template profile."""
     env = dict(
         os.environ,
@@ -79,7 +96,7 @@ def render_profile(template, name, enabled_ids, cutoff):
     return json.loads(out)
 
 
-def push_definitions(base, key, desired):
+def push_definitions(base: str, key: str, desired: dict[str, Any]) -> None:
     """Reuse render/quality_definitions.py: PUT the global tiers that differ."""
     current = api("GET", base + "/qualitydefinition", key)
     env = dict(os.environ, DESIRED=json.dumps(desired))
@@ -97,22 +114,14 @@ def push_definitions(base, key, desired):
         api("PUT", f"{base}/qualitydefinition/{def_id}", key, json.loads(put_body))
 
 
-def main():
-    app, base, key, res, size = sys.argv[1:6]
-    profile_id = sys.argv[6] if len(sys.argv) > 6 else None
-
-    model = wizard_apply.load_quality_model(os.path.join(REPO, "scripts", "setup", "presets.yml"))
-    cell = wizard_apply.compose_cell(model, res, size)
-    enabled = cell[f"{app}_qualities"]
-
-    profiles = api("GET", base + "/qualityprofile", key) or []
-    if profile_id:
-        template = next((p for p in profiles if str(p.get("id")) == str(profile_id)), profiles[0])
-    else:
-        template = profiles[0]  # app's default profile = the worst->best ordering
-
-    rendered = render_profile(template, cell["profile_name"], enabled, cell["cutoff_id"])
-
+def apply_profile(
+    base: str,
+    key: str,
+    template: dict[str, Any],
+    rendered: dict[str, Any],
+    profile_id: Optional[str],
+) -> Any:
+    """Push one rendered quality profile, creating or updating in place."""
     if profile_id:
         # In-place rename + repush: merge the rendered fields onto the full live
         # profile so id/language/etc. survive the PUT.
@@ -127,10 +136,23 @@ def main():
         )
         merged["id"] = int(profile_id)
         api("PUT", f"{base}/qualityprofile/{profile_id}", key, merged)
-        used = profile_id
-    else:
-        created = api("POST", base + "/qualityprofile", key, rendered)
-        used = created["id"]
+        return profile_id
+
+    created = api("POST", base + "/qualityprofile", key, rendered)
+    return created["id"]
+
+
+def main() -> None:
+    app, base, key, res, size = sys.argv[1:6]
+    profile_id = sys.argv[6] if len(sys.argv) > 6 else None
+
+    cell = load_cell(res, size)
+    enabled = cell[f"{app}_qualities"]
+
+    profiles = api("GET", base + "/qualityprofile", key) or []
+    template = select_template(profiles, profile_id)
+    rendered = render_profile(template, cell["profile_name"], enabled, cell["cutoff_id"])
+    used = apply_profile(base, key, template, rendered, profile_id)
 
     push_definitions(base, key, cell["quality_definitions"][app])
     print(used)
