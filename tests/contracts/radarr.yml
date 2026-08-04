@@ -5,23 +5,23 @@ openapi: https://raw.githubusercontent.com/Radarr/Radarr/develop/src/Radarr.Api.
 endpoints:
   - {id: config-naming-get, method: GET, path: /config/naming, sends: [], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: config-naming-update, method: PUT, path: /config/naming, sends: [renameMovies, replaceIllegalCharacters, standardMovieFormat, movieFolderFormat], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
-  - {id: quality-profile-list, method: GET, path: /qualityprofile, sends: [], reads: [id, name, cutoff, upgradeAllowed, "items[].quality.id", "items[].allowed", "formatItems[].score"], callers: [scripts/lib/arr/main.sh, scripts/services/seerr/arr_connect.sh]}
-  - {id: quality-profile-create, method: POST, path: /qualityprofile, sends: [name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/main.sh]}
-  - {id: quality-profile-get, method: GET, path: "/qualityprofile/{id}", sends: [], reads: [id, name, "formatItems[].score"], callers: [scripts/lib/arr/main.sh]}
-  - {id: quality-profile-update, method: PUT, path: "/qualityprofile/{id}", sends: [id, name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/main.sh]}
-  - {id: quality-definition-list, method: GET, path: /qualitydefinition, sends: [], reads: [id, quality.name, minSize, maxSize, preferredSize], callers: [scripts/lib/arr/main.sh]}
-  - {id: quality-definition-update, method: PUT, path: "/qualitydefinition/{id}", sends: [id, quality, minSize, maxSize, preferredSize], reads: [id, quality.name], callers: [scripts/lib/arr/main.sh]}
-  - {id: custom-format-list, method: GET, path: /customformat, sends: [], reads: [id, name], callers: [scripts/lib/arr/main.sh]}
-  - {id: custom-format-create, method: POST, path: /customformat, sends: [name, specifications], reads: [id, name], callers: [scripts/lib/arr/main.sh]}
-  - {id: indexer-list, method: GET, path: /indexer, sends: [], reads: [id, name, enableRss, enableAutomaticSearch, enableInteractiveSearch], callers: [scripts/lib/arr/main.sh]}
-  - {id: indexer-create, method: POST, path: /indexer, sends: [name, enableRss, enableAutomaticSearch, enableInteractiveSearch, protocol, priority, implementation, configContract, fields], reads: [id, name], callers: [scripts/lib/arr/main.sh]}
-  - {id: root-folder-list, method: GET, path: /rootfolder, sends: [], reads: [id, path], callers: [scripts/lib/arr/main.sh]}
-  - {id: root-folder-create, method: POST, path: /rootfolder, sends: [path], reads: [id, path], callers: [scripts/lib/arr/main.sh]}
-  - {id: media-management-get, method: GET, path: /config/mediamanagement, sends: [], reads: [minimumFreeSpaceWhenImporting], callers: [scripts/lib/arr/main.sh]}
-  - {id: media-management-update, method: PUT, path: /config/mediamanagement, sends: [minimumFreeSpaceWhenImporting], reads: [minimumFreeSpaceWhenImporting], callers: [scripts/lib/arr/main.sh]}
-  - {id: download-client-list, method: GET, path: /downloadclient, sends: [], reads: [name, "fields[].name", "fields[].value"], callers: [scripts/lib/arr/main.sh]}
-  - {id: download-client-create, method: POST, path: /downloadclient, sends: [enable, protocol, priority, name, implementation, configContract, removeCompletedDownloads, removeFailedDownloads, fields], reads: [id, name], callers: [scripts/lib/arr/main.sh]}
-  - {id: host-config-get, method: GET, path: /config/host, sends: [], reads: [authenticationMethod], callers: [scripts/lib/arr/main.sh]}
-  - {id: host-config-update, method: PUT, path: /config/host, sends: [authenticationMethod, authenticationRequired, username, password, passwordConfirmation], reads: [authenticationMethod], callers: [scripts/lib/arr/main.sh]}
-  - {id: notification-list, method: GET, path: /notification, sends: [], reads: [id, name, implementation], callers: [scripts/lib/arr/main.sh]}
-  - {id: notification-create, method: POST, path: /notification, sends: [name, implementation, configContract, fields, onDownload], reads: [id, name], callers: [scripts/lib/arr/main.sh]}
+  - {id: quality-profile-list, method: GET, path: /qualityprofile, sends: [], reads: [id, name, cutoff, upgradeAllowed, "items[].quality.id", "items[].allowed", "formatItems[].score"], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh, scripts/services/seerr/arr_connect.sh]}
+  - {id: quality-profile-create, method: POST, path: /qualityprofile, sends: [name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/quality.sh]}
+  - {id: quality-profile-get, method: GET, path: "/qualityprofile/{id}", sends: [], reads: [id, name, "formatItems[].score"], callers: [scripts/lib/arr/quality.sh]}
+  - {id: quality-profile-update, method: PUT, path: "/qualityprofile/{id}", sends: [id, name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh]}
+  - {id: quality-definition-list, method: GET, path: /qualitydefinition, sends: [], reads: [id, quality.name, minSize, maxSize, preferredSize], callers: [scripts/lib/arr/quality.sh]}
+  - {id: quality-definition-update, method: PUT, path: "/qualitydefinition/{id}", sends: [id, quality, minSize, maxSize, preferredSize], reads: [id, quality.name], callers: [scripts/lib/arr/quality.sh]}
+  - {id: custom-format-list, method: GET, path: /customformat, sends: [], reads: [id, name], callers: [scripts/lib/arr/formats.sh]}
+  - {id: custom-format-create, method: POST, path: /customformat, sends: [name, specifications], reads: [id, name], callers: [scripts/lib/arr/formats.sh]}
+  - {id: indexer-list, method: GET, path: /indexer, sends: [], reads: [id, name, enableRss, enableAutomaticSearch, enableInteractiveSearch], callers: [scripts/lib/arr/indexers.sh]}
+  - {id: indexer-create, method: POST, path: /indexer, sends: [name, enableRss, enableAutomaticSearch, enableInteractiveSearch, protocol, priority, implementation, configContract, fields], reads: [id, name], callers: [scripts/lib/arr/indexers.sh]}
+  - {id: root-folder-list, method: GET, path: /rootfolder, sends: [], reads: [id, path], callers: [scripts/lib/arr/storage.sh]}
+  - {id: root-folder-create, method: POST, path: /rootfolder, sends: [path], reads: [id, path], callers: [scripts/lib/arr/storage.sh]}
+  - {id: media-management-get, method: GET, path: /config/mediamanagement, sends: [], reads: [minimumFreeSpaceWhenImporting], callers: [scripts/lib/arr/storage.sh]}
+  - {id: media-management-update, method: PUT, path: /config/mediamanagement, sends: [minimumFreeSpaceWhenImporting], reads: [minimumFreeSpaceWhenImporting], callers: [scripts/lib/arr/storage.sh]}
+  - {id: download-client-list, method: GET, path: /downloadclient, sends: [], reads: [name, "fields[].name", "fields[].value"], callers: [scripts/lib/arr/storage.sh]}
+  - {id: download-client-create, method: POST, path: /downloadclient, sends: [enable, protocol, priority, name, implementation, configContract, removeCompletedDownloads, removeFailedDownloads, fields], reads: [id, name], callers: [scripts/lib/arr/storage.sh]}
+  - {id: host-config-get, method: GET, path: /config/host, sends: [], reads: [authenticationMethod], callers: [scripts/lib/arr/connections.sh]}
+  - {id: host-config-update, method: PUT, path: /config/host, sends: [authenticationMethod, authenticationRequired, username, password, passwordConfirmation], reads: [authenticationMethod], callers: [scripts/lib/arr/connections.sh]}
+  - {id: notification-list, method: GET, path: /notification, sends: [], reads: [id, name, implementation], callers: [scripts/lib/arr/connections.sh]}
+  - {id: notification-create, method: POST, path: /notification, sends: [name, implementation, configContract, fields, onDownload], reads: [id, name], callers: [scripts/lib/arr/connections.sh]}

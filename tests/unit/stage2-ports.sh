@@ -13,7 +13,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage2-ports"
 scenario_begin "$CURRENT_SCENARIO"
 
-[[ -f "$REPO_ROOT/scripts/lib/network.sh" ]] && source "$REPO_ROOT/scripts/lib/network.sh"
+source "$REPO_ROOT/scripts/lib/network.sh"
 [[ -f "$REPO_ROOT/scripts/lib/validators.sh" ]] && source "$REPO_ROOT/scripts/lib/validators.sh"
 [[ -f "$REPO_ROOT/scripts/setup/stages/stage2.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
 
@@ -56,12 +56,6 @@ net_check_tcp_port_external() {
     esac
 }
 
-if ! type stage2_check_http_ports >/dev/null 2>&1; then
-    stage2_check_http_ports() { printf '__not_implemented__'; }
-fi
-if ! type stage2_classify_port_failure >/dev/null 2>&1; then
-    stage2_classify_port_failure() { printf '__not_implemented__'; }
-fi
 if ! type validate_wireguard_port >/dev/null 2>&1; then
     validate_wireguard_port() { return 99; }
 fi

@@ -26,6 +26,16 @@ VARIABLE_RE = re.compile(r"\$\{(?P<braced>[A-Za-z_]\w*)\}|\$(?P<plain>[A-Za-z_]\
 PATH_RE = re.compile(r"(?P<path>/(?:[A-Za-z0-9_.~${}-]+/?)*)")
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 
+# The shared arr API helpers are split behind scripts/lib/arr/main.sh; retain
+# the same Sonarr/Radarr service attribution for each topical caller.
+_ARR_CONTRACT_CALLERS = {
+    "scripts/lib/arr/quality.sh",
+    "scripts/lib/arr/formats.sh",
+    "scripts/lib/arr/indexers.sh",
+    "scripts/lib/arr/storage.sh",
+    "scripts/lib/arr/connections.sh",
+}
+
 
 @dataclass(frozen=True)
 class Call:
@@ -161,7 +171,7 @@ def _services_for_call(
                     str(endpoint_map.get("path", "")), full_path
                 ):
                     return [(local_service, str(endpoint_map.get("path", "")))]
-    if caller == "scripts/lib/arr/main.sh":
+    if caller in _ARR_CONTRACT_CALLERS:
         return [
             (service, str(endpoint_map.get("path", "")))
             for service in ("sonarr", "radarr")
@@ -176,7 +186,7 @@ def _services_for_call(
 # Callers whose unmatched routes are coverage errors rather than noise: the
 # service configurators plus the shared helpers that speak to services.
 _CONTRACT_REQUIRED_CALLERS = {
-    "scripts/lib/arr/main.sh",
+    *_ARR_CONTRACT_CALLERS,
     "scripts/lib/health.sh",
     "scripts/lib/http.sh",
     "scripts/lib/npm_remote.sh",
