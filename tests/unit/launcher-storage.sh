@@ -77,3 +77,26 @@ dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 assert_contains "$dispatch_out" "ACTION_RECHECK" \
     "launcher: storage submenu dispatches re-check to action_recheck_nas"
+
+# 5. A failing NAS check propagates its non-zero exit status into the shared
+# action-result report instead of always reporting success.
+fail_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  storage_nas_ok(){ return 1; }
+  pause_for_menu(){ :; }
+  _show_action_result(){ echo "RESULT rc=$1 label=$2"; }
+  action_recheck_nas
+' 2>&1)
+assert_contains "$fail_out" "RESULT rc=1 label=Re-check NAS" \
+    "launcher: a failing NAS re-check propagates rc=1 into the action result"
+
+# 6. A healthy NAS check reports rc=0 into the same shared action-result path.
+ok_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  storage_nas_ok(){ return 0; }
+  pause_for_menu(){ :; }
+  _show_action_result(){ echo "RESULT rc=$1 label=$2"; }
+  action_recheck_nas
+' 2>&1)
+assert_contains "$ok_out" "RESULT rc=0 label=Re-check NAS" \
+    "launcher: a healthy NAS re-check reports rc=0 into the action result"
