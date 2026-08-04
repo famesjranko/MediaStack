@@ -4,7 +4,6 @@ scripts/services/jellyfin/main.sh	636
 scripts/setup/checks.sh	528
 scripts/setup/env_gen.sh	626
 scripts/setup/stack.sh	951
-scripts/setup/stages/stage1.sh	1290
 scripts/setup/stages/stage2.sh	1476
 scripts/setup/stages/stage3.sh	1718
 scripts/setup/storage.sh	598

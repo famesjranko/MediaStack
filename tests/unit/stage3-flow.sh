@@ -146,7 +146,7 @@ else
 fi
 
 setup_source="$(sed -n '1,760p' "$REPO_ROOT/setup.sh")"
-stage1_source="$(cat "$REPO_ROOT/scripts/setup/stages/stage1.sh")"
+stage1_source="$(cat "$REPO_ROOT/scripts/setup/stage1/install.sh")"
 assert_contains "$setup_source" "stash_gpu_type" "setup stashes detected GPU type"
 assert_contains "$stage1_source" 'generate_override "none"' "Stage 1 starts baseline stack without GPU runtime override"
 if [[ -f "$stage3_path" && "$setup_source" == *"install_nvidia_drivers"*"run_wizard"* || -f "$stage3_path" && "$setup_source" == *"install_intel_drivers"*"run_wizard"* || -f "$stage3_path" && "$setup_source" == *"install_amd_drivers"*"run_wizard"* ]]; then
