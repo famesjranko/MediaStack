@@ -76,6 +76,8 @@ scripts/
       render/*.py                   JSON/XML transforms (stdlib; PyYAML where needed)
   services/<svc>/                   Per-service configurators (14 services; Seerr is services/seerr/)
     main.sh                         configure_<svc>() — required
+    npm/{certs,health,post,publication,rendered,stale}.sh
+                                    NPM's internal concerns, sourced by npm/main.sh
     templates/*.json                Static API payloads (no variable substitution)
     render/*.py                     Optional pure per-service render/policy helpers
 
