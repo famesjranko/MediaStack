@@ -259,7 +259,11 @@ warm_python_tools() {
 
 # Same image-free scenario set + invocation the wizard-ui CI job uses. Fails
 # on an empty set rather than letting run.sh fall back to its image-pulling
-# default with no scenario arguments.
+# default with no scenario arguments. --reset-between: these scenarios share
+# one DinD, and wizard scenarios stub scripts/configure.sh and rewrite
+# config.yml/.env (tests/lib/wizard_stub_common.sh) — without a reset, a later
+# scenario (e.g. contract-mock) inherits that mutated state. See tests/README.md
+# "DinD state between scenarios".
 wizard_scenarios() {
     local scenarios
     local -a scenario_args
@@ -269,7 +273,7 @@ wizard_scenarios() {
         return 1
     }
     read -r -a scenario_args <<<"$scenarios"
-    MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh "${scenario_args[@]}"
+    MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh --reset-between "${scenario_args[@]}"
 }
 
 # Single-stage selector: run exactly one stage and nothing else, then exit.
@@ -317,7 +321,7 @@ if [[ -n "$STAGE" ]]; then
             ;;
         wizard)
             stage wizard "wizard: image-free scenarios" \
-                'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $(bash tests/ci-scenarios.sh)' \
+                'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh --reset-between $(bash tests/ci-scenarios.sh)' \
                 wizard_scenarios
             ;;
         warm-python)
@@ -360,7 +364,7 @@ stage default "unit: tests/unit.sh (compose, host units, syntax, bytecode)" \
     "MS_UNIT_SKIP_SHELLCHECK=1 MS_UNIT_SKIP_MYPY=1 bash tests/unit.sh" \
     env MS_UNIT_SKIP_SHELLCHECK=1 MS_UNIT_SKIP_MYPY=1 bash tests/unit.sh
 stage default "wizard: image-free scenarios" \
-    'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh $(bash tests/ci-scenarios.sh)' \
+    'MS_TEST_SKIP_PRELOAD=1 bash tests/run.sh --reset-between $(bash tests/ci-scenarios.sh)' \
     wizard_scenarios
 [[ "$TIER" == "default" ]] && exit 0
 
