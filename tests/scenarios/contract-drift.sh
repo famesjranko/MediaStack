@@ -27,8 +27,8 @@ run_scenario() {
 
     local log_path="/tmp/contract-drift-replay.out"
     if dind_exec "python3 tests/contracts/replay.py live \
-        --service sonarr:http://localhost:8989/api/v3:$API_MATRIX_SONARR_KEY \
-        --service radarr:http://localhost:7878/api/v3:$API_MATRIX_RADARR_KEY" \
+        --service sonarr:http://localhost:8989:$API_MATRIX_SONARR_KEY \
+        --service radarr:http://localhost:7878:$API_MATRIX_RADARR_KEY" \
         >"$log_path" 2>&1; then
         pass "contract-drift: replay.py live mode (sonarr, radarr)"
     else
