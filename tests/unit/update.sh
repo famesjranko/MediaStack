@@ -17,12 +17,13 @@ setup_update_sandbox() {
     mkdir -p "$TMP_DIR/sandbox/bin" \
         "$TMP_DIR/sandbox/docs/operations" \
         "$TMP_DIR/sandbox/scripts/lib" \
-        "$TMP_DIR/sandbox/scripts/setup"
+        "$TMP_DIR/sandbox/scripts/setup/gpu"
 
     cp "$REPO_ROOT/scripts/update.sh" "$TMP_DIR/sandbox/scripts/update.sh"
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/common.sh"
     cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/term_caps.sh" # common.sh sources it
     cp "$REPO_ROOT/scripts/setup/override.sh" "$TMP_DIR/sandbox/scripts/setup/override.sh"
+    cp "$REPO_ROOT/scripts/setup/gpu/compose.sh" "$TMP_DIR/sandbox/scripts/setup/gpu/compose.sh"
     cp "$REPO_ROOT/docs/operations/image-digests.lock" "$TMP_DIR/sandbox/docs/operations/image-digests.lock"
     chmod +x "$TMP_DIR/sandbox/scripts/update.sh"
     cat >"$TMP_DIR/sandbox/scripts/setup/storage.sh" <<'STUB'

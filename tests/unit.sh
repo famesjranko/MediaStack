@@ -163,7 +163,8 @@ endgroup
 # --- 4. python types ----------------------------------------------------------
 # mypy 2.x rejects --python-version 3.9 on the CLI and silently proceeds at 3.10
 # when the same value comes from pyproject.toml instead — the pin is load-bearing.
-# check_untyped_defs is asserted directly rather than trusted to still be set.
+# The strict function-annotation settings are asserted directly rather than
+# trusted to still be set.
 group "python types"
 if [[ "${MS_UNIT_SKIP_MYPY:-0}" == "1" ]]; then
     echo "SKIP: python types (MS_UNIT_SKIP_MYPY=1 — run by a separate caller)"
@@ -184,6 +185,13 @@ else
         END { exit !found }
     ' pyproject.toml; then
         err "python types config missing check_untyped_defs" "pyproject.toml [tool.mypy] must set check_untyped_defs = true"
+        fail=1
+    elif ! awk '
+        /^\[/{ in_section = ($0 == "[tool.mypy]") }
+        in_section && /^disallow_untyped_defs[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { found = 1 }
+        END { exit !found }
+    ' pyproject.toml; then
+        err "python types config missing disallow_untyped_defs" "pyproject.toml [tool.mypy] must set disallow_untyped_defs = true"
         fail=1
     elif ! mypy_pin=$(tool_pin mypy version) \
         || ! stubs_pin=$(tool_pin mypy types_pyyaml_version); then

@@ -1006,20 +1006,17 @@ def run_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def main() -> int:
-    args = parse_args()
+def _run_direct_command(args: argparse.Namespace) -> int | None:
     if args.readme_badges or args.write_readme_badges or args.check_readme_badges:
         return run_readme_badges(args)
     if args.status or args.status_tsv:
         return run_status(args)
     if args.record_install:
         return record_install(pathlib.Path(args.compose), pathlib.Path(args.record_install))
-    previous_path = pathlib.Path(args.previous) if args.previous else None
-    current_path = pathlib.Path(args.write_current) if args.write_current else None
-    snapshot_path = pathlib.Path(args.snapshot_current) if args.snapshot_current else None
-    upgrades_path = pathlib.Path(args.upgrades)
-    tested_at_utc = args.tested_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return None
 
+
+def _validate_accept_options(args: argparse.Namespace) -> bool:
     if args.accept_services:
         if args.accept_current:
             print(
@@ -1027,20 +1024,20 @@ def main() -> int:
                 "selective or full acceptance",
                 file=sys.stderr,
             )
-            return 1
+            return False
         if not args.current_file:
             print(
                 "--accept-services requires --current-file so the accepted digest snapshot "
                 "is the one that was preflighted",
                 file=sys.stderr,
             )
-            return 1
+            return False
         if not args.write_current:
             print(
                 "--accept-services requires --write-current <lock> to write the merged baseline",
                 file=sys.stderr,
             )
-            return 1
+            return False
 
     if args.accept_current and not args.current_file:
         print(
@@ -1048,13 +1045,21 @@ def main() -> int:
             "is the one that was preflighted",
             file=sys.stderr,
         )
-        return 1
+        return False
+    return True
 
+
+def _load_digest_rows(
+    args: argparse.Namespace,
+    previous_path: pathlib.Path | None,
+    upgrades_path: pathlib.Path,
+    tested_at_utc: str,
+) -> tuple[list[ImageDigest], list[ImageDigest]] | None:
     try:
         previous = read_tsv(previous_path)
         if args.require_previous and not previous:
             print(f"tested digest record missing or empty: {previous_path}", file=sys.stderr)
-            return 1
+            return None
         if args.current_file:
             current = read_tsv(pathlib.Path(args.current_file))
         else:
@@ -1066,13 +1071,128 @@ def main() -> int:
             tested_at_utc,
             restamp_all=args.restamp_all,
         )
-        if snapshot_path:
-            write_tsv(snapshot_path, current)
-            print(f"Current image digest snapshot written to {snapshot_path}.")
-            return 0
     except (RuntimeError, OSError) as exc:
         print(f"image drift check failed: {exc}", file=sys.stderr)
+        return None
+    return previous, current
+
+
+def _write_snapshot(snapshot_path: pathlib.Path, current: list[ImageDigest]) -> bool:
+    try:
+        write_tsv(snapshot_path, current)
+    except OSError as exc:
+        print(f"image drift check failed: {exc}", file=sys.stderr)
+        return False
+    print(f"Current image digest snapshot written to {snapshot_path}.")
+    return True
+
+
+def _run_selective_accept(
+    args: argparse.Namespace,
+    previous: list[ImageDigest],
+    current: list[ImageDigest],
+    added: list[ImageDigest],
+    changed: list[tuple[ImageDigest, ImageDigest]],
+    removed: list[ImageDigest],
+    current_path: pathlib.Path | None,
+) -> int:
+    selected = resolve_accept_services(args.accept_services, previous, current, added, removed)
+    verify_preflight_receipts(
+        selected,
+        previous,
+        current,
+        read_pass_receipts(pathlib.Path(args.preflight_receipt)),
+        no_verify=args.no_verify_preflight,
+    )
+    merged = merge_selective(previous, current, selected)
+    if current_path is None:
+        # --accept-services requires --write-current, checked above; an
+        # if/raise survives python -O, unlike a bare assert.
+        raise AssertionError("--accept-services requires --write-current")
+    write_tsv(current_path, merged)
+    print(
+        "Selectively accepted drifted services: "
+        + ", ".join(sorted(selected))
+        + "; all other rows preserved."
+    )
+    pending = sorted({current.service for _, current in changed} - selected)
+    if pending:
+        print("Drifted services left pending: " + ", ".join(pending) + ".")
+    return 0
+
+
+def _verify_full_accept(
+    args: argparse.Namespace,
+    previous: list[ImageDigest],
+    current: list[ImageDigest],
+    added: list[ImageDigest],
+    changed: list[tuple[ImageDigest, ImageDigest]],
+    removed: list[ImageDigest],
+) -> None:
+    if args.accept_current and (added or changed or removed):
+        verify_preflight_receipts(
+            {row.service for row in added} | {curr.service for _, curr in changed},
+            previous,
+            current,
+            read_pass_receipts(pathlib.Path(args.preflight_receipt)),
+            no_verify=args.no_verify_preflight,
+        )
+
+
+def _write_summary(
+    args: argparse.Namespace,
+    current_path: pathlib.Path | None,
+    current: list[ImageDigest],
+    added: list[ImageDigest],
+    changed: list[tuple[ImageDigest, ImageDigest]],
+    removed: list[ImageDigest],
+) -> int:
+    if current_path:
+        # --write-current names an output lock. accept_services has already returned
+        # above, so --accept-current is the only accept that legitimately writes here;
+        # writing the drifted snapshot into an existing lock with neither accept flag
+        # would slip image drift past the receipt gate. Refuse that, while
+        # still allowing a no-drift restamp write.
+        if (added or changed or removed) and not args.accept_current:
+            raise SystemExit(
+                "refusing to write image drift to --write-current without an accept flag "
+                "(--accept-current/--accept-services are receipt-gated); omit --write-current to "
+                "only report drift."
+            )
+        write_tsv(current_path, current)
+    summary = markdown_summary(added, changed, removed)
+    print(summary)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(summary)
+
+    if added or changed or removed:
+        if args.accept_current:
+            print("Image drift accepted; current digests will become the next baseline.")
+            return 0
+        return 2
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    direct_result = _run_direct_command(args)
+    if direct_result is not None:
+        return direct_result
+    previous_path = pathlib.Path(args.previous) if args.previous else None
+    current_path = pathlib.Path(args.write_current) if args.write_current else None
+    snapshot_path = pathlib.Path(args.snapshot_current) if args.snapshot_current else None
+    upgrades_path = pathlib.Path(args.upgrades)
+    tested_at_utc = args.tested_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if not _validate_accept_options(args):
         return 1
+
+    loaded = _load_digest_rows(args, previous_path, upgrades_path, tested_at_utc)
+    if loaded is None:
+        return 1
+    previous, current = loaded
+    if snapshot_path:
+        return 0 if _write_snapshot(snapshot_path, current) else 1
     if not previous:
         if args.accept_services:
             print(
@@ -1104,68 +1224,13 @@ def main() -> int:
     if args.accept_services:
         # Selective accept resolves and writes the merged lock here, then returns
         # before the full-snapshot write below, so it never clobbers the merge.
-        selected = resolve_accept_services(args.accept_services, previous, current, added, removed)
-        # Gate: refuse any selected digest lacking a passing local preflight receipt
-        # (raises before the write below, so a blocked accept never touches the lock).
-        verify_preflight_receipts(
-            selected,
-            previous,
-            current,
-            read_pass_receipts(pathlib.Path(args.preflight_receipt)),
-            no_verify=args.no_verify_preflight,
-        )
-        merged = merge_selective(previous, current, selected)
-        if current_path is None:
-            # --accept-services requires --write-current, checked above; an
-            # if/raise survives python -O, unlike a bare assert.
-            raise AssertionError("--accept-services requires --write-current")
-        write_tsv(current_path, merged)
-        print(
-            "Selectively accepted drifted services: "
-            + ", ".join(sorted(selected))
-            + "; all other rows preserved."
-        )
-        pending = sorted({current.service for _, current in changed} - selected)
-        if pending:
-            print("Drifted services left pending: " + ", ".join(pending) + ".")
-        return 0
+        return _run_selective_accept(args, previous, current, added, changed, removed, current_path)
 
     # A full --accept-current write happens at `write_tsv(current_path, current)`
     # below, so gate it here first — a blocked accept must raise before the lock is
     # overwritten. Only added/drifted rows are checked; unchanged restamps are free.
-    if args.accept_current and (added or changed or removed):
-        verify_preflight_receipts(
-            {row.service for row in added} | {curr.service for _, curr in changed},
-            previous,
-            current,
-            read_pass_receipts(pathlib.Path(args.preflight_receipt)),
-            no_verify=args.no_verify_preflight,
-        )
-
-    if current_path:
-        # --write-current names an output lock. accept_services has already returned
-        # above, so --accept-current is the only accept that legitimately writes here;
-        # writing the drifted snapshot into an existing lock with neither accept flag
-        # would slip image drift past the receipt gate. Refuse that, while
-        # still allowing a no-drift restamp write.
-        if (added or changed or removed) and not args.accept_current:
-            raise SystemExit(
-                "refusing to write image drift to --write-current without an accept flag "
-                "(--accept-current/--accept-services are receipt-gated); omit --write-current to "
-                "only report drift."
-            )
-        write_tsv(current_path, current)
-    summary = markdown_summary(added, changed, removed)
-    print(summary)
-    if os.environ.get("GITHUB_STEP_SUMMARY"):
-        pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(summary)
-
-    if added or changed or removed:
-        if args.accept_current:
-            print("Image drift accepted; current digests will become the next baseline.")
-            return 0
-        return 2
-    return 0
+    _verify_full_accept(args, previous, current, added, changed, removed)
+    return _write_summary(args, current_path, current, added, changed, removed)
 
 
 if __name__ == "__main__":

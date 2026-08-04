@@ -188,11 +188,11 @@ are blocking.
 
 `./tests/unit.sh` runs mypy (pinned version + stub, recorded in `tools.toml`
 `[mypy]`) with
-`check_untyped_defs` over every tracked `*.py`, config in `pyproject.toml`
-`[tool.mypy]`. The standalone selector rejects an empty population or a missing
-`check_untyped_defs = true` and passes the Python 3.9 floor explicitly. The
-executable shell runners repeat those versions; keep their invocations aligned
-when changing a pin.
+`check_untyped_defs` and `disallow_untyped_defs` over every tracked `*.py`,
+configured in `pyproject.toml` `[tool.mypy]`. The standalone selector rejects an
+empty population or a missing/false strict setting and passes the Python 3.9
+floor explicitly. The executable shell runners repeat those versions; keep
+their invocations aligned when changing a pin.
 
 The gate is mypy exiting 0 — every finding was fixed rather than shipping a
 suppression baseline, so there is nothing to compare against and nothing to
@@ -375,6 +375,56 @@ and asserts with `pass`/`fail`/`assert_eq`; `source` it and call it from
 render/config helpers rather than re-implementing request payloads. Each new
 day-2 action that mutates a service API should ship with a matrix module here.
 
+### Contract mocks and drift replay
+
+```bash
+./tests/run.sh --no-preload contract-mock   # image-free, PR gate
+./tests/run.sh contract-drift               # image-backed, preflight-only
+python3 tests/contracts/replay.py spec      # offline-friendly, run anywhere
+```
+
+Ticket 17's `tests/contracts/<service>.yml` files (schema:
+`tests/contracts/README.md`) are the single source of truth for what
+MediaStack calls; two consumers keep them honest without ever reimplementing
+service behavior:
+
+- **`tests/mock/serve.py`** — one generic, stdlib-only (`http.server` +
+  PyYAML) contract-driven mock. Zero per-service branches: it loads a
+  contract, matches each request to a declared endpoint, shape-checks the
+  declared auth (header/cookie/bearer/basic/query/form present — never a
+  simulated token dance), and answers from
+  `tests/mock/fixtures/<service>/<endpoint-id>.json`. A missing fixture
+  falls back to a minimal placeholder built from the endpoint's `reads`
+  fields. Stateless by design: every request is also appended to a JSONL
+  journal so a scenario can assert on the request sequence, and the only
+  per-fixture ordering is an optional `responses:` list consumed one entry
+  per call (the whole retry/failure-injection mechanism — see
+  `tests/mock/README.md`). `tests/scenarios/contract-mock.sh` binds it to
+  the exact fixed ports `service_local_url()` always resolves
+  (`localhost:8989` sonarr, `localhost:7878` radarr) and runs
+  `scripts/configure.sh --only sonarr,radarr` unmodified against it — no
+  test hook in `scripts/`. Image-free; joins the `wizard-ui-*` PR-gate set.
+- **`tests/contracts/replay.py`** — the drift replayer. `spec` mode checks
+  every endpoint of a contract with an `openapi:` URL still exists in the
+  upstream spec (cached locally; offline is a reported SKIP, never a
+  failure). `live` mode replays a contract's safe (`GET`, no `{id}`)
+  endpoints against a real running container and diffs only the declared
+  `reads` fields — mutating endpoints are covered by `spec` mode's
+  method+path check instead, so a drift run never mutates a preflight
+  container. `tests/scenarios/contract-drift.sh` reuses
+  `tests/api-matrix/bringup.sh` (the same bring-up `api-matrix.sh` uses — one
+  bring-up, not duplicated) and runs `live` mode against Sonarr/Radarr.
+  Image-backed; runs in the image-bump preflight
+  (`docs/operations/upgrades.md`), never the PR gate.
+
+Division of labor is a hard constraint (TARGET.md "API contracts and
+mocks"): contracts declare data only, the mock proves our scripts speak the
+contract, drift proves the contract still matches reality, and
+`tests/api-matrix/` keeps proving live behavior none of the above can (auth
+dances, seeding, retries, day-2 effects). Logic in a contract, a
+per-service branch in `serve.py`, or a mock asserting service-side behavior
+is a redesign, not a patch.
+
 ### Stage 1 wizard UI scenarios
 
 The `wizard-ui-stage1-*` scenarios drive real Stage 1 wizard prompts through a
@@ -505,7 +555,7 @@ installed natively or cached via `./tests/lint.sh install`) and `uv` for mypy.
 
 Current units:
 
-- **gpu-branching** — exercises `detect_gpu`, `check_secure_boot`, `verify_gpu_usable` from `scripts/setup/gpu.sh` by shimming `lspci`/`mokutil`/`nvidia-smi`/`docker` and render-device helpers as in-shell functions. Catches regressions in GPU selection logic, including no-GPU `set -e` behavior and vendor-aware Intel/AMD render-node routing, without needing real hardware.
+- **gpu-branching** — exercises the split GPU helpers under `scripts/setup/gpu/` (through the `scripts/setup/gpu.sh` entry) by shimming `lspci`/`mokutil`/`nvidia-smi`/`docker` and render-device helpers as in-shell functions. Catches regressions in GPU selection logic, including no-GPU `set -e` behavior and vendor-aware Intel/AMD render-node routing, without needing real hardware.
 - **qbittorrent** — checks qBittorrent login form encoding, first-run temp-password handling, shared-admin credential alignment, manual-storage behavior, and the reusable live assertion parser.
 - **portainer** — checks Portainer auth drift handling, including a warning when admin auth returns no JWT and the normal endpoint/API-token setup path when auth succeeds.
 - **bazarr** — checks Bazarr config-file write success/failure handling without needing a running Bazarr container.
@@ -514,7 +564,7 @@ Current units:
 - **seerr** — checks Sonarr/Radarr connection payload profile lookup with quoted/backslash profile names.
 - **json-helpers** — exercises `json_get`, `json_path`, `json_has_name`, `json_array_nonempty` from `scripts/lib/json.sh` with representative inputs (missing keys, nested paths, case-insensitive matching, empty/invalid JSON).
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
-- **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening.sh`.
+- **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening/firewall.sh`.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
 - **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
 - **launcher-hardware / nvidia-maintenance** — cover the day-2 hardware surface, Unlock-only visibility/dispatch guards, default-No cancellation, resolve-before-stop ordering, unload failure cleanup, one installer/toolkit execution, and expected-version marker persistence. Pure bash; no Docker/network.
@@ -726,7 +776,7 @@ command by hand:
 
 ```bash
 ./tests/check.sh          # default: fast + tests/unit.sh + image-free wizard scenarios
-./tests/check.sh fast     # static tier: shellcheck, shfmt, ruff, mypy, secrets.
+./tests/check.sh fast     # static tier: shellcheck, line cap, shfmt, ruff, mypy, contracts, secrets.
 ./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
 ./tests/check.sh install  # one-time per machine: fetch + verify every pinned dev
                           # tool (shellcheck, shfmt, gitleaks) into the local cache
@@ -736,9 +786,10 @@ Stages run in the documented order and stop at the first failure, naming the tie
 the exact underlying command so it can be re-run in isolation. It wraps the runners
 below; it does not reimplement their file discovery or logic:
 
-- **fast** — `./tests/lint.sh --severity=warning` (shellcheck), `./tests/format.sh check`
+- **fast** — `./tests/lint.sh --severity=warning` (shellcheck),
+  `./tests/shell-line-cap.sh` (the 500-line ratchet), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
-  pinned gitleaks over this repository's tree — all five from `tools.toml`. It starts
+  pinned gitleaks over this repository's tree. It starts
   no DinD or service containers; ShellCheck runs from a native or cached pinned
   binary (`./tests/check.sh install`) and only falls back to Docker when neither
   is present, but its whole-tree sweep can still take several minutes. Use

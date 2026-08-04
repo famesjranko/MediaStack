@@ -125,6 +125,19 @@ selector_out=$(run_selector \
     'default via 192.168.1.1 dev eth0' \
     '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0' \
     '[]' '' \
+    REQUESTED_PREFIX=172.30.42 REQUESTED_SUBNET=172.30.42.0/24 REQUESTED_GATEWAY=not-an-ip)
+assert_contains "$selector_out" "MEDIASTACK_GATEWAY=172.30.42.1" "network selector render: invalid requested gateway falls back"
+
+selector_out=$(run_selector \
+    'default via 192.168.1.1 dev eth0' \
+    '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0' \
+    '[{"Name":"other","IPAM":{"Config":[{"Subnet":"not-a-network"}]}}]' '')
+assert_contains "$selector_out" "MEDIASTACK_NETWORK_PREFIX=172.28.0" "network selector render: invalid Docker subnet is ignored"
+
+selector_out=$(run_selector \
+    'default via 192.168.1.1 dev eth0' \
+    '2: eth0    inet 192.168.1.50/24 brd 192.168.1.255 scope global eth0' \
+    '[]' '' \
     REQUESTED_PREFIX=172.99.0)
 assert_contains "$selector_out" "MEDIASTACK_NETWORK_PREFIX=172.28.0" "network selector render: invalid requested prefix falls back"
 

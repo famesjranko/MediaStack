@@ -10,6 +10,14 @@ connect_arr_to_seerr() {
     local app="$1" arr_port="$2" seerr_url="$3" cookiejar="$4"
     local app_label="${app^}"
 
+    # Endpoint literals must stay greppable for the contract checker.
+    local settings_url
+    case "$app" in
+        sonarr) settings_url="$seerr_url/api/v1/settings/sonarr" ;;
+        radarr) settings_url="$seerr_url/api/v1/settings/radarr" ;;
+        *) return 0 ;;
+    esac
+
     local arr_key
     arr_key=$(get_api_key "$SCRIPT_DIR/config/${app}/config.xml")
     [[ -z "$arr_key" ]] && return 0
@@ -23,7 +31,7 @@ connect_arr_to_seerr() {
     # blips), and if the read still fails, skip rather than risk a duplicate.
     local existing="" attempt
     for attempt in 1 2 3; do
-        existing=$(api_fetch "Seerr ${app_label} settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/${app}") && break
+        existing=$(api_fetch "Seerr ${app_label} settings" -c "$cookiejar" -b "$cookiejar" "$settings_url") && break
         existing=""
         sleep "$attempt"
     done
@@ -107,7 +115,7 @@ else:
 print(json.dumps(body))
 ')
 
-    js_post "$app_label" "$seerr_url/api/v1/settings/${app}" \
+    js_post "$app_label" "$settings_url" \
         "$body" \
         "$cookiejar"
 }

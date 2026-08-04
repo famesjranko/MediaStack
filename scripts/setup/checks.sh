@@ -243,7 +243,7 @@ prompt_sudo_cache() {
 }
 
 stash_gpu_type() {
-    # Invoke the existing detect_gpu (gpu.sh:9-31), which
+    # Invoke the existing detect_gpu (gpu/detection.sh), which
     # already populates GPU_TYPE in {nvidia, amd, intel, none} and gracefully
     # handles `lspci` absence. Hardware transcoding consumes the
     # global GPU_TYPE downstream.

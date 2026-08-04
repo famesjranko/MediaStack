@@ -947,11 +947,11 @@ else
     pass "main: host integration moved into Stage 1 (not called by main after run_wizard)"
 fi
 # ...and confirm Stage 1 actually owns it, ordered before the access summary.
-stage1_src_hostint="$(cat "$REPO_ROOT/scripts/setup/stages/stage1.sh")"
-if [[ "$stage1_src_hostint" == *"setup_ufw_service_ports"*"setup_samba"*"print_access_info"* ]]; then
-    pass "stage1: host integration runs before print_access_info"
+stage1_install_src="$(cat "$REPO_ROOT/scripts/setup/stage1/install.sh")"
+if [[ "$stage1_install_src" == *"setup_ufw_service_ports"*"setup_samba"*"print_access_info"* ]]; then
+    pass "stage1 install: host integration runs before print_access_info"
 else
-    fail "stage1: host integration must run before print_access_info" "stage1.sh order mismatch"
+    fail "stage1 install: host integration must run before print_access_info" "stage1/install.sh order mismatch"
 fi
 if [[ "$full_order_text" == *"run_wizard"*"stop_existing_stack"* || "$full_order_text" == *"run_wizard"*"pull_images"* || "$full_order_text" == *"run_wizard"*"start_stack"* ]]; then
     fail "main: legacy stack install is skipped after stage install" "order: $full_order_text"

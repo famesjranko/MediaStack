@@ -32,10 +32,9 @@ shopt -s nullglob
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
-# Additional image-free scenarios beyond the wizard-ui-* family. Empty today: the
-# classification found wizard-ui-* is the only no-dependency image-free set. Add a
-# bare scenario name (no path, no .sh); it is emitted only if its file exists.
-extra_image_free=()
+# Additional image-free scenarios beyond the wizard-ui-* family. Add a bare
+# scenario name (no path, no .sh); it is emitted only if its file exists.
+extra_image_free=(contract-mock)
 
 names=()
 for f in tests/scenarios/wizard-ui-*.sh; do

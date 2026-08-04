@@ -1,0 +1,16 @@
+service: npm
+base_path: /api
+auth: {type: bearer, name: Authorization}
+endpoints:
+  - {id: token-create, method: POST, path: /tokens, sends: [identity, secret], reads: [token], callers: [scripts/services/npm/health.sh, scripts/services/npm/main.sh, scripts/lib/npm_remote.sh]}
+  - {id: user-create, method: POST, path: /users, sends: [name, nickname, email, roles, is_disabled, auth.type, auth.secret], reads: [id, email], callers: [scripts/services/npm/main.sh]}
+  - {id: current-user-update, method: PUT, path: /users/me, sends: [name, nickname, email], reads: [], callers: [scripts/services/npm/main.sh]}
+  - {id: current-user-auth-update, method: PUT, path: /users/me/auth, sends: [type, current, secret], reads: [], callers: [scripts/services/npm/main.sh]}
+  - {id: settings-list, method: GET, path: /settings, sends: [], reads: [id, value], callers: [scripts/services/npm/main.sh]}
+  - {id: default-site-update, method: PUT, path: /settings/default-site, sends: [value, meta], reads: [], callers: [scripts/services/npm/main.sh]}
+  - {id: proxy-host-list, method: GET, path: /nginx/proxy-hosts, sends: [], reads: [id, domain_names, forward_host, forward_port, certificate_id, enabled], callers: [scripts/services/npm/publication.sh, scripts/lib/npm_remote.sh]}
+  - {id: proxy-host-get, method: GET, path: "/nginx/proxy-hosts/{id}", sends: [], reads: [id, domain_names, certificate_id, enabled], callers: [scripts/services/npm/rendered.sh]}
+  - {id: proxy-host-create, method: POST, path: /nginx/proxy-hosts, sends: [domain_names, forward_scheme, forward_host, forward_port, block_exploits, allow_websocket_upgrade, access_list_id, certificate_id, ssl_forced, http2_support, meta, advanced_config, locations, caching_enabled, hsts_enabled, hsts_subdomains, enabled], reads: [id], callers: [scripts/services/npm/publication.sh]}
+  - {id: proxy-host-update, method: PUT, path: "/nginx/proxy-hosts/{id}", sends: [domain_names, forward_scheme, forward_host, forward_port, block_exploits, allow_websocket_upgrade, access_list_id, certificate_id, ssl_forced, http2_support, meta, advanced_config, locations, caching_enabled, hsts_enabled, hsts_subdomains, enabled], reads: [], callers: [scripts/services/npm/publication.sh, scripts/services/npm/rendered.sh]}
+  - {id: certificate-list, method: GET, path: /nginx/certificates, sends: [], reads: [id, domain_names, is_deleted], callers: [scripts/lib/npm_remote.sh]}
+  - {id: certificate-create, method: POST, path: /nginx/certificates, sends: [provider, domain_names, meta.dns_challenge], reads: [id], callers: [scripts/services/npm/publication.sh]}

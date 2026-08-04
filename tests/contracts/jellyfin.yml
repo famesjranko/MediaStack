@@ -1,0 +1,27 @@
+service: jellyfin
+base_path: /
+auth: {type: header, name: Authorization}
+# live-replay-only: the upstream stable OpenAPI omits five endpoints we use
+# and verify live (System/Configuration/{encoding,network}, /health) — found
+# by replay.py spec mode 2026-08-04. Restore an openapi: URL if upstream
+# documents them.
+endpoints:
+  - {id: startup-configuration-get, method: GET, path: /Startup/Configuration, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: startup-configuration-update, method: POST, path: /Startup/Configuration, sends: [UICulture, MetadataCountry, PreferredMetadataLanguage], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: startup-user-get, method: GET, path: /Startup/User, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: startup-user-create, method: POST, path: /Startup/User, sends: [Name, Password], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: startup-remote-access, method: POST, path: /Startup/RemoteAccess, sends: [EnableRemoteAccess, EnableAutomaticPortMapping], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: startup-complete, method: POST, path: /Startup/Complete, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: authenticate-by-name, method: POST, path: /Users/AuthenticateByName, sends: [Username, Pw], reads: [AccessToken, User.Id], callers: [scripts/services/jellyfin/main.sh, scripts/lib/http.sh, scripts/lib/health.sh]}
+  - {id: api-keys-list, method: GET, path: /Auth/Keys, sends: [], reads: ["Items[].AccessToken", "Items[].AppName"], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: api-key-create, method: POST, path: /Auth/Keys, sends: [app], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: virtual-folders-list, method: GET, path: /Library/VirtualFolders, sends: [], reads: [Name, "Locations[]"], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: virtual-folder-create, method: POST, path: /Library/VirtualFolders, sends: [name, collectionType, refreshLibrary, "LibraryOptions.PathInfos[].Path"], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: media-folders-list, method: GET, path: /Library/MediaFolders, sends: [], reads: ["Items[].Name"], callers: [scripts/services/seerr/main.sh]}
+  - {id: encoding-config-get, method: GET, path: /System/Configuration/encoding, sends: [], reads: [HardwareAccelerationType], callers: [scripts/launcher/hardware.sh, scripts/services/jellyfin/main.sh]}
+  - {id: encoding-config-update, method: POST, path: /System/Configuration/encoding, sends: [HardwareAccelerationType, EnableHardwareEncoding, HardwareDecodingCodecs, EnableDecodingColorDepth10Hevc, EnableDecodingColorDepth10Vp9, AllowHevcEncoding, AllowAv1Encoding, QsvDevice, VaapiDevice], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: server-config-get, method: GET, path: /System/Configuration, sends: [], reads: [ServerName, RemoteClientBitrateLimit], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: server-config-update, method: POST, path: /System/Configuration, sends: [ServerName, RemoteClientBitrateLimit], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: network-config-get, method: GET, path: /System/Configuration/network, sends: [], reads: [KnownProxies,EnableRemoteAccess,EnableAutomaticPortMapping,AutoDiscoveryTracing,PublishedServerUriBySubnet], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: network-config-update, method: POST, path: /System/Configuration/network, sends: [KnownProxies,EnableRemoteAccess,EnableAutomaticPortMapping,AutoDiscoveryTracing,PublishedServerUriBySubnet], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: health, method: GET, path: /health, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh, scripts/setup/gpu/compose.sh, scripts/setup/stage1/install.sh]}

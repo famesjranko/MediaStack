@@ -1,0 +1,13 @@
+service: jackett
+base_path: /
+auth: {type: query, name: apikey}
+endpoints:
+  - {id: dashboard-get, method: GET, path: /UI/Dashboard, sends: [], reads: [], callers: [scripts/services/jackett/main.sh]}
+  - {id: dashboard-login, method: POST, path: /UI/Dashboard, sends: [], reads: [], callers: [scripts/services/jackett/main.sh]}
+  - {id: server-config-get, method: GET, path: /api/v2.0/server/config, sends: [], reads: [api_key, blackholeduration], callers: [scripts/services/jackett/main.sh]}
+  - {id: server-config-update, method: POST, path: /api/v2.0/server/config, sends: [api_key, blackholeduration], reads: [], callers: [scripts/services/jackett/main.sh]}
+  - {id: indexer-list, method: GET, path: /api/v2.0/indexers, sends: [], reads: [id, name, type], callers: [scripts/services/jackett/main.sh]}
+  - {id: indexer-config-get, method: GET, path: "/api/v2.0/indexers/{id}/config", sends: [], reads: [config], callers: [scripts/services/jackett/main.sh]}
+  - {id: indexer-config-update, method: POST, path: "/api/v2.0/indexers/{id}/config", sends: [config], reads: [], callers: [scripts/services/jackett/main.sh]}
+  - {id: torznab-caps, method: GET, path: "/api/v2.0/indexers/{id}/results/torznab/", sends: [apikey, t], reads: [caps], callers: [scripts/lib/arr/indexers.sh]}
+  - {id: admin-password-update, method: POST, path: /api/v2.0/server/adminpassword, sends: [password], reads: [], callers: [scripts/services/jackett/main.sh]}

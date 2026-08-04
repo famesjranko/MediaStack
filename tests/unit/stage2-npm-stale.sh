@@ -15,8 +15,8 @@ scenario_begin "$CURRENT_SCENARIO"
 
 SCRIPT_DIR="$REPO_ROOT"
 
-[[ -f "$REPO_ROOT/scripts/lib/npm_remote.sh" ]] && source "$REPO_ROOT/scripts/lib/npm_remote.sh"
-[[ -f "$REPO_ROOT/scripts/services/npm/main.sh" ]] && source "$REPO_ROOT/scripts/services/npm/main.sh"
+source "$REPO_ROOT/scripts/lib/npm_remote.sh"
+source "$REPO_ROOT/scripts/services/npm/main.sh"
 
 set +e
 set +u
@@ -34,13 +34,6 @@ log_info() { :; }
 log_ok() { :; }
 log_skip() { :; }
 log_error() { :; }
-
-if ! type npm_remote_hosts_ready >/dev/null 2>&1; then
-    npm_remote_hosts_ready() { return 127; }
-fi
-if ! type _npm_warn_stale_managed_hosts >/dev/null 2>&1; then
-    _npm_warn_stale_managed_hosts() { return 127; }
-fi
 
 DOCKER_INSPECT_ARGS_FILE="$TMP_ROOT/docker-inspect-args"
 DOCKER_INSPECT_RESULT=true
@@ -135,7 +128,7 @@ npm_remote_hosts_ready "gate.test"
 missing_rc=$?
 assert_eq "1" "$missing_rc" "npm_remote_hosts_ready rejects missing rendered proxy config"
 
-npm_source="$(cat "$REPO_ROOT/scripts/services/npm/main.sh")"
+npm_source="$(cat "$REPO_ROOT/scripts/services/npm/main.sh" "$REPO_ROOT/scripts/services/npm/publication.sh")"
 assert_contains "$npm_source" "MEDIASTACK_NPM_ATTEMPT_REMOTE" "NPM has scoped Stage 2 attempt flag"
 assert_contains "$npm_source" "remote_attempt_allowed" "NPM separates remote attempt allowance from global ready state"
 assert_contains "$npm_source" "Disabled non-ready proxy host" "non-ready current-domain host disable path remains"

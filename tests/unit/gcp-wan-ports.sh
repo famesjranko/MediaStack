@@ -2,7 +2,7 @@
 # Unit test - GCP WAN blocked-port coverage
 #
 # Keeps tests/gcp-vm/run-fresh.sh aligned with the Docker LAN-only ports
-# enforced by scripts/setup/hardening.sh.
+# enforced by scripts/setup/hardening/firewall.sh.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +24,7 @@ extract_hardening_ports() {
                 }
             }
         }
-    ' "$REPO_ROOT/scripts/setup/hardening.sh" | sort -n
+    ' "$REPO_ROOT/scripts/setup/hardening/firewall.sh" | sort -n
 }
 
 extract_gcp_ports() {

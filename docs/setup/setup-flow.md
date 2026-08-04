@@ -17,19 +17,19 @@ Entry point for the entire project. Common modes:
 |--------|-----------|----------------|
 | `scripts/setup/checks.sh` | `check_not_root`, `check_debian`, `check_docker`, `check_compose`, `check_disk_space` | Prerequisite validation |
 | `scripts/setup/packages.sh` | `install_base_packages`, `install_docker` | Base packages + Docker (--full) |
-| `scripts/setup/gpu.sh` | `detect_gpu`, `check_secure_boot`, `nvidia_driver_source`, `ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches used by hardware transcoding |
-| `scripts/setup/override.sh` | `detect_host_memory`, `compute_mem_limit`, `generate_override` | Host memory + compose override |
+| `scripts/setup/gpu.sh` + `scripts/setup/gpu/*` | `detect_gpu`, `check_secure_boot`, `nvidia_driver_source`, `ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches, verification, and generated Compose GPU wiring |
+| `scripts/setup/override.sh` + `scripts/setup/gpu/compose.sh` | `detect_host_memory`, `compute_mem_limit`, `generate_override` | Host memory, image policy, and Compose override |
 | `scripts/setup/env_gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
 | `scripts/setup/storage.sh` | `storage_preflight_nas`, `storage_guard_before_start`, `storage_install_watchdog` | Storage mode state, NFS guard, NAS watchdog installation |
 | `scripts/setup/wizard.sh` | `run_wizard` | Core LAN, hardware transcoding add-on, remote access flow (`DEMO=1` non-interactive mode) |
 | `scripts/setup/recovery.sh` | `require_stage1_complete`, `run_remote_recovery`, `run_remote_ready_recovery`, `run_transcoding_recovery`, `show_existing_install_menu` | Recovery Hooks routing for `--remote`, `--transcoding`, and existing-install add-stage menu |
-| `scripts/setup/stages/stage1.sh` | `run_stage1` | Core LAN account/storage/qBittorrent collection and install |
-| `scripts/setup/stages/stage2.sh` | `run_stage2` | Remote access collection/install, `./setup.sh --remote` retry path |
-| `scripts/setup/stages/stage3.sh` | `run_stage3`, `run_hardware_transcoding_addon`, `stage3_finalize_nvidia` | Internal hardware transcoding engine, NVIDIA marker/reboot handoff, post-reboot finalize |
+| `scripts/setup/stages/stage1.sh` + `scripts/setup/stage1/*` | `run_stage1` and Stage 1 steps | Core LAN flow ordering, account/storage/qBittorrent collection, and install |
+| `scripts/setup/stages/stage2.sh` + `scripts/setup/stage2/*` | `run_stage2` and Stage 2 steps | Remote access flow ordering, collection/install, and `./setup.sh --remote` retry path |
+| `scripts/setup/stages/stage3.sh` + `scripts/setup/stage3/*` | `run_stage3`, `run_hardware_transcoding_addon`, and Stage 3 steps | Internal hardware transcoding engine, NVIDIA marker/reboot handoff, post-reboot finalize |
 | `scripts/setup/wizard_apply.py` | *(CLI)* | Apply wizard preset to config.yml (section-targeted replacement) |
 | `scripts/setup/presets.yml` | *(data)* | Quality model — `quality_ids` / `resolutions` / `sizes` axes |
 | `scripts/setup/reboot.sh` | `schedule_post_reboot`, `cleanup_post_reboot` | Systemd oneshot for post-reboot resume |
-| `scripts/setup/hardening.sh` | `setup_hardening` (gated by `UFW_ENABLED`/`HARDENING_ENABLED`), `setup_ufw`, `setup_ufw_docker_rules`, `setup_unattended_upgrades`, `setup_sysctl_hardening`, `verify_gpu_runtime` (always), `setup_samba` | OS hardening (opt-in) + optional SMB |
+| `scripts/setup/hardening.sh` + `scripts/setup/hardening/*` | `setup_hardening` (gated by `UFW_ENABLED`/`HARDENING_ENABLED`), concern implementations, `verify_gpu_runtime` (always), `setup_samba` | OS hardening (opt-in) + optional SMB |
 | `scripts/setup/stack.sh` | `create_data_dirs`, `create_config_dirs`, `start_stack`, `wait_for_healthy`, `print_access_info`, `print_final_summary` | Data/config dirs, stack lifecycle, setup summary |
 | `scripts/setup/render/network_selector.py` | *(CLI)* | Select a non-conflicting Docker subnet from host route/address and Docker network snapshots |
 
@@ -60,7 +60,7 @@ The interactive path is:
 | 6 | Docker/base validation | `check_docker`, `check_compose`, `check_disk_space` | checks.sh |
 | 7 | Host detection | `detect_host_memory`, `detect_env`, `stash_gpu_type` | override.sh, env_gen.sh, gpu.sh |
 | 8 | *(--full only)* Base packages + Docker | `install_base_packages`, `install_docker` | packages.sh |
-| 9 | GPU runtime check + hardening re-affirm | `verify_gpu_runtime` (always); `setup_hardening` only on a completed re-run (`STAGE_1_COMPLETE=1`) | hardening.sh |
+| 9 | GPU runtime check + hardening re-affirm | `verify_gpu_runtime` (always); `setup_hardening` only on a completed re-run (`STAGE_1_COMPLETE=1`) | hardening.sh + hardening/* |
 | 10 | Wizard | `run_stage1`, `run_hardware_transcoding_addon`, `run_stage2`, final reboot gate | wizard.sh, stages/*.sh |
 
 On a **fresh** install, `setup_hardening` runs *inside* Stage 1 (`_stage1_install`, after the wizard collects the `UFW_ENABLED`/`HARDENING_ENABLED` choice and before the stack is started) so the firewall/Docker-port rules are applied before any published port is exposed. `setup_hardening` gates `setup_ufw` on `UFW_ENABLED` and the unattended-upgrades + sysctl steps on `HARDENING_ENABLED`; `verify_gpu_runtime` is independent of both and always runs pre-wizard (Phase 9).
@@ -171,7 +171,7 @@ On next boot:
 
 ## OS hardening
 
-`setup_hardening` (in `scripts/setup/hardening.sh`) runs before the wizard since it has no `.env` dependencies. It orchestrates four sub-functions, all idempotent (check-then-apply, `log_skip` if already done):
+`setup_hardening` (in `scripts/setup/hardening.sh`) runs before the wizard since it has no `.env` dependencies. It orchestrates the concern modules under `scripts/setup/hardening/`, all idempotent (check-then-apply, `log_skip` if already done):
 
 - **`setup_ufw`** — records UFW state in `/etc/mediastack/install-state`, preserves existing rules, applies deny-incoming/allow-outgoing defaults, and adds uniquely tagged `MediaStack:*` rules for SSH, HTTP/HTTPS, Beszel, torrent, WireGuard, and SMB traffic. `setup_ufw_docker_rules` owns an explicitly delimited block in `/etc/ufw/after.rules` and the matching live `MEDIASTACK-DOCKER-RESTRICT` chain. `setup_ufw_docker_dedup_hook` additionally installs a marker-delimited block in `/etc/ufw/after.init` that trims the DOCKER-USER → `MEDIASTACK-DOCKER-RESTRICT` jump back to a single copy after each UFW load (`after.rules` re-appends it on every reload). Re-runs skip matching state and warn on default-policy drift; they never reset UFW.
 - **`setup_unattended_upgrades`** — installs automatic security-only updates through MediaStack-owned `21mediastack-auto-upgrades` and `51mediastack-unattended-upgrades` drop-ins. Existing package files are never overwritten; effective settings are checked through `apt-config dump`.
@@ -239,7 +239,7 @@ The interactive wizard requires the user to set the admin password directly — 
 
 ### WireGuard INIT_PASSWORD propagation (v15)
 
-wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only. WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stages/stage2.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env_gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
+wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only. WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stage2/wireguard.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` in `scripts/setup/stage2/install.sh` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env_gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
 
 After `/etc/wireguard/wg-easy.db` exists, `INIT_*` vars are inert. Subsequent wizard re-runs leave the in-container admin password unchanged; rotate it in the wg-easy UI instead. The configurator (`scripts/services/wireguard/main.sh`) detects this on its readiness probe and logs `[SKIP]` for an existing initial peer.
 
@@ -256,7 +256,7 @@ The default cell is **`1080p Balanced`**, which matches the shipped `config.yml`
 
 ## Override generation
 
-`generate_override` writes `docker-compose.override.yml` based on `IMAGE_CHANNEL`, `$GPU_TYPE`, and
+`generate_override` in `scripts/setup/gpu/compose.sh` writes `docker-compose.override.yml` based on `IMAGE_CHANNEL`, `$GPU_TYPE`, and
 host memory. Stable (the default) adds `image: tag@sha256:digest` entries from
 `docs/operations/image-digests.lock`; Latest omits image overrides and uses the tags in `docker-compose.yml`.
 It then computes proportional memory limits for all 19 services using `compute_mem_limit`

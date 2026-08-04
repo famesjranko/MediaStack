@@ -146,6 +146,7 @@ unset -f sudo detect_ssh_server_ports
 # must have their session source re-allowed too (the install path preserves it via
 # ufw_valid_ip_literal). Same drift setup as above, but SSH_CONNECTION is IPv6.
 UFW_CALLS=()
+# shellcheck disable=SC2034  # read by _uninstall_ufw, sourced via hardening/firewall.sh
 SSH_CONNECTION="2001:db8::1 55123 2001:db8::20 2222"
 detect_ssh_server_ports() { echo 22; }
 sudo() {

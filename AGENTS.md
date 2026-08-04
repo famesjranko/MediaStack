@@ -29,7 +29,9 @@ and low maintenance.
 |---|---|---|
 | Anything (first visit) | [docs/conventions.md](docs/conventions.md) | What is enforced, what is deliberately not, file placement |
 | Services / compose | [docs/project/stack.md](docs/project/stack.md), [docs/project/structure.md](docs/project/structure.md) | Runtime model; where a new service's files go |
+| Day-2 launcher | [docs/project/structure.md](docs/project/structure.md) | Feature seams under scripts/launcher/; mediastack remains the dispatcher |
 | `setup.sh` | [docs/setup/setup-flow.md](docs/setup/setup-flow.md) | Phase ordering that re-run safety depends on |
+| Hardening concerns | [docs/setup/setup-flow.md](docs/setup/setup-flow.md), [docs/project/structure.md](docs/project/structure.md) | Per-concern modules under `scripts/setup/hardening/`; preserve host-state ownership and skip/warn semantics |
 | Service configurators | [docs/setup/configure-flow.md](docs/setup/configure-flow.md) | Per-service wiring; skip/warn semantics |
 | `config.yml` / `.env` keys | [docs/setup/configuration-schema.md](docs/setup/configuration-schema.md) | Full key reference; adding a key touches both |
 | Storage paths | [docs/setup/storage.md](docs/setup/storage.md) | Local/NAS/manual modes constrain path handling |
@@ -43,14 +45,14 @@ and low maintenance.
 | You changed | Run | Why |
 |---|---|---|
 | Nothing yet (first run on this machine) | `./tests/check.sh install` | Fetches the pinned dev tools (ShellCheck, shfmt, gitleaks) into the local cache — the fast tier then needs no Docker |
-| Any shell | `./tests/check.sh fast` | ShellCheck, shfmt, ruff, mypy, secrets — no containers |
+| Any shell | `./tests/check.sh fast` | ShellCheck, line cap, shfmt, ruff, mypy, secrets — no containers |
 | Any Python | `./tests/check.sh ruff && ./tests/check.sh mypy` | Lint/format and types, isolated stages |
 | Compose / config templates | `./tests/check.sh` | Adds compose render + unit + wizard scenarios |
 | Setup/wizard flows | `./tests/check.sh` | Wizard scenarios run image-free here |
 | Anything, before a PR | `./tests/check.sh` | Same coverage as the CI gate |
 | Container behaviour | `./tests/check.sh full` | Complete DinD battery — slow, needs Docker |
 
-Single-stage selectors (lint, shfmt, ruff, mypy, secrets, unit, wizard) are
+Single-stage selectors (lint, line-cap, shfmt, ruff, mypy, secrets, unit, wizard) are
 documented in the usage header of [tests/check.sh](tests/check.sh).
 
 ## Build

@@ -1,0 +1,12 @@
+service: portainer
+base_path: /
+auth: {type: bearer, name: Authorization}
+openapi: https://api-docs.portainer.io/?edition=ce&version=latest
+endpoints:
+  - {id: admin-check, method: GET, path: /api/users/admin/check, sends: [], reads: [], callers: [scripts/services/portainer/main.sh]}
+  - {id: admin-init, method: POST, path: /api/users/admin/init, sends: [Username, Password], reads: [], callers: [scripts/services/portainer/main.sh]}
+  - {id: auth, method: POST, path: /api/auth, sends: [Username, Password], reads: [jwt], callers: [scripts/services/portainer/main.sh]}
+  - {id: user-update, method: PUT, path: "/api/users/{id}", sends: [Username, Role], reads: [], callers: [scripts/services/portainer/main.sh]}
+  - {id: endpoint-list, method: GET, path: /api/endpoints, sends: [], reads: [id, Name], callers: [scripts/services/portainer/main.sh]}
+  - {id: user-token-create, method: POST, path: "/api/users/{id}/tokens", sends: [description, password], reads: [rawAPIKey], callers: [scripts/services/portainer/main.sh]}
+  - {id: endpoint-create, method: POST, path: /api/endpoints, sends: [Name, EndpointCreationType], reads: [Id, Name], callers: [scripts/services/portainer/main.sh]}

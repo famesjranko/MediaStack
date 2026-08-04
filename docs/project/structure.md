@@ -33,34 +33,42 @@ scripts/
   nvidia-repatch.sh                 Re-apply NVENC patch after driver update
   storage-watchdog.sh               NAS mount/sentinel watchdog for managed network storage
   fail2ban-reload-watcher.sh        Reloads fail2ban on log rotation (new dated file) so jail globs re-resolve (installed by scripts/setup/fail2ban.sh)
+  launcher/                         Day-2 feature modules sourced by mediastack (one file per launcher seam)
   setup/                            Setup modules sourced by setup.sh
     checks.sh                       Prerequisite checks (root, debian, docker, compose, disk)
     packages.sh                     Base package + Docker installation (--full only)
-    gpu.sh                          GPU detection, driver install, nvidia-patch, verification
-    override.sh                     Host memory detection, compute limits, generate override
+    gpu.sh                          GPU entry wiring; concern implementations live under gpu/
+    gpu/                             Detection, NVIDIA phases, Intel/AMD, verification, Compose output
+    override.sh                     Host memory detection, image policy, and helper loading for Compose output
     env_gen.sh                      Interactive .env generation
     fail2ban.sh                     Installs/uninstalls the fail2ban log-rotation reload watcher systemd units
     storage.sh                      Storage mode helpers, NAS preflight, watchdog install
     wizard.sh                       Interactive setup wizard (quality tier, GPU, subtitles)
     recovery.sh                     Stage re-entry routing and existing-install add-stage menu
     stages/
-      stage1.sh                     Stage 1 Core LAN controller and install path
-      stage2.sh                     Stage 2 remote-access collection/install controller
-      stage3.sh                     Internal hardware transcoding controller, NVIDIA finalize marker helpers, post-reboot finalize helper
+      stage1.sh                     Stage 1 Core LAN flow ordering and marker routing
+      stage2.sh                     Stage 2 remote-access flow ordering and marker routing
+      stage3.sh                     Hardware transcoding flow ordering (run_stage3, run_hardware_transcoding_addon)
+    stage1/                         Stage 1 concern implementations (sourced by stages/stage1.sh)
+    stage2/                         Stage 2 remote-access concern implementations (sourced by stages/stage2.sh)
+    stage3/                         Hardware transcoding concern implementations (sourced by stages/stage3.sh)
     wizard_apply.py                 Apply wizard preset to config.yml (preserves comments)
     presets.yml                     Quality model: resolution × size axes (composed at apply time)
     reboot.sh                       Post-reboot systemd service scheduling + cleanup
-    hardening.sh                    OS hardening (UFW, sysctl, auto-updates) + optional SMB
+    hardening.sh                    Hardening entry wiring, ledger, and orchestration
+    hardening/                      Per-concern modules: SSH, firewall, ports, updates, sysctl, GPU runtime, Samba
     stack.sh                        Data/config dirs, compose up, health wait, access info
     render/*.py                     Setup-time pure render/selector helpers
   lib/
     common.sh                       Logging, cfg_* YAML readers, api_get/api_post, key mgmt
+    render-device.sh                Shared internal GPU render-device resolution helpers
     ddns_providers.sh               DDNS provider registry + config.json renderer (6 providers; shared wizard/day-2)
     dry_run.sh                      `--dry-run` UI explorer: walks the real wizard/launcher with side effects neutralised
     health.sh                       Day-2 silent-failure health checks (fail2ban drift, cert renewal, DDNS drift, disk, UFW, Docker)
     http.sh                         wait_for_service, js_post (cookie-session)
     json.sh                         json_get, json_path, json_has_name, json_array_nonempty
-    network.sh                      Public IP detection, speed test, TCP port probing (shared by wizard.sh + port-check.sh)
+    network.sh                      Compatibility entry point and source-time state for shared network helpers
+    network/                        Public IP, DNS, DDNS, port-gate, and WireGuard access helpers
     npm_remote.sh                   Shared NPM remote-readiness checks, sourceable without the full npm/main.sh
     nvidia_patch.sh                 Shared nvidia-patch pinning and verified execution helpers
     profiles.sh                     Single source of truth for compose profile args, derived from `.env` (installer + launcher)
@@ -69,11 +77,18 @@ scripts/
     ui.sh + ui_render_fallback.sh + ui_render_gum.sh + ui_demo.sh   Interactive prompts: public API/orchestration, pure-bash backend, gum backend, demo-mode walkthrough
     validators.sh                   Stage 1 input-contract validators
     arr/                            Shared Sonarr/Radarr helpers
-      main.sh                       Quality profiles, definitions, custom formats, indexer wiring
+      main.sh                       Compatibility entry point for shared Sonarr/Radarr helpers
+      quality.sh                    Quality profiles and definitions
+      formats.sh                    Custom formats and profile scores
+      indexers.sh                   Jackett indexer discovery and wiring
+      storage.sh                    Root folders, disk thresholds, and download clients
+      connections.sh                Arr authentication and Jellyfin notifications
       custom_formats.yml            Curated TRaSH Guides format definitions (developer-managed)
       render/*.py                   JSON/XML transforms (stdlib; PyYAML where needed)
   services/<svc>/                   Per-service configurators (14 services; Seerr is services/seerr/)
     main.sh                         configure_<svc>() — required
+    npm/{certs,health,post,publication,rendered,stale}.sh
+                                    NPM's internal concerns, sourced by npm/main.sh
     templates/*.json                Static API payloads (no variable substitution)
     render/*.py                     Optional pure per-service render/policy helpers
 

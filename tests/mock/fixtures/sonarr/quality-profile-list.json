@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "body": [
+    {
+      "id": 1,
+      "name": "Any",
+      "cutoff": 1,
+      "upgradeAllowed": false,
+      "items": [
+        { "quality": { "id": 1, "name": "SDTV" }, "allowed": true }
+      ],
+      "minFormatScore": 0,
+      "formatItems": []
+    }
+  ]
+}

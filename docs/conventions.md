@@ -48,14 +48,47 @@ may be tracked. `tests/lib/repo_guard.py` is the guard;
 [`../tests/unit/repository-safety.sh`](../tests/unit/repository-safety.sh) proves it
 against one clean and one targeted bad fixture per rule.
 
+### Shell structure
+
+Every tracked shell file (`*.sh` and the `mediastack` launcher) is capped at 500 lines. The fast-tier line-cap gate
+uses `tests/shell-line-cap.allowlist` for today's existing offenders. An
+allowlist entry is `<path>\t<line-count>`. Recorded counts may only shrink (or
+the entry may be removed), and the file may not grow past its recorded count;
+an entry for a missing file or a file now at or under the cap is stale and fails
+the gate. Remove entries as files are brought under the cap.
+
+The source-to-unit naming rule is that a unit suite names the source module it
+covers, in one of three shapes: `tests/unit/<name>.sh` (the source basename),
+`tests/unit/<area>-<name>.sh` where the basename alone is ambiguous (e.g.
+`launcher-ddns.sh`, `stage2-ddns.sh`), or a mirrored directory
+`tests/unit/<area>/<name>.sh` (e.g. `tests/unit/gpu/`, `tests/unit/hardening/`).
+Submodules split out of a covered module (e.g. `scripts/services/npm/*.sh`,
+`scripts/lib/arr/*.sh`) may stay covered by that module's existing suite rather
+than gaining one file each. Service modules use one fixed shape:
+`scripts/services/<name>/main.sh` is required, with `render/` and `templates/`
+optional for Python renderers and static templates.
+
+Every new shell module under `scripts/` starts with this two-line header
+contract immediately after its shebang (or as its first two lines when it has
+no shebang). Two exemptions: `scripts/services/<name>/main.sh` keeps the
+numbered banner shape its peers use, and test files under `tests/` carry no
+header contract:
+
+```bash
+# Owns: <the responsibility this file owns>.
+# Sources: <the files, functions, or environment it depends on>.
+```
+
 ## Enforcement
 
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
+| Tracked shell file is at or under 500 lines, with an allowlist ratchet for existing offenders | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check | `./tests/check.sh ruff` | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
+| API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`) | — |
 | No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled against `tests/secret-scan.expected` | `secret-scan` |
 | No secret in reachable history | `./tests/check.sh secrets-history` — run before a push that publishes new history, not in any tier | — |
 | Shell parses, Python byte-compiles, compose renders across profiles | `./tests/check.sh unit` → `tests/unit.sh` tiers 1, 3, 5 | `unit-host` |
@@ -107,6 +140,13 @@ automated, arriving without context.
 These are conventions, judgement calls, or documented workflows that no test,
 lint rule, or CI job checks. Follow them; do not mistake them for gates.
 
+- **Unit-test naming.** The 1:1 source-to-`tests/unit/<name>.sh` basename rule
+  is a convention; no checker currently verifies the correspondence.
+- **Service-module shape.** The required `main.sh` with optional `render/` and
+  `templates/` layout is a convention; no checker currently verifies it.
+- **New-file header contract.** The two-line `Owns`/`Sources` header is a
+  convention; no checker currently verifies it.
+
 - **The "Adding a New Service" checklist** in `project/structure.md`. Nothing
   verifies that the tree section, the `config.yml` section, or the
   `scripts/configure.sh` loop entry were updated alongside a new service.
@@ -140,7 +180,7 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **README menu screenshot freshness.** The PNGs under `docs/assets/` are
   manually refreshed snapshots. This repository has no capture generator or
   freshness gate, so review them when launcher menus change.
-- **The admin-port list in `scripts/setup/hardening.sh`.** Nothing checks that
+- **The admin-port list in `scripts/setup/hardening/firewall.sh`.** Nothing checks that
   the `MEDIASTACK-DOCKER-RESTRICT` multiport rules still cover every admin port
   published by `docker-compose.yml`. A new admin service whose port is not added
   there is exposed on a hardened host and lints clean. See
@@ -148,7 +188,7 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **The uninstall teardown of `MEDIASTACK-DOCKER-RESTRICT`.**
   `tests/unit/uninstall-system-cleanup.sh` drives `_uninstall_ufw`, but its `sudo`
   stub fails every `iptables` call, so the delete/flush/delete-chain block in
-  `scripts/setup/hardening.sh` is never observed. Deleting that block leaves every
+  `scripts/setup/hardening/firewall.sh` is never observed. Deleting that block leaves every
   host unit suite green while an uninstalled or firewall-disabled host keeps a
   live chain DROPping 16 ports.
 - **Lint suppressions.** Nothing inventories the inline `# shellcheck disable=`,
