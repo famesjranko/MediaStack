@@ -8,6 +8,8 @@
 # GPU_TYPE ("nvidia"|"amd"|"intel"|"none"), NEEDS_REBOOT (bool).
 
 _GPU_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/render-device.sh
+source "$_GPU_HELPER_DIR/lib/render-device.sh"
 # shellcheck source=../lib/nvidia_patch.sh
 source "$_GPU_HELPER_DIR/lib/nvidia_patch.sh"
 unset _GPU_HELPER_DIR
@@ -73,64 +75,22 @@ gpu_brand_label() {
 }
 
 gpu_render_device_for_vendor() {
-    local vendor="${1:-}"
-    local vendor_id=""
-    case "$vendor" in
-        intel) vendor_id="0x8086" ;;
-        amd) vendor_id="0x1002" ;;
-    esac
-
-    local render node sys_vendor found="" saw_vendor_file=false
-    for render in /dev/dri/renderD*; do
-        [[ -e "$render" ]] || continue
-        node="${render##*/}"
-        sys_vendor="/sys/class/drm/${node}/device/vendor"
-        if [[ -r "$sys_vendor" ]]; then
-            saw_vendor_file=true
-            if [[ -n "$vendor_id" ]] && grep -qi "^${vendor_id}$" "$sys_vendor"; then
-                printf '%s\n' "$render"
-                return 0
-            fi
-        fi
-        [[ -z "$found" ]] && found="$render"
-    done
-
-    if [[ -n "$vendor_id" && "$saw_vendor_file" == "true" ]]; then
-        return 1
+    if _render_device_for_vendor "$@"; then
+        return 0
     fi
-    [[ -n "$found" ]] || return 1
-    printf '%s\n' "$found"
+    return 1
 }
 
 gpu_render_device_exists() {
-    [[ -e "${1:-}" ]]
+    _render_device_exists "$@"
 }
 
 gpu_render_device_vendor_matches() {
-    local render_device="${1:-}"
-    local vendor="${2:-}"
-    local vendor_id=""
-    case "$vendor" in
-        intel) vendor_id="0x8086" ;;
-        amd) vendor_id="0x1002" ;;
-    esac
-
-    [[ -n "$vendor_id" ]] || return 0
-
-    local node sys_vendor
-    node="${render_device##*/}"
-    sys_vendor="/sys/class/drm/${node}/device/vendor"
-    [[ -r "$sys_vendor" ]] || return 0
-    grep -qi "^${vendor_id}$" "$sys_vendor"
+    _render_device_vendor_matches "$@"
 }
 
 gpu_persisted_render_device() {
-    local vendor="${1:-}"
-    local render_device="${STAGE_3_GPU_RENDER_DEVICE:-}"
-    [[ "$render_device" =~ ^/dev/dri/renderD[0-9]+$ ]] || return 1
-    gpu_render_device_exists "$render_device" || return 1
-    gpu_render_device_vendor_matches "$render_device" "$vendor" || return 1
-    printf '%s\n' "$render_device"
+    _render_device_persisted "${1:-}" gpu_render_device_exists gpu_render_device_vendor_matches
 }
 
 # Detect Secure Boot state via mokutil. Secure Boot refuses to load unsigned

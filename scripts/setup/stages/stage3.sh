@@ -7,6 +7,11 @@ if [[ -z "${SCRIPT_DIR:-}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 fi
 
+_STAGE3_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../../lib/render-device.sh
+source "$_STAGE3_HELPER_DIR/../lib/render-device.sh"
+unset _STAGE3_HELPER_DIR
+
 if ! type ui_log >/dev/null 2>&1; then
     ui_log() { :; }
 fi
@@ -359,69 +364,34 @@ stage3_resolve_render_device() {
     fi
 
     if type gpu_render_device_for_vendor >/dev/null 2>&1; then
-        gpu_render_device_for_vendor "$vendor" && return 0
+        if gpu_render_device_for_vendor "$vendor"; then
+            return 0
+        fi
     fi
 
-    local vendor_id=""
-    case "$vendor" in
-        intel) vendor_id="0x8086" ;;
-        amd) vendor_id="0x1002" ;;
-    esac
-
-    local render node sys_vendor found="" saw_vendor_file=false
-    for render in /dev/dri/renderD*; do
-        [[ -e "$render" ]] || continue
-        node="${render##*/}"
-        sys_vendor="/sys/class/drm/${node}/device/vendor"
-        if [[ -r "$sys_vendor" ]]; then
-            saw_vendor_file=true
-            if [[ -n "$vendor_id" ]] && grep -qi "^${vendor_id}$" "$sys_vendor"; then
-                printf '%s\n' "$render"
-                return 0
-            fi
-        fi
-        [[ -z "$found" ]] && found="$render"
-    done
-
-    if [[ -n "$found" ]]; then
-        if [[ -n "$vendor_id" && "$saw_vendor_file" == "true" ]]; then
-            return 1
-        fi
-        printf '%s\n' "$found"
+    local resolve_rc=0
+    if _render_device_for_vendor "$vendor"; then
+        return 0
     else
-        printf '%s\n' "/dev/dri/renderD128"
+        resolve_rc=$?
     fi
+    if ((resolve_rc == 1)); then
+        printf '%s\n' "/dev/dri/renderD128"
+        return 0
+    fi
+    return 1
 }
 
 stage3_render_device_exists() {
-    [[ -e "${1:-}" ]]
+    _render_device_exists "$@"
 }
 
 stage3_render_device_vendor_matches() {
-    local render_device="${1:-}"
-    local vendor="${2:-}"
-    local vendor_id=""
-    case "$vendor" in
-        intel) vendor_id="0x8086" ;;
-        amd) vendor_id="0x1002" ;;
-    esac
-
-    [[ -n "$vendor_id" ]] || return 0
-
-    local node sys_vendor
-    node="${render_device##*/}"
-    sys_vendor="/sys/class/drm/${node}/device/vendor"
-    [[ -r "$sys_vendor" ]] || return 0
-    grep -qi "^${vendor_id}$" "$sys_vendor"
+    _render_device_vendor_matches "$@"
 }
 
 stage3_persisted_render_device() {
-    local vendor="${1:-}"
-    local render_device="${STAGE_3_GPU_RENDER_DEVICE:-}"
-    [[ "$render_device" =~ ^/dev/dri/renderD[0-9]+$ ]] || return 1
-    stage3_render_device_exists "$render_device" || return 1
-    stage3_render_device_vendor_matches "$render_device" "$vendor" || return 1
-    printf '%s\n' "$render_device"
+    _render_device_persisted "${1:-}" stage3_render_device_exists stage3_render_device_vendor_matches
 }
 
 stage3_run_encoder_smoke_test() {
