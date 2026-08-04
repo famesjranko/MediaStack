@@ -53,6 +53,14 @@ XML"
 
 run_scenario() {
     create_config_dirs_in_dind
+    # Earlier scenarios in a shared battery mutate the DinD copy: wizard
+    # scenarios overwrite scripts/configure.sh with a no-op stub
+    # (tests/lib/wizard_stub_common.sh) and rewrite config.yml. Restore the
+    # real configurator from the host tree and reseed config.yml from its
+    # template so this scenario always exercises fresh-install paths.
+    docker cp "$(pwd)/scripts/configure.sh" "$DIND_NAME:/root/MediaStack/scripts/configure.sh"
+    dind_exec "chmod +x scripts/configure.sh"
+    dind_exec "cp config/examples/config.yml config.yml"
     dind_exec "cp .env.example .env"
     env_set TZ Etc/UTC
     env_set PUID 1000
@@ -96,6 +104,9 @@ set +a
         pass "contract-mock: journal recorded requests"
     else
         fail "contract-mock: journal recorded requests"
+        echo "--- configure output (journal was empty) ---"
+        tail -40 "$log_path"
+        dind_exec "tail -20 /tmp/contract-mock.log 2>/dev/null || true"
         contract_mock_stop_server
         return 1
     fi
