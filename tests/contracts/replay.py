@@ -188,6 +188,19 @@ def _parse_service_arg(value: str) -> tuple[str, str, str]:
     return name, base_url, api_key
 
 
+def _missing_reads(endpoint: dict[str, Any], body: Any) -> list[str]:
+    if isinstance(body, list):
+        if not body:
+            return []  # empty list: nothing to diff, not a drift
+        body = body[0]
+    missing = []
+    for field in endpoint.get("reads", []):
+        present, _ = _get_dotted(body, str(field).split("."))
+        if not present:
+            missing.append(str(field))
+    return missing
+
+
 def run_live_mode(targets: list[tuple[str, str, str]]) -> int:
     contracts = _load_contracts([name for name, _, _ in targets])
     errors: list[str] = []
@@ -214,12 +227,8 @@ def run_live_mode(targets: list[tuple[str, str, str]]) -> int:
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
                 errors.append(f"{service} {endpoint.get('id')}: {method} {url} failed: {exc}")
                 continue
-            for field in endpoint.get("reads", []):
-                present, _ = _get_dotted(body, str(field).split("."))
-                if not present:
-                    errors.append(
-                        f"{service} {endpoint.get('id')}: reads field '{field}' missing live"
-                    )
+            for field in _missing_reads(endpoint, body):
+                errors.append(f"{service} {endpoint.get('id')}: reads field '{field}' missing live")
     for skip in skips:
         print(f"replay: live: SKIP {skip}", file=sys.stderr)
     for error in errors:
