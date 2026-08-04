@@ -15,7 +15,7 @@ endpoints:
   - {id: virtual-folders-list, method: GET, path: /Library/VirtualFolders, sends: [], reads: [Name, "Locations[]"], callers: [scripts/services/jellyfin/main.sh]}
   - {id: virtual-folder-create, method: POST, path: /Library/VirtualFolders, sends: [name, collectionType, refreshLibrary, "LibraryOptions.PathInfos[].Path"], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: media-folders-list, method: GET, path: /Library/MediaFolders, sends: [], reads: ["Items[].Name"], callers: [scripts/services/seerr/main.sh]}
-  - {id: encoding-config-get, method: GET, path: /System/Configuration/encoding, sends: [], reads: [HardwareAccelerationType], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: encoding-config-get, method: GET, path: /System/Configuration/encoding, sends: [], reads: [HardwareAccelerationType], callers: [scripts/launcher/hardware.sh, scripts/services/jellyfin/main.sh]}
   - {id: encoding-config-update, method: POST, path: /System/Configuration/encoding, sends: [HardwareAccelerationType, EnableHardwareEncoding, HardwareDecodingCodecs, EnableDecodingColorDepth10Hevc, EnableDecodingColorDepth10Vp9, AllowHevcEncoding, AllowAv1Encoding, QsvDevice, VaapiDevice], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: server-config-get, method: GET, path: /System/Configuration, sends: [], reads: [ServerName, RemoteClientBitrateLimit], callers: [scripts/services/jellyfin/main.sh]}
   - {id: server-config-update, method: POST, path: /System/Configuration, sends: [ServerName, RemoteClientBitrateLimit], reads: [], callers: [scripts/services/jellyfin/main.sh]}
