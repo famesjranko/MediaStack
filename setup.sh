@@ -228,6 +228,7 @@ main() {
             esac
         fi
     fi
+    # shellcheck disable=SC2034  # read by stage3/marker.sh and stage3/nvidia-flow.sh
     NEEDS_REBOOT=false
     GPU_TYPE="none"
     local watchdog_paused_before_wizard=false

@@ -25,7 +25,7 @@ Entry point for the entire project. Common modes:
 | `scripts/setup/recovery.sh` | `require_stage1_complete`, `run_remote_recovery`, `run_remote_ready_recovery`, `run_transcoding_recovery`, `show_existing_install_menu` | Recovery Hooks routing for `--remote`, `--transcoding`, and existing-install add-stage menu |
 | `scripts/setup/stages/stage1.sh` + `scripts/setup/stage1/*` | `run_stage1` and Stage 1 steps | Core LAN flow ordering, account/storage/qBittorrent collection, and install |
 | `scripts/setup/stages/stage2.sh` + `scripts/setup/stage2/*` | `run_stage2` and Stage 2 steps | Remote access flow ordering, collection/install, and `./setup.sh --remote` retry path |
-| `scripts/setup/stages/stage3.sh` | `run_stage3`, `run_hardware_transcoding_addon`, `stage3_finalize_nvidia` | Internal hardware transcoding engine, NVIDIA marker/reboot handoff, post-reboot finalize |
+| `scripts/setup/stages/stage3.sh` + `scripts/setup/stage3/*` | `run_stage3`, `run_hardware_transcoding_addon`, and Stage 3 steps | Internal hardware transcoding engine, NVIDIA marker/reboot handoff, post-reboot finalize |
 | `scripts/setup/wizard_apply.py` | *(CLI)* | Apply wizard preset to config.yml (section-targeted replacement) |
 | `scripts/setup/presets.yml` | *(data)* | Quality model — `quality_ids` / `resolutions` / `sizes` axes |
 | `scripts/setup/reboot.sh` | `schedule_post_reboot`, `cleanup_post_reboot` | Systemd oneshot for post-reboot resume |

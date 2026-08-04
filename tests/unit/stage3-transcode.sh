@@ -12,7 +12,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage3-transcode"
 scenario_begin "$CURRENT_SCENARIO"
 
-[[ -f "$REPO_ROOT/scripts/setup/stages/stage3.sh" ]] && source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 
 set +e
 set +u
@@ -195,6 +195,7 @@ assert_contains "$(cat "$nvidia_decode_script")" "-profile:v 2" "VP9 10-bit prob
 assert_contains "$(cat "$nvidia_decode_script")" "vp9_cuvid" "VP9 10-bit probe decodes with NVIDIA CUVID"
 unset -f docker
 
+# shellcheck disable=SC2034 # read by stage3_set_gpu_env in scripts/setup/stage3/state.sh
 STAGE_3_GPU_RENDER_DEVICE=/dev/dri/renderD129
 stage3_render_device_exists() {
     [[ "$1" == "/dev/dri/renderD129" ]]
