@@ -189,5 +189,7 @@ _compose_image_line() {
     printf '    image: %s\n' "$(_stable_image_ref "$service")"
 }
 
+# Resolved from this file's own location: callers (launcher day-2 features,
+# units) may point SCRIPT_DIR elsewhere for output paths.
 # shellcheck source=gpu/compose.sh
-source "$SCRIPT_DIR/scripts/setup/gpu/compose.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gpu/compose.sh"
