@@ -188,11 +188,11 @@ are blocking.
 
 `./tests/unit.sh` runs mypy (pinned version + stub, recorded in `tools.toml`
 `[mypy]`) with
-`check_untyped_defs` over every tracked `*.py`, config in `pyproject.toml`
-`[tool.mypy]`. The standalone selector rejects an empty population or a missing
-`check_untyped_defs = true` and passes the Python 3.9 floor explicitly. The
-executable shell runners repeat those versions; keep their invocations aligned
-when changing a pin.
+`check_untyped_defs` and `disallow_untyped_defs` over every tracked `*.py`,
+configured in `pyproject.toml` `[tool.mypy]`. The standalone selector rejects an
+empty population or a missing/false strict setting and passes the Python 3.9
+floor explicitly. The executable shell runners repeat those versions; keep
+their invocations aligned when changing a pin.
 
 The gate is mypy exiting 0 — every finding was fixed rather than shipping a
 suppression baseline, so there is nothing to compare against and nothing to

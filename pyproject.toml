@@ -16,4 +16,5 @@ indent-style = "space"
 [tool.mypy]
 python_version = "3.9"          # Debian 11 floor, docs/project/stack.md
 check_untyped_defs = true       # also type-check unannotated function bodies
+disallow_untyped_defs = true    # every function must declare its full signature
 exclude = ["config/examples"]
