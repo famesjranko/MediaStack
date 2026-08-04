@@ -8,12 +8,14 @@
 # Usage:
 #   ./tests/check.sh          # default tier
 #   ./tests/check.sh fast     # static checks: shellcheck, shfmt, ruff, mypy,
-#                              # secrets. No DinD or service containers.
+#                              # contracts, secrets. No DinD or service containers.
 #   ./tests/check.sh full     # everything, including the complete DinD battery.
 #   ./tests/check.sh lint     # single stage: shellcheck sweep only.
 #   ./tests/check.sh shfmt    # single stage: shell formatting only.
 #   ./tests/check.sh ruff     # single stage: python lint + format check only.
 #   ./tests/check.sh mypy     # single stage: type check only.
+#   ./tests/check.sh contracts
+#                             # single stage: API contract coverage only.
 #   ./tests/check.sh secrets  # single stage: pinned gitleaks over the tree.
 #   ./tests/check.sh secrets-history
 #                             # single stage: pinned gitleaks over all history.
@@ -32,7 +34,8 @@
 #
 # Tiers are cumulative and run in the fixed order below:
 #   fast    - lint (tests/lint.sh), shell formatting (tests/format.sh), python
-#             lint + format (ruff), python types (mypy) and the secret scan
+#             lint + format (ruff), python types (mypy), API contract coverage,
+#             and the secret scan
 #             over the working tree (tests/secret-scan.sh). It starts no DinD
 #             or service containers; ShellCheck runs from a native or cached
 #             pinned binary (`./tests/check.sh install`) and falls back to
@@ -43,7 +46,7 @@
 #             This is the PR gate's local equivalent.
 #   full    - default + tests/battery.sh (the complete DinD scenario battery).
 #
-# lint/shfmt/ruff/mypy/secrets/secrets-history/unit/wizard/warm-python/install
+# lint/shfmt/ruff/mypy/contracts/secrets/secrets-history/unit/wizard/warm-python/install
 # are single-stage selectors, not tiers: each
 # runs exactly one stage and nothing else, so a caller (CI) can spread the
 # pipeline across parallel jobs without a stage running twice. tests/unit.sh
@@ -67,7 +70,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.." || exit 2
 
 if (($# > 1)); then
-    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
     exit 2
 fi
 
@@ -79,9 +82,9 @@ case "$arg" in
         exit 0
         ;;
     fast | default | full) TIER="$arg" ;;
-    lint | shfmt | ruff | mypy | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
+    lint | shfmt | ruff | mypy | contracts | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
     *)
-        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
         exit 2
         ;;
 esac
@@ -281,6 +284,10 @@ if [[ -n "$STAGE" ]]; then
                 "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==<tools.toml [mypy] version> --with types-PyYAML==<tools.toml [mypy] types_pyyaml_version> mypy --python-version 3.9 <tracked-python>" \
                 mypy_type_check
             ;;
+        contracts)
+            stage contracts "contracts: API coverage" "python3 tests/contracts/check.py" \
+                python3 tests/contracts/check.py
+            ;;
         secrets)
             stage secrets "secrets: gitleaks tree" \
                 "./tests/secret-scan.sh install && ... gate-tree" \
@@ -327,6 +334,8 @@ stage fast "python: ruff" \
 stage fast "type: mypy" \
     "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==<tools.toml [mypy] version> --with types-PyYAML==<tools.toml [mypy] types_pyyaml_version> mypy --python-version 3.9 <tracked-python>" \
     mypy_type_check
+stage fast "contracts: API coverage" "python3 tests/contracts/check.py" \
+    python3 tests/contracts/check.py
 stage fast "secrets: gitleaks tree" \
     "./tests/secret-scan.sh install && ... gate-tree" \
     secret_scan_gate

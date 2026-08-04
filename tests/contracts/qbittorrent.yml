@@ -1,0 +1,9 @@
+service: qbittorrent
+base_path: /api/v2
+auth: {type: cookie, name: SID}
+endpoints:
+  - {id: auth-login, method: POST, path: /auth/login, sends: [username, password], reads: [], callers: [scripts/services/qbittorrent/main.sh]}
+  - {id: preferences-update, method: POST, path: /app/setPreferences, sends: [web_ui_username, web_ui_password, max_ratio, max_seeding_time, max_seeding_time_enabled, dl_limit, up_limit, max_connec, max_connec_per_torrent, max_uploads, max_uploads_per_torrent, queueing_enabled, max_active_downloads, max_active_uploads, max_active_torrents, upnp, preallocate_all, bypass_auth_subnet_whitelist], reads: [], callers: [scripts/services/qbittorrent/main.sh]}
+  - {id: categories-list, method: GET, path: /torrents/categories, sends: [], reads: [name, savePath], callers: [scripts/services/qbittorrent/main.sh]}
+  - {id: category-create, method: POST, path: /torrents/createCategory, sends: [category, savePath], reads: [], callers: [scripts/services/qbittorrent/main.sh]}
+  - {id: category-update, method: POST, path: /torrents/editCategory, sends: [category, savePath], reads: [], callers: [scripts/services/qbittorrent/main.sh]}

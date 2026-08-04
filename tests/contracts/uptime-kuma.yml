@@ -1,0 +1,7 @@
+# Configured over socket.io (see scripts/services/uptime-kuma/main.sh), not
+# REST: no HTTP API endpoints exist to contract. File kept so the per-service
+# inventory stays complete and check.py can prove the zero explicitly.
+service: uptime-kuma
+base_path: /
+auth: {type: none}
+endpoints: []

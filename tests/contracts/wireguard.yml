@@ -1,0 +1,10 @@
+service: wireguard
+base_path: /
+auth: {type: basic}
+endpoints:
+  - {id: client-list, method: GET, path: /api/client, sends: [], reads: [id, name, enabled, firewallIps], callers: [scripts/services/wireguard/main.sh]}
+  - {id: client-get, method: GET, path: "/api/client/{id}", sends: [], reads: [id, name, firewallIps], callers: [scripts/services/wireguard/main.sh]}
+  - {id: client-create, method: POST, path: /api/client, sends: [name, password, enabled, firewallIps], reads: [id, name], callers: [scripts/services/wireguard/main.sh]}
+  - {id: client-update, method: POST, path: "/api/client/{id}", sends: [firewallIps], reads: [id, firewallIps], callers: [scripts/services/wireguard/main.sh]}
+  - {id: admin-interface-get, method: GET, path: /api/admin/interface, sends: [], reads: [firewallIps], callers: [scripts/services/wireguard/main.sh]}
+  - {id: admin-interface-update, method: POST, path: /api/admin/interface, sends: [firewallIps], reads: [], callers: [scripts/services/wireguard/main.sh]}
