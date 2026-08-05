@@ -4,6 +4,4 @@ scripts/setup/env_gen.sh	626
 tests/secret-scan.sh	543
 tests/unit/checks.sh	988
 tests/unit/image-drift.sh	530
-tests/unit/recovery-routing.sh	707
 tests/unit/repository-safety.sh	665
-tests/unit/wizard-flow.sh	966
