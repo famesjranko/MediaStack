@@ -321,6 +321,48 @@ else
 fi
 assert_contains "$SELECTOR_OUT" "carries a bare un-scoped noqa" "the bare-noqa refusal names what it found"
 
+make_fixture c901-upper-noqa
+printf '%s\n' 'def wide():  # NOQA: C901' '    return 1' >"$FIXTURE_ROOT/sample.py"
+git -C "$FIXTURE_ROOT" add sample.py
+run_selector ruff
+if ((SELECTOR_RC != 0)); then
+    pass "an upper-case NOQA C901 suppression is refused"
+else
+    fail "an upper-case NOQA C901 suppression is refused" "exit 0: $SELECTOR_OUT"
+fi
+
+make_fixture c901-file-level-ruff-noqa
+printf '%s\n' '# ruff: noqa' 'value = 1' >"$FIXTURE_ROOT/sample.py"
+git -C "$FIXTURE_ROOT" add sample.py
+run_selector ruff
+if ((SELECTOR_RC != 0)); then
+    pass "a file-level blanket ruff noqa is refused"
+else
+    fail "a file-level blanket ruff noqa is refused" "exit 0: $SELECTOR_OUT"
+fi
+assert_contains "$SELECTOR_OUT" "carries a file-level noqa covering C901" \
+    "the file-level refusal names what it found"
+
+make_fixture c901-file-level-flake8-noqa
+printf '%s\n' '# flake8: noqa' 'value = 1' >"$FIXTURE_ROOT/sample.py"
+git -C "$FIXTURE_ROOT" add sample.py
+run_selector ruff
+if ((SELECTOR_RC != 0)); then
+    pass "a file-level blanket flake8 noqa is refused"
+else
+    fail "a file-level blanket flake8 noqa is refused" "exit 0: $SELECTOR_OUT"
+fi
+
+make_fixture c901-file-level-scoped-other
+printf '%s\n' '# ruff: noqa: E402' 'import os' 'value = os' >"$FIXTURE_ROOT/sample.py"
+git -C "$FIXTURE_ROOT" add sample.py
+run_selector ruff
+if ((SELECTOR_RC == 0)); then
+    pass "a file-level scoped suppression of another rule still passes"
+else
+    fail "a file-level scoped suppression of another rule still passes" "exit $SELECTOR_RC: $SELECTOR_OUT"
+fi
+
 make_fixture c901-scoped-noqa
 printf '%s\n' 'import os  # noqa: E402  (legitimate, scoped)' 'value = os' >"$FIXTURE_ROOT/sample.py"
 git -C "$FIXTURE_ROOT" add sample.py

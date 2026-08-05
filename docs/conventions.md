@@ -108,10 +108,12 @@ which of three it is before touching anything:
 3. **Accidental complexity** — a simpler solution exists and this one grew
    around a shape that was never needed. Find the simpler one.
 
-Raising the cap and suppressing the rule are both refused. `# noqa: C901` and
-bare un-scoped `# noqa` are rejected in any tracked Python file by
-`tests/python-complexity.sh`; a scoped suppression of another rule (e.g.
-`# noqa: E402`) stays legal because it names what it silences.
+Raising the cap and suppressing the rule are both refused. `# noqa: C901`,
+bare un-scoped `# noqa`, and the file-level forms — a blanket `# ruff: noqa`
+or `# flake8: noqa`, or a `# ruff: noqa:` list naming C901 — are rejected in
+any tracked Python file by `tests/python-complexity.sh`, in any casing; a
+scoped suppression of another rule (e.g. `# noqa: E402`, line-level or
+file-level) stays legal because it names what it silences.
 
 The functions that were already over the cap when it dropped to 10 are
 grandfathered in `tests/python-complexity.allowlist`, one entry per line as
@@ -161,7 +163,7 @@ adding the next gate.
 | No service module sources another service or any setup module, and no module under `scripts/setup/` sources a peer top-level `scripts/setup/*.sh` module | `./tests/check.sh structure` → `tests/structure.sh` (also in `fast`); the sanctioned seams are named in `project/structure.md` "Dependency Direction" | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
-| Python function complexity is at or under 10, with no `C901` or bare `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
+| Python function complexity is at or under 10, with no `C901`, bare, or file-level `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
 | API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`), with the missing/dead-entry failure paths proved by `tests/unit/contracts-gate.sh` | — |
 | No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled by `tests/lib/secret_scan_reconcile.py` against `tests/secret-scan.expected` | `secret-scan` |

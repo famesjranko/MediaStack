@@ -36,7 +36,7 @@ findings="${1:-}"
 tracked_python=$(mktemp) || die "cannot create tracked-python list"
 trap 'rm -f "$tracked_python"' EXIT
 
-base_ref="$(ratchet_base_ref "$REPO_ROOT")"
+base_ref="$(ratchet_base_ref "$REPO_ROOT")" || die "cannot resolve a ratchet baseline"
 
 # Same discovery the ruff and mypy selectors use: no new file dodges the ban.
 git -C "$REPO_ROOT" ls-files -z '*.py' >"$tracked_python" || die "tracked python discovery failed"
@@ -47,12 +47,16 @@ mapfile -d '' -t python_files <"$tracked_python"
 failed=false
 complexity_failed=false
 
-# Escape hatches closed: a C901-scoped suppression and a bare un-scoped noqa
-# (which silences C901 too). A scoped suppression of another rule stays legal.
+# Escape hatches closed: a C901-scoped suppression, a bare un-scoped noqa
+# (which silences C901 too), and the file-level forms — a blanket
+# `# ruff: noqa`/`# flake8: noqa` or a `# ruff: noqa:` list naming C901 —
+# all matched case-insensitively, since ruff honours every casing. A scoped
+# suppression of another rule stays legal, line-level or file-level.
 for file in "${python_files[@]}"; do
     for hatch in 'a C901 suppression|#[[:space:]]*noqa:[^#]*\bC901\b' \
-        'a bare un-scoped noqa|#[[:space:]]*noqa([[:space:]]*$|[[:space:]]+[^:[:space:]])'; do
-        grep -HnE "${hatch#*|}" "$REPO_ROOT/$file" >&2 || continue
+        'a bare un-scoped noqa|#[[:space:]]*noqa([[:space:]]*$|[[:space:]]+[^:[:space:]])' \
+        'a file-level noqa covering C901|#[[:space:]]*(ruff|flake8):[[:space:]]*noqa[[:space:]]*$|#[[:space:]]*ruff:[[:space:]]*noqa:[^#]*\bC901\b'; do
+        grep -iHnE "${hatch#*|}" "$REPO_ROOT/$file" >&2 || continue
         printf 'python-complexity: %s carries %s; suppression is not the fix\n' \
             "$file" "${hatch%%|*}" >&2
         failed=true
