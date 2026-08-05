@@ -155,7 +155,7 @@ Display name shown in the Jellyfin Dashboard header and browser tab. Defaults to
 
 Per-remote-viewer streaming bitrate cap in Mbps. `0` means unlimited. Set by the setup wizard (speed test → viewer count → recommendation) or manually in `config.yml`. Maps to Jellyfin's `RemoteClientBitrateLimit` (in bits/sec, so the configured Mbps value is multiplied by 1,000,000).
 
-Consumed by `configure_jellyfin_streaming` (`scripts/services/jellyfin/main.sh`) which applies the value via GET-merge-POST on `/System/Configuration`. This setting is authoritative — config.yml always wins (unlike GPU encoding, which warns on drift).
+Consumed by `configure_jellyfin_streaming` (`scripts/services/jellyfin/server.sh`) which applies the value via GET-merge-POST on `/System/Configuration`. This setting is authoritative — config.yml always wins (unlike GPU encoding, which warns on drift).
 
 ### `jellyfin.libraries`
 
