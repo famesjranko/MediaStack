@@ -22,6 +22,7 @@ setup_update_sandbox() {
     cp "$REPO_ROOT/scripts/update.sh" "$TMP_DIR/sandbox/scripts/update.sh"
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/common.sh"
     cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/term_caps.sh" # common.sh sources it
+    cp "$REPO_ROOT/scripts/lib/env_write.sh" "$TMP_DIR/sandbox/scripts/lib/env_write.sh" # common.sh sources it
     cp "$REPO_ROOT/scripts/setup/override.sh" "$TMP_DIR/sandbox/scripts/setup/override.sh"
     cp "$REPO_ROOT/scripts/setup/gpu/compose.sh" "$TMP_DIR/sandbox/scripts/setup/gpu/compose.sh"
     cp "$REPO_ROOT/docs/operations/image-digests.lock" "$TMP_DIR/sandbox/docs/operations/image-digests.lock"
