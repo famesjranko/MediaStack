@@ -75,7 +75,14 @@ scripts/
     quality_select.sh               Two-axis (resolution × size) quality picker, shared by the wizard and day-2 "Change quality profile"
     term_caps.sh                    Terminal capability detection (colour/glyph support), shared by common.sh and ui_render_fallback.sh
     ui.sh + ui_render_fallback.sh + ui_render_gum.sh + ui_demo.sh   Interactive prompts: public API/orchestration, pure-bash backend, gum backend, demo-mode walkthrough
-    validators.sh                   Stage 1 input-contract validators
+    validators.sh                   Compatibility entry point for Stage 1 input-contract validators
+    validators/                     Topic-split Stage 1 input-contract validators
+      account.sh                    Admin username, email, and password validators
+      ddns.sh                       DDNS credential, token/API-key, and zone-ID validators
+      bandwidth.sh                  Mbps/MB-per-sec bandwidth field validators
+      storage.sh                    Data dir, NAS mountpoint, NFS, and storage-sentinel validators
+      network.sh                    Port-in-use helpers plus torrent/WireGuard/SMB port, domain, LAN CIDR, and IP validators
+      misc.sh                       Timezone and subtitle-language validators
     arr/                            Shared Sonarr/Radarr helpers
       main.sh                       Compatibility entry point for shared Sonarr/Radarr helpers
       quality.sh                    Quality profiles and definitions

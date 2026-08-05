@@ -1,5 +1,4 @@
 scripts/lib/common.sh	506
-scripts/lib/validators.sh	719
 scripts/services/jellyfin/main.sh	636
 scripts/setup/checks.sh	528
 scripts/setup/env_gen.sh	626
@@ -10,5 +9,4 @@ tests/unit/image-drift.sh	530
 tests/unit/recovery-routing.sh	707
 tests/unit/repository-safety.sh	665
 tests/unit/storage.sh	1013
-tests/unit/validators.sh	704
 tests/unit/wizard-flow.sh	966
