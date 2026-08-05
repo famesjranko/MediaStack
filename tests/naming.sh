@@ -97,7 +97,8 @@ done
 ((fail == 0)) || exit 1
 
 # -----------------------------------------------------------------------------
-# Declared function-prefix gate: a module under scripts/ opts in by putting a
+# Declared function-prefix gate: a module under scripts/ (or the root
+# `mediastack` dispatcher) opts in by putting a
 # `<prefix>_*` token on its `# Owns:` line (first 5 lines) — see
 # docs/conventions.md "Identifier and file naming". Once declared, every
 # function def in that file must start with a declared prefix, allowing one
@@ -109,8 +110,8 @@ DEF_PATTERN='^_?[a-z0-9_]+[[:space:]]*\(\)'
 
 prefix_files_list=$(mktemp) || die "cannot create prefix-file list"
 trap 'rm -f "$tracked_file_list" "$base_allowlist" "$prefix_files_list"' EXIT
-git -C "$REPO_ROOT" ls-files -z 'scripts/*.sh' >"$prefix_files_list" \
-    || die "scripts/*.sh discovery failed"
+git -C "$REPO_ROOT" ls-files -z 'scripts/*.sh' 'mediastack' >"$prefix_files_list" \
+    || die "prefix-population discovery failed"
 
 declared_files=()
 mapfile -d '' -t declared_candidates <"$prefix_files_list"
@@ -135,7 +136,7 @@ for file in "${declared_candidates[@]}"; do
 done
 
 if ((${#declared_files[@]} == 0)); then
-    die "no scripts/*.sh file declares a function prefix — empty population"
+    die "no prefix-population file declares a function prefix — empty population"
 fi
 
 ((prefix_fail == 0)) || exit 1

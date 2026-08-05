@@ -2,6 +2,7 @@
 # =============================================================================
 # MediaStack — front-door launcher
 # =============================================================================
+# Owns: launcher_* — the front-door menu and its dispatch.
 # Interactive menu for non-technical users. Adapts to install state:
 #   - Pre-install: install + readiness diagnostics (system, ports, DNS, public IP)
 #   - Post-install: status, ports, update, configure, add-feature, manage,

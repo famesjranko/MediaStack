@@ -120,7 +120,7 @@ Python module name must also be a valid import identifier.
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
 | Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell filename is kebab-case, tracked python filename is snake_case | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), with no exceptions: the grandfathered offenders have all been renamed and `tests/shell-naming.allowlist` deleted | `lint-shellcheck` |
-| A `scripts/*.sh` module that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |
+| A `scripts/*.sh` module (or the root `mediastack` dispatcher) that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
@@ -183,7 +183,8 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **New-file header contract.** The two-line `Owns`/`Sources` header is a
   convention; no checker currently verifies it.
 - **Shell function-prefix discipline for undeclared modules.** The naming gate
-  only checks a `scripts/*.sh` file once it declares `<prefix>_*` on its
+  only checks a `scripts/*.sh` file (or the root `mediastack` dispatcher)
+  once it declares `<prefix>_*` on its
   `# Owns:` line; declaration is opt-in, so a module that declares no prefix
   is left unchecked.
 - **Cross-file calls of `_`-private functions.** A leading `_` marking a
