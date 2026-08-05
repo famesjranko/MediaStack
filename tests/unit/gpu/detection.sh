@@ -104,9 +104,9 @@ if [[ "$(gpu_brand_label unexpected)" != "unexpected" ]]; then
 fi
 GPU_UNINSTALL_CALLS=()
 sudo() { GPU_UNINSTALL_CALLS+=("$*"); }
-gpu_uninstall
+nvidia_driver_gpu_uninstall
 if [[ "${GPU_UNINSTALL_CALLS[*]}" != "rm -f $MEDIASTACK_GPU_NONFREE_LIST $MEDIASTACK_GPU_BACKPORTS_LIST" ]]; then
-    fail "gpu_uninstall: removes both MediaStack-owned apt source files"
+    fail "nvidia_driver_gpu_uninstall: removes both MediaStack-owned apt source files"
 fi
 unset -f sudo
 unset GPU_UNINSTALL_CALLS

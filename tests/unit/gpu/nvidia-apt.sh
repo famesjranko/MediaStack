@@ -2,8 +2,8 @@
 # Sources: tests/unit/gpu-branching.sh setup and scripts/setup/gpu/nvidia-apt.sh.
 # shellcheck disable=SC2034 # GPU_TYPE is consumed by product code under test.
 # Deterministic Debian release seams for the resolver/non-free assertions.
-_debian_codename() { printf 'bookworm'; }
-_debian_version_id() { printf '12'; }
+nvidia_driver_debian_codename() { printf 'bookworm'; }
+_nvidia_driver_debian_version_id() { printf '12'; }
 
 # --- _resolve_debian_nvidia_driver: prefer the stable candidate ---
 lspci() { printf '01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GA104 [10de:2484]\n'; }
@@ -11,10 +11,10 @@ apt-cache() {
     [[ "${1:-}" == "madison" ]] || return 0
     printf ' nvidia-driver | 535.100-1 | http://deb.debian.org/debian bookworm/non-free amd64 Packages\n'
 }
-_check_nvidia_compat() { printf 'current'; }
+_nvidia_driver_check_compat() { printf 'current'; }
 assert_eq "nvidia-driver firmware-misc-nonfree" "$(_resolve_debian_nvidia_driver)" \
     "_resolve_debian_nvidia_driver: stable candidate supports GPU → no backports"
-unset -f apt-cache _check_nvidia_compat
+unset -f apt-cache _nvidia_driver_check_compat
 
 # --- _resolve_debian_nvidia_driver: escalate to backports only on evidence ---
 apt-cache() {
@@ -23,10 +23,10 @@ apt-cache() {
     printf ' nvidia-driver | 550.100-1~bpo12+1 | http://deb.debian.org/debian bookworm-backports/non-free amd64 Packages\n'
 }
 # Stable does not list the GPU; backports does.
-_check_nvidia_compat() { case "${1:-}" in 550.100) printf 'current' ;; *) return 1 ;; esac }
+_nvidia_driver_check_compat() { case "${1:-}" in 550.100) printf 'current' ;; *) return 1 ;; esac }
 assert_eq "-t bookworm-backports nvidia-driver firmware-misc-nonfree" "$(_resolve_debian_nvidia_driver)" \
     "_resolve_debian_nvidia_driver: card too new for stable + backports newer & supported → backports"
-unset -f apt-cache _check_nvidia_compat lspci
+unset -f apt-cache _nvidia_driver_check_compat lspci
 
 # --- install_nvidia_drivers_apt: pre-existing non-Debian driver → returns 2 ---
 command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 0 ;; *) builtin command "$@" ;; esac }
@@ -66,11 +66,11 @@ apt-cache() {
         linux-headers-amd64) printf ' linux-headers-amd64 | 6.1.0-18 | http://deb.debian.org/debian bookworm/main amd64 Packages\n' ;;
     esac
 }
-check_secure_boot() { printf 'disabled'; }
-ensure_debian_nonfree() { return 0; }
+nvidia_driver_check_secure_boot() { printf 'disabled'; }
+nvidia_driver_ensure_debian_nonfree() { return 0; }
 _resolve_debian_nvidia_driver() { printf 'nvidia-driver firmware-misc-nonfree'; }
 _install_nvidia_container_toolkit() { return 0; }
-nouveau_is_active() { return 0; } # forces a reboot
+nvidia_driver_nouveau_is_active() { return 0; } # forces a reboot
 PATCH_CALLED=0
 apply_nvidia_patch() { PATCH_CALLED=1; }
 INSTALL_ARGS=""
@@ -90,8 +90,8 @@ assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt: fresh ap
 assert_eq "true" "$NEEDS_REBOOT" "install_nvidia_drivers_apt: fresh install with nouveau active → reboot required"
 assert_eq "0" "$PATCH_CALLED" "install_nvidia_drivers_apt: fresh Standard install never patches"
 assert_contains "$INSTALL_ARGS" "linux-headers-amd64" "install_nvidia_drivers_apt: fresh install appends resolved headers package"
-unset -f command check_secure_boot ensure_debian_nonfree _resolve_debian_nvidia_driver \
-    _install_nvidia_container_toolkit nouveau_is_active apply_nvidia_patch sudo dpkg-query uname apt-cache
+unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _resolve_debian_nvidia_driver \
+    _install_nvidia_container_toolkit nvidia_driver_nouveau_is_active apply_nvidia_patch sudo dpkg-query uname apt-cache
 unset PATCH_CALLED rc NEEDS_REBOOT INSTALL_ARGS
 
 # --- _nvidia_headers_flavor: derive the meta-package suffix from uname -r ---
@@ -159,8 +159,8 @@ command() { case "${1:-}:${2:-}" in -v:nvidia-smi) return 1 ;; *) builtin comman
 dpkg-query() { return 1; }
 uname() { [[ "${1:-}" == "-r" ]] && printf '6.5.0-custom\n' || builtin uname "$@"; }
 apt-cache() { [[ "${1:-}" == "madison" ]] || return 0; }
-check_secure_boot() { printf 'disabled'; }
-ensure_debian_nonfree() { return 0; }
+nvidia_driver_check_secure_boot() { printf 'disabled'; }
+nvidia_driver_ensure_debian_nonfree() { return 0; }
 INSTALL_CALLED=0
 sudo() {
     case "${1:-}:${2:-}" in
@@ -175,7 +175,7 @@ install_nvidia_drivers_apt || rc=$?
 assert_eq "1" "$rc" "install_nvidia_drivers_apt: unresolvable headers → falls back"
 assert_eq "none" "$GPU_TYPE" "install_nvidia_drivers_apt: unresolvable headers → GPU_TYPE=none"
 assert_eq "0" "$INSTALL_CALLED" "install_nvidia_drivers_apt: unresolvable headers → no half-install of the driver"
-unset -f command check_secure_boot ensure_debian_nonfree sudo dpkg-query uname apt-cache
+unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree sudo dpkg-query uname apt-cache
 unset INSTALL_CALLED rc GPU_TYPE NVIDIA_DRIVER_MODE
 
 # --- install_nvidia_drivers_apt: backports "-t" + flavor meta headers → version-pinned ---
@@ -191,11 +191,11 @@ apt-cache() {
         linux-headers-cloud-amd64) printf ' linux-headers-cloud-amd64 | 6.1.85-1 | http://deb.debian.org/debian bookworm/main amd64 Packages\n' ;;
     esac
 }
-check_secure_boot() { printf 'disabled'; }
-ensure_debian_nonfree() { return 0; }
+nvidia_driver_check_secure_boot() { printf 'disabled'; }
+nvidia_driver_ensure_debian_nonfree() { return 0; }
 _resolve_debian_nvidia_driver() { printf -- '-t bookworm-backports nvidia-driver firmware-misc-nonfree'; }
 _install_nvidia_container_toolkit() { return 0; }
-nouveau_is_active() { return 0; }
+nvidia_driver_nouveau_is_active() { return 0; }
 INSTALL_ARGS=""
 sudo() {
     case "${1:-}:${2:-}" in
@@ -211,14 +211,14 @@ install_nvidia_drivers_apt || rc=$?
 assert_eq "0" "$rc" "install_nvidia_drivers_apt: backports install with meta headers → success"
 assert_contains "$INSTALL_ARGS" "linux-headers-cloud-amd64=6.1.85-1" \
     "install_nvidia_drivers_apt: backports \"-t\" pins the headers meta to the preflight-validated version"
-unset -f command check_secure_boot ensure_debian_nonfree _resolve_debian_nvidia_driver \
-    _install_nvidia_container_toolkit nouveau_is_active sudo dpkg-query uname apt-cache
+unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _resolve_debian_nvidia_driver \
+    _install_nvidia_container_toolkit nvidia_driver_nouveau_is_active sudo dpkg-query uname apt-cache
 unset INSTALL_ARGS rc GPU_TYPE NEEDS_REBOOT NVIDIA_DRIVER_MODE
 
 # --- install_nvidia_drivers_apt repair: one reinstall, no toolkit package transaction ---
 nvidia_driver_source() { printf 'debian'; }
-check_secure_boot() { printf 'disabled'; }
-ensure_debian_nonfree() { return 0; }
+nvidia_driver_check_secure_boot() { printf 'disabled'; }
+nvidia_driver_ensure_debian_nonfree() { return 0; }
 _nvidia_debian_repair_packages() { printf '%s\n' nvidia-driver libnvidia-encode1:amd64; }
 _nvidia_toolkit_healthy() { return 0; }
 TOOLKIT_CONFIGURES=0
@@ -240,7 +240,7 @@ assert_contains "${REPAIR_CALLS[*]}" "apt-get update -qq" "install_nvidia_driver
 assert_contains "${REPAIR_CALLS[*]}" "apt-get install -y -qq --reinstall nvidia-driver libnvidia-encode1:amd64" "install_nvidia_drivers_apt repair: reinstalls existing driver/userspace packages once"
 assert_eq "1" "$TOOLKIT_CONFIGURES" "install_nvidia_drivers_apt repair: configures toolkit once"
 assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt repair: persists Standard mode"
-unset -f nvidia_driver_source check_secure_boot ensure_debian_nonfree _nvidia_debian_repair_packages \
+unset -f nvidia_driver_source nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _nvidia_debian_repair_packages \
     _nvidia_toolkit_healthy _configure_nvidia_container_toolkit sudo
 unset TOOLKIT_CONFIGURES REPAIR_CALLS GPU_TYPE NVIDIA_DRIVER_MODE rc
 source "$REPO_ROOT/scripts/setup/gpu.sh"
@@ -327,7 +327,7 @@ sudo() {
     esac
 }
 _nvidia_unload_loaded_modules() { return 0; }
-_nvidia_blacklist_nouveau() {
+nvidia_driver_blacklist_nouveau() {
     BLACKLIST_CALLED=1
     return 0
 }
@@ -346,7 +346,7 @@ case "$PURGE_ARGS" in
 esac
 assert_eq "false" "$NEEDS_REBOOT" "prepare_nvidia_debian_to_unlock: no reboot when modules unload"
 assert_eq "0" "$BLACKLIST_CALLED" "prepare_nvidia_debian_to_unlock: no blacklist when modules unload"
-unset -f dpkg-query sudo _nvidia_unload_loaded_modules _nvidia_blacklist_nouveau
+unset -f dpkg-query sudo _nvidia_unload_loaded_modules nvidia_driver_blacklist_nouveau
 unset NEEDS_REBOOT APT_MARK_CALLED PURGE_ARGS BLACKLIST_CALLED rc
 
 dpkg-query() { printf 'nvidia-driver ii \n'; }
@@ -359,7 +359,7 @@ sudo() {
     esac
 }
 _nvidia_unload_loaded_modules() { return 1; }
-_nvidia_blacklist_nouveau() {
+nvidia_driver_blacklist_nouveau() {
     BLACKLIST_CALLED=1
     return 0
 }
@@ -370,7 +370,7 @@ prepare_nvidia_debian_to_unlock || rc=$?
 assert_eq "0" "$rc" "prepare_nvidia_debian_to_unlock: still succeeds when reboot is needed"
 assert_eq "true" "$NEEDS_REBOOT" "prepare_nvidia_debian_to_unlock: queues reboot when modules stay loaded"
 assert_eq "1" "$BLACKLIST_CALLED" "prepare_nvidia_debian_to_unlock: blacklists nouveau before conversion reboot"
-unset -f dpkg-query sudo _nvidia_unload_loaded_modules _nvidia_blacklist_nouveau
+unset -f dpkg-query sudo _nvidia_unload_loaded_modules nvidia_driver_blacklist_nouveau
 unset NEEDS_REBOOT BLACKLIST_CALLED rc
 
 # --- nvidia-container-toolkit health: binary presence is not enough ---
@@ -402,6 +402,6 @@ assert_eq "0" "$(
 unset -f command ldd
 
 # The mocked install tests above unset the real gpu.sh helpers (mock + real share
-# one function slot). Re-source gpu.sh to restore ensure_debian_nonfree et al.
+# one function slot). Re-source gpu.sh to restore nvidia_driver_ensure_debian_nonfree et al.
 # shellcheck source=../../scripts/setup/gpu.sh
 source "$REPO_ROOT/scripts/setup/gpu.sh"

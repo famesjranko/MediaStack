@@ -17,7 +17,7 @@ Entry point for the entire project. Common modes:
 |--------|-----------|----------------|
 | `scripts/setup/checks.sh` | `check_not_root`, `check_debian`, `check_docker`, `check_compose`, `check_disk_space` | Prerequisite validation |
 | `scripts/setup/packages.sh` | `install_base_packages`, `install_docker` | Base packages + Docker (--full) |
-| `scripts/setup/gpu.sh` + `scripts/setup/gpu/*` | `detect_gpu`, `check_secure_boot`, `nvidia_driver_source`, `ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches, verification, and generated Compose GPU wiring |
+| `scripts/setup/gpu.sh` + `scripts/setup/gpu/*` | `detect_gpu`, `nvidia_driver_check_secure_boot`, `nvidia_driver_source`, `nvidia_driver_ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches, verification, and generated Compose GPU wiring |
 | `scripts/setup/override.sh` + `scripts/setup/gpu/compose.sh` | `detect_host_memory`, `compute_mem_limit`, `generate_override` | Host memory, image policy, and Compose override |
 | `scripts/setup/env-gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
 | `scripts/setup/storage.sh` | `storage_preflight_nas`, `storage_guard_before_start`, `storage_install_watchdog` | Storage mode state, NFS guard, NAS watchdog installation |
@@ -131,10 +131,10 @@ NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pe
 `install_nvidia_drivers` (Unlock mode):
 
 1. Check for a `pending` marker from a pre-reboot cache — if found, verify nouveau is gone and install the cached `.run`.
-2. Check Secure Boot state via `check_secure_boot` — if enabled, fall back to software transcoding (unsigned kernel modules won't load).
+2. Check Secure Boot state via `nvidia_driver_check_secure_boot` — if enabled, fall back to software transcoding (unsigned kernel modules won't load).
 3. Install kernel headers and DKMS build prerequisites.
-4. Blacklist nouveau unconditionally (`/etc/modprobe.d/blacklist-nouveau.conf` + `update-initramfs`). Attempt runtime unload via `try_unload_nouveau()` — stops display manager, unbinds fbcon from vtconsoles, runs `modprobe -r nouveau drm_kms_helper drm`. Checks sysfs PCI binding for success, not just lsmod.
-5. Resolve the correct driver via `_resolve_nvidia_driver()`: fetch the keylase/nvidia-patch README from MediaStack's reviewed pinned commit, then check GPU compatibility by curling NVIDIA's `supportedchips.html` for the target driver version (lightweight HTML, no `.run` download yet). The page lists PCI device IDs under "Current NVIDIA GPUs" or `legacy_NNN.xx` sections — a python parser identifies which section the GPU falls in. If legacy, switch to the matching branch from the README. Only then download the correct `.run` file.
+4. Blacklist nouveau unconditionally (`/etc/modprobe.d/blacklist-nouveau.conf` + `update-initramfs`). Attempt runtime unload via `nvidia_driver_try_unload_nouveau()` — stops display manager, unbinds fbcon from vtconsoles, runs `modprobe -r nouveau drm_kms_helper drm`. Checks sysfs PCI binding for success, not just lsmod.
+5. Resolve the correct driver via `nvidia_driver_resolve_driver()`: fetch the keylase/nvidia-patch README from MediaStack's reviewed pinned commit, then check GPU compatibility by curling NVIDIA's `supportedchips.html` for the target driver version (lightweight HTML, no `.run` download yet). The page lists PCI device IDs under "Current NVIDIA GPUs" or `legacy_NNN.xx` sections — a python parser identifies which section the GPU falls in. If legacy, switch to the matching branch from the README. Only then download the correct `.run` file.
 6. If nouveau is still active (sysfs check): cache the `.run` in `.nvidia-tmp/pending`, set `NEEDS_REBOOT`, return. The installer is never run while nouveau has the GPU — it would either abort (`--silent`) or compile-then-rollback.
 7. If nouveau is gone: install via `.run --silent --dkms --no-nouveau-check`. Sets `NEEDS_REBOOT=true`.
 8. Install `nvidia-container-toolkit`, run `nvidia-ctk runtime configure --runtime=docker`, restart Docker.

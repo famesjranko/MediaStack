@@ -17,7 +17,7 @@ source "$_GPU_HELPER_DIR/lib/nvidia-patch.sh"
 unset _GPU_HELPER_DIR
 
 # apt sources this module owns. Single source of truth so install and uninstall
-# can never drift (see gpu_uninstall). Plain assignment — this file is re-sourced.
+# can never drift (see nvidia_driver_gpu_uninstall). Plain assignment — this file is re-sourced.
 # shellcheck disable=SC2034 # consumed by gpu/nvidia-apt.sh and gpu/updates callers
 MEDIASTACK_GPU_NONFREE_LIST=/etc/apt/sources.list.d/mediastack-nonfree.list
 # shellcheck disable=SC2034 # consumed by gpu/nvidia-apt.sh and gpu/updates callers

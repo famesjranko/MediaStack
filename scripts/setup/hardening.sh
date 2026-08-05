@@ -13,7 +13,7 @@
 #                     .env; runs after the wizard.
 
 # uninstall_system_cleanup dispatches host-artefact teardown to the owning
-# modules (gpu_uninstall, storage_uninstall_watchdog, f2b_uninstall_reload_watcher);
+# modules (nvidia_driver_gpu_uninstall, storage_uninstall_watchdog, f2b_uninstall_reload_watcher);
 # source them from a BASH_SOURCE-resolved path so the calls resolve without
 # relying on setup.sh's source order. All are side-effect-free
 # and re-source-safe.

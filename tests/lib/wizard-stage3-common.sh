@@ -54,8 +54,8 @@ apply_nvidia_patch() { return 0; }
 prepare_nvidia_debian_to_unlock() { NEEDS_REBOOT=false; return 0; }
 _install_nvidia_container_toolkit() { return 0; }
 nvidia_driver_source() { printf 'none\\n'; }
-check_secure_boot() { printf 'disabled\\n'; }
-nouveau_is_active() { return 1; }
+nvidia_driver_check_secure_boot() { printf 'disabled\\n'; }
+nvidia_driver_nouveau_is_active() { return 1; }
 verify_gpu_usable() { return 0; }
 # Capability probe + Jellyfin encoder verification — default: pass.
 stage3_probe_capabilities() { return 0; }

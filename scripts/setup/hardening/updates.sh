@@ -72,6 +72,6 @@ _uninstall_apt() {
         fi
         sudo rm -f "$path" || return 1
     done
-    gpu_uninstall # apt sources owned by gpu.sh; removed by their owner
+    nvidia_driver_gpu_uninstall # apt sources owned by gpu.sh; removed by their owner
     log_ok "MediaStack apt sources and unattended-upgrades policy removed"
 }

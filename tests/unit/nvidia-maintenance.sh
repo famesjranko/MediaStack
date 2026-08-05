@@ -39,7 +39,7 @@ ui_confirm() {
     printf '%s\n' confirm >>"$TRACE"
     return 0
 }
-_resolve_nvidia_driver() {
+nvidia_driver_resolve_driver() {
     printf '%s\n' resolve >>"$TRACE"
     _driver_ver=550.90
     _run_file="$_nvidia_tmp/NVIDIA.run"
@@ -54,7 +54,7 @@ _nvidia_unload_loaded_modules() {
     printf '%s\n' unload >>"$TRACE"
     return 0
 }
-_install_nvidia_run_file() {
+_nvidia_driver_install_run_file() {
     printf 'install:%s\n' "$2" >>"$TRACE"
     return 0
 }

@@ -295,7 +295,7 @@ run_nvidia_unlock_maintenance() {
     local _driver_ver="" _run_file="" jellyfin_running=false
     rm -rf "$_nvidia_tmp"
     mkdir -p "$_nvidia_tmp" || return 1
-    if ! _resolve_nvidia_driver; then
+    if ! nvidia_driver_resolve_driver; then
         rm -rf "$_nvidia_tmp"
         return 1
     fi
@@ -315,7 +315,7 @@ run_nvidia_unlock_maintenance() {
         return 1
     fi
 
-    if ! _install_nvidia_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp" \
+    if ! _nvidia_driver_install_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp" \
         || ! _configure_nvidia_container_toolkit; then
         $jellyfin_running && (cd "$SCRIPT_DIR" && docker compose start jellyfin >/dev/null 2>&1 || true)
         rm -rf "$_nvidia_tmp"
