@@ -1,4 +1,3 @@
-scripts/lib/common.sh	506
 scripts/setup/checks.sh	528
 scripts/setup/env_gen.sh	626
 tests/secret-scan.sh	543
