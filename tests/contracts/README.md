@@ -55,3 +55,9 @@ inventory is deliberately only-what-we-call: do not copy a service's full
 published API into these files. `tests/contracts/check.py` enforces that every
 literal endpoint call has an entry, every entry has a caller, and each caller
 list matches the tree.
+
+Its two failure kinds are opposite directions of that check. `missing contract`
+means a call in the tree has no entry covering it — add the endpoint and its
+caller to the service's file here, or fix the call if the route it names is
+malformed. `dead contract entry` means the call an entry covered is gone —
+delete the entry. Neither is fixed by loosening the check.

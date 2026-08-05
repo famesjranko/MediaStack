@@ -154,7 +154,7 @@ adding the next gate.
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
-| Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
+| Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`), its ratchet refusals proved against a fabricated allowlist by `tests/unit/line-cap-gate.sh` | `lint-shellcheck` |
 | Tracked shell filename is kebab-case, tracked python filename is snake_case | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), with no exceptions: the grandfathered offenders have all been renamed and `tests/shell-naming.allowlist` deleted | `lint-shellcheck` |
 | A `scripts/*.sh` module (or the root `mediastack` dispatcher) that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |
 | Every `scripts/services/<svc>/main.sh` defines `configure_<svc>()` (directory hyphens map to underscores) | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), proved against fabricated violations by `tests/unit/naming-gate.sh` | `lint-shellcheck` |
@@ -163,8 +163,8 @@ adding the next gate.
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
 | Python function complexity is at or under 10, with no `C901` or bare `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
-| API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`) | — |
-| No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled against `tests/secret-scan.expected` | `secret-scan` |
+| API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`), with the missing/dead-entry failure paths proved by `tests/unit/contracts-gate.sh` | — |
+| No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled by `tests/lib/secret_scan_reconcile.py` against `tests/secret-scan.expected` | `secret-scan` |
 | No secret in reachable history | `./tests/check.sh secrets-history` — run before a push that publishes new history, not in any tier | — |
 | Shell parses, Python byte-compiles, compose renders across profiles | `./tests/check.sh unit` → `tests/unit.sh` tiers 1, 3, 5 | `unit-host` |
 | Every `tests/unit/*.sh` suite passes | `tests/unit.sh` tier 6 | `unit-host` |

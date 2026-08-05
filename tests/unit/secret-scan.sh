@@ -79,6 +79,148 @@ printf 'nothing to see\n' >"$FIXTURE_ROOT/clean/readme"
 write_aws_canary "$FIXTURE_ROOT/canary/creds"
 ln -s "$FIXTURE_ROOT/canary" "$FIXTURE_ROOT/canary-link"
 
+# The identity a declaration pins is never transcribed by hand: it hashes
+# gitleaks' redacted match text, so it is always harvested from the
+# reconciler's own UNEXPECTED output.
+declarations_from() {
+    awk -F'\t' '$1 == "UNEXPECTED" { print $2 "\t" $3 "\t" $4 }' <<<"$1"
+}
+
+# --- reconciliation, direct ------------------------------------------------
+# The reconciler is a separate module and needs no scanner: a report and a
+# declaration file are the whole input. The steering matrix is proved here in
+# milliseconds, which is why the gitleaks-backed gate probes further down
+# prove only that the scanner and the gate agree.
+
+RECONCILE="$REPO_ROOT/tests/lib/secret_scan_reconcile.py"
+RECON="$FIXTURE_ROOT/reconcile"
+mkdir -p "$RECON"
+
+# A gitleaks report carries far more than this; these are exactly the fields
+# the identity hashes, so a fixture with any more in it would be scenery.
+write_report() {
+    local out="$RECON/report.json" first=1 file
+    printf '[' >"$out"
+    for file in "$@"; do
+        ((first)) || printf ',' >>"$out"
+        printf '{"RuleID":"generic-api-key","File":"%s","Match":"REDACTED","Entropy":3.5}' \
+            "$file" >>"$out"
+        first=0
+    done
+    printf ']\n' >>"$out"
+}
+
+run_reconcile() {
+    OUT=$(python3 "$RECONCILE" "$RECON/report.json" "$RECON/expected" "$RECON" "$1" 2>&1)
+    RC=$?
+}
+
+# Harvest the two real identities once; every case below is built from them.
+write_report a b
+printf 'generic-api-key\tplaceholder\t0000000000000000\n' >"$RECON/expected"
+run_reconcile tree
+declarations_from "$OUT" >"$RECON/both"
+head -1 "$RECON/both" >"$RECON/one"
+STALE='generic-api-key	gone	ffffffffffffffff'
+
+assert_steer_tree() {
+    assert_contains "$OUT" "remove the secret from the tree" "$1: steers to removal"
+    assert_contains "$OUT" "grows only under human review" "$1: refuses a declaration to pass"
+    assert_contains "$OUT" "secret-scan section of tests/README.md" "$1: points at the contract"
+}
+
+assert_steer_history() {
+    assert_contains "$OUT" "cannot be taken back" "$1: names the published commit"
+    assert_contains "$OUT" "rotating the credential is the only real remediation" \
+        "$1: steers to rotation"
+    assert_contains "$OUT" "needs human review" "$1: defers the declaration to a human"
+    # Case-folded: the point is that no wording anywhere tells a reader to
+    # rewrite published history, and "Rewrite" slips past a literal match.
+    assert_absent "$(tr '[:upper:]' '[:lower:]' <<<"$OUT")" "rewrit" \
+        "$1: never suggests rewriting history"
+}
+
+STALE_LINE="a declaration nothing produced is stale"
+
+# tree x unexpected only
+write_report a b
+cp "$RECON/one" "$RECON/expected"
+run_reconcile tree
+assert_rc 1 "tree: an undeclared finding fails"
+assert_steer_tree "tree unexpected"
+assert_absent "$OUT" "$STALE_LINE" "tree unexpected: no stale-declaration direction"
+
+# tree x absent only
+write_report a
+{
+    cat "$RECON/one"
+    printf '%s\n' "$STALE"
+} >"$RECON/expected"
+run_reconcile tree
+assert_rc 1 "tree: a declaration nothing produced fails"
+assert_contains "$OUT" "$STALE_LINE" "tree absent: names the stale declaration"
+assert_contains "$OUT" "remove its line from" "tree absent: steers to removing the line"
+assert_absent "$OUT" "remove the secret from the tree" "tree absent: no removal steering"
+
+# tree x both
+write_report a b
+printf '%s\n' "$STALE" >"$RECON/expected"
+run_reconcile tree
+assert_rc 1 "tree: both directions at once fail"
+assert_steer_tree "tree both"
+assert_contains "$OUT" "$STALE_LINE" "tree both: carries the stale direction too"
+
+# history x unexpected only
+cp "$RECON/one" "$RECON/expected"
+write_report a b
+run_reconcile history
+assert_rc 1 "history: an undeclared finding fails"
+assert_steer_history "history unexpected"
+assert_absent "$OUT" "remove the secret from the tree" \
+    "history unexpected: never steers to removing it from the tree"
+
+# history x absent only
+write_report a
+{
+    cat "$RECON/one"
+    printf '%s\n' "$STALE"
+} >"$RECON/expected"
+run_reconcile history
+assert_rc 1 "history: a declaration nothing produced fails"
+assert_contains "$OUT" "$STALE_LINE" "history absent: names the stale declaration"
+assert_absent "$OUT" "cannot be taken back" "history absent: no rotation steering"
+
+# history x both
+write_report a b
+printf '%s\n' "$STALE" >"$RECON/expected"
+run_reconcile history
+assert_rc 1 "history: both directions at once fail"
+assert_steer_history "history both"
+assert_contains "$OUT" "$STALE_LINE" "history both: carries the stale direction too"
+
+# the green path and the two fail-closed paths
+write_report a b
+cp "$RECON/both" "$RECON/expected"
+run_reconcile tree
+assert_rc 0 "a fully declared report reconciles clean"
+assert_contains "$OUT" "all declared" "the clean run says the findings are declared"
+assert_absent "$OUT" "$STALE_LINE" "the clean run prints no steering"
+
+printf '# nothing declared\n' >"$RECON/expected"
+run_reconcile tree
+assert_rc 2 "a declaration file holding no declarations is an error"
+assert_contains "$OUT" "no declarations in" "the empty declaration set names the file"
+
+cp "$RECON/both" "$RECON/expected"
+printf 'not json\n' >"$RECON/report.json"
+run_reconcile tree
+assert_rc 2 "an unreadable report is an error"
+assert_contains "$OUT" "unreadable report" "the unreadable report is named"
+
+OUT=$(python3 "$RECONCILE" one two 2>&1)
+RC=$?
+assert_rc 2 "the reconciler rejects a short argument list"
+
 # --- install + usage -------------------------------------------------------
 
 run_scan "$SCANNER" install
@@ -149,15 +291,18 @@ rm -f "$FIXTURE_ROOT/canary/.gitleaksignore"
 
 # --- tampered pin / ruleset ------------------------------------------------
 
-# A standalone copy of the scanner: it resolves its pin manifest and config
-# from its own location, so a mutated copy exercises the guards in isolation.
+# A standalone copy of the scanner: it resolves its pin manifest, its config and
+# its helper modules from its own location, so a mutated copy exercises the
+# guards in isolation. tests/lib is copied wholesale rather than file by file:
+# a named-file list silently goes stale when the scanner gains a helper, and
+# these probes all die in the self-test before a missing one would be reached.
 fake_root() {
     local dir="$FIXTURE_ROOT/$1"
     mkdir -p "$dir/tests/lib" || return 1
     cp "$REPO_ROOT/tools.toml" "$dir/tools.toml"
     cp "$REPO_ROOT/.gitleaks.toml" "$dir/.gitleaks.toml"
     cp "$SCANNER" "$dir/tests/secret-scan.sh"
-    cp "$REPO_ROOT/tests/lib/secret-scan-install.sh" "$dir/tests/lib/secret-scan-install.sh"
+    cp -R "$REPO_ROOT/tests/lib/." "$dir/tests/lib/"
     printf '%s\n' "$dir"
 }
 
@@ -256,14 +401,10 @@ assert_contains "$OUT" "commit-" "the message finding names the commit it came f
 assert_contains "$OUT" "tag-v0" "the message finding names the annotated tag"
 assert_absent "$OUT" "$AWS_CANARY" "the message finding is redacted"
 
-# --- gate mode: reconciliation against a declared finding set --------------
-# The identity a declaration pins is derived here from the gate's own output
-# rather than transcribed: it hashes gitleaks' redacted match text, so writing
-# one by hand would mean knowing what the scanner saw.
-
-declarations_from() {
-    awk -F'\t' '$1 == "UNEXPECTED" { print $2 "\t" $3 "\t" $4 }' <<<"$1"
-}
+# --- gate mode: the scanner and the reconciler, together -------------------
+# The reconciliation contract is proved directly above. What is left here is
+# the join: that a real scan produces identities the declaration file can pin,
+# and that both gate modes agree on them.
 
 gate_repo=$(new_repo gate)
 printf 'readme\n' >"$gate_repo/readme"
@@ -286,6 +427,9 @@ assert_rc 1 "an undeclared finding fails the gate"
 assert_contains "$OUT" "UNEXPECTED" "the gate names the undeclared finding"
 assert_contains "$OUT" "DECLARED-BUT-ABSENT" "the gate names the declaration nothing produced"
 assert_absent "$OUT" "$AWS_CANARY" "the gate never echoes the matched value"
+# The steering text itself is proved against the reconciler above; this probe
+# only has to show that a real scan reaches it.
+assert_contains "$OUT" "remove the secret from the tree" "the gate reaches the tree steering"
 
 declarations_from "$OUT" >"$DECL"
 run_scan "$SCANNER" gate-tree "$DECL" "$gate_repo"
@@ -339,7 +483,7 @@ sed -i '$d' "$DECL"
 run_scan "$SCANNER" gate-history "$DECL" "$gate_repo"
 assert_rc 0 "the history gate reconciles the history-only declaration"
 
-expected=61
+expected=99
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 
