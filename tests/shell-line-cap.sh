@@ -38,9 +38,9 @@ for file in "${tracked_files[@]}"; do
     tracked_counts["$file"]="$(wc -l <"$REPO_ROOT/$file")"
 done
 
-# Ticket-09 done-state: the allowlist file is gone and every file obeys the
-# cap. An absent allowlist means an empty allowed set; if it exists it must be
-# readable, and its entries still ratchet (shrink-only, no new entries).
+# The allowlist file is gone and every file obeys the cap. An absent
+# allowlist means an empty allowed set; if it exists it must be readable,
+# and its entries still ratchet (shrink-only, no new entries).
 if [[ -e "$ALLOWLIST" ]]; then
     [[ -r "$ALLOWLIST" ]] || die "allowlist is unreadable: $ALLOWLIST"
 else
