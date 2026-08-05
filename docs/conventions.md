@@ -97,7 +97,7 @@ header contract:
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
-| Tracked shell file is at or under 500 lines, with an allowlist ratchet for existing offenders | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
+| Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check | `./tests/check.sh ruff` | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |

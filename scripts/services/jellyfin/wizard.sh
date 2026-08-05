@@ -1,6 +1,5 @@
-# =============================================================================
-# Jellyfin wizard follow-ups — permanent API key, library provisioning
-# =============================================================================
+# Owns: save_jellyfin_api_key and configure_jellyfin_libraries — permanent API key persistence and library provisioning after the first-run wizard.
+# Sources: main.sh (auth/session context), api helpers, save_api_key and log_* from scripts/lib/common.sh.
 
 # Create (or reuse) a permanent Jellyfin API key and save it to .env.
 # Session tokens from AuthenticateByName are transient and change every run;

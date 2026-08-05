@@ -1,6 +1,5 @@
-# =============================================================================
-# Jellyfin server identity and remote streaming limit
-# =============================================================================
+# Owns: configure_jellyfin_server_name and configure_jellyfin_streaming — server identity and the remote streaming bitrate limit.
+# Sources: main.sh (auth/session context), api helpers and log_* from scripts/lib/common.sh.
 
 configure_jellyfin_server_name() {
     local jf_url="$1" jf_token="$2"

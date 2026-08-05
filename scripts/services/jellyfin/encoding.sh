@@ -1,6 +1,5 @@
-# =============================================================================
-# Jellyfin hardware transcoding (encoding.xml) configuration
-# =============================================================================
+# Owns: configure_jellyfin_encoding — hardware transcoding (encoding.xml) via the System/Configuration/encoding API.
+# Sources: main.sh (auth/session context), api helpers and log_* from scripts/lib/common.sh.
 
 configure_jellyfin_encoding() {
     local jf_url="$1" jf_token="$2"

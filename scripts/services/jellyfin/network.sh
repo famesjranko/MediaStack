@@ -1,6 +1,5 @@
-# =============================================================================
-# Jellyfin networking (PublishedServerUrl, KnownProxies) configuration
-# =============================================================================
+# Owns: configure_jellyfin_networking — PublishedServerUrl and KnownProxies via the System/Configuration/network API.
+# Sources: main.sh (auth/session context), api helpers and log_* from scripts/lib/common.sh.
 
 configure_jellyfin_networking() {
     local jf_url="$1" jf_token="$2"
