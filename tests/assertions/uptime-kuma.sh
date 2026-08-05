@@ -49,7 +49,7 @@ assert_uptime_kuma_idempotent() {
     fi
 
     local rerun_log=/tmp/configure-rerun.out
-    # UI_ASCII=1: deterministic [SKIP]/[OK] markers for the grep below (term_caps.sh).
+    # UI_ASCII=1: deterministic [SKIP]/[OK] markers for the grep below (term-caps.sh).
     dind_exec "UI_ASCII=1 ./scripts/configure.sh --only uptime-kuma" >"$rerun_log" 2>&1
 
     local skip_count

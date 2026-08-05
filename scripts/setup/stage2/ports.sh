@@ -1,4 +1,4 @@
-# Owns: Stage 2 router port reachability gate and retry flow.
+# Owns: stage2_* — Stage 2 router port reachability gate and retry flow.
 # Sources: Stage 2 skip helper, network port probes, and interactive UI.
 
 _stage2_port_gate() {
@@ -14,7 +14,7 @@ _stage2_port_gate() {
     local port_state failure action attempt
     while true; do
         for attempt in $(seq 1 "$STAGE2_PORT_PROBE_MAX_ATTEMPTS"); do
-            port_state=$(stage2_check_http_ports)
+            port_state=$(net_check_http_ports)
             if [[ "$port_state" == "ok" ]]; then
                 if ((attempt == 1)); then
                     ui_log ok "TCP ports 80 and 443 appear reachable from this host."
@@ -29,7 +29,7 @@ _stage2_port_gate() {
             fi
         done
 
-        failure=$(stage2_classify_port_failure "${_NET_PUBLIC_IP:-}" "ok" "$port_state")
+        failure=$(net_classify_port_failure "${_NET_PUBLIC_IP:-}" "ok" "$port_state")
         case "$failure" in
             cgnat) ui_log warn "Your public IP looks like CGNAT. Ask your ISP for a public IPv4 or use VPN-only access." ;;
             cloudflare) ui_log warn "Cloudflare proxy is on. Set the records to DNS-only, then retry." ;;

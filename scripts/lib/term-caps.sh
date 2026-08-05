@@ -2,7 +2,7 @@
 # MediaStack terminal-capability detection (single source of truth)
 # =============================================================================
 # Decides whether the current terminal can render ANSI colour (and, from PR-B
-# onward, unicode glyphs). Both scripts/lib/common.sh and scripts/lib/ui_render_fallback.sh
+# onward, unicode glyphs). Both scripts/lib/common.sh and scripts/lib/ui-render-fallback.sh
 # source this file and gate their own palettes on the predicates here, so the
 # decision lives in exactly one place.
 #
@@ -14,7 +14,7 @@
 #   - every environment read uses a `${VAR:-}` / `${VAR+x}` default so an unset
 #     var never trips `set -u`.
 #
-# Include-guarded: common.sh + ui_render_fallback.sh (via ui.sh) both source it during
+# Include-guarded: common.sh + ui-render-fallback.sh (via ui.sh) both source it during
 # a single `./setup.sh`, so it is sourced 2-3 times per process.
 
 [[ -n "${_TERM_CAPS_SOURCED:-}" ]] && return 0
@@ -121,8 +121,8 @@ else
 fi
 
 # --- ANSI color palette (shared by all rendering backends) ------------------
-# Frozen here at source time. Both ui_render_fallback.sh and ui_render_gum.sh
-# source term_caps.sh, so defining the palette here makes it available to any
+# Frozen here at source time. Both ui-render-fallback.sh and ui-render-gum.sh
+# source term-caps.sh, so defining the palette here makes it available to any
 # code regardless of which backend is active.
 if _color_enabled; then
     _UI_RESET='\033[0m'

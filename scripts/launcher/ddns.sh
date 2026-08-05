@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Owns: DDNS status, credential updates, live verification, and rollback.
-# Sources: launcher globals, .env, scripts/lib/ui.sh, network.sh, env_gen.sh, and service helpers.
+# Sources: launcher globals, .env, scripts/lib/ui.sh, network.sh, env-gen.sh, and service helpers.
 
 _resolve_ddns_ip() {
     local _dom="${DOMAIN:-}" _ip=""
-    # BOUNDED: the shared _stage2_dns_lookup_a is unbounded (~30s worst case, fine
+    # BOUNDED: the shared _net_dns_lookup_a is unbounded (~30s worst case, fine
     # for install/on-demand checks, not for a hot render path). Short-timeout digs
     # (system resolver, then 8.8.8.8) via the shared IPv4 extractor. Broken DNS
     # falls to "" -> "not resolving yet", never a frozen menu.
     if [[ -n "$_dom" && "$_dom" != "example.com" ]] && command -v dig &>/dev/null; then
-        _ip=$(dig +short +time=2 +tries=1 A "$_dom" 2>/dev/null | _stage2_first_ipv4)
-        [[ -z "$_ip" ]] && _ip=$(dig +short +time=2 +tries=1 A "$_dom" @8.8.8.8 2>/dev/null | _stage2_first_ipv4)
+        _ip=$(dig +short +time=2 +tries=1 A "$_dom" 2>/dev/null | _net_first_ipv4)
+        [[ -z "$_ip" ]] && _ip=$(dig +short +time=2 +tries=1 A "$_dom" @8.8.8.8 2>/dev/null | _net_first_ipv4)
     fi
     printf '%s' "$_ip"
 }
@@ -74,31 +74,31 @@ action_change_ddns() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     # The row is already gated on "remote ready AND ddns configured"; this guard is
     # the safety net for a stale/direct call and routes to "Add remote access".
     if recovery_menu_remote_available || ! _ddns_configured; then
         ui_log info "No DDNS provider is set up yet - use 'Add remote access' to configure remote access first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     if ! _service_is_running ddns-updater; then
         ui_log warn "ddns-updater isn't running - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
-    # The shared DDNS registry/renderer + config-write helpers live in env_gen.sh
+    # The shared DDNS registry/renderer + config-write helpers live in env-gen.sh
     # (which also sources the provider registry). Load it lazily; the guard keeps a
     # repeat visit cheap. ddns_verify_via_container is already sourced via network.sh.
-    type ddns_render_config_json &>/dev/null || source "$SCRIPT_DIR/scripts/setup/env_gen.sh"
+    type ddns_render_config_json &>/dev/null || source "$SCRIPT_DIR/scripts/setup/env-gen.sh"
 
     local domain="${DOMAIN:-}"
     if [[ -z "$domain" ]]; then
         ui_log warn "No domain on record - use 'Add remote access' to set the domain first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -110,7 +110,7 @@ action_change_ddns() {
     new_provider=$(ddns_provider_pick "${DDNS_PROVIDER:-}")
     if [[ -z "$new_provider" || "$new_provider" == "${_DDNS_SKIP:-__skip__}" ]]; then
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -136,7 +136,7 @@ action_change_ddns() {
         else
             ui_log info "No change to DDNS."
         fi
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -165,7 +165,7 @@ action_change_ddns() {
 
         if ! payload=$(ddns_render_config_json "$new_provider" _ddns_new_fields); then
             ui_log warn "Couldn't build the DDNS config from those entries - no change made."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         fi
 
@@ -189,32 +189,32 @@ action_change_ddns() {
             if ((attempt < 3)); then
                 ui_confirm "Those credentials were rejected. Re-enter them?" yes || {
                     ui_log info "No change."
-                    pause_for_menu
+                    launcher_pause_for_menu
                     return 0
                 }
                 continue
             fi
             ui_log warn "Still rejected after ${attempt} attempts - no change made."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         fi
         # verify_rc == 2 -> degrade (docker/pull/timeout). Never restart a working
         # live service on unverified creds; leave the current provider untouched.
         [[ -n "$vbody" ]] && rm -f "$vbody"
         ui_log warn "Couldn't verify the new credentials (Docker or network issue) - no change made."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     done
     [[ -z "$payload" ]] && {
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     }
 
     # WARN + CONFIRM the disruptive part (the live restart).
     ui_confirm "Switch DDNS to '${new_provider}' and restart the updater now? Your current config is backed up and restored if it fails to start." no || {
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     }
 
@@ -227,7 +227,7 @@ action_change_ddns() {
     [[ -z "$old_payload" ]] && old_payload=$(sudo -n cat "$live" 2>/dev/null)
     if [[ -z "$old_payload" ]]; then
         ui_log warn "Couldn't read the current DDNS config to make a rollback point - no change made."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -269,6 +269,6 @@ action_change_ddns() {
         docker restart ddns-updater >/dev/null 2>&1 || true
         _show_action_result 1 "Update DDNS provider / credentials"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
     return 0
 }

@@ -69,28 +69,28 @@ action_toggle_bazarr() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     local rc=0
     if [[ "${BAZARR_ENABLED:-false}" == "true" ]]; then
         ui_confirm "Turn OFF subtitles (Bazarr)? Your subtitle settings are kept." no || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var BAZARR_ENABLED false
         _reload_env
         ui_log info "Stopping Bazarr (its ./config/bazarr settings are preserved)..."
         # Literal --profile subtitles: the flag is required for compose to see
-        # the service, and _build_profile_args no longer yields it post-flip.
+        # the service, and profiles_build_args no longer yields it post-flip.
         # rm -sf stops + removes only the container; the bind-mount survives.
         docker compose --profile subtitles rm -sf bazarr 2>&1 || rc=$?
         _show_action_result "$rc" "Disable subtitles (Bazarr)"
     else
         ui_confirm "Turn ON subtitles (Bazarr) for automatic subtitle downloads?" yes || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var BAZARR_ENABLED true
@@ -98,14 +98,14 @@ action_toggle_bazarr() {
         ui_log info "Enabling Bazarr..."
         _regenerate_override
         local profiles=()
-        _build_profile_args profiles
+        profiles_build_args profiles
         docker compose "${profiles[@]}" up -d bazarr 2>&1 || rc=$?
         if ((rc == 0)); then
             "$SCRIPT_DIR/scripts/configure.sh" --only bazarr || rc=$?
         fi
         _show_action_result "$rc" "Enable subtitles (Bazarr)"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_toggle_smb() {
@@ -114,7 +114,7 @@ action_toggle_smb() {
     if [[ "${SMB_ENABLED:-false}" == "true" ]]; then
         ui_confirm "Turn OFF the host file share (SMB)? Your files are NOT deleted." no || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var SMB_ENABLED false
@@ -137,7 +137,7 @@ action_toggle_smb() {
             "Full system"*) scope="system" ;;
             *)
                 ui_log info "No change."
-                pause_for_menu
+                launcher_pause_for_menu
                 return 0
                 ;;
         esac
@@ -150,7 +150,7 @@ action_toggle_smb() {
         setup_samba || rc=$?
         _show_action_result "$rc" "Enable file sharing (SMB)"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_toggle_watchdog() {
@@ -159,7 +159,7 @@ action_toggle_watchdog() {
     if [[ "${STORAGE_WATCHDOG:-true}" == "true" ]]; then
         ui_confirm "Turn OFF the NAS storage watchdog? Data services will no longer be protected if the NAS drops." no || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var STORAGE_WATCHDOG false
@@ -170,7 +170,7 @@ action_toggle_watchdog() {
     else
         ui_confirm "Turn ON the NAS storage watchdog? Recommended - it protects data services if the NAS disconnects." yes || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var STORAGE_WATCHDOG true
@@ -179,7 +179,7 @@ action_toggle_watchdog() {
         storage_install_watchdog || rc=$?
         _show_action_result "$rc" "Enable NAS storage watchdog"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_toggle_ufw() {
@@ -190,7 +190,7 @@ action_toggle_ufw() {
     if [[ "${UFW_ENABLED:-true}" == "true" ]]; then
         ui_confirm "Turn OFF the UFW firewall? Rules you added yourself are kept." no || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var UFW_ENABLED false
@@ -216,17 +216,17 @@ action_toggle_ufw() {
     else
         if ! _docker_reachable; then
             ui_log warn "Docker isn't reachable - start the stack first (the firewall restricts Docker's published ports)."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         fi
         if ! validate_install_state; then
             ui_log warn "No valid install ledger found - run a full install/repair before enabling the firewall."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         fi
         ui_confirm "Turn ON the UFW firewall (default-deny inbound; LAN, SSH and web stay open)?" yes || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var UFW_ENABLED true
@@ -240,7 +240,7 @@ action_toggle_ufw() {
         fi
         _show_action_result "$rc" "Enable UFW firewall"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_toggle_hardening() {
@@ -251,7 +251,7 @@ action_toggle_hardening() {
     if [[ "${HARDENING_ENABLED:-true}" == "true" ]]; then
         ui_confirm "Turn OFF system hardening (auto security updates + kernel sysctl)?" no || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var HARDENING_ENABLED false
@@ -263,12 +263,12 @@ action_toggle_hardening() {
     else
         if ! validate_install_state; then
             ui_log warn "No valid install ledger found - run a full install/repair before enabling hardening."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         fi
         ui_confirm "Turn ON system hardening (automatic security updates + kernel network hardening)?" yes || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var HARDENING_ENABLED true
@@ -278,14 +278,14 @@ action_toggle_hardening() {
         setup_sysctl_hardening || rc=$?
         _show_action_result "$rc" "Enable system hardening"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_toggle_indexers() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     local rc=0
@@ -293,7 +293,7 @@ action_toggle_indexers() {
     if [[ "${PUBLIC_INDEXERS_ENABLED:-false}" == "true" ]]; then
         ui_confirm "Stop configuring public indexers? Existing ones stay in Jackett." no || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var PUBLIC_INDEXERS_ENABLED false
@@ -307,7 +307,7 @@ action_toggle_indexers() {
         ui_log info "(any indexers you added yourself will be overwritten)."
         ui_confirm "Add the example public search indexers so Sonarr/Radarr can find releases?" yes || {
             ui_log info "No change."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         _set_env_var PUBLIC_INDEXERS_ENABLED true
@@ -320,7 +320,7 @@ action_toggle_indexers() {
         fi
         _show_action_result "$rc" "Enable public indexers"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_remote() { _run_setup_return 0 "Add remote access" --remote; }
@@ -329,7 +329,7 @@ action_configure() {
     echo ""
     if ! ui_confirm "Re-run auto-configuration now?" no; then
         ui_log info "Cancelled."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     # Precondition: configure.sh polls each core service for 90s via
@@ -351,7 +351,7 @@ action_configure() {
         ui_log warn "Stack is not fully running - configure.sh would wait 90s per missing service."
         ui_log info "Not running: ${missing[*]}"
         ui_log info "Start the stack first:  Manage stack -> Start all services"
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     ui_log info "This adds services newly enabled in your settings. Already-configured services are detected and skipped, not changed."
@@ -366,5 +366,5 @@ action_configure() {
     else
         _show_action_result "$rc" "Re-run configuration"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }

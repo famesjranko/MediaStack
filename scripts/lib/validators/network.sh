@@ -1,4 +1,4 @@
-# Owns: Port-in-use helpers plus torrent/WireGuard/SMB port, domain, hostname, LAN CIDR, and IP validators.
+# Owns: validate_* validators_* — Port-in-use helpers plus torrent/WireGuard/SMB port, domain, hostname, LAN CIDR, and IP validators.
 # Sources: scripts/lib/validators.sh state; sourced by scripts/lib/validators.sh.
 
 _validators_port_process_name() {

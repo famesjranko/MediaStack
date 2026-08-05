@@ -195,7 +195,7 @@ done
 
 # --- Record a preflight pass receipt for the images this run overrode ---
 # When this run applied MS_TEST_IMAGE_OVERRIDES *and* every scenario passed, vouch
-# for the exact image@digest tested under each scenario. scripts/image-drift.py
+# for the exact image@digest tested under each scenario. scripts/image_drift.py
 # reads this to refuse accepting an untested digest into the lock. Local-only and
 # gitignored; append + dedup so a maintainer's separate per-scenario runs (e.g.
 # fresh-install then autoheal) accumulate. Tag-only overrides carry no digest to

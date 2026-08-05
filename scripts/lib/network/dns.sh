@@ -1,6 +1,6 @@
-# Owns: Stage 2 Cloudflare CIDR and DNS classification helpers.
+# Owns: net_* — Stage 2 Cloudflare CIDR and DNS classification helpers.
 # Sources: scripts/lib/network.sh state plus curl, dig, awk, and python3.
-stage2_fetch_cloudflare_ips_v4() {
+net_fetch_cloudflare_ips_v4() {
     if [[ -n "${STAGE2_CLOUDFLARE_IPS_TEXT:-}" ]]; then
         printf '%s\n' "$STAGE2_CLOUDFLARE_IPS_TEXT"
         return 0
@@ -21,11 +21,11 @@ stage2_fetch_cloudflare_ips_v4() {
     printf '%s\n' "$_STAGE2_CLOUDFLARE_IPS_V4"
 }
 
-stage2_ip_in_cloudflare_v4() {
+net_ip_in_cloudflare_v4() {
     local ip="$1"
     local cidrs="${2:-}"
     if [[ -z "$cidrs" ]]; then
-        cidrs=$(stage2_fetch_cloudflare_ips_v4) || return 1
+        cidrs=$(net_fetch_cloudflare_ips_v4) || return 1
     fi
 
     IP="$ip" CIDRS="$cidrs" python3 -c '
@@ -48,7 +48,7 @@ sys.exit(1)
 ' 2>/dev/null
 }
 
-_stage2_first_ipv4() {
+_net_first_ipv4() {
     awk -F. '
         NF == 4 {
             for (i = 1; i <= 4; i++) {
@@ -62,20 +62,20 @@ _stage2_first_ipv4() {
     '
 }
 
-_stage2_dns_lookup_a() {
+_net_dns_lookup_a() {
     local name="$1"
     local result
 
     # Try the host's configured resolver first. Some home networks and ISPs
     # block direct queries to public resolvers, and the system resolver is the
     # closest match for what the setup host can actually use.
-    result=$(dig +short A "$name" 2>/dev/null | _stage2_first_ipv4)
+    result=$(dig +short A "$name" 2>/dev/null | _net_first_ipv4)
     if [[ -n "$result" ]]; then
         printf '%s\n' "$result"
         return 0
     fi
 
-    result=$(dig +short A "$name" @8.8.8.8 2>/dev/null | _stage2_first_ipv4)
+    result=$(dig +short A "$name" @8.8.8.8 2>/dev/null | _net_first_ipv4)
     if [[ -n "$result" ]]; then
         printf '%s\n' "$result"
         return 0
@@ -84,15 +84,15 @@ _stage2_dns_lookup_a() {
     return 1
 }
 
-stage2_dns_classify() {
+net_dns_classify() {
     local domain="$1" public_ip="$2"
     local jellyfin_a seerr_a apex_a
 
-    jellyfin_a=$(_stage2_dns_lookup_a "jellyfin.${domain}" || true)
-    seerr_a=$(_stage2_dns_lookup_a "seerr.${domain}" || true)
+    jellyfin_a=$(_net_dns_lookup_a "jellyfin.${domain}" || true)
+    seerr_a=$(_net_dns_lookup_a "seerr.${domain}" || true)
 
     if [[ -z "$jellyfin_a" && -z "$seerr_a" ]]; then
-        apex_a=$(_stage2_dns_lookup_a "$domain" || true)
+        apex_a=$(_net_dns_lookup_a "$domain" || true)
         if [[ -n "$apex_a" ]]; then
             printf 'apex-only'
             return 1
@@ -105,7 +105,7 @@ stage2_dns_classify() {
         printf 'no-a'
         return 1
     fi
-    if stage2_ip_in_cloudflare_v4 "$jellyfin_a" || stage2_ip_in_cloudflare_v4 "$seerr_a"; then
+    if net_ip_in_cloudflare_v4 "$jellyfin_a" || net_ip_in_cloudflare_v4 "$seerr_a"; then
         printf 'cloudflare'
         return 1
     fi

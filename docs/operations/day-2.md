@@ -39,7 +39,7 @@ non-technical users — per-image visibility and selective control, without SSH 
 was tested against); post-install every update is a uniform, manual opt-in, so detection and apply
 are fully channel-agnostic — an update is an update.
 
-**Status scan.** `python3 scripts/image-drift.py --status` (table) / `--status-tsv` (machine)
+**Status scan.** `python3 scripts/image_drift.py --status` (table) / `--status-tsv` (machine)
 reports, per service, a **Policy** (`Pinned` = still on its installed digest / `Tracking tag` =
 following its compose tag, with `*` marking a service you've updated) and a **Status**:
 
@@ -113,7 +113,7 @@ Flow:
 
 1. **Guards** — Docker reachable and **both Sonarr and Radarr running** (a split rename across the two
    apps is avoided by requiring both up front).
-2. **Pick** — the same two-axis picker the wizard uses (`scripts/lib/quality_select.sh`): resolution
+2. **Pick** — the same two-axis picker the wizard uses (`scripts/lib/quality-select.sh`): resolution
    ceiling, then size envelope. The current cell is pre-selected.
 3. **No-change / confirm** — re-picking the current cell short-circuits. Otherwise you are warned that
    raising the ceiling or size makes Sonarr/Radarr **re-search and upgrade existing media** (extra
@@ -133,7 +133,7 @@ If you renamed the quality profile yourself in the Sonarr/Radarr UI (so the live
 
 The **"Update DDNS provider / credentials"** action (under **Features & settings**) swaps the
 dynamic-DNS provider — or just re-enters its credentials — after install, reusing the exact provider
-picker, JSON renderer and ephemeral verify the setup wizard uses (`scripts/lib/ddns_providers.sh` +
+picker, JSON renderer and ephemeral verify the setup wizard uses (`scripts/lib/ddns-providers.sh` +
 `scripts/lib/network.sh`). The row is shown only once remote access is set up **and** uses DDNS (a
 static-IP remote has no provider to change); when remote access is not configured yet, use **Add remote
 access** instead.
@@ -243,7 +243,7 @@ Flow:
 0. Parse args (`--force` to patch regardless of mode; unknown args error with usage). Read `NVIDIA_DRIVER_MODE` from `.env`; if it is not `unlock` and `--force` was not given, print "nothing to repatch" and exit 0.
 1. Refuse if `nvidia-smi` is missing — no drivers loaded.
 2. Read current driver version.
-3. Verify `keylase/nvidia-patch` in `$SCRIPT_DIR/.nvidia-patch` (gitignored) at the reviewed commit pinned in `scripts/lib/nvidia_patch.sh`. Dirty local trees and unexpected origins are rejected.
+3. Verify `keylase/nvidia-patch` in `$SCRIPT_DIR/.nvidia-patch` (gitignored) at the reviewed commit pinned in `scripts/lib/nvidia-patch.sh`. Dirty local trees and unexpected origins are rejected.
 4. Export that pinned commit to a temporary execution directory; root never executes files from a moving branch checkout. The `.nvidia-patch` clone itself lives in the repo working tree (gitignored, so it never gets committed) rather than a cache directory like `~/.cache/` — it shows up in a plain `ls` of the checkout, which is expected.
 5. **Compatibility check** — runs exported `patch.sh -c $DRIVER_VER` to confirm the reviewed commit supports this driver version. Exits cleanly with guidance if MediaStack needs a newer reviewed nvidia-patch commit.
 6. `sudo bash patch.sh` from the exported tree — removes NVENC encoding session limits on consumer GPUs.

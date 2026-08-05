@@ -327,7 +327,7 @@ Matches 429 (Too Many Requests) responses in NPM's nginx access log. Same log fo
 
 ### `config/jackett/Jackett/ServerConfig.json`
 
-Pre-seeded with `FlareSolverrUrl: http://flaresolverr:8191` so Jackett knows how to use the Cloudflare bypass immediately. Empty `APIKey`, `AdminPassword`, `InstanceId` fields — Jackett generates them on first start, then `get_api_key` in `scripts/lib/common.sh` reads them.
+Pre-seeded with `FlareSolverrUrl: http://flaresolverr:8191` so Jackett knows how to use the Cloudflare bypass immediately. Empty `APIKey`, `AdminPassword`, `InstanceId` fields — Jackett generates them on first start, then `api_get_key` in `scripts/lib/common.sh` reads them.
 
 ### `config/qbittorrent/qBittorrent/qBittorrent.conf`
 

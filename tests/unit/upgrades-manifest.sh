@@ -15,7 +15,7 @@
 #     never launches the service (the bazarr class)
 #   - README Stable-baseline badge is regenerated from the current lock (catches
 #     a lock-restamping commit that forgot the image-updates.md step 9 badge
-#     regen — see scripts/image-drift.py --check-readme-badges)
+#     regen — see scripts/image_drift.py --check-readme-badges)
 # docker-compose.yml stays the single source of truth for tags; this guard makes
 # the manifest's policy claims self-checking.
 
@@ -234,7 +234,7 @@ done <<<"$results"
 
 # README Stable-baseline badge must reflect the current lock. Pure local file
 # read, no network — safe to run on every PR, not just at accept-time.
-badge_out=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+badge_out=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$REPO_ROOT/docs/operations/image-digests.lock" \
     --check-readme-badges "$REPO_ROOT/README.md" 2>&1)
 if [[ $? -eq 0 ]]; then

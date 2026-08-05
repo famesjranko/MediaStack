@@ -17,9 +17,9 @@ Entry point for the entire project. Common modes:
 |--------|-----------|----------------|
 | `scripts/setup/checks.sh` | `check_not_root`, `check_debian`, `check_docker`, `check_compose`, `check_disk_space` | Prerequisite validation |
 | `scripts/setup/packages.sh` | `install_base_packages`, `install_docker` | Base packages + Docker (--full) |
-| `scripts/setup/gpu.sh` + `scripts/setup/gpu/*` | `detect_gpu`, `check_secure_boot`, `nvidia_driver_source`, `ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches, verification, and generated Compose GPU wiring |
+| `scripts/setup/gpu.sh` + `scripts/setup/gpu/*` | `detect_gpu`, `nvidia_driver_check_secure_boot`, `nvidia_driver_source`, `nvidia_driver_ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches, verification, and generated Compose GPU wiring |
 | `scripts/setup/override.sh` + `scripts/setup/gpu/compose.sh` | `detect_host_memory`, `compute_mem_limit`, `generate_override` | Host memory, image policy, and Compose override |
-| `scripts/setup/env_gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
+| `scripts/setup/env-gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
 | `scripts/setup/storage.sh` | `storage_preflight_nas`, `storage_guard_before_start`, `storage_install_watchdog` | Storage mode state, NFS guard, NAS watchdog installation |
 | `scripts/setup/wizard.sh` | `run_wizard` | Core LAN, hardware transcoding add-on, remote access flow (`DEMO=1` non-interactive mode) |
 | `scripts/setup/recovery.sh` | `require_stage1_complete`, `run_remote_recovery`, `run_remote_ready_recovery`, `run_transcoding_recovery`, `show_existing_install_menu` | Recovery Hooks routing for `--remote`, `--transcoding`, and existing-install add-stage menu |
@@ -58,7 +58,7 @@ The interactive path is:
 | 4 | Optional `--transcoding` recovery hook | `run_transcoding_recovery` | recovery.sh |
 | 5 | Existing install check + add-stage menu | `detect_existing_install`, `show_existing_install_menu`, `nuke_existing_install` | checks.sh, recovery.sh |
 | 6 | Docker/base validation | `check_docker`, `check_compose`, `check_disk_space` | checks.sh |
-| 7 | Host detection | `detect_host_memory`, `detect_env`, `stash_gpu_type` | override.sh, env_gen.sh, gpu.sh |
+| 7 | Host detection | `detect_host_memory`, `detect_env`, `stash_gpu_type` | override.sh, env-gen.sh, gpu.sh |
 | 8 | *(--full only)* Base packages + Docker | `install_base_packages`, `install_docker` | packages.sh |
 | 9 | GPU runtime check + hardening re-affirm | `verify_gpu_runtime` (always); `setup_hardening` only on a completed re-run (`STAGE_1_COMPLETE=1`) | hardening.sh + hardening/* |
 | 10 | Wizard | `run_stage1`, `run_hardware_transcoding_addon`, `run_stage2`, final reboot gate | wizard.sh, stages/*.sh |
@@ -94,7 +94,7 @@ State rules stay unchanged across the recovery routes:
 
 ## Base packages and Docker install (phase 2, `--full` only)
 
-`install_base_packages` installs: `curl ca-certificates gnupg lsb-release sudo pciutils python3-yaml python3-bcrypt gettext-base ufw unattended-upgrades git htop bind9-dnsutils smartmontools`. Samba remains optional and is installed only when the wizard enables SMB. `python3-yaml` is needed by `configure.sh`'s YAML helpers. `python3-bcrypt` is retained as a harmless legacy dependency, but wg-easy v15 now hashes `INIT_PASSWORD` internally on first boot. Variable JSON payloads are rendered with Python `json.dumps` or the `json_body` helper; `gettext-base` remains installed for legacy shell-template compatibility, not for JSON substitution. `git` is needed for the pinned nvidia-patch fetch/checkout flow. `htop`, `bind9-dnsutils` (dig), and `smartmontools` (smartctl) are diagnostic tools for common media server troubleshooting.
+`install_base_packages` installs: `curl ca-certificates gnupg lsb-release sudo pciutils python3-yaml python3-bcrypt gettext-base ufw unattended-upgrades git htop bind9-dnsutils smartmontools`. Samba remains optional and is installed only when the wizard enables SMB. `python3-yaml` is needed by `configure.sh`'s YAML helpers. `python3-bcrypt` is retained as a harmless legacy dependency, but wg-easy v15 now hashes `INIT_PASSWORD` internally on first boot. Variable JSON payloads are rendered with Python `json.dumps` or the `http_json_body` helper; `gettext-base` remains installed for legacy shell-template compatibility, not for JSON substitution. `git` is needed for the pinned nvidia-patch fetch/checkout flow. `htop`, `bind9-dnsutils` (dig), and `smartmontools` (smartctl) are diagnostic tools for common media server troubleshooting.
 
 `install_docker` adds the official Docker apt repo, installs `docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`, and runs `usermod -aG docker "$USER"`. Group membership needs a new session; the script uses `exec sg docker -c "$0 $*"` to re-invoke itself with the group applied immediately.
 
@@ -131,10 +131,10 @@ NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pe
 `install_nvidia_drivers` (Unlock mode):
 
 1. Check for a `pending` marker from a pre-reboot cache — if found, verify nouveau is gone and install the cached `.run`.
-2. Check Secure Boot state via `check_secure_boot` — if enabled, fall back to software transcoding (unsigned kernel modules won't load).
+2. Check Secure Boot state via `nvidia_driver_check_secure_boot` — if enabled, fall back to software transcoding (unsigned kernel modules won't load).
 3. Install kernel headers and DKMS build prerequisites.
-4. Blacklist nouveau unconditionally (`/etc/modprobe.d/blacklist-nouveau.conf` + `update-initramfs`). Attempt runtime unload via `try_unload_nouveau()` — stops display manager, unbinds fbcon from vtconsoles, runs `modprobe -r nouveau drm_kms_helper drm`. Checks sysfs PCI binding for success, not just lsmod.
-5. Resolve the correct driver via `_resolve_nvidia_driver()`: fetch the keylase/nvidia-patch README from MediaStack's reviewed pinned commit, then check GPU compatibility by curling NVIDIA's `supportedchips.html` for the target driver version (lightweight HTML, no `.run` download yet). The page lists PCI device IDs under "Current NVIDIA GPUs" or `legacy_NNN.xx` sections — a python parser identifies which section the GPU falls in. If legacy, switch to the matching branch from the README. Only then download the correct `.run` file.
+4. Blacklist nouveau unconditionally (`/etc/modprobe.d/blacklist-nouveau.conf` + `update-initramfs`). Attempt runtime unload via `nvidia_driver_try_unload_nouveau()` — stops display manager, unbinds fbcon from vtconsoles, runs `modprobe -r nouveau drm_kms_helper drm`. Checks sysfs PCI binding for success, not just lsmod.
+5. Resolve the correct driver via `nvidia_driver_resolve_driver()`: fetch the keylase/nvidia-patch README from MediaStack's reviewed pinned commit, then check GPU compatibility by curling NVIDIA's `supportedchips.html` for the target driver version (lightweight HTML, no `.run` download yet). The page lists PCI device IDs under "Current NVIDIA GPUs" or `legacy_NNN.xx` sections — a python parser identifies which section the GPU falls in. If legacy, switch to the matching branch from the README. Only then download the correct `.run` file.
 6. If nouveau is still active (sysfs check): cache the `.run` in `.nvidia-tmp/pending`, set `NEEDS_REBOOT`, return. The installer is never run while nouveau has the GPU — it would either abort (`--silent`) or compile-then-rollback.
 7. If nouveau is gone: install via `.run --silent --dkms --no-nouveau-check`. Sets `NEEDS_REBOOT=true`.
 8. Install `nvidia-container-toolkit`, run `nvidia-ctk runtime configure --runtime=docker`, restart Docker.
@@ -143,7 +143,7 @@ NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pe
 
 `install_amd_drivers` — installs `mesa-va-drivers vainfo` from non-free. No reboot required. Same verification as Intel (a usable `/dev/dri/renderD*` render device, resolved by GPU vendor when sysfs exposes it).
 
-`apply_nvidia_patch` verifies `github.com/keylase/nvidia-patch` at the pinned commit in `scripts/lib/nvidia_patch.sh`, rejects dirty or unexpected local patch trees, exports the reviewed commit to a temporary execution directory, checks driver version compatibility, then applies NVENC (removes encoding session limit on consumer GPUs) and NvFBC patches from that exported tree. Requires drivers already loaded, so the hardware engine runs it only after NVIDIA runtime verification.
+`apply_nvidia_patch` verifies `github.com/keylase/nvidia-patch` at the pinned commit in `scripts/lib/nvidia-patch.sh`, rejects dirty or unexpected local patch trees, exports the reviewed commit to a temporary execution directory, checks driver version compatibility, then applies NVENC (removes encoding session limit on consumer GPUs) and NvFBC patches from that exported tree. Requires drivers already loaded, so the hardware engine runs it only after NVIDIA runtime verification.
 
 ## Reboot and resume
 
@@ -200,7 +200,7 @@ Managed NAS mode never recursively `chown`s the NAS root. It creates missing Med
 
 ## Environment detection
 
-`detect_env` (in `scripts/setup/env_gen.sh`) auto-detects host-specific values without user interaction:
+`detect_env` (in `scripts/setup/env-gen.sh`) auto-detects host-specific values without user interaction:
 
 - `TZ` via `timedatectl show --property=Timezone` (fallback `Etc/UTC`)
 - `PUID`/`PGID` via `id -u`/`id -g`
@@ -208,7 +208,7 @@ Managed NAS mode never recursively `chown`s the NAS root. It creates missing Med
 
 These are stored in shell variables (`_ENV_*`) for the wizard to use as defaults. No files are written — `detect_env` is idempotent and side-effect-free.
 
-`write_env` (also in `env_gen.sh`) writes the complete `.env` file from wizard-set globals (`_WIZ_*`) and auto-detected values (`_ENV_*`). Called by the wizard apply phase to materialize the current selections, replacing any pre-seeded `.env` values with the finalized wizard state. It seeds default Docker bridge values (`MEDIASTACK_NETWORK_PREFIX=172.28.0`, `/24` subnet, gateway, and NPM IP); `start_stack` then runs the collision selector and rewrites those values before container start if a LAN/VPN/Docker route already uses the default subnet. Also seeds the DDNS `config.json` after Dynu credentials pass the Stage 2 preflight.
+`write_env` (also in `env-gen.sh`) writes the complete `.env` file from wizard-set globals (`_WIZ_*`) and auto-detected values (`_ENV_*`). Called by the wizard apply phase to materialize the current selections, replacing any pre-seeded `.env` values with the finalized wizard state. It seeds default Docker bridge values (`MEDIASTACK_NETWORK_PREFIX=172.28.0`, `/24` subnet, gateway, and NPM IP); `start_stack` then runs the collision selector and rewrites those values before container start if a LAN/VPN/Docker route already uses the default subnet. Also seeds the DDNS `config.json` after Dynu credentials pass the Stage 2 preflight.
 
 ## Setup wizard (after `detect_env`)
 
@@ -239,7 +239,7 @@ The interactive wizard requires the user to set the admin password directly — 
 
 ### WireGuard INIT_PASSWORD propagation (v15)
 
-wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only. WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stage2/wireguard.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` in `scripts/setup/stage2/install.sh` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env_gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
+wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only. WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stage2/wireguard.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` in `scripts/setup/stage2/install.sh` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env-gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
 
 After `/etc/wireguard/wg-easy.db` exists, `INIT_*` vars are inert. Subsequent wizard re-runs leave the in-container admin password unchanged; rotate it in the wg-easy UI instead. The configurator (`scripts/services/wireguard/main.sh`) detects this on its readiness probe and logs `[SKIP]` for an existing initial peer.
 
@@ -273,7 +273,7 @@ The override is gitignored and regenerated on setup runs. Stage 1 writes resourc
 
 `pull_images` runs `docker compose pull` with the active profile args before any containers start. If a pull fails (transient network error, registry timeout), it retries up to 3 times with exponential backoff (10s, 20s, 40s). On exhaustion it warns but continues — cached images and non-failing services will still start. This prevents a single registry timeout (e.g. ghcr.io for FlareSolverr) from silently cascading through `depends_on` chains into skipped configuration.
 
-`start_stack` then runs `docker compose up -d` with profiles determined by `_build_profile_args`: `--profile subtitles` when `BAZARR_ENABLED=true`, `--profile autoheal` by default unless disabled, `--profile proxy` when `DOMAIN` is set, and `--profile remote` when `WG_INIT_PASSWORD` is set (wizard confirmed the admin password for wg-easy unattended setup). `wait_for_healthy` polls `docker compose ps --format json` for up to 120s, parses each service's `Health`/`State` via inline Python, and reports the set still starting. Warns (not fails) if any service is still unhealthy at the timeout — `configure.sh` will retry its own waits (up to 90s each, in `wait_for_service` from `scripts/lib/http.sh`). On a slow host doing a cold pull of several GB of images, services can still be downloading well past the 120s mark, so `setup.sh` may warn "some services may still be starting" even on a healthy cold install.
+`start_stack` then runs `docker compose up -d` with profiles determined by `profiles_build_args`: `--profile subtitles` when `BAZARR_ENABLED=true`, `--profile autoheal` by default unless disabled, `--profile proxy` when `DOMAIN` is set, and `--profile remote` when `WG_INIT_PASSWORD` is set (wizard confirmed the admin password for wg-easy unattended setup). `wait_for_healthy` polls `docker compose ps --format json` for up to 120s, parses each service's `Health`/`State` via inline Python, and reports the set still starting. Warns (not fails) if any service is still unhealthy at the timeout — `configure.sh` will retry its own waits (up to 90s each, in `wait_for_service` from `scripts/lib/http.sh`). On a slow host doing a cold pull of several GB of images, services can still be downloading well past the 120s mark, so `setup.sh` may warn "some services may still be starting" even on a healthy cold install.
 
 ## Running configure.sh
 

@@ -1,4 +1,4 @@
-# Owns: NFS mounting, mismatched-mount repair, and non-destructive NAS probing.
+# Owns: storage_* — NFS mounting, mismatched-mount repair, and non-destructive NAS probing.
 # Sourced by scripts/setup/storage.sh; depends on storage/core.sh helpers
 # (storage_mountpoint, storage_mount_matches, storage_log_*, etc.).
 

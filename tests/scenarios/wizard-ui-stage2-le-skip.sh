@@ -5,7 +5,7 @@
 # user picks "Skip HTTPS for now". Asserts the gate copy and the LAN-safe skip
 # state. Exercises stage2_le_gate's failure branch without any real NPM/LE.
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-le-skip.sh"

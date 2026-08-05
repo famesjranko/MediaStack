@@ -15,7 +15,9 @@
 # tests/secret-scan.expected — the tree gate as a multiset, the history gate
 # as distinct identities (each edit of a declared line re-adds it to history).
 # An undeclared finding fails; a declaration nothing produced fails too, so
-# removing a false positive means removing its line.
+# removing a false positive means removing its line. A declaration prefixed
+# "history-only<TAB>" covers a finding only history can produce (a file since
+# deleted or renamed): the history gate reconciles it, the tree gate ignores it.
 #
 # A tree scan covers what a checkout contains right now. It says nothing about
 # a secret that was committed and later deleted; only history mode reaches
@@ -395,11 +397,23 @@ if os.path.isfile(report_path):
         sys.exit(2)
 
 actual = collections.Counter(identity(f) for f in findings)
-expected = collections.Counter(
-    line.rstrip("\n")
-    for line in open(expected_path)
-    if line.strip() and not line.lstrip().startswith("#")
-)
+
+# A "history-only\t" prefix declares a finding that only reachable history
+# produces — a file since deleted or renamed. The tree gate ignores those
+# lines entirely (the tree cannot produce them, so listing them plainly would
+# read as stale); the history gate strips the marker and holds them to the
+# same reconciliation as every other declaration.
+expected_lines = []
+for line in open(expected_path):
+    line = line.rstrip("\n")
+    if not line.strip() or line.lstrip().startswith("#"):
+        continue
+    if line.startswith("history-only\t"):
+        if mode == "history":
+            expected_lines.append(line[len("history-only\t") :])
+        continue
+    expected_lines.append(line)
+expected = collections.Counter(expected_lines)
 
 # History compares distinct identities: every edit of a declared line re-adds
 # it as a new finding, while tree multiplicity is the tree gate's job.

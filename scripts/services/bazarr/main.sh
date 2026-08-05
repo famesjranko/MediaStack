@@ -31,11 +31,11 @@ print(c.get('auth', {}).get('apikey', ''))
         return 0
     fi
 
-    save_api_key "BAZARR_API_KEY" "$bazarr_key"
+    env_save_api_key "BAZARR_API_KEY" "$bazarr_key"
 
     local sonarr_key radarr_key
-    sonarr_key=$(get_api_key "$SCRIPT_DIR/config/sonarr/config.xml")
-    radarr_key=$(get_api_key "$SCRIPT_DIR/config/radarr/config.xml")
+    sonarr_key=$(api_get_key "$SCRIPT_DIR/config/sonarr/config.xml")
+    radarr_key=$(api_get_key "$SCRIPT_DIR/config/radarr/config.xml")
 
     # Check current state via API (read works fine)
     local current_settings

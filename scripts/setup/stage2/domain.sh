@@ -1,4 +1,4 @@
-# Owns: Stage 2 domain, DNS, and remote-access collection flow.
+# Owns: stage2_* — Stage 2 domain, DNS, and remote-access collection flow.
 # Sources: Stage 2 DDNS and input helpers, network helpers, and interactive UI.
 
 # The remote-access offer is a yes/no gate, not a data-collection step, so it
@@ -142,7 +142,7 @@ _stage2_collect_domain() {
     local dns_status action retry_count=0 reject_blocked
     while true; do
         reject_blocked=false
-        dns_status=$(stage2_dns_classify "$_WIZ_DOMAIN" "${_NET_PUBLIC_IP:-}") || true
+        dns_status=$(net_dns_classify "$_WIZ_DOMAIN" "${_NET_PUBLIC_IP:-}") || true
         if [[ "$dns_status" == "ok" ]]; then
             # Don't declare success on a coincidental DNS-ok (e.g. a re-run where the
             # record already points here) if DDNS is wanted but its credentials were

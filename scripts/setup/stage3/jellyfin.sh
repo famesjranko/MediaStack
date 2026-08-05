@@ -1,4 +1,4 @@
-# Owns: Jellyfin encoder configuration/verification, fallback-to-software, and NVIDIA finalize-failure handling.
+# Owns: stage3_* — Jellyfin encoder configuration/verification, fallback-to-software, and NVIDIA finalize-failure handling.
 # Sources: python3 for Jellyfin API JSON; stage3_* marker/state/transcode helpers.
 
 _stage3_apply_runtime_override() {

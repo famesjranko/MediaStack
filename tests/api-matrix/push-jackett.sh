@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# tests/api-matrix/push_jackett.sh — drive the PRODUCT Jackett configurator
+# tests/api-matrix/push-jackett.sh — drive the PRODUCT Jackett configurator
 # against a live Jackett, inside DinD. Reuses product code only; this file
 # owns no API logic of its own.
 #
-#   push_jackett.sh seed-config <id[:type]> [id[:type] ...]  # write indexers: list
-#   push_jackett.sh apply                                    # configure_jackett
+#   push-jackett.sh seed-config <id[:type]> [id[:type] ...]  # write indexers: list
+#   push-jackett.sh apply                                    # configure_jackett
 set -uo pipefail
 
 mode="$1"
@@ -26,7 +26,7 @@ export CONFIG_FILE
 
 if [[ "$mode" == "seed-config" ]]; then
     (($# >= 1)) || {
-        echo "usage: push_jackett.sh seed-config <id[:type]> [id[:type] ...]" >&2
+        echo "usage: push-jackett.sh seed-config <id[:type]> [id[:type] ...]" >&2
         exit 2
     }
     JKM_PAIRS="$*" python3 - "$CONFIG_FILE" <<'PY'
@@ -60,7 +60,7 @@ case "$mode" in
         configure_jackett
         ;;
     *)
-        echo "usage: push_jackett.sh seed-config <id[:type]> ...|apply" >&2
+        echo "usage: push-jackett.sh seed-config <id[:type]> ...|apply" >&2
         exit 2
         ;;
 esac

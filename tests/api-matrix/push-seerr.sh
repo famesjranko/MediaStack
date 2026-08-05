@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# tests/api-matrix/push_seerr.sh — drive the PRODUCT Seerr configurator and the
+# tests/api-matrix/push-seerr.sh — drive the PRODUCT Seerr configurator and the
 # Sonarr/Radarr->Seerr connection helper against a live Seerr, inside DinD.
 # Reuses product code only; this file owns no API logic of its own.
 #
-#   push_seerr.sh apply                    # configure_seerr (assumes the
+#   push-seerr.sh apply                    # configure_seerr (assumes the
 #                                           # jellyfin module already created
 #                                           # the SSO admin this needs)
-#   push_seerr.sh connect <sonarr|radarr> <cookiejar>  # connect_arr_to_seerr
+#   push-seerr.sh connect <sonarr|radarr> <cookiejar>  # connect_arr_to_seerr
 #                                           # (day-2 reuse path, same session)
 set -uo pipefail
 
@@ -42,7 +42,7 @@ case "$mode" in
         ;;
     connect)
         [[ $# -eq 2 ]] || {
-            echo "usage: push_seerr.sh connect <sonarr|radarr> <cookiejar>" >&2
+            echo "usage: push-seerr.sh connect <sonarr|radarr> <cookiejar>" >&2
             exit 2
         }
         app="$1"
@@ -51,13 +51,13 @@ case "$mode" in
             sonarr) connect_arr_to_seerr sonarr 8989 "http://localhost:5055" "$cookiejar" ;;
             radarr) connect_arr_to_seerr radarr 7878 "http://localhost:5055" "$cookiejar" ;;
             *)
-                echo "usage: push_seerr.sh connect <sonarr|radarr> <cookiejar>" >&2
+                echo "usage: push-seerr.sh connect <sonarr|radarr> <cookiejar>" >&2
                 exit 2
                 ;;
         esac
         ;;
     *)
-        echo "usage: push_seerr.sh apply|connect <sonarr|radarr> <cookiejar>" >&2
+        echo "usage: push-seerr.sh apply|connect <sonarr|radarr> <cookiejar>" >&2
         exit 2
         ;;
 esac

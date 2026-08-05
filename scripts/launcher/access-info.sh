@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Owns: The day-2 access-information view.
+# Owns: action_* — The day-2 access-information view.
 # Sources: scripts/setup/stack.sh (lazy), launcher globals, and scripts/lib/ui.sh.
 
 action_access_info() {

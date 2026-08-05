@@ -1,4 +1,4 @@
-# Owns: Stage 3 hardware-transcoding flow ordering (run_stage3, run_hardware_transcoding_addon).
+# Owns: run_* — Stage 3 hardware-transcoding flow ordering (run_stage3, run_hardware_transcoding_addon).
 # Sources: stage3/* concern modules, scripts/lib/render-device.sh, and setup globals.
 # =============================================================================
 # MediaStack Setup -- Hardware Transcoding controller

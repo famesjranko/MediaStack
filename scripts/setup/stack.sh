@@ -4,7 +4,7 @@
 # Sourced by setup.sh. Depends on $SCRIPT_DIR and scripts/lib/common.sh
 # being loaded by the caller.
 
-# Shared docker-compose profile-arg builder (_build_profile_args), also used by
+# Shared docker-compose profile-arg builder (profiles_build_args), also used by
 # the ./mediastack launcher so the day-2 menu's stop/start/status always targets
 # the same profile set the installer used. Resolved relative to this file so
 # every sourcer (setup.sh and the unit/scenario tests) finds it regardless of CWD.
@@ -63,8 +63,8 @@ PY
 _stack_save_env_value() {
     local key="$1" value="$2"
     export "${key}=${value}"
-    if [[ -f "$SCRIPT_DIR/.env" ]] && declare -F save_api_key >/dev/null; then
-        save_api_key "$key" "$value"
+    if [[ -f "$SCRIPT_DIR/.env" ]] && declare -F env_save_api_key >/dev/null; then
+        env_save_api_key "$key" "$value"
     fi
 }
 

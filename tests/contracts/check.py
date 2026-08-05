@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_DIR = Path(__file__).resolve().parent
 CALL_RE = re.compile(
     r"\b(?P<function>curl|api_get|api_fetch|api_post|api_put|api_delete|"
-    r"post_restart_wait|wait_for_jellyfin_auth|js_post|http_check)\b(?P<args>[^\n]*)"
+    r"post_restart_wait|wait_for_jellyfin_auth|http_json_post|http_check)\b(?P<args>[^\n]*)"
 )
 QUOTED_RE = re.compile(r"(?P<quote>['\"])(?P<value>.*?)(?P=quote)")
 ASSIGN_RE = re.compile(
@@ -119,7 +119,7 @@ def _method(function: str, args: str) -> str:
     explicit = re.search(r"(?:^|\s)-X\s+(GET|POST|PUT|PATCH|DELETE)\b", args)
     if explicit and explicit.group(1) in METHODS:
         return explicit.group(1)
-    if function in {"api_post", "js_post"}:
+    if function in {"api_post", "http_json_post"}:
         return "POST"
     if function == "api_put":
         return "PUT"
@@ -189,7 +189,7 @@ _CONTRACT_REQUIRED_CALLERS = {
     *_ARR_CONTRACT_CALLERS,
     "scripts/lib/health.sh",
     "scripts/lib/http.sh",
-    "scripts/lib/npm_remote.sh",
+    "scripts/lib/npm-remote.sh",
 }
 
 

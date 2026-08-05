@@ -7,7 +7,7 @@
 #   NAME in: containers fail2ban sonarr radarr jackett qbittorrent channel bazarr quality indexers gpu
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/_lib.sh"
+source "$HERE/lib.sh"
 
 SERVICE="" NV_AUTOHEAL=0
 while (($#)); do
@@ -94,21 +94,21 @@ if want jackett; then
   # Only meaningful when the public-indexer preset is enabled. Gate on the indexers toggle.
   if [ "${LANHOST_INDEXERS:-0}" = 1 ] || [ "${SERVICE:-}" = jackett ]; then
     # Jackett's API key lives in config/jackett/Jackett/ServerConfig.json, NOT .env, so read it
-    # via the PRODUCT's own get_jackett_api_key (needs SCRIPT_DIR), then probe the apikey-authed
+    # via the PRODUCT's own api_get_jackett_key (needs SCRIPT_DIR), then probe the apikey-authed
     # Torznab caps endpoint exactly like tests/assertions/jackett.sh. The old check hit
     # /api/v2.0/server/config with ${JACKETT_API_KEY} (always empty) — that's a session/UI route
     # that 302-redirects regardless of key, a false failure even though indexers work end-to-end.
-    jkey=$(SCRIPT_DIR="$TARGET_PATH" bash -c 'source scripts/lib/common.sh 2>/dev/null && get_jackett_api_key' 2>/dev/null)
+    jkey=$(SCRIPT_DIR="$TARGET_PATH" bash -c 'source scripts/lib/common.sh 2>/dev/null && api_get_jackett_key' 2>/dev/null)
     if [ -n "$jkey" ] && [ "${#jkey}" -ge 20 ]; then
       # Capture then scan: piping into `grep -q` would SIGPIPE curl and flip the result non-zero
       # under pipefail even on a match (false failure). See feedback_sigpipe_pipefail_flake.
       caps=$(curl -sf --max-time 15 "http://localhost:9117/api/v2.0/indexers/all/results/torznab/?apikey=${jkey}&t=caps" 2>/dev/null)
       case "$caps" in
-        *'<caps>'*) echo "  ✓ jackett serves Torznab caps (apikey-authed, via get_jackett_api_key)" ;;
+        *'<caps>'*) echo "  ✓ jackett serves Torznab caps (apikey-authed, via api_get_jackett_key)" ;;
         *)          echo "  ✗ jackett Torznab caps not served (key len ${#jkey}; Jackett API unreachable/unauthed)"; fail=1 ;;
       esac
     else
-      echo "  ✗ jackett API key missing/short via get_jackett_api_key (len ${#jkey}; expected ≥20 with indexers enabled)"; fail=1
+      echo "  ✗ jackett API key missing/short via api_get_jackett_key (len ${#jkey}; expected ≥20 with indexers enabled)"; fail=1
     fi
   else
     echo "  ↷ jackett skipped (public indexers disabled)"

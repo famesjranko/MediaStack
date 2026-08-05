@@ -4,7 +4,7 @@
 # DESTROY exactly. Here the user types something else; the guard must abort with
 # no destruction (.env preserved). One typo aborts.
 
-source tests/lib/wizard_recovery_common.sh
+source tests/lib/wizard-recovery-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-recovery-wipe-guard.sh"

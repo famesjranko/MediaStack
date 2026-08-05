@@ -1,6 +1,6 @@
 # tests/scenarios/wizard-ui-stage1-nas-fallback-local.sh — NAS failure to local storage.
 
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage1-nas-fallback-local.sh"

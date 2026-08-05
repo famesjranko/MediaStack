@@ -4,13 +4,13 @@
 # operations. This validates interactive UI flow and generated state without
 # pulling images or starting the stack.
 
-# Reuses the shared Stage-1 fixture builders (wizard_stage1_common.sh) so the stub vocabulary
-# lives in one place (tests/lib/wizard_stub_common.sh). That source is side-effect-free in this
-# shell — its only top-level statement is `source wizard_steps_common.sh` (the step-builder); the
+# Reuses the shared Stage-1 fixture builders (wizard-stage1-common.sh) so the stub vocabulary
+# lives in one place (tests/lib/wizard-stub-common.sh). That source is side-effect-free in this
+# shell — its only top-level statement is `source wizard-steps-common.sh` (the step-builder); the
 # `source ./setup.sh` lives INSIDE the fixture heredoc, so it runs in the DinD container, not here.
 # This scenario still drives wizard_pty.py directly (keeping its own assertions) rather than via
 # wizard_stage1_run_pty.
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 wizard_ui_stage1_local_write_fixture() {
     wizard_stage1_write_base_fixture "/tmp/wizard-stage1-local.sh" "wizard-local-key"

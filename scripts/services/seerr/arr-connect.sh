@@ -2,8 +2,8 @@
 # Seerr — connect a Sonarr or Radarr instance
 # =============================================================================
 # Sourced by seerr/main.sh. Depends on helpers already loaded by
-# configure.sh: get_api_key, api_get, api_fetch, json_array_nonempty,
-# js_post, cfg_field (common.sh / http.sh / json.sh).
+# configure.sh: api_get_key, api_get, api_fetch, json_array_nonempty,
+# http_json_post, cfg_field (common.sh / http.sh / json.sh).
 
 # Args: <sonarr|radarr> <arr_port> <seerr_url> <cookiejar>
 connect_arr_to_seerr() {
@@ -19,7 +19,7 @@ connect_arr_to_seerr() {
     esac
 
     local arr_key
-    arr_key=$(get_api_key "$SCRIPT_DIR/config/${app}/config.xml")
+    arr_key=$(api_get_key "$SCRIPT_DIR/config/${app}/config.xml")
     [[ -z "$arr_key" ]] && return 0
 
     # Read the current Seerr-side config for this app. A failed GET must NOT be
@@ -115,7 +115,7 @@ else:
 print(json.dumps(body))
 ')
 
-    js_post "$app_label" "$settings_url" \
+    http_json_post "$app_label" "$settings_url" \
         "$body" \
         "$cookiejar"
 }

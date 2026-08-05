@@ -110,7 +110,7 @@ export UI_DEMO=1
 source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/lib/ui.sh"
 source "$REPO_ROOT/scripts/setup/checks.sh"
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 source "$REPO_ROOT/scripts/setup/wizard.sh"
 
 _stage1_install() {

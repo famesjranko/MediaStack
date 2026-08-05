@@ -7,7 +7,7 @@
 # ships a full tzdata tree, so America/New_York validates against
 # /usr/share/zoneinfo without extra setup.
 
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage1-timezone.sh"

@@ -29,7 +29,7 @@ install_nvidia_drivers() {
             sudo rm -rf "$_nvidia_tmp" 2>/dev/null || true
             return 1
         fi
-        if nouveau_is_active; then
+        if nvidia_driver_nouveau_is_active; then
             log_error "Nouveau is still active after reboot - blacklist may have failed"
             log_warn "Falling back to software transcoding"
             GPU_TYPE="none"
@@ -44,7 +44,7 @@ install_nvidia_drivers() {
             return 1
         fi
         log_info "Resuming NVIDIA driver install (post-reboot)..."
-        if ! _install_nvidia_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp"; then
+        if ! _nvidia_driver_install_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp"; then
             log_error "NVIDIA driver installation failed"
             log_warn "Falling back to software transcoding"
             GPU_TYPE="none"
@@ -61,7 +61,7 @@ install_nvidia_drivers() {
     fi
 
     local sb_state
-    sb_state=$(check_secure_boot)
+    sb_state=$(nvidia_driver_check_secure_boot)
     case "$sb_state" in
         enabled)
             log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
@@ -91,12 +91,12 @@ install_nvidia_drivers() {
     # Blacklist nouveau unconditionally for NVIDIA installs — the installer
     # checks sysfs PCI binding, not just lsmod, so we must ensure nouveau
     # is fully gone before running it.
-    if ! _nvidia_blacklist_nouveau; then
+    if ! nvidia_driver_blacklist_nouveau; then
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"
         return 1
     fi
-    try_unload_nouveau || true
+    nvidia_driver_try_unload_nouveau || true
 
     if ! mkdir -p "$_nvidia_tmp"; then
         log_error "Failed to create NVIDIA driver cache directory"
@@ -106,7 +106,7 @@ install_nvidia_drivers() {
     fi
 
     local _driver_ver="" _run_file=""
-    if ! _resolve_nvidia_driver; then
+    if ! nvidia_driver_resolve_driver; then
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"
         sudo rm -rf "$_nvidia_tmp" 2>/dev/null || true
@@ -116,7 +116,7 @@ install_nvidia_drivers() {
     # If nouveau is still active, we cannot run the installer — it will
     # either abort (without --no-nouveau-check) or compile-then-rollback
     # (with it). Cache the .run and reboot instead.
-    if nouveau_is_active; then
+    if nvidia_driver_nouveau_is_active; then
         log_warn "Nouveau is still bound to the GPU - caching driver for post-reboot install"
         if ! cat >"$_nvidia_tmp/pending" <<EOF; then
 _driver_ver='${_driver_ver}'
@@ -134,7 +134,7 @@ EOF
     fi
 
     # Nouveau is gone — install now
-    if ! _install_nvidia_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp"; then
+    if ! _nvidia_driver_install_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp"; then
         log_error "NVIDIA driver installation failed"
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"

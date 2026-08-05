@@ -7,7 +7,7 @@ configure_sonarr() {
     echo -e "${BOLD}Configuring Sonarr...${NC}"
 
     local sonarr_key
-    sonarr_key=$(get_api_key "$SCRIPT_DIR/config/sonarr/config.xml")
+    sonarr_key=$(api_get_key "$SCRIPT_DIR/config/sonarr/config.xml")
     if [[ -z "$sonarr_key" ]]; then
         log_error "Cannot read Sonarr API key"
         return 1
@@ -72,7 +72,7 @@ json.dump(config, sys.stdout)
     # Cloudflare-protected trackers is the wizard's slowest phase, and there's
     # no per-app dependency between them. Save the API key here so the parallel
     # phase has $SONARR_API_KEY exported.
-    save_api_key "SONARR_API_KEY" "$sonarr_key"
+    env_save_api_key "SONARR_API_KEY" "$sonarr_key"
 
     configure_arr_auth "sonarr" "$base" "$sonarr_key"
 }

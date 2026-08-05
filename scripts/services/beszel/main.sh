@@ -75,7 +75,7 @@ print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_P
     if [[ "$current_key" == "$hub_key" ]]; then
         log_skip "Beszel agent key already in .env"
     else
-        save_api_key "BESZEL_AGENT_KEY" "$hub_key"
+        env_save_api_key "BESZEL_AGENT_KEY" "$hub_key"
 
         # --- 4. Recreate agent so it picks up the new KEY ---
         log_info "Recreating beszel-agent with SSH key..."

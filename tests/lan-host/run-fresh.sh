@@ -19,7 +19,7 @@
 # usage: run-fresh.sh [--preflight] [--persona NAME] [--gpu MODE] [--smb] [--no-wipe] [--nvidia] [--yes]
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/_lib.sh"
+source "$HERE/lib.sh"
 
 PREFLIGHT=0 NO_WIPE=0 NVIDIA=0 ASSUME_YES=0
 # --persona/--gpu are applied as env overrides BEFORE load_env so they win over .env
@@ -80,7 +80,7 @@ case "$LANHOST_GPU" in nvidia-standard | nvidia-unlock)
 esac
 
 # 0. Validate the matrix cell + generate the wizard steps BEFORE any destructive action.
-#    wizard-steps.py is the single source of truth for which cells the LAN live-drive
+#    wizard_steps.py is the single source of truth for which cells the LAN live-drive
 #    supports; it exits non-zero (message on stderr) for unsupported toggle combos (e.g.
 #    LANHOST_REMOTE=1, nvidia-unlock/intel/amd). Generating locally here means a
 #    `--persona remote-nas` / `--persona nvidia-unlock` run is refused BEFORE we stop the
@@ -89,28 +89,28 @@ STEPS_JSON=""
 if ((MATRIX_USE_WIZARD)); then
     STEPS_JSON="$TMP/lan-host-wizard.steps.json"
     step "Validate matrix cell + generate wizard steps (pre-wipe): persona=${LANHOST_PERSONA:-custom} gpu=$LANHOST_GPU"
-    python3 "$HERE/wizard-steps.py" >"$STEPS_JSON" \
+    python3 "$HERE/wizard_steps.py" >"$STEPS_JSON" \
         || die "matrix cell not supported by the LAN live-drive (see message above) — refusing BEFORE any destructive action"
     ok "matrix cell validated; steps written ($STEPS_JSON)"
 fi
 
 if ((PREFLIGHT)); then
     local_files=(
-        "$HERE/_lib.sh"
+        "$HERE/lib.sh"
         "$HERE/clean-wipe.sh"
         "$HERE/probe-services.sh"
         "$HERE/rsync-push.sh"
         "$HERE/run-fresh.sh"
-        "$HERE/wizard-steps.py"
+        "$HERE/wizard_steps.py"
         "$REPO_ROOT/tests/lib/wizard_pty.py"
         "$REPO_ROOT/tests/lib/wizard_prompts.json"
     )
     for path in "${local_files[@]}"; do
         [[ -s "$path" ]] || die "missing/empty dependency: $path"
     done
-    bash -n "$HERE/_lib.sh" "$HERE/clean-wipe.sh" "$HERE/probe-services.sh" \
+    bash -n "$HERE/lib.sh" "$HERE/clean-wipe.sh" "$HERE/probe-services.sh" \
         "$HERE/rsync-push.sh" "$HERE/run-fresh.sh"
-    python3 "$HERE/wizard-steps.py" >/dev/null
+    python3 "$HERE/wizard_steps.py" >/dev/null
     if ((USING_EXAMPLE)); then
         echo "✓ LAN-host placeholder-bundle preflight passed"
         echo "  copy tests/.env.lan-host.example to tests/.env.lan-host and replace every placeholder before a live run"

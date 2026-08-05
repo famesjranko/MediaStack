@@ -83,7 +83,7 @@ net_detect_public_ip() {
     _NET_PUBLIC_IP="203.0.113.9"
     return 0
 }
-stage2_dns_classify() {
+net_dns_classify() {
     printf '%s' "$DNS_TOKEN"
     [[ "$DNS_TOKEN" == "ok" ]]
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unit test — the `--dry-run` UI explorer (scripts/lib/dry_run.sh).
+# Unit test — the `--dry-run` UI explorer (scripts/lib/dry-run.sh).
 #
 # Two layers:
 #   1. Container-free SAFETY assertions (always): the host driver isolates the
@@ -26,7 +26,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="dry-run"
 scenario_begin "$CURRENT_SCENARIO"
 
-lib="scripts/lib/dry_run.sh"
+lib="scripts/lib/dry-run.sh"
 
 # ---------------------------------------------------------------------------
 # 1. Container-free safety invariants (source-level — these gate host safety)
@@ -65,15 +65,15 @@ for entry in mediastack setup.sh; do
     fi
 done
 
-source scripts/lib/dry_run.sh # inert — installs no stubs (asserted below)
+source scripts/lib/dry-run.sh # inert — installs no stubs (asserted below)
 
 # Gate-misfire: sourcing the library must install NO stubs (inert until dry_run_begin).
 gate_out=$(bash -c '
     set -uo pipefail
-    source scripts/lib/dry_run.sh
+    source scripts/lib/dry-run.sh
     declare -F sudo pull_images _run_setup_return start_stack 2>/dev/null | wc -l
 ' 2>/dev/null)
-assert_eq "0" "$gate_out" "gate-misfire: sourcing dry_run.sh installs no stub functions (inert until dry_run_begin)"
+assert_eq "0" "$gate_out" "gate-misfire: sourcing dry-run.sh installs no stub functions (inert until dry_run_begin)"
 
 # BLOCKER guard (the load-bearing safety check): the file-writing stubs MUST refuse
 # to run outside the sandbox (no /etc/ms-dry-run-sandbox) — so a stray env var or a
@@ -85,7 +85,7 @@ else
     pass "safety: dry_run_in_sandbox is false on a normal host (no sentinel present)"
     refuse_tmp="$(mktemp -d)"
     refuse_rc=0
-    (cd "$refuse_tmp" && bash -c "ui_banner() { :; }; source '$REPO_ROOT/scripts/lib/dry_run.sh'; dry_run_begin launcher") >/dev/null 2>&1 || refuse_rc=$?
+    (cd "$refuse_tmp" && bash -c "ui_banner() { :; }; source '$REPO_ROOT/scripts/lib/dry-run.sh'; dry_run_begin launcher") >/dev/null 2>&1 || refuse_rc=$?
     rm -rf "$refuse_tmp"
     if ((refuse_rc != 0)); then
         pass "safety: dry_run_begin refuses to run outside the sandbox container (exit $refuse_rc)"
@@ -116,7 +116,7 @@ plain="$(mktemp)"
 # and "Get enhanced menus (install GUM)" + "Refresh status" are appended before
 # Uninstall, so the order is ... Health & security(5), Manage fail2ban(6), Manage
 # hardware(7), Diagnostics(8), Refresh(9), GUM(10), Uninstall(11), Quit(12). Keep
-# in sync with menu_post ordering.
+# in sync with launcher_menu_post ordering.
 printf '%s\n' '[{"expect":"What would you like to do"},{"send":"12\n"}]' >"$steps"
 
 walk_rc=0

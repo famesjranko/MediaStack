@@ -86,10 +86,10 @@ def list_axes(model: dict[str, Any]) -> str:
     The GB/movie size hint is a CELL (resolution x size) value, so it ships as
     HINT rows rather than on the SIZE row — the picker can't know the chosen
     resolution until after the resolution prompt. The hint sits in the 4th
-    (description) column on purpose: scripts/lib/quality_select.sh reads with
+    (description) column on purpose: scripts/lib/quality-select.sh reads with
     `IFS=$'\\t'`, and tab is IFS-whitespace, so an empty *interior* column would
     collapse — a padded 5th column would never survive. Consumed only by
-    quality_select.sh; no YAML parsing in bash, single parse home here.
+    quality-select.sh; no YAML parsing in bash, single parse home here.
     """
     lines = []
     for key, res in (model.get("resolutions") or {}).items():

@@ -17,12 +17,12 @@ source tests/assertions/npm.sh
 source tests/assertions/fail2ban.sh
 source tests/assertions/ratelimit.sh
 source tests/assertions/env.sh
-source tests/assertions/jellyfin_encoding.sh
-source tests/assertions/port_check.sh
-source tests/assertions/uptime_kuma.sh
+source tests/assertions/jellyfin-encoding.sh
+source tests/assertions/port-check.sh
+source tests/assertions/uptime-kuma.sh
 source tests/assertions/drift.sh
 source tests/assertions/beszel.sh
-source tests/assertions/install_digest.sh
+source tests/assertions/install-digest.sh
 
 run_scenario() {
     # ------------------------------------------------------------------
@@ -170,7 +170,7 @@ PYEOF
     # assertions (uptime-kuma, beszel, jellyfin encoding, drift) are deterministic
     # regardless of the DinD locale — without it the glyph markers (✓/→/!) added in
     # the terminal-capability work make those greps silently miss. See
-    # scripts/lib/term_caps.sh (UI_ASCII).
+    # scripts/lib/term-caps.sh (UI_ASCII).
     if dind_exec "UI_ASCII=1 ./scripts/configure.sh" >"$configure_log" 2>&1; then
         pass "configure.sh exits 0"
     else

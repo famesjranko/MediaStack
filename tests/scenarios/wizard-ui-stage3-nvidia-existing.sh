@@ -4,7 +4,7 @@
 # offers to use it as-is; the user accepts. Asserts mode=existing is
 # recorded and the flow verifies/completes against the existing driver.
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-nvidia-existing.sh"

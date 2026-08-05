@@ -1,4 +1,4 @@
-# Owns: GPU hardware detection, vendor selection, and render-device helpers.
+# Owns: detect_* gpu_* — GPU hardware detection, vendor selection, and render-device helpers.
 # Sources: common.sh and lib/render-device.sh, already sourced by gpu.sh.
 detect_gpu() {
     GPU_TYPE="none"

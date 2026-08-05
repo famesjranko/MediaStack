@@ -5,7 +5,7 @@
 # This function reports status so configure.sh output is consistent.
 
 configure_ddns_updater() {
-    if ! container_running ddns-updater; then
+    if ! service_container_running ddns-updater; then
         return 0
     fi
 

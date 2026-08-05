@@ -3,10 +3,10 @@
 # Forces the TCP 80/443 reachability probe to fail (closed) so the port gate
 # exhausts its auto-retries, classifies the failure, and presents the manual
 # menu. The user picks "Skip HTTPS for now"; we assert the LAN-safe skip state.
-# stage2_classify_port_failure is stubbed to a fixed class so the warning copy
+# net_classify_port_failure is stubbed to a fixed class so the warning copy
 # is deterministic and no external probe service is contacted.
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-port-gate-skip.sh"
@@ -15,8 +15,8 @@ run_scenario() {
 
     wizard_stage2_write_base_fixture "$fixture"
     dind_exec "cat >>$fixture <<'BASH'
-stage2_check_http_ports() { printf 'closed:80,443\n'; }
-stage2_classify_port_failure() { printf 'carrier-block\n'; }
+net_check_http_ports() { printf 'closed:80,443\n'; }
+net_classify_port_failure() { printf 'carrier-block\n'; }
 BASH"
     wizard_stage2_append_runner "$fixture"
 

@@ -16,7 +16,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 SCRIPT_DIR="$REPO_ROOT"
 source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/lib/ui.sh"
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 source "$REPO_ROOT/scripts/setup/wizard.sh"
 
 set +e
@@ -85,7 +85,7 @@ STAGE_1_COMPLETE=
 EXISTING_INSTALL_DETECTED=true
 INSTALL_CALLED=false
 _wizard_run_discovery() { :; }
-_stage1_show_system() { :; }
+stage1_show_system() { :; }
 _stage1_collect_admin() { :; }
 _stage1_collect_storage() { :; }
 _stage1_collect_subtitles() { :; }
@@ -108,7 +108,7 @@ assert_eq "" "$SKIP_CAPTURE" "stage1-marker: existing-install flag alone does no
 
 # BESZEL_AGENT_KEY source-safety: configure.sh populates BESZEL_AGENT_KEY
 # with an ssh-ed25519 line of the form 'ssh-ed25519 AAAAC3Nza... comment'
-# (three space-separated tokens). Without single-quoting in env_gen.sh,
+# (three space-separated tokens). Without single-quoting in env-gen.sh,
 # `set -a; source .env` would treat the BASE64 chunk as a command and
 # fail with exit 127. This test surfaced from the GCP fresh-test cascade
 # at Stage 2 setup.sh --remote.

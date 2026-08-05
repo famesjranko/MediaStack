@@ -1,4 +1,4 @@
-# Owns: Data dir, NAS mountpoint, NFS, and storage-sentinel path validators.
+# Owns: validate_* — Data dir, NAS mountpoint, NFS, and storage-sentinel path validators.
 # Sources: scripts/lib/validators.sh state; sourced by scripts/lib/validators.sh.
 
 validate_data_dir() {

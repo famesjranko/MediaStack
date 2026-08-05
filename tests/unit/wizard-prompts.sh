@@ -136,11 +136,11 @@ if out=$(
     python3 - "${SCENARIOS[@]}" <<'PY'
 import re, sys, os
 DEFN = {
-    "wizard_stage1_steps": ("wizard_stage1_common.sh",),
-    "wizard_stage2_steps": ("wizard_stage2_common.sh",),
-    "wizard_stage3_steps": ("wizard_stage3_common.sh",),
-    "wizard_build_steps":  ("wizard_steps_common.sh", "wizard_stage1_common.sh",
-                            "wizard_stage2_common.sh", "wizard_stage3_common.sh"),
+    "wizard_stage1_steps": ("wizard-stage1-common.sh",),
+    "wizard_stage2_steps": ("wizard-stage2-common.sh",),
+    "wizard_stage3_steps": ("wizard-stage3-common.sh",),
+    "wizard_build_steps":  ("wizard-steps-common.sh", "wizard-stage1-common.sh",
+                            "wizard-stage2-common.sh", "wizard-stage3-common.sh"),
 }
 problems = []
 for path in sys.argv[1:]:

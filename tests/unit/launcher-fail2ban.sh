@@ -42,7 +42,7 @@ docker() {
 STUB
 export DOCKER_STUB
 
-# --- 1a. menu_post renders the "Manage fail2ban" item ----------------------
+# --- 1a. launcher_menu_post renders the "Manage fail2ban" item ----------------------
 render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   LABELS=$(mktemp)
@@ -50,10 +50,10 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   _warn_gpu_runtime_fallback(){ :; }
   storage_is_nas(){ return 1; }
   ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Back"; }
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   cat "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$render_out" "Manage fail2ban" "menu_post: Manage fail2ban item shown"
+assert_contains "$render_out" "Manage fail2ban" "launcher_menu_post: Manage fail2ban item shown"
 
 # --- 1b. selecting it dispatches to submenu_fail2ban ------------------------
 route_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -63,16 +63,16 @@ route_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   storage_is_nas(){ return 1; }
   ui_choose(){ echo "Manage fail2ban (banned IPs, whitelist, stats)"; }
   submenu_fail2ban(){ echo DISPATCH_F2B; exit 0; }
-  menu_post 2>&1
+  launcher_menu_post 2>&1
 ' 2>&1)
-assert_contains "$route_out" "DISPATCH_F2B" "menu_post: Manage fail2ban routes to submenu_fail2ban"
+assert_contains "$route_out" "DISPATCH_F2B" "launcher_menu_post: Manage fail2ban routes to submenu_fail2ban"
 
 # --- 2. docker-down entry guard --------------------------------------------
 down_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   _docker_reachable(){ return 1; }
   ui_log(){ shift; echo "$*"; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   submenu_fail2ban
 ' 2>&1)
 assert_contains "$down_out" "Docker isn't reachable" "submenu_fail2ban: docker-down guard message"
@@ -83,7 +83,7 @@ lan_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   _docker_reachable(){ return 0; }
   _health_f2b_running(){ return 1; }
   ui_log(){ shift; echo "$*"; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   submenu_fail2ban
 ' 2>&1)
 assert_contains "$lan_out" "LAN-only installs" "submenu_fail2ban: LAN-only guard message"
@@ -206,7 +206,7 @@ hub_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKE
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
   clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   ui_choose(){ shift; printf "%s\n" "$@" >> "$ITEMS"; local l; l=$(head -1 "$QUEUE"); sed -i "1d" "$QUEUE"; printf "%s\n" "$l"; }
   f2b_ip_actions(){ echo "IP_ACTIONS:$1"; }
   f2b_banned_menu
@@ -243,7 +243,7 @@ MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" PAGE_IPS="$PAGE_IPS" PITEMS="
     "exec fail2ban fail2ban-client status") printf "Status\n|- Jail list:\tjellyfin\n" ;;
     "exec fail2ban fail2ban-client status jellyfin") printf "Status\n|- Currently banned:\t17\n|- Total banned:\t17\n|- Banned IP list:\t%s\n" "$PAGE_IPS" ;;
     *) return 0 ;; esac; }
-  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }; launcher_pause_for_menu(){ :; }
   f2b_ip_actions(){ :; }
   ui_choose(){ shift; printf "===CALL===\n" >> "$PITEMS"; printf "%s\n" "$@" >> "$PITEMS"; local l; l=$(head -1 "$PQUEUE"); sed -i "1d" "$PQUEUE"; printf "%s\n" "$l"; }
   f2b_banned_menu
@@ -275,7 +275,7 @@ bulk_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UITEMS="$UITEMS" U
     "exec fail2ban fail2ban-client status") printf "Status\n|- Jail list:\tjellyfin\n" ;;
     "exec fail2ban fail2ban-client status jellyfin") printf "Status\n|- Currently banned:\t2\n|- Total banned:\t2\n|- Banned IP list:\t203.0.113.5 198.51.100.9\n" ;;
     *) return 0 ;; esac; }
-  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }; pause_for_menu(){ :; }
+  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }; launcher_pause_for_menu(){ :; }
   ui_confirm(){ echo "CONFIRM:$1"; return 0; }
   _show_action_result(){ shift; echo "RESULT:$*"; }
   ui_choose(){ shift; printf "%s\n" "$@" >> "$UITEMS"; local l; l=$(head -1 "$UQUEUE"); sed -i "1d" "$UQUEUE"; printf "%s\n" "$l"; }
@@ -299,7 +299,7 @@ bulkno_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UQUEUE="$UQUEUE"
     "exec fail2ban fail2ban-client status") printf "Status\n|- Jail list:\tjellyfin\n" ;;
     "exec fail2ban fail2ban-client status jellyfin") printf "Status\n|- Currently banned:\t2\n|- Total banned:\t2\n|- Banned IP list:\t203.0.113.5 198.51.100.9\n" ;;
     *) return 0 ;; esac; }
-  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }; pause_for_menu(){ :; }
+  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ echo "$1: ${*:2}"; }; launcher_pause_for_menu(){ :; }
   ui_confirm(){ return 1; }
   ui_choose(){ shift; local l; l=$(head -1 "$UQUEUE"); sed -i "1d" "$UQUEUE"; printf "%s\n" "$l"; }
   f2b_banned_menu
@@ -317,7 +317,7 @@ MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" UITEMS="$UITEMS" bash -c '
     "exec fail2ban fail2ban-client status") printf "Status\n|- Jail list:\tjellyfin\n" ;;
     "exec fail2ban fail2ban-client status jellyfin") printf "Status\n|- Currently banned:\t1\n|- Total banned:\t1\n|- Banned IP list:\t203.0.113.5\n" ;;
     *) return 0 ;; esac; }
-  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }; launcher_pause_for_menu(){ :; }
   ui_choose(){ shift; printf "%s\n" "$@" >> "$UITEMS"; echo "Back"; }
   f2b_banned_menu
 ' >/dev/null 2>&1
@@ -330,7 +330,7 @@ assert_eq "0" "$(grep -c 'Unban all' <<<"$uitems")" "f2b_banned_menu bulk: item 
 ctx_unban=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
-  clear(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; launcher_pause_for_menu(){ :; }
   ui_box(){ shift; printf "%s\n" "$@"; }
   ui_kv(){ printf "%s=%s" "$1" "$2"; }
   ui_confirm(){ echo "SECOND_CONFIRM"; return 0; }
@@ -352,7 +352,7 @@ ctx_wl=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
   SCRIPT_DIR="/opt/ms"
-  clear(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; launcher_pause_for_menu(){ :; }
   ui_box(){ :; }; ui_kv(){ :; }
   ui_confirm(){ echo "SECOND_CONFIRM"; return 0; }
   f2b_do_unban(){ echo "DO_UNBAN:$1"; }
@@ -381,7 +381,7 @@ jd_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" JDQ="$JDQ" bash -c '
     "exec fail2ban fail2ban-client status jellyfin")
       printf "Status for jellyfin\n|- Currently failed:\t1\n|- Total failed:\t34\n|- File list:\t/var/log/jellyfin/log_.log\n|- Currently banned:\t2\n|- Total banned:\t5\n|- Banned IP list:\t203.0.113.5 198.51.100.9\n" ;;
     *) return 0 ;; esac; }
-  clear(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; launcher_pause_for_menu(){ :; }
   ui_box(){ shift; printf "%s\n" "$@"; }
   ui_kv(){ printf "%s=%s" "$1" "$2"; }
   ui_log(){ echo "$1: ${*:2}"; }
@@ -402,7 +402,7 @@ jde_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
     "exec fail2ban fail2ban-client status seerr")
       printf "Status for seerr\n|- Currently failed:\t0\n|- Total failed:\t3\n|- File list:\t/var/log/seerr/*.log\n|- Currently banned:\t0\n|- Total banned:\t1\n|- Banned IP list:\t\n" ;;
     *) return 0 ;; esac; }
-  clear(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; launcher_pause_for_menu(){ :; }
   ui_box(){ :; }; ui_kv(){ :; }
   ui_log(){ echo "$1: ${*:2}"; }
   ui_choose(){ echo "Back"; }
@@ -415,7 +415,7 @@ jdr_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   docker(){ return 1; }
   clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }
   ui_log(){ echo "$1: ${*:2}"; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   f2b_jail_detail jellyfin
 ' 2>&1)
 assert_contains "$jdr_out" "Couldn't read status for jellyfin." "f2b_jail_detail: unreadable status warns"
@@ -424,7 +424,7 @@ assert_contains "$jdr_out" "Couldn't read status for jellyfin." "f2b_jail_detail
 stats_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
-  clear(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; launcher_pause_for_menu(){ :; }
   ui_box(){ shift; printf "%s\n" "$@"; }
   ui_kv(){ printf "%s=%s" "$1" "$2"; }
   ui_log(){ echo "$1: ${*:2}"; }
@@ -448,7 +448,7 @@ printf '%s\n' "jellyfin" "Back" >"$STQ"
 stroute=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" STQ="$STQ" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
-  clear(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; launcher_pause_for_menu(){ :; }
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }
   f2b_jail_detail(){ echo "JAIL_DETAIL:$1"; }
   f2b_show_recent(){ echo "SHOW_RECENT"; }
@@ -463,7 +463,7 @@ printf '%s\n' "Recent ban history" "Back" >"$STR"
 strec=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" STR="$STR" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   eval "$DOCKER_STUB"
-  clear(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; launcher_pause_for_menu(){ :; }
   ui_box(){ :; }; ui_kv(){ :; }; ui_log(){ :; }
   f2b_jail_detail(){ echo "JAIL_DETAIL:$1"; }
   f2b_show_recent(){ echo "SHOW_RECENT"; }

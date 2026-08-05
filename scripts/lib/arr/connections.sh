@@ -1,4 +1,4 @@
-# Owns: Sonarr/Radarr authentication and Jellyfin notification configuration.
+# Owns: configure_* — Sonarr/Radarr authentication and Jellyfin notification configuration.
 # Sources: scripts/lib/arr/main.sh state plus lib/common.sh, lib/json.sh, and Docker/service helpers.
 configure_arr_auth() {
     local app="$1" base="$2" key="$3"

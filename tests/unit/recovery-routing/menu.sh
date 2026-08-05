@@ -50,7 +50,7 @@ else
     assert_eq "1" "$complete_rc" "menu hides transcoding when Stage 3 is complete"
 fi
 
-checks_source="$(cat "$REPO_ROOT/scripts/setup/checks/existing_install.sh" "$REPO_ROOT/scripts/setup/checks/destroy.sh")"
+checks_source="$(cat "$REPO_ROOT/scripts/setup/checks/existing-install.sh" "$REPO_ROOT/scripts/setup/checks/destroy.sh")"
 assert_contains "$checks_source" "Wipe everything and start fresh" "destructive wipe copy remains present"
 assert_contains "$checks_source" "nuke_existing_install" "destructive wipe delegates to nuke_existing_install"
 

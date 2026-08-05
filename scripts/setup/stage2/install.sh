@@ -1,4 +1,4 @@
-# Owns: Stage 2 remote-access persistence, stack start, configuration, and LE handoff.
+# Owns: stage2_* — Stage 2 remote-access persistence, stack start, configuration, and LE handoff.
 # Sources: Stage 2 defaults, DDNS, LE, stack, fail2ban, and setup helpers.
 
 _stage2_install() {
@@ -18,7 +18,7 @@ _stage2_install() {
     fi
     _WIZ_REMOTE_WEB_STATE="unchecked"
     write_env || return 1
-    _stage2_preserve_stage1_marker
+    stage2_preserve_stage1_marker
 
     _stage2_source_env
 
@@ -42,7 +42,7 @@ _stage2_install() {
     # Stage 2 decision — hence installed here, not in Stage 1 beside the storage
     # watchdog. Install the log-rotation reload watcher when fail2ban is up; tear
     # it down otherwise (LAN-only re-run). Gated on ground truth, not a wizard var.
-    if container_running fail2ban; then
+    if service_container_running fail2ban; then
         f2b_install_reload_watcher
     else
         f2b_uninstall_reload_watcher || true

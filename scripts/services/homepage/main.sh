@@ -19,19 +19,19 @@ configure_homepage() {
     local remote_state="${REMOTE_WEB_STATE:-}"
 
     local has_bazarr="" has_wireguard="" has_ddns="" has_beszel="" has_npm=""
-    if container_running bazarr; then
+    if service_container_running bazarr; then
         has_bazarr=1
     fi
-    if container_running wireguard; then
+    if service_container_running wireguard; then
         has_wireguard=1
     fi
-    if container_running ddns-updater; then
+    if service_container_running ddns-updater; then
         has_ddns=1
     fi
-    if container_running beszel; then
+    if service_container_running beszel; then
         has_beszel=1
     fi
-    if [[ -n "$domain" && "$domain" != "example.com" ]] && container_running npm; then
+    if [[ -n "$domain" && "$domain" != "example.com" ]] && service_container_running npm; then
         has_npm=1
     fi
 

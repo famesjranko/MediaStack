@@ -1,4 +1,4 @@
-# Owns: Timezone and subtitle-language validators.
+# Owns: validate_* — Timezone and subtitle-language validators.
 # Sources: scripts/lib/validators.sh state; sourced by scripts/lib/validators.sh.
 
 validate_timezone() {

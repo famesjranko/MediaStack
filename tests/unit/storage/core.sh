@@ -1,6 +1,6 @@
 # Owns: storage_classify_data_root, storage_nas_ok, storage_watchdog_enabled,
 # storage_guard_before_start. Sourced by tests/unit/storage.sh; inherits its
-# preamble (TMP_DIR, source of storage.sh/stack.sh/stage1.sh/env_gen.sh, assert lib).
+# preamble (TMP_DIR, source of storage.sh/stack.sh/stage1.sh/env-gen.sh, assert lib).
 
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT

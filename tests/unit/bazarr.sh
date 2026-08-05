@@ -31,13 +31,13 @@ log_warn() { WARN_MESSAGES+=("$1"); }
 log_skip() { SKIP_MESSAGES+=("$1"); }
 log_info() { :; }
 
-save_api_key() { return 0; }
+env_save_api_key() { return 0; }
 service_local_url() {
     [[ "$1" == "bazarr" ]] || return 1
     printf 'http://localhost:6767'
 }
 
-get_api_key() {
+api_get_key() {
     case "$1" in
         *sonarr*) printf '%s\n' "sonarr-api-key" ;;
         *radarr*) printf '%s\n' "radarr-api-key" ;;

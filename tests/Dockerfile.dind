@@ -52,7 +52,7 @@ RUN apt-get update && \
 VOLUME /var/lib/docker
 
 # Pin a UTF-8 locale + a real TERM so the wizard PTY scenarios exercise the
-# glyph + colour render path (term_caps.sh:_glyphs_enabled / _color_enabled).
+# glyph + colour render path (term-caps.sh:_glyphs_enabled / _color_enabled).
 # bookworm-slim leaves LANG unset (-> C) and TERM unset, which would silently
 # downgrade every scenario to the ASCII fallback. C.UTF-8 is a glibc built-in
 # (no `locales` package needed). The ASCII path is covered by the unit test

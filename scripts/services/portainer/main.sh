@@ -34,7 +34,7 @@ configure_portainer() {
     fi
 
     local init_body
-    init_body=$(json_body Username "$admin_user" Password "$admin_pw")
+    init_body=$(http_json_body Username "$admin_user" Password "$admin_pw")
 
     if [[ "$admin_exists" == "false" ]]; then
         # If Portainer returned anything other than 404 (e.g. init timeout),
@@ -90,7 +90,7 @@ configure_portainer() {
 
     if [[ -z "$jwt" && "$admin_user" != "admin" ]]; then
         local legacy_body legacy_jwt
-        legacy_body=$(json_body Username admin Password "$admin_pw")
+        legacy_body=$(http_json_body Username admin Password "$admin_pw")
         legacy_jwt=$(curl -s -X POST "$portainer_url/api/auth" \
             -H "Content-Type: application/json" \
             -d "$legacy_body" 2>/dev/null \
@@ -98,7 +98,7 @@ configure_portainer() {
 
         if [[ -n "$legacy_jwt" ]]; then
             local rename_body rename_resp rename_http rename_body_resp
-            rename_body=$(json_obj Username str "$admin_user" Role int 1)
+            rename_body=$(http_json_obj Username str "$admin_user" Role int 1)
             rename_resp=$(curl -s -w "\n%{http_code}" -X PUT \
                 "$portainer_url/api/users/1" \
                 -H "Authorization: Bearer $legacy_jwt" \
@@ -140,14 +140,14 @@ configure_portainer() {
         fi
         if [[ -z "$ptkey_valid" ]]; then
             local token_body token_resp token_raw
-            token_body=$(json_body description Homepage password "$admin_pw")
+            token_body=$(http_json_body description Homepage password "$admin_pw")
             token_resp=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
                 -H "Authorization: Bearer $jwt" \
                 -H "Content-Type: application/json" \
                 -d "$token_body" 2>/dev/null)
             token_raw=$(echo "$token_resp" | json_get rawAPIKey)
             if [[ -n "$token_raw" ]]; then
-                save_api_key "PORTAINER_API_KEY" "$token_raw"
+                env_save_api_key "PORTAINER_API_KEY" "$token_raw"
             fi
         fi
 

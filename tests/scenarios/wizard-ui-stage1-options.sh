@@ -9,7 +9,7 @@
 # create-it branches are covered by their own scenarios
 # (wizard-ui-stage1-timezone.sh, wizard-ui-stage1-datadir-create.sh).
 
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage1-options.sh"

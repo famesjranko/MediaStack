@@ -1,5 +1,5 @@
 # Assertion: per-service install-digest recording.
-# record_install (scripts/image-drift.py --record-install, wired into the real
+# record_install (scripts/image_drift.py --record-install, wired into the real
 # installer at stage1.sh) writes the digest each service came up running to
 # config/state/image-install.tsv, giving day-2 "Revert to installed image" a
 # channel-independent target. Only services with a resolvable local repo digest
@@ -14,7 +14,7 @@
 assert_install_digest_recorded() {
     local file="config/state/image-install.tsv"
     local rows sha rec_err
-    if ! rec_err=$(dind_exec "python3 scripts/image-drift.py --compose docker-compose.yml --record-install $file" 2>&1); then
+    if ! rec_err=$(dind_exec "python3 scripts/image_drift.py --compose docker-compose.yml --record-install $file" 2>&1); then
         fail "install: image-install.tsv recorded" "recorder exited non-zero: $(echo "$rec_err" | tail -3 | tr '\n' ' ')"
         return
     fi

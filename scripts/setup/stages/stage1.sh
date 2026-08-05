@@ -1,4 +1,4 @@
-# Owns: Stage 1 flow ordering and completion-marker skip routing.
+# Owns: run_* — Stage 1 flow ordering and completion-marker skip routing.
 # Sources: stage1/* concern modules, wizard helpers, and setup globals.
 # =============================================================================
 # MediaStack Setup — Stage 1 controller (Core LAN)
@@ -37,9 +37,9 @@ source "$_STAGE1_CONCERNS_DIR/demo.sh"
 unset _STAGE1_CONCERNS_DIR
 
 run_stage1() {
-    seed_root_config # ensure live config.yml exists before the wizard mutates it (env_gen.sh)
+    seed_root_config # ensure live config.yml exists before the wizard mutates it (env-gen.sh)
     # Sentinel convention: STAGE_1_COMPLETE is unset OR empty when Stage 1
-    # has not yet completed; literal "1" means complete. env_gen.sh writes
+    # has not yet completed; literal "1" means complete. env-gen.sh writes
     # the empty value (see 'STAGE_1_COMPLETE=${prev_stage1}' where
     # prev_stage1 defaults to ""), and setup.sh uses '${STAGE_1_COMPLETE:-}'
     # to match. Do NOT change this to ':-0' — the sentinel is empty, not 0,
@@ -61,7 +61,7 @@ run_stage1() {
     ui_banner "MediaStack - Core Media Server" "Working media server in 5-7 minutes"
 
     _wizard_run_discovery
-    _stage1_show_system
+    stage1_show_system
 
     while true; do
         _stage1_collect_admin

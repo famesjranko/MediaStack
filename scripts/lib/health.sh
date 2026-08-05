@@ -6,7 +6,7 @@
 # bump, a cert quietly past renewal, DDNS drift, a full disk, UFW off, or Docker
 # having flushed the port-restriction chain).
 #
-# Design: one classifier, many presenters (models stage2_dns_classify). Each
+# Design: one classifier, many presenters (models net_dns_classify). Each
 # health_<name> echoes ONE line "STATUS|message" (STATUS ∈ ok|warn|fail|skip),
 # self-gates to "skip|..." when its profile/tooling/sudo is absent, and does NO
 # presentation — callers (menu, update flow, tests) present via health_present.
@@ -25,9 +25,9 @@ _HEALTH_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _HEALTH_REPO_ROOT="$(cd "$_HEALTH_LIB_DIR/../.." && pwd)"
 
 # Source our own lib deps: update.sh/tests source only common.sh, so a check
-# calling stage2_dns_classify/net_detect_public_ip would otherwise be undefined.
+# calling net_dns_classify/net_detect_public_ip would otherwise be undefined.
 # common.sh (log_*) is assumed already sourced by every consumer.
-if ! declare -F stage2_dns_classify >/dev/null 2>&1; then
+if ! declare -F net_dns_classify >/dev/null 2>&1; then
     # shellcheck source=/dev/null
     source "$_HEALTH_LIB_DIR/network.sh"
 fi
@@ -338,7 +338,7 @@ health_dns_drift() {
         return 0
     }
     local pip="$_NET_PUBLIC_IP" result
-    result=$(stage2_dns_classify "$DOMAIN" "$pip" 2>/dev/null) || true
+    result=$(net_dns_classify "$DOMAIN" "$pip" 2>/dev/null) || true
     case "$result" in
         ok) echo "ok|DNS points at this box (${pip})" ;;
         mismatch:*) echo "fail|DNS drift: ${DOMAIN} resolves to ${result#mismatch:}, box is ${pip} — remote access broken (DDNS not updating?)" ;;

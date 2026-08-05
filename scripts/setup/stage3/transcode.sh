@@ -1,4 +1,4 @@
-# Owns: Transcode evidence capture/parsing: render-device resolution, vainfo/nvidia-smi probes, capability parsing, and verification.
+# Owns: stage3_* — Transcode evidence capture/parsing: render-device resolution, vainfo/nvidia-smi probes, capability parsing, and verification.
 # Sources: scripts/lib/render-device.sh helpers (sourced by stages/stage3.sh); python3 for vainfo parsing.
 
 stage3_transcode_log_uses_gpu() {

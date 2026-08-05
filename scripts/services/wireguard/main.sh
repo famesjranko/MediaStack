@@ -3,7 +3,7 @@
 # =============================================================================
 
 configure_wireguard() {
-    if ! container_running wireguard; then
+    if ! service_container_running wireguard; then
         return 0
     fi
 

@@ -1,6 +1,6 @@
-# Owns: Stage 2 HTTP port-gate classification and external reachability probes.
+# Owns: net_* — Stage 2 HTTP port-gate classification and external reachability probes.
 # Sources: scripts/lib/network.sh state plus curl, ss, python3, sudo, and standard host utilities.
-stage2_check_http_ports() {
+net_check_http_ports() {
     local port80="closed" port443="closed" unavailable=()
     # Accept both rc=0 (verified open) and rc=4 (existing-bound, probed open
     # but verification skipped) as "open" for the wizard's LE attempt — if

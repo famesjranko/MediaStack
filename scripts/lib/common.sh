@@ -9,12 +9,12 @@
 _MS_COMMON_SH=1
 
 # --- Terminal capability (colour gating) ---
-# Resolve term_caps.sh from this file's own dir (BASH_SOURCE), not $SCRIPT_DIR:
+# Resolve term-caps.sh from this file's own dir (BASH_SOURCE), not $SCRIPT_DIR:
 # common.sh is sourced by configure.sh / setup.sh / update.sh / mediastack with
-# differing $SCRIPT_DIR contracts. term_caps.sh sets no shell options.
+# differing $SCRIPT_DIR contracts. term-caps.sh sets no shell options.
 _COMMON_TC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=term_caps.sh
-source "$_COMMON_TC_DIR/term_caps.sh"
+# shellcheck source=term-caps.sh
+source "$_COMMON_TC_DIR/term-caps.sh"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -54,7 +54,7 @@ _log_emit() {
     fi
 }
 
-# Marker via _ui_status_token (term_caps.sh): the ASCII bracket tag [INFO]/[OK]/...
+# Marker via _ui_status_token (term-caps.sh): the ASCII bracket tag [INFO]/[OK]/...
 # when glyphs are unavailable (byte-identical to the historical output), or the
 # matching icon (•/✓/!/✗/→) when the terminal can render it — same vocabulary as
 # the wizard's ui_log, so a single run never mixes bracket and glyph "languages".
@@ -240,19 +240,19 @@ api_get() { _api_request api_get GET "$1" "$2"; }
 api_post() { _api_request api_post POST "$1" "$2" "$3"; }
 api_put() { _api_request api_put PUT "$1" "$2" "$3"; }
 
-get_api_key() {
+api_get_key() {
     [[ -f "$1" ]] && grep -oP '<ApiKey>\K[^<]+' "$1" 2>/dev/null || echo ""
 }
 
-get_jackett_api_key() {
+api_get_jackett_key() {
     local f="$SCRIPT_DIR/config/jackett/Jackett/ServerConfig.json"
     [[ -f "$f" ]] && python3 -c "import json; print(json.load(open('$f')).get('APIKey',''))" 2>/dev/null || echo ""
 }
 
-# .env-writing concern (atomic key/value rewrite, save_api_key) lives in its
-# own file — see env_update.sh's header for what it owns.
-# shellcheck source=env_update.sh
-source "$_COMMON_TC_DIR/env_update.sh"
+# .env-writing concern (atomic key/value rewrite, env_save_api_key) lives in its
+# own file — see env-update.sh's header for what it owns.
+# shellcheck source=env-update.sh
+source "$_COMMON_TC_DIR/env-update.sh"
 
 # =============================================================================
 # Container state
@@ -266,7 +266,7 @@ source "$_COMMON_TC_DIR/env_update.sh"
 # docker is absent (inspect errors are swallowed → false). health.sh keeps its
 # own batch/health-aware probes (_health_svc_healthy, _health_f2b_running) —
 # those answer "running AND healthy", a different question.
-container_running() {
+service_container_running() {
     [[ "$(docker inspect --format '{{.State.Running}}' "$1" 2>/dev/null || echo false)" == "true" ]]
 }
 

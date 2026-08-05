@@ -4,7 +4,7 @@
 # user declines. Verifies the offer box renders and that declining writes
 # REMOTE_WEB_STATE=skipped while preserving the Stage 1 completion marker.
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-offer-skip.sh"

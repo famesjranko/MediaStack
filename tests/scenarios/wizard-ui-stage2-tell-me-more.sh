@@ -3,7 +3,7 @@
 # Selects "Tell me more" at the offer, confirms the explanatory copy renders,
 # then loops back to the offer and skips. Covers the third offer branch.
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-tell-me-more.sh"

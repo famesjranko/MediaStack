@@ -15,7 +15,7 @@ source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/lib/ui.sh"
 source "$REPO_ROOT/scripts/setup/checks.sh"
 source "$REPO_ROOT/scripts/setup/wizard.sh"
-# gpu.sh defines gpu_brand_label, used by _stage1_show_system for the GPU row's
+# gpu.sh defines gpu_brand_label, used by stage1_show_system for the GPU row's
 # brand casing (production sources it via setup.sh before Stage 1 runs).
 source "$REPO_ROOT/scripts/setup/gpu.sh"
 
@@ -46,7 +46,7 @@ ui_box() {
 
 ui_choose() { echo "Continue"; }
 
-_stage1_show_system
+stage1_show_system
 
 assert_contains "$SCREEN_CAPTURE" "Detected your system" "stage1-show-system: title"
 assert_contains "$SCREEN_CAPTURE" "Hostname=" "stage1-show-system: hostname row"

@@ -1,4 +1,4 @@
-# Minimal image for the `--dry-run` UI explorer (scripts/lib/dry_run.sh).
+# Minimal image for the `--dry-run` UI explorer (scripts/lib/dry-run.sh).
 #
 # NOT a DinD image: the dry-run runs the real wizard/launcher flow with every
 # side effect stubbed, so it needs no dockerd, no privilege, and no network.
@@ -32,7 +32,7 @@ RUN useradd -m -s /bin/bash mstest
 RUN install -m 0444 /dev/null /etc/ms-dry-run-sandbox
 
 # A UTF-8 locale + real TERM so the glyph + colour render path is exercised
-# (term_caps.sh), matching tests/Dockerfile.dind.
+# (term-caps.sh), matching tests/Dockerfile.dind.
 ENV LANG=C.UTF-8 \
     TERM=xterm-256color
 

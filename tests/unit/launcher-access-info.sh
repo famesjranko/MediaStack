@@ -26,9 +26,9 @@ menu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Noop"; }
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   STAGE_1_COMPLETE=1
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   head -n1 "$LABELS"
   rm -f "$LABELS"
 ' 2>&1)

@@ -1,7 +1,7 @@
-# Owns: Stage 1 detected-system screen and timezone choice.
+# Owns: stage1_* — Stage 1 detected-system screen and timezone choice.
 # Sources: wizard UI helpers, `_ENV_*`/`_NET_*`/`GPU_TYPE` detection globals, and Stage 1 state.
 
-_stage1_show_system() {
+stage1_show_system() {
     local hostname_value os_value docker_value ram_value root_free data_path data_free gateway_value
     hostname_value=$(hostname)
     # LAN gateway = the router the user logs into for port forwarding. The `via`

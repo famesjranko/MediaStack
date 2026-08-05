@@ -68,7 +68,7 @@ action_recheck_nas() {
         ui_log warn "NAS is not currently mounted/verified. The watchdog keeps retrying — check the NAS is powered on and reachable on the network."
     fi
     _show_action_result "$rc" "Re-check NAS"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 submenu_storage() {

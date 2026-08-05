@@ -13,8 +13,8 @@ _CHECKS_MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # from a single source.
 # shellcheck source=checks/preflight.sh
 source "$_CHECKS_MODULE_DIR/checks/preflight.sh"
-# shellcheck source=checks/existing_install.sh
-source "$_CHECKS_MODULE_DIR/checks/existing_install.sh"
+# shellcheck source=checks/existing-install.sh
+source "$_CHECKS_MODULE_DIR/checks/existing-install.sh"
 # shellcheck source=checks/destroy.sh
 source "$_CHECKS_MODULE_DIR/checks/destroy.sh"
 
@@ -28,7 +28,7 @@ unset _CHECKS_MODULE_DIR
 # we drop a one-word token in it. No-op for direct `./setup.sh` runs (and the
 # DinD recovery fixtures), which never set the variable. set -u safe.
 #
-# Kept in the entry point (not a topic file) because both existing_install.sh
+# Kept in the entry point (not a topic file) because both existing-install.sh
 # and destroy.sh call it.
 record_launcher_outcome() {
     [[ -n "${MEDIASTACK_LAUNCHER_RESULT:-}" ]] || return 0

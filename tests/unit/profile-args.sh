@@ -2,7 +2,7 @@
 # tests/unit/profile-args.sh
 #
 # Contract tests for the shared docker-compose profile-arg builder
-# (scripts/lib/profiles.sh::_build_profile_args). The installer and the day-2
+# (scripts/lib/profiles.sh::profiles_build_args). The installer and the day-2
 # launcher now share this one builder, so this is the single place the
 # profile-selection logic is exercised in isolation. Output order is fixed:
 # subtitles, autoheal, proxy, remote.
@@ -38,7 +38,7 @@ mkenv() {
 # Run the builder against a .env fixture and join the flags into one string.
 profiles_for() {
     local arr=()
-    _build_profile_args arr "$1"
+    profiles_build_args arr "$1"
     echo "${arr[*]}"
 }
 
@@ -106,7 +106,7 @@ strict_out=$(
     unset _MS_PROFILES_SH_LOADED
     source "$REPO_ROOT/scripts/lib/profiles.sh"
     a=()
-    _build_profile_args a "$allon"
+    profiles_build_args a "$allon"
     echo "${a[*]}"
 )
 strict_rc=$?

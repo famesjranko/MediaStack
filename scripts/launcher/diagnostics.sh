@@ -7,7 +7,7 @@ _compose_running_summary() {
     # this compose project. Counts include all .env-declared profiles, not just
     # default — otherwise npm/bazarr/wireguard/autoheal would be invisible.
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     local total running
     total=$(docker compose "${profiles[@]}" ps --format '{{.Name}}' 2>/dev/null | wc -l)
     running=$(docker compose "${profiles[@]}" ps --filter 'status=running' --format '{{.Name}}' 2>/dev/null | wc -l)
@@ -53,7 +53,7 @@ diag_readiness() {
         log_warn "Docker: not installed (will be installed on first install run)"
     fi
 
-    # GUM: optional binary that unlocks arrow-key menus (ui_render_gum.sh backend).
+    # GUM: optional binary that unlocks arrow-key menus (ui-render-gum.sh backend).
     if command -v gum &>/dev/null; then
         log_ok "GUM (optional): $(gum --version 2>/dev/null || echo installed) — arrow-key menus active"
     else
@@ -74,7 +74,7 @@ diag_dns_check() {
     echo ""
     # bind9-dnsutils (dig) is installed by setup.sh's install_base_packages,
     # so post-install this is always present. Pre-install on a bare Debian, dig
-    # may be absent — and stage2_dns_classify silently returns "no-a" when dig
+    # may be absent — and net_dns_classify silently returns "no-a" when dig
     # is missing, which the user reads as "your A-records are wrong" instead of
     # "tool missing". Fail fast with an actionable apt hint.
     if ! command -v dig &>/dev/null; then
@@ -121,7 +121,7 @@ diag_dns_check() {
     echo ""
     ui_log info "Checking jellyfin.${domain} and seerr.${domain} A-records (via 8.8.8.8)..."
     local result
-    result=$(stage2_dns_classify "$domain" "$public_ip")
+    result=$(net_dns_classify "$domain" "$public_ip")
     local rc=$?
 
     case "$result" in
@@ -189,7 +189,7 @@ action_port_check() {
     # "completed successfully" line — it contradicts a "3 of 4 checks failed"
     # result. Matches the other diagnostics, which pause straight to the menu.
     "$SCRIPT_DIR/scripts/port-check.sh" || true
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 submenu_port_forwarding() {
@@ -213,7 +213,7 @@ submenu_port_forwarding() {
             "Test the required"*) action_port_check ;;
             "Test a specific port"*)
                 diag_test_port
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             *) return 0 ;;
         esac
@@ -248,15 +248,15 @@ submenu_diagnostics() {
             "Test port forwarding"*) submenu_port_forwarding ;;
             "Check domain DNS"*)
                 diag_dns_check
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "System readiness"*)
                 diag_readiness
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "Run speed test"*)
                 diag_speedtest
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             *) return 0 ;;
         esac
@@ -318,33 +318,33 @@ submenu_health() {
                 _render_service_list
                 echo ""
                 _health_run_all_spin
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "fail2ban"*)
                 _health_present_spin "Checking fail2ban jails..." health_fail2ban_jails
                 _health_present_spin "Checking fail2ban jellyfin filter (~15s)..." health_fail2ban_regex jellyfin
                 _health_present_spin "Checking fail2ban seerr filter (~15s)..." health_fail2ban_regex seerr
                 _health_present_spin "Checking fail2ban jellyfin log watch..." health_fail2ban_watching jellyfin
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "TLS certificate"*)
                 _health_prime_sudo
                 _health_present_spin "Checking TLS certificate..." health_cert_expiry
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "DNS"*)
                 _health_present_spin "Checking DNS / public IP (~5s)..." health_dns_drift
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "Disk"*)
                 _health_present_spin "Checking disk space..." health_disk_pct
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "Firewall"*)
                 _health_prime_sudo
                 _health_present_spin "Checking UFW firewall..." health_ufw_active
                 _health_present_spin "Checking Docker port lock..." health_docker_user_restrict
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             *) return 0 ;;
         esac

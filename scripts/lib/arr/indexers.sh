@@ -1,4 +1,4 @@
-# Owns: Sonarr/Radarr Jackett indexer discovery and configuration.
+# Owns: configure_* — Sonarr/Radarr Jackett indexer discovery and configuration.
 # Sources: scripts/lib/arr/main.sh state plus lib/common.sh, lib/json.sh, curl, and the Torznab renderer.
 configure_arr_indexers() {
     local app="$1" base="$2" key="$3" fallback_categories="$4"
@@ -7,7 +7,7 @@ configure_arr_indexers() {
     jackett_internal_url="$(service_internal_url jackett)"
 
     local jackett_key
-    jackett_key=$(get_jackett_api_key)
+    jackett_key=$(api_get_jackett_key)
     if [[ -z "$jackett_key" ]]; then
         log_warn "Cannot read Jackett API key - skipping indexers"
         return 0

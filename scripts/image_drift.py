@@ -311,7 +311,7 @@ def run_readme_badges(args: argparse.Namespace) -> int:
         if expected != current:
             print(
                 "README Stable-baseline badge is out of date; run "
-                f"python3 scripts/image-drift.py --write-readme-badges {readme_path}",
+                f"python3 scripts/image_drift.py --write-readme-badges {readme_path}",
                 file=sys.stderr,
             )
             return 1
@@ -669,14 +669,14 @@ def markdown_summary(
             "",
             "```bash",
             "mkdir -p .tmp",
-            "python3 scripts/image-drift.py --snapshot-current .tmp/image-digests.current.tsv",
-            "python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv",
+            "python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv",
+            "python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv",
             "```",
             "",
             "After every affected preflight passes, accept that same snapshot and commit it:",
             "",
             "```bash",
-            "python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv "
+            "python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv "
             "--write-current docs/operations/image-digests.lock --accept-current",
             "```",
         ]
@@ -690,7 +690,7 @@ def markdown_summary(
                 "drifted rows pending, name them explicitly (preserves every other row):",
                 "",
                 "```bash",
-                "python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv "
+                "python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv "
                 "--write-current docs/operations/image-digests.lock "
                 f"--accept-services {drifted}",
                 "```",
@@ -704,7 +704,7 @@ def markdown_summary(
             "build if this step is skipped:",
             "",
             "```bash",
-            "python3 scripts/image-drift.py --write-readme-badges README.md",
+            "python3 scripts/image_drift.py --write-readme-badges README.md",
             "```",
         ]
     )

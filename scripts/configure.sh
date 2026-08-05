@@ -211,7 +211,7 @@ main() {
     fi
 
     if _should_configure bazarr; then
-        if container_running bazarr; then
+        if service_container_running bazarr; then
             wait_for_service "Bazarr" "$(service_local_url bazarr)"
             _run_configure "Bazarr|bazarr" configure_bazarr
         fi
@@ -253,7 +253,7 @@ main() {
     _should_configure homepage && _run_configure "Homepage|homepage" configure_homepage
 
     if _should_configure npm; then
-        if container_running npm; then
+        if service_container_running npm; then
             wait_for_service "NPM" "$(service_local_url npm)"
             _run_configure "NPM|npm" configure_npm
         fi
@@ -261,7 +261,7 @@ main() {
     _should_configure ddns-updater && _run_configure "DDNS Updater|ddns-updater" configure_ddns_updater
 
     if _should_configure wireguard; then
-        if container_running wireguard; then
+        if service_container_running wireguard; then
             wait_for_healthy "WireGuard" "wireguard" "$(service_local_url wireguard)"
             if ! _run_configure "WireGuard|wireguard" configure_wireguard; then
                 log_error "WireGuard access-tier enforcement failed; fix the warnings above, then choose Features & settings -> Add remote access from the menu"
@@ -299,7 +299,7 @@ main() {
         # the placeholder touchfiles from setup.sh — a reload re-resolves them.
         # Note: iptables chains are created at jail start (actionstart_on_demand=false
         # in mediastack.conf) and survive reload, so no chain repair is needed here.
-        if container_running fail2ban; then
+        if service_container_running fail2ban; then
             docker exec fail2ban fail2ban-client reload >/dev/null 2>&1 \
                 && log_ok "fail2ban reloaded (jails watching real log files)" \
                 || log_warn "Could not reload fail2ban"

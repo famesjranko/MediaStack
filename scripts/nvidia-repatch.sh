@@ -11,8 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATCH_DIR="$SCRIPT_DIR/.nvidia-patch"
 PATCH_RUN_DIR=""
 
-# shellcheck source=lib/nvidia_patch.sh
-source "$SCRIPT_DIR/scripts/lib/nvidia_patch.sh"
+# shellcheck source=lib/nvidia-patch.sh
+source "$SCRIPT_DIR/scripts/lib/nvidia-patch.sh"
 
 cleanup() {
     [[ -n "$PATCH_RUN_DIR" ]] && rm -rf "$PATCH_RUN_DIR"

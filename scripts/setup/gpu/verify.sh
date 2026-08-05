@@ -1,4 +1,4 @@
-# Owns: final GPU usability checks and vendor-specific verification state.
+# Owns: nvidia_* verify_* — final GPU usability checks and vendor-specific verification state.
 # Sources: gpu.sh detection helpers, common.sh logging, and host GPU commands.
 _nvidia_docker_runtime_state() {
     local keys

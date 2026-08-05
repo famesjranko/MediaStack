@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/api-matrix/push_quality.sh — drive the PRODUCT quality configurators for
+# tests/api-matrix/push-quality.sh — drive the PRODUCT quality configurators for
 # one (resolution x size) cell against a live Sonarr/Radarr, inside DinD.
 #
 # Composes the cell into a throwaway config.yml via `wizard_apply.py
@@ -9,7 +9,7 @@
 # QP_RENAME_FROM set it exercises the in-place rename branch. Reuses product code
 # only; this file owns no API logic of its own.
 #
-#   push_quality.sh <app> <base_url> <api_key> <resolution> <size> [rename_from]
+#   push-quality.sh <app> <base_url> <api_key> <resolution> <size> [rename_from]
 set -uo pipefail
 
 app="$1"

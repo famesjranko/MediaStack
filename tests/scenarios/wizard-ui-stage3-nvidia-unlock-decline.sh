@@ -4,7 +4,7 @@
 # the advisory box, declines the confirmation, views "Tell me more", then falls
 # back to the Standard driver. Asserts the picker recovers to standard mode.
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-nvidia-unlock-decline.sh"

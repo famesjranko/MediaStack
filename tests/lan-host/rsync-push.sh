@@ -8,7 +8,7 @@
 # usage: rsync-push.sh [--dry-run]
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/_lib.sh"
+source "$HERE/lib.sh"
 
 DRYRUN=0
 while (($#)); do

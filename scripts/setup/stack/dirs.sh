@@ -6,7 +6,7 @@ create_data_dirs() {
     # Default to the operator's actual uid/gid, NOT a hardcoded 1000.
     # On hosts where the operator isn't the first user (so they're uid
     # 1001+), defaulting to 1000 chowns /data to a different account and
-    # the operator gets "not writable". env_gen.sh:12 already does this
+    # the operator gets "not writable". env-gen.sh:12 already does this
     # — keep them aligned. Explicit PUID/PGID env vars still win when set.
     local puid="${PUID:-$(id -u)}"
     local pgid="${PGID:-$(id -g)}"
@@ -60,7 +60,7 @@ stop_existing_stack() {
     # `--profile all` is a literal profile name, not a wildcard — without real
     # profile args, npm/bazarr/wireguard/autoheal survive the down.
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     docker compose "${profiles[@]}" down 2>/dev/null || true
 }
 

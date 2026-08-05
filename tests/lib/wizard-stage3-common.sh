@@ -35,10 +35,10 @@ sed -i \
 
 source ./setup.sh
 
-# Shared external-command stubs live in one place — tests/lib/wizard_stub_common.sh.
+# Shared external-command stubs live in one place — tests/lib/wizard-stub-common.sh.
 # Stage 3 shares only the core set (sudo/curl/docker/openssl + a no-op configure.sh);
 # the GPU machinery below stays stage-specific.
-source tests/lib/wizard_stub_common.sh
+source tests/lib/wizard-stub-common.sh
 ms_stub_core
 reboot() { log_info \"stub reboot (suppressed)\"; }
 detect_host_memory() { HOST_MEMORY_MB=16000; }
@@ -54,8 +54,8 @@ apply_nvidia_patch() { return 0; }
 prepare_nvidia_debian_to_unlock() { NEEDS_REBOOT=false; return 0; }
 _install_nvidia_container_toolkit() { return 0; }
 nvidia_driver_source() { printf 'none\\n'; }
-check_secure_boot() { printf 'disabled\\n'; }
-nouveau_is_active() { return 1; }
+nvidia_driver_check_secure_boot() { printf 'disabled\\n'; }
+nvidia_driver_nouveau_is_active() { return 1; }
 verify_gpu_usable() { return 0; }
 # Capability probe + Jellyfin encoder verification — default: pass.
 stage3_probe_capabilities() { return 0; }
@@ -87,7 +87,7 @@ RUNNER"
 
 # Shared step-builder (prompt regexes live in tests/lib/wizard_prompts.json). The stage-3
 # scenarios call wizard_stage3_steps; the implementation is wizard_build_steps.
-source tests/lib/wizard_steps_common.sh
+source tests/lib/wizard-steps-common.sh
 wizard_stage3_steps() { wizard_build_steps "$@"; }
 
 wizard_stage3_run_pty() {

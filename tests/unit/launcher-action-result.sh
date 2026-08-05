@@ -100,7 +100,7 @@ fi
 service_guard=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   docker(){ [[ "$*" == *"ps --filter status=exited"* ]] && echo jellyfin || echo DOCKER_CALLED; }
-  ui_choose(){ echo jellyfin; }; storage_guard_before_start(){ return 1; }; pause_for_menu(){ :; }
+  ui_choose(){ echo jellyfin; }; storage_guard_before_start(){ return 1; }; launcher_pause_for_menu(){ :; }
   action_service_start
 ' 2>&1)
 if [[ "$service_guard" == *DOCKER_CALLED* ]]; then
@@ -113,7 +113,7 @@ fi
 service_failure=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   docker(){ [[ "$*" == *"ps --filter status=running"* ]] && { echo jellyfin; return; }; return 42; }
-  ui_choose(){ echo jellyfin; }; pause_for_menu(){ :; }; ui_log(){ printf "%s|%s\n" "$1" "$2"; }
+  ui_choose(){ echo jellyfin; }; launcher_pause_for_menu(){ :; }; ui_log(){ printf "%s|%s\n" "$1" "$2"; }
   action_service_stop
 ' 2>&1)
 assert_contains "$service_failure" "error|Stop jellyfin exited with code 42." \

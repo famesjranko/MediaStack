@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/ui-box-alignment.sh
 #
-# _ui_strip_ansi (scripts/lib/ui_render_fallback.sh) was a silent
+# _ui_strip_ansi (scripts/lib/ui-render-fallback.sh) was a silent
 # no-op due to three independent bugs: (1) the CSI introducer was written as the
 # regex '\\[' (a literal backslash) instead of '\['; (2) under non-C locales the
 # CSI byte-range classes [ -/] and [@-~] do not match via bash =~; and (3) the
@@ -26,15 +26,15 @@ CURRENT_SCENARIO="ui-box-alignment"
 echo -e "${CYAN}${BOLD}▶ scenario: ui-box-alignment${NC}"
 
 # Force colour AND glyphs ON before sourcing. This test runs non-TTY with no
-# UTF-8 locale guarantee, where term_caps.sh would otherwise blank the palette
+# UTF-8 locale guarantee, where term-caps.sh would otherwise blank the palette
 # (no ANSI to strip) and pick ASCII box chars (the grep for │/╭/╰ below would
 # find nothing) — making the assertions below pass vacuously. The forces keep
 # the coloured unicode render path under test. Must be set BEFORE the source:
 # the palette and glyph vocabulary are frozen at source time.
 export UI_FORCE_COLOR=1
 export UI_FORCE_GLYPHS=1
-# shellcheck source=../../scripts/lib/ui_render_fallback.sh
-source "$REPO_ROOT/scripts/lib/ui_render_fallback.sh"
+# shellcheck source=../../scripts/lib/ui-render-fallback.sh
+source "$REPO_ROOT/scripts/lib/ui-render-fallback.sh"
 
 # Independent visible-width oracle (perl), not the function under test.
 _oracle_len() { printf '%b' "$1" | perl -CS -pe 's/\e\[[0-9:;<=>?]*[ -\/]*[@-~]//g; s/\R//g' | perl -CS -ne 'print length'; }

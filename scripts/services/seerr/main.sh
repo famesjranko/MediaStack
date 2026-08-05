@@ -3,7 +3,7 @@
 # =============================================================================
 
 _SEERR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$_SEERR_DIR/arr_connect.sh"
+source "$_SEERR_DIR/arr-connect.sh"
 
 configure_seerr() {
     echo ""
@@ -284,7 +284,7 @@ except Exception:
     local seerr_api_key
     seerr_api_key=$(echo "$current_settings" | json_get apiKey)
     if [[ -n "$seerr_api_key" ]]; then
-        save_api_key "SEERR_API_KEY" "$seerr_api_key"
+        env_save_api_key "SEERR_API_KEY" "$seerr_api_key"
     fi
 
     current_perms=$(echo "$current_settings" | json_get defaultPermissions 0)
@@ -345,7 +345,7 @@ print(json.dumps(body))
         log_skip "Seerr trustProxy already $want_trust"
     else
         local net_body
-        net_body=$(json_obj trustProxy bool "$want_trust")
+        net_body=$(http_json_obj trustProxy bool "$want_trust")
         if curl -fsS -X POST "$seerr_url/api/v1/settings/network" \
             -H "Content-Type: application/json" \
             -c "$cookiejar" -b "$cookiejar" \

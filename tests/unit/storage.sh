@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Owns: the ordered storage unit-suite entry point.
 # Sources: tests/unit/storage/* and scripts/setup/storage.sh (+ stack.sh,
-# stages/stage1.sh, env_gen.sh for the wizard-integration scenarios).
+# stages/stage1.sh, env-gen.sh for the wizard-integration scenarios).
 # tests/unit/storage.sh
 
 set -uo pipefail
@@ -17,7 +17,7 @@ scenario_begin "$CURRENT_SCENARIO"
 source "$REPO_ROOT/scripts/setup/storage.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
 source "$REPO_ROOT/scripts/setup/stages/stage1.sh"
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 
 set +e
 set +u

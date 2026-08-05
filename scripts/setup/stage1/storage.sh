@@ -1,4 +1,4 @@
-# Owns: Stage 1 local, manual, and managed-NAS storage collection.
+# Owns: stage1_* — Stage 1 local, manual, and managed-NAS storage collection.
 # Sources: storage helpers, wizard UI, validators, `DEFAULT_NFS_OPTS`, and `_WIZ_*`/`_WIZ_PREV_*` state.
 
 _stage1_collect_storage() {
@@ -308,7 +308,7 @@ _stage1_collect_nas_managed() {
 }
 
 # Consolidated review of the managed-NAS choices, shown before the lock-in menu.
-# Reuses the ui_box + ui_kv pattern from _stage1_show_system.
+# Reuses the ui_box + ui_kv pattern from stage1_show_system.
 _stage1_nas_review_box() {
     local wd
     [[ "${_WIZ_STORAGE_WATCHDOG:-true}" == "false" ]] && wd="off" || wd="on"

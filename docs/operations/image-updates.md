@@ -21,8 +21,8 @@ When it fails:
 
    ```bash
    mkdir -p .tmp
-   python3 scripts/image-drift.py --snapshot-current .tmp/image-digests.current.tsv
-   python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv
+   python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv
    ```
 
 4. Run the exact local preflight shown by that snapshot summary. For scenario-backed services, the
@@ -51,7 +51,7 @@ When it fails:
    rest pending:
 
    ```bash
-   python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
    ```
 
    Accept is **receipt-gated**: it refuses to write a drifted digest into the lock unless step 4's
@@ -64,13 +64,13 @@ When it fails:
    removed, since `--accept-services` refuses a changed service set):
 
    ```bash
-   python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
    ```
 
 9. Regenerate the README Stable-baseline badge from the accepted lock:
 
    ```bash
-   python3 scripts/image-drift.py --write-readme-badges README.md
+   python3 scripts/image_drift.py --write-readme-badges README.md
    ```
 
 10. Inspect the lock-file diff. Only rows for changed images should get new digests and timestamps,
@@ -85,8 +85,8 @@ accept gate you vouch for the batch by hand:
 
 ```bash
 mkdir -p .tmp
-python3 scripts/image-drift.py --snapshot-current .tmp/image-digests.current.tsv
-python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current --restamp-all --no-verify-preflight
+python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv
+python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current --restamp-all --no-verify-preflight
 ```
 
 ## Stable vs Latest

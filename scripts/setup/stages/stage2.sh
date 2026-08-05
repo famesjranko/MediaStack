@@ -1,4 +1,4 @@
-# Owns: Stage 2 remote-access flow ordering and completion-state routing.
+# Owns: run_* — Stage 2 remote-access flow ordering and completion-state routing.
 # Sources: stage2/* concern modules, shared remote helpers, and setup globals.
 # =============================================================================
 # MediaStack Setup -- Stage 2 controller (Remote Access)
@@ -9,8 +9,8 @@ if [[ -z "${SCRIPT_DIR:-}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 fi
 
-source "$SCRIPT_DIR/scripts/lib/npm_remote.sh"
-source "$SCRIPT_DIR/scripts/lib/ddns_providers.sh"
+source "$SCRIPT_DIR/scripts/lib/npm-remote.sh"
+source "$SCRIPT_DIR/scripts/lib/ddns-providers.sh"
 
 : "${STAGE2_DNS_PROPAGATION_MAX_ATTEMPTS:=12}"
 : "${STAGE2_DNS_PROPAGATION_SLEEP_SECONDS:=10}"
@@ -58,7 +58,7 @@ source "$_STAGE2_CONCERNS_DIR/install.sh"
 unset _STAGE2_CONCERNS_DIR
 
 run_stage2() {
-    seed_root_config # ensure live config.yml exists before the bitrate write (env_gen.sh)
+    seed_root_config # ensure live config.yml exists before the bitrate write (env-gen.sh)
     if [[ "${DEMO:-0}" == "1" ]]; then
         return 0
     fi

@@ -1,4 +1,4 @@
-# Owns: Stage 1 non-interactive DEMO=1 collection and install handoff.
+# Owns: demo_* — Stage 1 non-interactive DEMO=1 collection and install handoff.
 # Sources: env state, wizard application, and Stage 1 install helpers.
 
 _demo_stage1_noninteractive() {

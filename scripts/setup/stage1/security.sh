@@ -1,4 +1,4 @@
-# Owns: Stage 1 firewall and system-hardening choices.
+# Owns: stage1_* — Stage 1 firewall and system-hardening choices.
 # Sources: wizard UI and Stage 1 wizard state.
 
 _stage1_collect_security() {

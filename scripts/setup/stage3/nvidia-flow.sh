@@ -1,4 +1,4 @@
-# Owns: NVIDIA driver-mode wizard screens (Standard/Unlock), action menu, and the run_nvidia orchestration.
+# Owns: stage3_* — NVIDIA driver-mode wizard screens (Standard/Unlock), action menu, and the run_nvidia orchestration.
 # Sources: stage3_* marker/state/jellyfin/nvidia-finalize helpers; scripts/setup/gpu/* driver modules.
 
 _stage3_nvidia_mode_more_copy() {

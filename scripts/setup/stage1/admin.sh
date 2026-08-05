@@ -1,4 +1,4 @@
-# Owns: Stage 1 administrator identity collection and review.
+# Owns: stage1_* — Stage 1 administrator identity collection and review.
 # Sources: wizard UI helpers, validators, and `_WIZ_*`/`_WIZ_PREV_*` wizard state.
 
 _stage1_collect_admin() {

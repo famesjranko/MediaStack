@@ -325,7 +325,21 @@ run_scan "$SCANNER" gate-tree "$DECL" "$gate_repo"
 assert_rc 1 "a declaration whose finding disappeared fails until the line is removed"
 assert_contains "$OUT" "DECLARED-BUT-ABSENT" "the shrink path names the stale declaration"
 
-expected=57
+# The deleted file's finding still exists in reachable history. Marking its
+# declaration history-only satisfies both gates: the tree gate ignores the
+# line, the history gate strips the marker and reconciles it normally.
+sed -i 's/^aws-access-token\t/history-only\taws-access-token\t/' "$DECL"
+run_scan "$SCANNER" gate-tree "$DECL" "$gate_repo"
+assert_rc 2 "a history-only declaration alone leaves the tree set empty and fails closed"
+printf 'generic-api-key\treadme\t0000000000000000\n' >>"$DECL"
+run_scan "$SCANNER" gate-tree "$DECL" "$gate_repo"
+assert_rc 1 "the tree gate reconciles only the plain declarations"
+assert_absent "$OUT" "aws-access-token" "the history-only line is invisible to the tree gate"
+sed -i '$d' "$DECL"
+run_scan "$SCANNER" gate-history "$DECL" "$gate_repo"
+assert_rc 0 "the history gate reconciles the history-only declaration"
+
+expected=61
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

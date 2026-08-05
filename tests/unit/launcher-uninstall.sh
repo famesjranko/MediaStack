@@ -3,8 +3,8 @@
 #
 # Launcher coverage for the "Uninstall MediaStack" day-2 menu option.
 # Verifies:
-#   1. "Uninstall MediaStack" appears in menu_post labels.
-#   2. menu_post routes the selection to action_uninstall.
+#   1. "Uninstall MediaStack" appears in launcher_menu_post labels.
+#   2. launcher_menu_post routes the selection to action_uninstall.
 
 set -uo pipefail
 
@@ -25,7 +25,7 @@ menu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
   STAGE_1_COMPLETE=1
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   echo "LABELS=[$(tr "\n" "|" < "$LABELS")]"
   rm -f "$LABELS"
 ' 2>&1)
@@ -41,7 +41,7 @@ dispatch_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_transcoding_available(){ return 1; }
   action_uninstall(){ echo DISPATCH_UNINSTALL; exit 0; }
   STAGE_1_COMPLETE=1
-  menu_post 2>&1
+  launcher_menu_post 2>&1
 ' 2>&1)
 assert_contains "$dispatch_out" "DISPATCH_UNINSTALL" \
     "launcher: Uninstall MediaStack routes to action_uninstall"

@@ -1,4 +1,4 @@
-# Owns: Stage 1 library-quality preset collection and review.
+# Owns: stage1_* — Stage 1 library-quality preset collection and review.
 # Sources: wizard UI, quality selector, and Stage 1 wizard state.
 
 _stage1_collect_quality() {

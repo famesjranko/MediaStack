@@ -6,7 +6,7 @@
 # stubbed to "ready". Asserts the collected remote state lands in .env and the
 # gate reports success. All network/NPM/LE/stack operations are stubbed.
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-install-ready.sh"

@@ -7,7 +7,7 @@ configure_radarr() {
     echo -e "${BOLD}Configuring Radarr...${NC}"
 
     local radarr_key
-    radarr_key=$(get_api_key "$SCRIPT_DIR/config/radarr/config.xml")
+    radarr_key=$(api_get_key "$SCRIPT_DIR/config/radarr/config.xml")
     if [[ -z "$radarr_key" ]]; then
         log_error "Cannot read Radarr API key"
         return 1
@@ -65,7 +65,7 @@ json.dump(config, sys.stdout)
 
     # Indexer add is hoisted to scripts/configure.sh main() so Sonarr and
     # Radarr can run concurrently — see the matching note in sonarr/main.sh.
-    save_api_key "RADARR_API_KEY" "$radarr_key"
+    env_save_api_key "RADARR_API_KEY" "$radarr_key"
 
     configure_arr_auth "radarr" "$base" "$radarr_key"
 }

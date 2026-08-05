@@ -200,7 +200,7 @@ run_remote_ready_recovery() {
     wait_all_healthy
     # Remote access just came up → install the fail2ban log-rotation reload
     # watcher. Sudo is primed above (prompt_sudo_cache).
-    if container_running fail2ban; then
+    if service_container_running fail2ban; then
         f2b_install_reload_watcher
     fi
     (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage,ddns-updater,wireguard)
@@ -295,7 +295,7 @@ run_nvidia_unlock_maintenance() {
     local _driver_ver="" _run_file="" jellyfin_running=false
     rm -rf "$_nvidia_tmp"
     mkdir -p "$_nvidia_tmp" || return 1
-    if ! _resolve_nvidia_driver; then
+    if ! nvidia_driver_resolve_driver; then
         rm -rf "$_nvidia_tmp"
         return 1
     fi
@@ -315,7 +315,7 @@ run_nvidia_unlock_maintenance() {
         return 1
     fi
 
-    if ! _install_nvidia_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp" \
+    if ! _nvidia_driver_install_run_file "$_run_file" "$_driver_ver" "$_nvidia_tmp" \
         || ! _configure_nvidia_container_toolkit; then
         $jellyfin_running && (cd "$SCRIPT_DIR" && docker compose start jellyfin >/dev/null 2>&1 || true)
         rm -rf "$_nvidia_tmp"

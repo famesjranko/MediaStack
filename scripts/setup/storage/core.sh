@@ -1,4 +1,4 @@
-# Owns: storage mode predicates, NAS mount-identity/sentinel checks.
+# Owns: storage_* — storage mode predicates, NAS mount-identity/sentinel checks.
 # Sourced by scripts/setup/storage.sh; depends on common.sh and
 # DEFAULT_NFS_OPTS/MEDIASTACK_STORAGE_* being defined by the parent.
 

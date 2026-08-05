@@ -2,18 +2,18 @@
 # MediaStack UI — pure bash rendering backend
 # =============================================================================
 # Implements all _render_* primitives using ANSI escape codes and unicode.
-# Zero external dependencies beyond bash 4+ (term_caps.sh is an internal sibling).
+# Zero external dependencies beyond bash 4+ (term-caps.sh is an internal sibling).
 #
 # This is one concrete backend for ui.sh's backend abstraction. Sourced by ui.sh
 # via _ui_select_backend() — do not source directly in application code.
 # Orchestration (demo mode, retry loops, non-TTY handling) lives in ui.sh.
 
-# Terminal-capability detection — colour gating lives in one place (term_caps.sh).
+# Terminal-capability detection — colour gating lives in one place (term-caps.sh).
 # Resolve via BASH_SOURCE: this file may be sourced standalone by unit tests where
 # $SCRIPT_DIR is the test dir, not the lib dir.
 _UI_TC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=term_caps.sh
-source "$_UI_TC_DIR/term_caps.sh"
+# shellcheck source=term-caps.sh
+source "$_UI_TC_DIR/term-caps.sh"
 
 _UI_FRAME_WIDTH=46
 

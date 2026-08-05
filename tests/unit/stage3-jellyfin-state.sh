@@ -26,7 +26,7 @@ log_skip() { :; }
 log_info() { :; }
 log_error() { :; }
 
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 
 env_val_from() {
     local env_path="$1"

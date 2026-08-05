@@ -5,7 +5,7 @@
 # reversible toggles — Bazarr subtitles, the host SMB share, and public search
 # indexers. Verifies:
 #   1. submenu_features renders ON/OFF state from .env; remote/GPU adds self-hide.
-#   2. menu_post always exposes "Features" and routes to submenu_features.
+#   2. launcher_menu_post always exposes "Features" and routes to submenu_features.
 #   3. menu choices dispatch to the right action_toggle_* handler.
 #   4. each toggle does the right, ADD-ONLY thing — and enabling indexers wires
 #      them into Sonarr/Radarr (configure.sh --only jackett,sonarr,radarr), not
@@ -96,7 +96,7 @@ nas_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$nas_out" "NAS storage watchdog: ON" "features: NAS watchdog shown ON on NAS install"
 
 # ---------------------------------------------------------------------------
-# 2. menu_post always exposes Features and routes it to submenu_features.
+# 2. launcher_menu_post always exposes Features and routes it to submenu_features.
 # ---------------------------------------------------------------------------
 menu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
@@ -105,15 +105,15 @@ menu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
   STAGE_1_COMPLETE=1
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
 assert_contains "$menu_out" "Features & settings (quality, bandwidth, subtitles, sharing, indexers)" \
-    "menu_post: Features item always shown"
+    "launcher_menu_post: Features item always shown"
 if grep -q "Add a feature" <<<"$menu_out"; then
-    fail "menu_post: legacy 'Add a feature' label removed"
+    fail "launcher_menu_post: legacy 'Add a feature' label removed"
 else
-    pass "menu_post: legacy 'Add a feature' label removed"
+    pass "launcher_menu_post: legacy 'Add a feature' label removed"
 fi
 
 route_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -124,9 +124,9 @@ route_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
   STAGE_1_COMPLETE=1
-  menu_post 2>&1
+  launcher_menu_post 2>&1
 ' 2>&1)
-assert_contains "$route_out" "DISPATCH_FEATURES" "menu_post: Features routes to submenu_features"
+assert_contains "$route_out" "DISPATCH_FEATURES" "launcher_menu_post: Features routes to submenu_features"
 
 # ---------------------------------------------------------------------------
 # 3. submenu_features dispatches each toggle label to the right handler.
@@ -202,7 +202,7 @@ EOF
     # Capture wizard_apply.py calls, but let the real python3 run the .env writer
     # (_env_write_kv invokes `python3 - <file> <key> <value>...` reading its script on stdin).
     python3(){ if [[ "$1" == "-" ]]; then command python3 "$@"; else echo "WIZARD $*" >> "$CAPTURE"; fi; }
-    ui_log(){ :; }; pause_for_menu(){ :; }; _show_action_result(){ :; }
+    ui_log(){ :; }; launcher_pause_for_menu(){ :; }; _show_action_result(){ :; }
     ui_confirm(){ return 0; }
     ui_choose(){ echo "Media only (recommended)"; }
     storage_install_watchdog(){ echo "WATCHDOG_INSTALL" >> "$CAPTURE"; }
@@ -327,7 +327,7 @@ EOF
       docker(){ echo "DOCKER $*" >> "$CAPTURE"; }
       # Capture wizard_apply.py calls, but let the real python3 run the .env writer.
       python3(){ if [[ "$1" == "-" ]]; then command python3 "$@"; else echo "WIZARD $*" >> "$CAPTURE"; fi; }
-      ui_log(){ :; }; pause_for_menu(){ :; }; _show_action_result(){ :; }
+      ui_log(){ :; }; launcher_pause_for_menu(){ :; }; _show_action_result(){ :; }
       # ui_confirm is the REAL primitive — its read sees EOF from </dev/null.
       _reload_env
       "$HANDLER" </dev/null
@@ -365,7 +365,7 @@ warn_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   printf "PUBLIC_INDEXERS_ENABLED=false\n" > "$tmp/.env"
   _docker_reachable(){ return 0; }
   ui_confirm(){ return 1; }        # decline right after the warning prints
-  pause_for_menu(){ :; }; _show_action_result(){ :; }
+  launcher_pause_for_menu(){ :; }; _show_action_result(){ :; }
   _reload_env
   action_toggle_indexers
   rm -rf "$tmp"

@@ -4,7 +4,7 @@
 # prompt for non-full-lan tiers), then chooses "Skip Stage 2" at the confirm
 # screen. Asserts the server tier is recorded and the skip path preserves it.
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-wg-server.sh"

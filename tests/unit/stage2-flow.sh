@@ -102,7 +102,7 @@ ui_log() {
     fi
 }
 
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
 source "$REPO_ROOT/scripts/lib/validators.sh"
 
@@ -177,7 +177,7 @@ seed_stage2_env_vars() {
 
 # v15 wg-easy takes plaintext INIT_PASSWORD; no bcrypt step. The wizard sets
 # _WIZ_WG_INIT_PASSWORD from _WIZ_ADMIN_PW inside _stage2_collect_wireguard and
-# env_gen.sh persists it. The Stage 2 skip path should leave it empty so the
+# env-gen.sh persists it. The Stage 2 skip path should leave it empty so the
 # remote profile stays inactive.
 seed_stage2_env_vars
 seed_jf_pw="$_WIZ_ADMIN_PW"
@@ -192,8 +192,8 @@ STAGE_1_COMPLETE=1
 _stage2_skip_https >/dev/null
 assert_eq "skipped" "$(env_val_from "$SCRIPT_DIR/.env" REMOTE_WEB_STATE)" "AUDIT: Stage 2 immediate skip persists skipped state"
 assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" WG_INIT_PASSWORD)" "AUDIT: Stage 2 immediate skip leaves WireGuard init password empty"
-_build_profile_args skip_profiles
-# Populated by _build_profile_args via its `local -n` nameref output param.
+profiles_build_args skip_profiles
+# Populated by profiles_build_args via its `local -n` nameref output param.
 # shellcheck disable=SC2154
 case " ${skip_profiles[*]} " in
     *" --profile remote "*) fail "AUDIT: Stage 2 immediate skip leaves remote profile inactive" "profiles=${skip_profiles[*]}" ;;
@@ -316,7 +316,7 @@ ui_input() {
 }
 _stage2_offer_ddns "true" >/dev/null
 assert_eq "good-secret" "${_WIZ_DDNS_FIELDS[password]}" "field loop rejects single quote, keeps good password"
-assert_eq "mediastack" "$(bash -c 'source scripts/lib/ddns_providers.sh; declare -A f=([domain]=d.test [password]=x); ddns_render_config_json dynu f' | python3 -c 'import sys,json; print(json.load(sys.stdin)["settings"][0]["username"])')" "Dynu renders the constant username placeholder (no prompt)"
+assert_eq "mediastack" "$(bash -c 'source scripts/lib/ddns-providers.sh; declare -A f=([domain]=d.test [password]=x); ddns_render_config_json dynu f' | python3 -c 'import sys,json; print(json.load(sys.stdin)["settings"][0]["username"])')" "Dynu renders the constant username placeholder (no prompt)"
 assert_eq "true" "$_WIZ_DDNS_PREFLIGHT_OK" "AUDIT: verify-accepted marks creds verified (messaging tier only)"
 assert_eq "2" "$(cat "$DDNS_PW_INPUT_COUNT_FILE")" "password field re-prompts after invalid single quote"
 assert_contains "$(cat "$LAST_WARN_FILE")" "single quote" "password validation explains single quote rejection"
@@ -367,7 +367,7 @@ ddns_verify_via_container() {
     # Reject: the caller clears the fields and re-prompts (like Dynu badauth before).
     return 1
 }
-stage2_dns_classify() {
+net_dns_classify() {
     printf 'no-a'
     return 1
 }
@@ -387,7 +387,7 @@ else
     pass "AUDIT: bad Dynu auth does not write DDNS config.json"
 fi
 
-stage2_dns_classify() {
+net_dns_classify() {
     printf 'ok'
     return 0
 }

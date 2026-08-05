@@ -1,12 +1,12 @@
 # Common fixture helpers for Stage 2 (remote access) PTY wizard scenarios.
 #
-# Mirrors wizard_stage1_common.sh. Writes a fixture that sources setup.sh,
+# Mirrors wizard-stage1-common.sh. Writes a fixture that sources setup.sh,
 # seeds a post-Stage-1 .env baseline (STAGE_1_COMPLETE=1 + admin/storage values
 # so _stage2_seed_wizard_defaults has coherent inputs), and stubs every slow,
 # networked, or dangerous operation Stage 2 would otherwise perform: image
 # pulls, stack start, NPM/Let's-Encrypt cert issuance, and the DNS / Dynu /
-# router-port probes. Scenarios override individual stubs (stage2_dns_classify,
-# ddns_verify_via_container, stage2_check_http_ports, stage2_le_classify, ...) to
+# router-port probes. Scenarios override individual stubs (net_dns_classify,
+# ddns_verify_via_container, net_check_http_ports, stage2_le_classify, ...) to
 # exercise a specific branch, then append the runner and drive via wizard_pty.
 
 wizard_stage2_write_base_fixture() {
@@ -31,21 +31,21 @@ sed -i \
 
 source ./setup.sh
 
-# Shared executor stubs live in one place — tests/lib/wizard_stub_common.sh.
+# Shared executor stubs live in one place — tests/lib/wizard-stub-common.sh.
 # Sourced AFTER setup.sh so the stubs shadow the real functions; Stage 2 keeps a
 # plain no-op configure.sh (no api key) and adds the remote-access services to the
 # compose-config stub.
-source tests/lib/wizard_stub_common.sh
+source tests/lib/wizard-stub-common.sh
 ms_stub_core
 ms_stub_common_env
 ms_stub_service_lifecycle
 _stub_compose_service_list() { printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer unpackerr flaresolverr uptime-kuma npm wireguard ddns-updater; }
 _stub_compose_image_list() { printf '%s\n' i1 i2 i3 i4 i5 i6 i7 i8 i9 i10 i11 i12 i13 i14; }
 # Stage 2 networked/heavy operations — overridable per scenario.
-stage2_dns_classify() { printf 'ok\n'; }
-stage2_check_http_ports() { printf 'ok\n'; }
+net_dns_classify() { printf 'ok\n'; }
+net_check_http_ports() { printf 'ok\n'; }
 ddns_verify_via_container() { return 0; }
-detect_lan_cidr() { printf '192.168.1.0/24\n'; }
+net_detect_lan_cidr() { printf '192.168.1.0/24\n'; }
 stage2_le_classify() { STAGE2_LE_CLASSIFICATION=ready; STAGE2_LE_READY_HOSTS=\"jellyfin.\$1, seerr.\$1\"; printf 'ready\\n'; return 0; }
 BASH
 chmod +x $fixture_path"
@@ -63,7 +63,7 @@ BASH"
 
 # Shared step-builder (prompt regexes live in tests/lib/wizard_prompts.json). The stage-2
 # scenarios call wizard_stage2_steps; the implementation is wizard_build_steps.
-source tests/lib/wizard_steps_common.sh
+source tests/lib/wizard-steps-common.sh
 wizard_stage2_steps() { wizard_build_steps "$@"; }
 
 wizard_stage2_run_pty() {

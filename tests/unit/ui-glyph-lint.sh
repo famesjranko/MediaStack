@@ -3,13 +3,13 @@
 #
 # Static completeness guard for the terminal-capability series. Every structural
 # glyph the product prints (box-drawing, the █░ bar, the braille spinner, the
-# ✓/✗ status icons) MUST come from term_caps.sh's _G_* vocabulary so it degrades
+# ✓/✗ status icons) MUST come from term-caps.sh's _G_* vocabulary so it degrades
 # to ASCII on a non-UTF-8 locale or the bare Linux console. A raw glyph literal
 # in an output line bypasses the gate and mojibakes — this test fails on any.
 #
 # Scope: all tracked product shell (scripts/**, mediastack, setup.sh). Comment
 # lines are ignored. One file is allowed to hold raw structural glyphs:
-#   - scripts/lib/term_caps.sh : defines the _G_* vocabulary itself.
+#   - scripts/lib/term-caps.sh : defines the _G_* vocabulary itself.
 # (reboot.sh's login banner — baked into /etc/profile.d at write time, run
 #  outside the MediaStack process where term_caps is unavailable — was made
 #  unconditionally ASCII, so it is no longer exempt.)
@@ -30,7 +30,7 @@ GLYPHS=(─ ═ │ ║ ╔ ╗ ╚ ╝ ╭ ╮ ╰ ╯ ┌ ┐ └ ┘ ├ ┤ 
 GREP_ARGS=()
 for g in "${GLYPHS[@]}"; do GREP_ARGS+=(-e "$g"); done
 
-ALLOW=" scripts/lib/term_caps.sh "
+ALLOW=" scripts/lib/term-caps.sh "
 
 cd "$REPO_ROOT" || exit 1
 # Via a temp file, not a pipeline: a subshell would hide a nonzero git exit

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# tests/api-matrix/push_jellyfin.sh — drive the PRODUCT Jellyfin configurator
+# tests/api-matrix/push-jellyfin.sh — drive the PRODUCT Jellyfin configurator
 # and the Sonarr/Radarr->Jellyfin notification connector against a live
 # Jellyfin, inside DinD. Reuses product code only; this file owns no API
 # logic of its own.
 #
-#   push_jellyfin.sh seed-config <name:type:path> [name:type:path ...]
-#   push_jellyfin.sh apply                                  # configure_jellyfin
-#   push_jellyfin.sh connect <sonarr|radarr> <api-base> <api-key>
+#   push-jellyfin.sh seed-config <name:type:path> [name:type:path ...]
+#   push-jellyfin.sh apply                                  # configure_jellyfin
+#   push-jellyfin.sh connect <sonarr|radarr> <api-base> <api-key>
 set -uo pipefail
 
 mode="$1"
@@ -28,7 +28,7 @@ export CONFIG_FILE
 
 if [[ "$mode" == "seed-config" ]]; then
     (($# >= 1)) || {
-        echo "usage: push_jellyfin.sh seed-config <name:type:path> [name:type:path ...]" >&2
+        echo "usage: push-jellyfin.sh seed-config <name:type:path> [name:type:path ...]" >&2
         exit 2
     }
     # Pass each spec as its own argv entry, not space-joined - library names
@@ -67,13 +67,13 @@ case "$mode" in
         ;;
     connect)
         [[ $# -eq 3 ]] || {
-            echo "usage: push_jellyfin.sh connect <sonarr|radarr> <api-base> <api-key>" >&2
+            echo "usage: push-jellyfin.sh connect <sonarr|radarr> <api-base> <api-key>" >&2
             exit 2
         }
         configure_arr_jellyfin_connection "$1" "$2" "$3"
         ;;
     *)
-        echo "usage: push_jellyfin.sh seed-config <name:type:path>...|apply|connect <sonarr|radarr> <api-base> <api-key>" >&2
+        echo "usage: push-jellyfin.sh seed-config <name:type:path>...|apply|connect <sonarr|radarr> <api-base> <api-key>" >&2
         exit 2
         ;;
 esac

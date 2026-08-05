@@ -1,6 +1,6 @@
 # tests/scenarios/wizard-ui-stage1-back-abort.sh — install confirmation back/abort safety.
 
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage1-back-abort.sh"

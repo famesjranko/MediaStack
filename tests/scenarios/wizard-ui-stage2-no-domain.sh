@@ -16,7 +16,7 @@
 # have_domain "No" -> confirm -> hostname -> picker (NO static-IP step, since "no
 # domain" implies DDNS).
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-no-domain.sh"

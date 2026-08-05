@@ -92,14 +92,37 @@ header contract:
 # Sources: <the files, functions, or environment it depends on>.
 ```
 
+### Identifier and file naming
+
+Shell functions are snake_case, prefixed with the owning module's prefix
+(e.g. `arr_connect`, `hardening_firewall_apply`); a leading `_` marks a
+file-private function, callable only from the file that defines it. A module
+declares its prefix on its `# Owns:` header line as one or more `<prefix>_*`
+tokens (e.g. `# Owns: net_* — shared network detection helpers.`); the naming
+gate enforces that every function defined in a file that declares a prefix
+matches it, `_`-allowance and `main` exempted.
+
+Shell variables that are exported or environment-facing, and script-scope
+globals, are UPPER_SNAKE (`_UPPER_SNAKE` when file-private); locals are
+lower_snake and always declared `local`. `readonly` is neither mandated nor
+forbidden.
+
+Python identifiers follow PEP 8 naming, enforced by Ruff's `N` (pep8-naming)
+rule set.
+
+File names: `*.sh` files are kebab-case; `*.py` files are snake_case, since a
+Python module name must also be a valid import identifier.
+
 ## Enforcement
 
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
 | Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
+| Tracked shell filename is kebab-case, tracked python filename is snake_case | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), with no exceptions: the grandfathered offenders have all been renamed and `tests/shell-naming.allowlist` deleted | `lint-shellcheck` |
+| A `scripts/*.sh` module (or the root `mediastack` dispatcher) that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
-| Python passes ruff lint and format check | `./tests/check.sh ruff` | `lint-ruff` |
+| Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
 | API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`) | — |
 | No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled against `tests/secret-scan.expected` | `secret-scan` |
@@ -159,6 +182,17 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
   `templates/` layout is a convention; no checker currently verifies it.
 - **New-file header contract.** The two-line `Owns`/`Sources` header is a
   convention; no checker currently verifies it.
+- **Shell function-prefix discipline for undeclared modules.** The naming gate
+  only checks a `scripts/*.sh` file (or the root `mediastack` dispatcher)
+  once it declares `<prefix>_*` on its
+  `# Owns:` line; declaration is opt-in, so a module that declares no prefix
+  is left unchecked.
+- **Cross-file calls of `_`-private functions.** A leading `_` marking a
+  function callable only from its defining file is a convention; nothing
+  stops another file from calling it anyway.
+- **Shell variable casing.** UPPER_SNAKE for globals/exports, lower_snake for
+  `local`s, is a convention; there is no reliable static check for shell
+  variable scope, so this is left to review.
 
 - **The "Adding a New Service" checklist** in `project/structure.md`. Nothing
   verifies that the tree section, the `config.yml` section, or the

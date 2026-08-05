@@ -18,5 +18,5 @@ endpoints:
   - {id: main-settings-update, method: POST, path: /settings/main, sends: [defaultPermissions, defaultQuotas], reads: [], callers: [scripts/services/seerr/main.sh]}
   - {id: network-settings-get, method: GET, path: /settings/network, sends: [], reads: [trustProxy], callers: [scripts/services/seerr/main.sh]}
   - {id: network-settings-update, method: POST, path: /settings/network, sends: [trustProxy], reads: [], callers: [scripts/services/seerr/main.sh]}
-  - {id: arr-settings-get, method: GET, path: "/settings/{id}", sends: [], reads: [], callers: [scripts/services/seerr/arr_connect.sh]}
-  - {id: arr-settings-update, method: POST, path: "/settings/{id}", sends: [name, hostname, port, useSsl, urlBase, serverType, apiKey, activeProfileId, activeProfileName, activeDirectory, is4k, isDefault, syncEnabled, preventSearch, activeLanguageProfileId, enableSeasonFolders, minimumAvailability], reads: [], callers: [scripts/services/seerr/arr_connect.sh]}
+  - {id: arr-settings-get, method: GET, path: "/settings/{id}", sends: [], reads: [], callers: [scripts/services/seerr/arr-connect.sh]}
+  - {id: arr-settings-update, method: POST, path: "/settings/{id}", sends: [name, hostname, port, useSsl, urlBase, serverType, apiKey, activeProfileId, activeProfileName, activeDirectory, is4k, isDefault, syncEnabled, preventSearch, activeLanguageProfileId, enableSeasonFolders, minimumAvailability], reads: [], callers: [scripts/services/seerr/arr-connect.sh]}

@@ -25,7 +25,7 @@ sudo() { \"\$@\"; }
 source scripts/lib/common.sh
 source scripts/lib/ui.sh
 source scripts/setup/override.sh
-source scripts/setup/env_gen.sh
+source scripts/setup/env-gen.sh
 source scripts/setup/wizard.sh
 source scripts/setup/stack.sh
 

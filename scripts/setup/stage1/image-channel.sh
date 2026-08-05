@@ -1,4 +1,4 @@
-# Owns: Stage 1 install-time image-channel choice.
+# Owns: stage1_* — Stage 1 install-time image-channel choice.
 # Sources: wizard UI and Stage 1 wizard state.
 
 _stage1_collect_image_channel() {

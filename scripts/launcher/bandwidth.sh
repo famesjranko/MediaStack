@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Owns: The qBittorrent bandwidth-limit day-2 action.
+# Owns: action_* — The qBittorrent bandwidth-limit day-2 action.
 # Sources: launcher globals, .env, scripts/lib/ui.sh, validators.sh, and qBittorrent helpers.
 
 # Guided day-2 adjust of qBittorrent download/upload speed limits (MB/s; the knob
@@ -15,12 +15,12 @@ action_adjust_bandwidth() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     if ! _service_is_running qbittorrent; then
         ui_log warn "qBittorrent isn't running - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -46,12 +46,12 @@ action_adjust_bandwidth() {
 
     if [[ "$new_dl" == "$cur_dl" && "$new_ul" == "$cur_ul" ]]; then
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     ui_confirm "Apply download ${new_dl} MB/s / upload ${new_ul} MB/s to qBittorrent now?" yes || {
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     }
 
@@ -70,7 +70,7 @@ action_adjust_bandwidth() {
         _reload_env
     fi
     _show_action_result "$rc" "Adjust bandwidth limits"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 # Atomically write + secure a DDNS config.json payload to the live path, reusing
@@ -78,7 +78,7 @@ action_adjust_bandwidth() {
 # symlink-guarded, sudo fallback). The temp file lives OUTSIDE config/ddns-updater/
 # (that dir is writable by the uid-1000 container). Used for both the new write and
 # the rollback, so verify-first apply and restore share one code path. Returns
-# non-zero on any failure. Requires env_gen.sh to have been sourced by the caller.
+# non-zero on any failure. Requires env-gen.sh to have been sourced by the caller.
 # Set by _ddns_write_live_config to 1 the instant the live config.json is replaced
 # (the mv lands), before the perms repair. Lets action_change_ddns tell a write
 # that never touched the file (mv failed -> old config still intact) from one that

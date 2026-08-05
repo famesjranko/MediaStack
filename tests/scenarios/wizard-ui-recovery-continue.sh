@@ -4,7 +4,7 @@
 # then "Continue without changes" in the recovery submenu. Asserts both menus
 # render and no changes are made (.env preserved).
 
-source tests/lib/wizard_recovery_common.sh
+source tests/lib/wizard-recovery-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-recovery-continue.sh"

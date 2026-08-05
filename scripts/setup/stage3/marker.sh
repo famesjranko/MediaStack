@@ -1,4 +1,4 @@
-# Owns: The NVIDIA post-reboot finalize marker: path, boot-id read, write/remove, field readers, and reboot-prompt gating.
+# Owns: stage3_* — The NVIDIA post-reboot finalize marker: path, boot-id read, write/remove, field readers, and reboot-prompt gating.
 # Sources: python3 for marker JSON; stage3_prompt_nvidia_reboot (nvidia-finalize.sh) via stage3_prompt_pending_nvidia_reboot.
 
 _stage3_marker_path() {

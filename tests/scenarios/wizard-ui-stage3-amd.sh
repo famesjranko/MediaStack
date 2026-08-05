@@ -4,7 +4,7 @@
 # succeed, so VAAPI is configured and verified. Asserts JELLYFIN_GPU=amd and
 # complete state.
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-amd.sh"

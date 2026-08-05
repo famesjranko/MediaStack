@@ -14,9 +14,9 @@ mkdir -p config/ddns-updater
 source ./setup.sh
 
 # Shared executor stubs (run-real-in-sandbox philosophy) live in one place —
-# tests/lib/wizard_stub_common.sh. Sourced here at fixture-run time, AFTER
+# tests/lib/wizard-stub-common.sh. Sourced here at fixture-run time, AFTER
 # setup.sh, so the stubs shadow the real functions.
-source tests/lib/wizard_stub_common.sh
+source tests/lib/wizard-stub-common.sh
 ms_stub_core $api_key
 ms_stub_common_env
 ms_stub_service_lifecycle
@@ -37,7 +37,7 @@ BASH"
 
 # Shared step-builder (prompt regexes live in tests/lib/wizard_prompts.json). The stage-1
 # scenarios call wizard_stage1_steps; the implementation is wizard_build_steps.
-source tests/lib/wizard_steps_common.sh
+source tests/lib/wizard-steps-common.sh
 wizard_stage1_steps() { wizard_build_steps "$@"; }
 
 wizard_stage1_run_pty() {

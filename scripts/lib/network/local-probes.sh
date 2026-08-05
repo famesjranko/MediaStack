@@ -1,4 +1,4 @@
-# Owns: Local HTTP and port-boundary probes.
+# Owns: net_* — Local HTTP and port-boundary probes.
 # Sources: scripts/lib/network.sh state plus nc, curl, and service-local network state.
 net_is_port_locally_bound() {
     local port="$1"

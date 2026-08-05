@@ -1,4 +1,4 @@
-# Owns: Stage 1 SMB enablement, retry, and share-scope collection.
+# Owns: stage1_* — Stage 1 SMB enablement, retry, and share-scope collection.
 # Sources: wizard UI, SMB port validator, and Stage 1 wizard state.
 
 # File sharing (SMB): enable + share scope in one section.

@@ -101,7 +101,7 @@ fixture logs, so it guards the fail2ban engine/filters against a *fail2ban* imag
 ## CI image drift alert
 
 The `Image Drift Alert` GitHub workflow runs weekly and on demand. It resolves each compose image tag
-to its current remote digest with `scripts/image-drift.py`, compares that with
+to its current remote digest with `scripts/image_drift.py`, compares that with
 `docs/operations/image-digests.lock`, and fails when a tag moved.
 
 This is an alert only:
@@ -116,8 +116,8 @@ mirror-cached `:latest` tags. Before preflight, freeze the current digest snapsh
 
 ```bash
 mkdir -p .tmp
-python3 scripts/image-drift.py --snapshot-current .tmp/image-digests.current.tsv
-python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv
+python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv
+python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv
 ```
 
 Accepting drifted services is **selective by default**, not all-or-nothing: accept only the rows
@@ -125,7 +125,7 @@ whose preflight passed and leave the rest pending until they are fixed, manually
 deliberately deferred.
 
 ```bash
-python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
+python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
 ```
 
 `--accept-services` preserves every other row and its timestamp, and refuses if the snapshot adds or
@@ -134,7 +134,7 @@ only when every drifted service's preflight passed and you want to accept the wh
 step:
 
 ```bash
-python3 scripts/image-drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
+python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
 ```
 
 **Accept is receipt-gated.** A passing `./tests/run.sh` that applied `MS_TEST_IMAGE_OVERRIDES` records
@@ -240,6 +240,6 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 | radarr | latest | stable | scenario:fresh-install | scripts/services/radarr/main.sh + tests/assertions/radarr.sh |
 | sonarr | latest | stable | scenario:fresh-install | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh |
 | unpackerr | latest | stable | scenario:unpackerr | docker-compose.yml unpackerr environment (UN_SONARR_0_*/UN_RADARR_0_*) + tests/scenarios/unpackerr.sh — proves generated-key/authenticated completed-Radarr-queue → configured torrent-path archive extraction; does not prove a live qBittorrent transfer or Arr import |
-| uptime-kuma | major:2 | major-gated | scenario:fresh-install | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime_kuma.sh |
+| uptime-kuma | major:2 | major-gated | scenario:fresh-install | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime-kuma.sh |
 | wireguard | major:15 | unstable | scenario:wireguard | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios |
 <!-- upgrades-manifest:end -->

@@ -65,7 +65,7 @@ contract_mock_wait_ready() {
 }
 
 # Seed the API-key XML each service normally writes to config/<app>/config.xml
-# on first boot — the configurator reads it via get_api_key(), and there is no
+# on first boot — the configurator reads it via api_get_key(), and there is no
 # config.yml/env surface for that value (a known product seam), so the
 # scenario has to write the file directly, the same way it
 # would exist on a real host after Sonarr/Radarr's own first start.
@@ -110,7 +110,7 @@ conn.close()
 \""
 }
 
-# configure_bazarr is gated behind container_running bazarr (scripts/configure.sh)
+# configure_bazarr is gated behind service_container_running bazarr (scripts/configure.sh)
 # — a real check against a real docker container, not something reachable
 # through config.yml/.env. No compose is up in this image-free scenario, so a
 # minimal placeholder container stands in for it; all HTTP traffic still goes

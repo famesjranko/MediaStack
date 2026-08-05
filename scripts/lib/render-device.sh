@@ -1,4 +1,4 @@
-# Owns: shared GPU render-device resolution (vendor id, node scan, fallback rc).
+# Owns: render_* — shared GPU render-device resolution (vendor id, node scan, fallback rc).
 # Sources: /sys/class/drm device metadata; no setup globals.
 # =============================================================================
 # MediaStack Setup — shared render-device helpers

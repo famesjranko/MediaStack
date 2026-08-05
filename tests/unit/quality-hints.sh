@@ -2,7 +2,7 @@
 # tests/unit/quality-hints.sh
 #
 # Regression guard: the shared two-axis quality picker
-# (scripts/lib/quality_select.sh, used by BOTH the install wizard and the day-2
+# (scripts/lib/quality-select.sh, used by BOTH the install wizard and the day-2
 # launcher) must show size-menu GB hints that match the resolution just chosen —
 # 720p shows 720p sizes, 1080p shows 1080p sizes — NOT always the 1080p column
 # with a contradictory "at 1080p" suffix.
@@ -51,7 +51,7 @@ pick_size_labels() {
       printf "%s\n" "$@" > "$CAP"
       printf "%s" "$1"; return 0
     }
-    source "$SCRIPT_DIR/scripts/lib/quality_select.sh"
+    source "$SCRIPT_DIR/scripts/lib/quality-select.sh"
     _r=""; _s=""
     if ! quality_select_pick _r _s >/dev/null 2>&1; then
       echo "PICKER_FAILED"; rm -f "$CAP"; exit 0

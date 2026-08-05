@@ -4,7 +4,7 @@
 # Unit tests for scripts/lib/http.sh helpers. No DinD, no Docker, no network.
 # Mocks curl as a bash function to control HTTP responses. The mock handles
 # two calling conventions: _http_request (code appended to stdout) and
-# js_post (body to -o file, code to stdout).
+# http_json_post (body to -o file, code to stdout).
 
 set -uo pipefail
 
@@ -104,49 +104,49 @@ source "$REPO_ROOT/scripts/lib/http.sh"
 assert_eq "function" "$(type -t http_check)" "http.sh: include guard keeps functions available on repeat source"
 
 # ---------------------------------------------------------------------------
-# json_body
+# http_json_body
 # ---------------------------------------------------------------------------
 
-result=$(json_body user admin pass secret)
+result=$(http_json_body user admin pass secret)
 assert_eq '{"user": "admin", "pass": "secret"}' "$result" \
-    "json_body: basic key-value"
+    "http_json_body: basic key-value"
 
-result=$(json_body msg 'He said "hello" & back\\slash')
+result=$(http_json_body msg 'He said "hello" & back\\slash')
 expected=$(python3 -c 'import json; print(json.dumps({"msg": "He said \"hello\" & back\\\\slash"}))')
 assert_eq "$expected" "$result" \
-    "json_body: JSON-special characters escaped"
+    "http_json_body: JSON-special characters escaped"
 
-if json_body one 2>/dev/null; then
-    fail "json_body: odd arg count exits non-zero"
+if http_json_body one 2>/dev/null; then
+    fail "http_json_body: odd arg count exits non-zero"
 else
-    pass "json_body: odd arg count exits non-zero"
+    pass "http_json_body: odd arg count exits non-zero"
 fi
 
 # ---------------------------------------------------------------------------
-# json_obj — typed key/type/value triples
+# http_json_obj — typed key/type/value triples
 # ---------------------------------------------------------------------------
 
-assert_eq '{"Role": 1}' "$(json_obj Role int 1)" "json_obj: int type"
-assert_eq '{"trustProxy": true}' "$(json_obj trustProxy bool true)" "json_obj: bool true"
+assert_eq '{"Role": 1}' "$(http_json_obj Role int 1)" "http_json_obj: int type"
+assert_eq '{"trustProxy": true}' "$(http_json_obj trustProxy bool true)" "http_json_obj: bool true"
 # The trap: bool('false') is truthy in Python; must map "false" -> JSON false.
-assert_eq '{"trustProxy": false}' "$(json_obj trustProxy bool false)" "json_obj: bool false is not truthy"
-assert_eq '{"value": "404", "meta": {}}' "$(json_obj value str 404 meta json '{}')" "json_obj: str + nested json literal"
-assert_eq '{"user": "admin", "role": 1}' "$(json_obj user str admin role int 1)" "json_obj: multiple triples preserve order"
+assert_eq '{"trustProxy": false}' "$(http_json_obj trustProxy bool false)" "http_json_obj: bool false is not truthy"
+assert_eq '{"value": "404", "meta": {}}' "$(http_json_obj value str 404 meta json '{}')" "http_json_obj: str + nested json literal"
+assert_eq '{"user": "admin", "role": 1}' "$(http_json_obj user str admin role int 1)" "http_json_obj: multiple triples preserve order"
 
-result=$(json_obj pw str 'He said "hi" \ end')
+result=$(http_json_obj pw str 'He said "hi" \ end')
 expected=$(python3 -c 'import json; print(json.dumps({"pw": "He said \"hi\" \\ end"}))')
-assert_eq "$expected" "$result" "json_obj: str value JSON-escaped"
+assert_eq "$expected" "$result" "http_json_obj: str value JSON-escaped"
 
-if json_obj a b 2>/dev/null; then
-    fail "json_obj: non-triple arg count exits non-zero"
+if http_json_obj a b 2>/dev/null; then
+    fail "http_json_obj: non-triple arg count exits non-zero"
 else
-    pass "json_obj: non-triple arg count exits non-zero"
+    pass "http_json_obj: non-triple arg count exits non-zero"
 fi
 
-if json_obj k bogus v 2>/dev/null; then
-    fail "json_obj: unknown type exits non-zero"
+if http_json_obj k bogus v 2>/dev/null; then
+    fail "http_json_obj: unknown type exits non-zero"
 else
-    pass "json_obj: unknown type exits non-zero"
+    pass "http_json_obj: unknown type exits non-zero"
 fi
 
 # ---------------------------------------------------------------------------
@@ -269,36 +269,36 @@ assert_eq "" "$LAST_LOG_FN" "post_restart_wait: timeout does not log"
 unset -f sleep
 
 # ---------------------------------------------------------------------------
-# js_post — 200 and 201 return 0
+# http_json_post — 200 and 201 return 0
 # ---------------------------------------------------------------------------
 
 reset_mock
 MOCK_CURL_CODE=200
 MOCK_CURL_BODY='{"id":1}'
-js_post "test-svc" "http://fake/ep" '{"k":"v"}' "/tmp/test-cookie" >/dev/null
+http_json_post "test-svc" "http://fake/ep" '{"k":"v"}' "/tmp/test-cookie" >/dev/null
 rc=$?
-assert_eq "0" "$rc" "js_post: 200 returns 0"
-assert_eq "log_ok" "$LAST_LOG_FN" "js_post: 200 calls log_ok"
+assert_eq "0" "$rc" "http_json_post: 200 returns 0"
+assert_eq "log_ok" "$LAST_LOG_FN" "http_json_post: 200 calls log_ok"
 
 reset_mock
 MOCK_CURL_CODE=201
 MOCK_CURL_BODY='{"id":2}'
-js_post "test-svc" "http://fake/ep" '{"k":"v"}' "/tmp/test-cookie" >/dev/null
+http_json_post "test-svc" "http://fake/ep" '{"k":"v"}' "/tmp/test-cookie" >/dev/null
 rc=$?
-assert_eq "0" "$rc" "js_post: 201 returns 0"
+assert_eq "0" "$rc" "http_json_post: 201 returns 0"
 
 # ---------------------------------------------------------------------------
-# js_post — 4xx returns 1 with body in warning
+# http_json_post — 4xx returns 1 with body in warning
 # ---------------------------------------------------------------------------
 
 reset_mock
 MOCK_CURL_CODE=422
 MOCK_CURL_BODY='validation failed'
-js_post "test-svc" "http://fake/ep" '{"k":"v"}' "/tmp/test-cookie" >/dev/null
+http_json_post "test-svc" "http://fake/ep" '{"k":"v"}' "/tmp/test-cookie" >/dev/null
 rc=$?
-assert_eq "1" "$rc" "js_post: 4xx returns 1"
-assert_eq "log_warn" "$LAST_LOG_FN" "js_post: 4xx calls log_warn"
-assert_contains "$LAST_LOG_MSG" "validation failed" "js_post: 4xx includes response body"
+assert_eq "1" "$rc" "http_json_post: 4xx returns 1"
+assert_eq "log_warn" "$LAST_LOG_FN" "http_json_post: 4xx calls log_warn"
+assert_contains "$LAST_LOG_MSG" "validation failed" "http_json_post: 4xx includes response body"
 
 echo -e "${CYAN}◀ http-helpers done${NC}"
 summary

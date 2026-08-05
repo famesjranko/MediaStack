@@ -3,7 +3,7 @@
 # With GPU_TYPE=none, Stage 3 auto-skips without any prompt and leaves Jellyfin
 # on software transcoding. No interactive steps — just verify the skip outcome.
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-no-gpu.sh"

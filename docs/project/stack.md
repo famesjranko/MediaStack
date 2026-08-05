@@ -97,7 +97,7 @@ explaining and are not checked for completeness by anything.
 - docker-ce, docker-compose-plugin
 - python3, python3-yaml (config.yml parsing)
 - curl (API calls + healthchecks + the wizard's primary connection speed test via Cloudflare)
-- envsubst (gettext-base — legacy shell-template compatibility; variable JSON uses Python/json_body)
+- envsubst (gettext-base — legacy shell-template compatibility; variable JSON uses Python/http_json_body)
 - openssl (password/hash generation)
 - git (nvidia-patch reviewed commit fetch/checkout)
 - htop (interactive process/CPU/memory monitor)
@@ -146,11 +146,11 @@ explaining and are not checked for completeness by anything.
 # Day-2 change quality profile: ./mediastack → "Features & settings" → "Change quality profile" (resolution × size, renamed in place, no orphan)
 # Day-2 uninstall: ./mediastack → "Uninstall MediaStack" (transactional teardown; removes only recorded MediaStack host changes; data/ and config/ preserved)
 # Per-service update-availability scan (table / TSV):
-python3 scripts/image-drift.py --status
-python3 scripts/image-drift.py --status-tsv
+python3 scripts/image_drift.py --status
+python3 scripts/image_drift.py --status-tsv
 
 # README Stable-baseline badge guard (no network; derives from docs/operations/image-digests.lock):
-python3 scripts/image-drift.py --check-readme-badges README.md
+python3 scripts/image_drift.py --check-readme-badges README.md
 
 # Re-apply NVIDIA patch after driver update
 ./scripts/nvidia-repatch.sh

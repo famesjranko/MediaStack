@@ -5,7 +5,7 @@ openapi: https://raw.githubusercontent.com/Radarr/Radarr/develop/src/Radarr.Api.
 endpoints:
   - {id: config-naming-get, method: GET, path: /config/naming, sends: [], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: config-naming-update, method: PUT, path: /config/naming, sends: [renameMovies, replaceIllegalCharacters, standardMovieFormat, movieFolderFormat], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
-  - {id: quality-profile-list, method: GET, path: /qualityprofile, sends: [], reads: [id, name, cutoff, upgradeAllowed, "items[].quality.id", "items[].allowed", "formatItems[].score"], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh, scripts/services/seerr/arr_connect.sh]}
+  - {id: quality-profile-list, method: GET, path: /qualityprofile, sends: [], reads: [id, name, cutoff, upgradeAllowed, "items[].quality.id", "items[].allowed", "formatItems[].score"], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh, scripts/services/seerr/arr-connect.sh]}
   - {id: quality-profile-create, method: POST, path: /qualityprofile, sends: [name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/quality.sh]}
   - {id: quality-profile-get, method: GET, path: "/qualityprofile/{id}", sends: [], reads: [id, name, "formatItems[].score"], callers: [scripts/lib/arr/quality.sh]}
   - {id: quality-profile-update, method: PUT, path: "/qualityprofile/{id}", sends: [id, name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh]}

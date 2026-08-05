@@ -14,8 +14,8 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="nvidia-patch"
 scenario_begin "$CURRENT_SCENARIO"
 
-# shellcheck source=../../scripts/lib/nvidia_patch.sh
-source "$REPO_ROOT/scripts/lib/nvidia_patch.sh"
+# shellcheck source=../../scripts/lib/nvidia-patch.sh
+source "$REPO_ROOT/scripts/lib/nvidia-patch.sh"
 
 set +e
 set +u

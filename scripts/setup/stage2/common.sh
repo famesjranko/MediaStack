@@ -1,5 +1,5 @@
-# Owns: Stage 2 shared defaults, choice labels, state helpers, and HTTPS probes.
-# Sources: setup globals, scripts/lib/common.sh, scripts/lib/npm_remote.sh, and scripts/lib/ddns_providers.sh.
+# Owns: stage2_* — Stage 2 shared defaults, choice labels, state helpers, and HTTPS probes.
+# Sources: setup globals, scripts/lib/common.sh, scripts/lib/npm-remote.sh, and scripts/lib/ddns-providers.sh.
 
 stage2_offer_choices() {
     printf '%s\n' "Enable remote access" "Skip for now" "Tell me more"
@@ -95,7 +95,7 @@ _stage2_seed_wizard_defaults() {
     _WIZ_USES_DDNS="true"
 }
 
-_stage2_preserve_stage1_marker() {
+stage2_preserve_stage1_marker() {
     if [[ -f "$SCRIPT_DIR/.env" && "${STAGE_1_COMPLETE:-}" == "1" ]]; then
         sed -i 's/^STAGE_1_COMPLETE=$/STAGE_1_COMPLETE=1/' "$SCRIPT_DIR/.env"
     fi

@@ -72,7 +72,7 @@ PY
 }
 
 _qbtm_seed_config_limits() {
-    dind_exec "bash tests/api-matrix/push_qbt.sh seed-config 11 5"
+    dind_exec "bash tests/api-matrix/push-qbt.sh seed-config 11 5"
 }
 
 matrix_qbittorrent() {
@@ -91,7 +91,7 @@ matrix_qbittorrent() {
     fi
 
     # State 1: the real first-run/re-run configurator applies config.yml.
-    if dind_exec "bash tests/api-matrix/push_qbt.sh apply"; then
+    if dind_exec "bash tests/api-matrix/push-qbt.sh apply"; then
         pass "qBittorrent api-matrix: product configurator applied"
     else
         fail "qBittorrent api-matrix: product configurator applied"
@@ -147,7 +147,7 @@ matrix_qbittorrent() {
     # State 2: .env limits take precedence over the config.yml values above.
     env_set QBT_DL_LIMIT 17
     env_set QBT_UL_LIMIT 7
-    if dind_exec "bash tests/api-matrix/push_qbt.sh apply"; then
+    if dind_exec "bash tests/api-matrix/push-qbt.sh apply"; then
         pass "qBittorrent api-matrix: product configurator reapplied with .env limits"
     else
         fail "qBittorrent api-matrix: product configurator reapplied with .env limits"
@@ -167,7 +167,7 @@ matrix_qbittorrent() {
     # State 3: the day-2 action may only mutate the two speed-limit fields.
     before_prefs="$prefs"
     before_categories="$categories"
-    if dind_exec "bash tests/api-matrix/push_qbt.sh speedlimit 7 3"; then
+    if dind_exec "bash tests/api-matrix/push-qbt.sh speedlimit 7 3"; then
         pass "qBittorrent api-matrix: day-2 speed-limit action applied"
     else
         fail "qBittorrent api-matrix: day-2 speed-limit action applied"

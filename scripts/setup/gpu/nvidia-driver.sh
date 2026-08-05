@@ -1,7 +1,7 @@
-# Owns: NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
-# Sources: gpu.sh globals, common.sh logging, and nvidia_patch.sh helpers.
+# Owns: nvidia_* — NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
+# Sources: gpu.sh globals, common.sh logging, and nvidia-patch.sh helpers.
 # shellcheck disable=SC2154 # _nvidia_tmp is a documented caller-owned workspace.
-check_secure_boot() {
+nvidia_driver_check_secure_boot() {
     if ! command -v mokutil &>/dev/null; then
         sudo apt-get install -y -qq mokutil >/dev/null 2>&1 || true
     fi
@@ -18,7 +18,7 @@ check_secure_boot() {
 
 # Check whether nouveau is bound to any NVIDIA GPU via sysfs PCI driver
 # binding. lsmod alone is insufficient — the installer checks sysfs.
-nouveau_is_active() {
+nvidia_driver_nouveau_is_active() {
     lsmod 2>/dev/null | grep -q '^nouveau ' && return 0
     # `ls -l` is intentional: we match the driver symlink TARGET (-> .../nouveau),
     # which a filename glob cannot inspect.
@@ -29,8 +29,8 @@ nouveau_is_active() {
 
 # Attempt to unload nouveau at runtime. Returns 0 if nouveau is no longer
 # active (never was, or we successfully removed it).
-try_unload_nouveau() {
-    if ! nouveau_is_active; then
+nvidia_driver_try_unload_nouveau() {
+    if ! nvidia_driver_nouveau_is_active; then
         return 0
     fi
 
@@ -48,7 +48,7 @@ try_unload_nouveau() {
 
     sudo modprobe -r nouveau drm_kms_helper drm 2>/dev/null || true
 
-    if ! nouveau_is_active; then
+    if ! nvidia_driver_nouveau_is_active; then
         log_ok "Nouveau unloaded - no reboot required for driver install"
         return 0
     fi
@@ -59,7 +59,7 @@ try_unload_nouveau() {
 
 # Check if NVIDIA kernel modules were installed (via DKMS or direct) even
 # though the installer reported failure.
-nvidia_modules_installed() {
+nvidia_driver_modules_installed() {
     ls /lib/modules/"$(uname -r)"/updates/dkms/nvidia*.ko* &>/dev/null && return 0
     ls /lib/modules/"$(uname -r)"/updates/nvidia*.ko* &>/dev/null && return 0
     ls /lib/modules/"$(uname -r)"/extra/nvidia*.ko* &>/dev/null && return 0
@@ -67,7 +67,7 @@ nvidia_modules_installed() {
     return 1
 }
 
-_install_nvidia_run_file() {
+_nvidia_driver_install_run_file() {
     local run_file="$1" driver_version="$2" temp_dir="$3"
     # ui_spin captures output to a log and surfaces it on failure, so the noisy
     # "Uncompressing..."/dpkg output stays hidden behind the spinner.
@@ -79,7 +79,7 @@ _install_nvidia_run_file() {
 # Check NVIDIA's supportedchips.html for a driver version to determine
 # whether a GPU (by PCI ID) is current or needs a legacy branch.
 # Echoes "current" or "legacy_NNN" (e.g. "legacy_580"). Empty on failure.
-_check_nvidia_compat() {
+_nvidia_driver_check_compat() {
     local _ver="$1" _pci_id="$2"
     local _url="https://download.nvidia.com/XFree86/Linux-x86_64/${_ver}/README/supportedchips.html"
     local _html
@@ -109,7 +109,7 @@ sys.exit(1)
 #
 # Sets caller variables: _driver_ver, _run_file
 # Uses caller variables: _nvidia_tmp
-_resolve_nvidia_driver() {
+nvidia_driver_resolve_driver() {
     log_info "Detecting NVENC-patchable driver versions..."
     local _readme_url
     _readme_url=$(nvidia_patch_readme_url)
@@ -143,7 +143,7 @@ _resolve_nvidia_driver() {
 
     if [[ -n "$_gpu_pci_id" ]]; then
         log_info "Checking GPU compatibility (device 0x${_gpu_pci_id})..."
-        _compat_result=$(_check_nvidia_compat "$_driver_ver" "$_gpu_pci_id") || true
+        _compat_result=$(_nvidia_driver_check_compat "$_driver_ver" "$_gpu_pci_id") || true
     fi
 
     if [[ "$_compat_result" == legacy_* ]]; then
@@ -182,13 +182,13 @@ _resolve_nvidia_driver() {
 
 # Debian release identifiers, read in a subshell so /etc/os-release vars don't
 # leak as globals. Small mockable seams keep the apt helpers/tests deterministic.
-_debian_codename() {
+nvidia_driver_debian_codename() {
     (
         . /etc/os-release 2>/dev/null
         printf '%s' "${VERSION_CODENAME:-}"
     )
 }
-_debian_version_id() {
+_nvidia_driver_debian_version_id() {
     (
         . /etc/os-release 2>/dev/null
         printf '%s' "${VERSION_ID:-}"
@@ -198,7 +198,7 @@ _debian_version_id() {
 # Echo the apt version of a package, optionally restricted to a release (matched
 # against the archive column of `apt-cache madison`). Empty if unavailable.
 # Pure-bash parsing avoids the SIGPIPE/pipefail flake of piping into head/grep -q.
-_apt_candidate_version() {
+nvidia_driver_apt_candidate_version() {
     local _pkg="$1" _release="${2:-}"
     local _madison _name _verfield _archive _ver=""
     _madison=$(apt-cache madison "$_pkg" 2>/dev/null) || _madison=""
@@ -221,14 +221,14 @@ _apt_candidate_version() {
 # never edits the user's own apt configuration. Codename/version aware: Debian 11
 # (bullseye) has no separate non-free-firmware component. Idempotent (fixed path,
 # overwritten not appended). Used by the Intel, AMD, and Standard NVIDIA routes.
-ensure_debian_nonfree() {
+nvidia_driver_ensure_debian_nonfree() {
     local _codename _version_id
-    _codename=$(_debian_codename)
+    _codename=$(nvidia_driver_debian_codename)
     if [[ -z "$_codename" ]]; then
         log_error "Failed to detect Debian codename for non-free apt source"
         return 1
     fi
-    _version_id=$(_debian_version_id)
+    _version_id=$(_nvidia_driver_debian_version_id)
 
     local _components="contrib non-free non-free-firmware"
     if [[ "$_version_id" == "11" || "$_codename" == "bullseye" ]]; then
@@ -273,9 +273,9 @@ ensure_debian_nonfree() {
 # already visible). Backports has low apt pin priority by default, so this never
 # changes the versions of other packages — backports installs require an explicit
 # `-t ${codename}-backports`. Codename/version aware (no non-free-firmware on 11).
-ensure_debian_backports() {
+nvidia_driver_ensure_debian_backports() {
     local _codename
-    _codename=$(_debian_codename)
+    _codename=$(nvidia_driver_debian_codename)
     [[ -n "$_codename" ]] || return 1
 
     local _policy
@@ -285,7 +285,7 @@ ensure_debian_backports() {
     esac
 
     local _version_id _components="main contrib non-free non-free-firmware"
-    _version_id=$(_debian_version_id)
+    _version_id=$(_nvidia_driver_debian_version_id)
     if [[ "$_version_id" == "11" || "$_codename" == "bullseye" ]]; then
         _components="main contrib non-free"
     fi
@@ -305,11 +305,11 @@ ensure_debian_backports() {
 # unlike the apt.conf.d drop-ins _uninstall_apt guards.
 # `|| true`: apt-source removal is non-fatal (matches the old inline `rm … || true`)
 # and keeps this errexit-safe regardless of caller context, not just today's `||` callers.
-gpu_uninstall() {
+nvidia_driver_gpu_uninstall() {
     sudo rm -f "$MEDIASTACK_GPU_NONFREE_LIST" "$MEDIASTACK_GPU_BACKPORTS_LIST" || true
 }
 
-_nvidia_blacklist_nouveau() {
+nvidia_driver_blacklist_nouveau() {
     log_info "Blacklisting nouveau kernel module..."
     local _blacklist
     _blacklist=$'blacklist nouveau\noptions nouveau modeset=0\n'

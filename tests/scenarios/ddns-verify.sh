@@ -67,7 +67,7 @@ _ddns_verify_run() {
 
     # Render needs bash (assoc array + source); dind_exec is sh.
     if ! docker exec -w /root/MediaStack "$DIND_NAME" bash -c \
-        "source scripts/lib/ddns_providers.sh; declare -A F=([domain]=$domain $*); ddns_render_config_json $provider F > /tmp/dv/data/config.json && chmod 644 /tmp/dv/data/config.json" >/dev/null 2>&1; then
+        "source scripts/lib/ddns-providers.sh; declare -A F=([domain]=$domain $*); ddns_render_config_json $provider F > /tmp/dv/data/config.json && chmod 644 /tmp/dv/data/config.json" >/dev/null 2>&1; then
         printf 'RENDER-FAIL 0\n'
         return
     fi
@@ -119,7 +119,7 @@ _ddns_verify_real() {
     docker exec -w /root/MediaStack "$DIND_NAME" bash -c '
         pubip="$1"; gw="$2"; img="$3"
         rm -rf /tmp/dvr && mkdir -p /tmp/dvr
-        source scripts/lib/ddns_providers.sh
+        source scripts/lib/ddns-providers.sh
         declare -A F=([domain]=verify.test [password]=wrong)
         ddns_render_config_json dynu F > /tmp/dvr/config.json 2>/dev/null || { printf "rc=RENDER-FAIL hits=0 body=\n"; exit 0; }
         source scripts/lib/network.sh
@@ -264,7 +264,7 @@ _dv_run_scenario() {
     local fr
     fr=$(docker exec -w /root/MediaStack "$DIND_NAME" bash -c '
         rm -rf /tmp/dvf && mkdir -p /tmp/dvf && chown 1000:1000 /tmp/dvf
-        source scripts/lib/ddns_providers.sh
+        source scripts/lib/ddns-providers.sh
         declare -A F=([domain]=verify.duckdns.org [token]=not-a-valid-uuid)
         ddns_render_config_json duckdns F > /tmp/dvf/config.json && chmod 644 /tmp/dvf/config.json
         source scripts/lib/network.sh
@@ -290,7 +290,7 @@ _dv_run_scenario() {
     #        fails before any provider is contacted, yielding the infra 500. ---
     dind_exec "rm -rf /tmp/dvi && mkdir -p /tmp/dvi && chown 1000:1000 /tmp/dvi" >/dev/null
     docker exec -w /root/MediaStack "$DIND_NAME" bash -c \
-        'source scripts/lib/ddns_providers.sh; declare -A F=([domain]=verify.duckdns.org [token]=00000000-0000-0000-0000-000000000000); ddns_render_config_json duckdns F > /tmp/dvi/config.json && chmod 644 /tmp/dvi/config.json' >/dev/null 2>&1
+        'source scripts/lib/ddns-providers.sh; declare -A F=([domain]=verify.duckdns.org [token]=00000000-0000-0000-0000-000000000000); ddns_render_config_json duckdns F > /tmp/dvi/config.json && chmod 644 /tmp/dvi/config.json' >/dev/null 2>&1
     dind_exec "docker rm -f dv-infra >/dev/null 2>&1 || true
       docker run -d --name dv-infra \
         -e RESOLVER_ADDRESS=127.0.0.1:1 \

@@ -74,7 +74,7 @@ prepare_nvidia_debian_to_unlock() {
         return 0
     fi
 
-    if ! _nvidia_blacklist_nouveau; then
+    if ! nvidia_driver_blacklist_nouveau; then
         return 1
     fi
     NEEDS_REBOOT=true
@@ -90,10 +90,10 @@ prepare_nvidia_debian_to_unlock() {
 _resolve_debian_nvidia_driver() {
     local _pkg_args="nvidia-driver firmware-misc-nonfree"
     local _codename
-    _codename=$(_debian_codename)
+    _codename=$(nvidia_driver_debian_codename)
 
     local _cand
-    _cand=$(_apt_candidate_version "nvidia-driver" "")
+    _cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "")
     if [[ -z "$_cand" || -z "$_codename" ]]; then
         printf '%s' "$_pkg_args"
         return 0
@@ -108,7 +108,7 @@ _resolve_debian_nvidia_driver() {
 
     # The normal candidate already lists this GPU as current — keep it.
     local _normal_compat
-    _normal_compat=$(_check_nvidia_compat "${_cand%%-*}" "$_pci_id" 2>/dev/null) || _normal_compat=""
+    _normal_compat=$(_nvidia_driver_check_compat "${_cand%%-*}" "$_pci_id" 2>/dev/null) || _normal_compat=""
     if [[ "$_normal_compat" == "current" ]]; then
         printf '%s' "$_pkg_args"
         return 0
@@ -117,10 +117,10 @@ _resolve_debian_nvidia_driver() {
     # Escalate only on positive evidence: backports has a strictly-newer candidate
     # that lists this GPU as current.
     local _bp_cand
-    _bp_cand=$(_apt_candidate_version "nvidia-driver" "${_codename}-backports")
+    _bp_cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "${_codename}-backports")
     if [[ -n "$_bp_cand" ]] && dpkg --compare-versions "$_bp_cand" gt "$_cand"; then
         local _bp_compat
-        _bp_compat=$(_check_nvidia_compat "${_bp_cand%%-*}" "$_pci_id" 2>/dev/null) || _bp_compat=""
+        _bp_compat=$(_nvidia_driver_check_compat "${_bp_cand%%-*}" "$_pci_id" 2>/dev/null) || _bp_compat=""
         if [[ "$_bp_compat" == "current" ]]; then
             log_info "GPU needs a newer driver - selecting ${_codename}-backports"
             printf '%s' "-t ${_codename}-backports $_pkg_args"
@@ -147,13 +147,13 @@ _nvidia_headers_flavor() {
 # bumps. Fails (no output) when neither resolves to an apt candidate.
 _nvidia_headers_candidate() {
     local _running="$1"
-    if [[ -n "$(_apt_candidate_version "linux-headers-${_running}" "")" ]]; then
+    if [[ -n "$(nvidia_driver_apt_candidate_version "linux-headers-${_running}" "")" ]]; then
         printf 'linux-headers-%s' "$_running"
         return 0
     fi
     local _flavor
     _flavor=$(_nvidia_headers_flavor "$_running") || return 1
-    if [[ -n "$(_apt_candidate_version "linux-headers-${_flavor}" "")" ]]; then
+    if [[ -n "$(nvidia_driver_apt_candidate_version "linux-headers-${_flavor}" "")" ]]; then
         printf 'linux-headers-%s' "$_flavor"
         return 0
     fi
@@ -217,7 +217,7 @@ install_nvidia_drivers_apt() {
     esac
 
     local sb_state
-    sb_state=$(check_secure_boot)
+    sb_state=$(nvidia_driver_check_secure_boot)
     case "$sb_state" in
         enabled)
             log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
@@ -234,7 +234,7 @@ install_nvidia_drivers_apt() {
             ;;
     esac
 
-    if ! ensure_debian_nonfree; then
+    if ! nvidia_driver_ensure_debian_nonfree; then
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"
         return 1
@@ -274,11 +274,11 @@ install_nvidia_drivers_apt() {
     # Without this, backports escalation is unreachable on a clean host (the
     # resolver could never find a backports candidate to compare against).
     local _gate_cand _gate_pci="" _gate_compat=""
-    _gate_cand=$(_apt_candidate_version "nvidia-driver" "")
+    _gate_cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "")
     _gate_pci=$(lspci -nn 2>/dev/null | grep -i 'nvidia' | grep -oP '\[10de:\K\w+' | head -1) || true
     if [[ -n "$_gate_cand" && -n "$_gate_pci" ]]; then
-        _gate_compat=$(_check_nvidia_compat "${_gate_cand%%-*}" "$_gate_pci" 2>/dev/null) || _gate_compat=""
-        if [[ "$_gate_compat" != "current" ]] && ensure_debian_backports; then
+        _gate_compat=$(_nvidia_driver_check_compat "${_gate_cand%%-*}" "$_gate_pci" 2>/dev/null) || _gate_compat=""
+        if [[ "$_gate_compat" != "current" ]] && nvidia_driver_ensure_debian_backports; then
             sudo apt-get update -qq || true
         fi
     fi
@@ -302,7 +302,7 @@ install_nvidia_drivers_apt() {
         # the headers DKMS builds against are exactly the ones verified.
         if [[ "$_install_args" == "-t "* ]]; then
             local _hdr_ver
-            _hdr_ver=$(_apt_candidate_version "$_headers_pkg" "")
+            _hdr_ver=$(nvidia_driver_apt_candidate_version "$_headers_pkg" "")
             [[ -n "$_hdr_ver" ]] && _headers_pkg="${_headers_pkg}=${_hdr_ver}"
         fi
         _install_args="$_install_args $_headers_pkg"
@@ -322,12 +322,12 @@ install_nvidia_drivers_apt() {
         return 1
     fi
 
-    # Read by env_gen.sh / stage3.sh / nvidia-repatch.sh, not within gpu.sh.
+    # Read by env-gen.sh / stage3.sh / nvidia-repatch.sh, not within gpu.sh.
     # shellcheck disable=SC2034
     NVIDIA_DRIVER_MODE="standard"
     # The Debian package blacklists nouveau and builds the module via DKMS, but a
     # reboot is needed to swap nouveau->nvidia before nvidia-smi works.
-    if nouveau_is_active || ! { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; }; then
+    if nvidia_driver_nouveau_is_active || ! { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; }; then
         # Read by stage3.sh reboot gating, not within gpu.sh.
         # shellcheck disable=SC2034
         NEEDS_REBOOT=true

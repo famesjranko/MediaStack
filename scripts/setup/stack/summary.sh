@@ -171,7 +171,7 @@ print_access_info() {
         domain=$(grep -oP '^DOMAIN=\K.*' "$SCRIPT_DIR/.env" | tr -d "'" | tr -d '"')
         remote_state=$(grep -oP '^REMOTE_WEB_STATE=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "'" | tr -d '"' || true)
         # WireGuard is gated on WG_INIT_PASSWORD alone, independent of DOMAIN (see
-        # _build_profile_args' --profile remote) — so this drives the wg-easy admin
+        # profiles_build_args' --profile remote) — so this drives the wg-easy admin
         # line below regardless of whether HTTPS/domain remote access was set up.
         wg_init_pw=$(grep -oP "^WG_INIT_PASSWORD='\\K[^']+" "$SCRIPT_DIR/.env" 2>/dev/null || true)
         jellyfin_gpu=$(grep -oP '^JELLYFIN_GPU=\K.*' "$SCRIPT_DIR/.env" 2>/dev/null | tr -d "'" | tr -d '"' || true)

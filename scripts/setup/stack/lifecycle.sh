@@ -1,10 +1,10 @@
 # Owns: Image pulls, stack start, and post-start health-gating for setup.sh.
-# Sources: scripts/setup/stack.sh state ($SCRIPT_DIR, STACK_PULL_*/STACK_HEALTH_* vars, _build_profile_args) plus scripts/lib/common.sh.
+# Sources: scripts/setup/stack.sh state ($SCRIPT_DIR, STACK_PULL_*/STACK_HEALTH_* vars, profiles_build_args) plus scripts/lib/common.sh.
 
 pull_images() {
     cd "$SCRIPT_DIR" || return 1
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     local image_channel="${IMAGE_CHANNEL:-stable}"
     image_channel="${image_channel,,}"
 
@@ -67,26 +67,26 @@ start_stack() {
         export UNPACKERR_TORRENT_PATHS="/data/torrents"
     fi
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     # Stop containers from profiles that are no longer selected (re-run safety).
     # docker compose up -d does NOT stop containers from a previously-active
     # profile, so a domain→local switch would leave NPM/fail2ban running.
     if [[ ! " ${profiles[*]} " =~ " --profile proxy " ]]; then
         for svc in npm fail2ban ddns-updater; do
-            if container_running "$svc"; then
+            if service_container_running "$svc"; then
                 log_info "Stopping leftover $svc (proxy profile no longer active)..."
                 docker stop "$svc" >/dev/null 2>&1 && docker rm "$svc" >/dev/null 2>&1 || true
             fi
         done
     fi
     if [[ ! " ${profiles[*]} " =~ " --profile subtitles " ]]; then
-        if container_running bazarr; then
+        if service_container_running bazarr; then
             log_info "Stopping leftover bazarr (subtitles profile no longer active)..."
             docker stop bazarr >/dev/null 2>&1 && docker rm bazarr >/dev/null 2>&1 || true
         fi
     fi
     if [[ ! " ${profiles[*]} " =~ " --profile autoheal " ]]; then
-        if container_running autoheal; then
+        if service_container_running autoheal; then
             log_info "Stopping leftover autoheal (AUTOHEAL_ENABLED=false)..."
             docker stop autoheal >/dev/null 2>&1 && docker rm autoheal >/dev/null 2>&1 || true
         fi
@@ -102,7 +102,7 @@ wait_all_healthy() {
     local elapsed=0
     local interval="$STACK_HEALTH_POLL_INTERVAL_SECONDS"
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     local expected_services
     if (($# > 0)); then
         expected_services=$(printf '%s\n' "$@")

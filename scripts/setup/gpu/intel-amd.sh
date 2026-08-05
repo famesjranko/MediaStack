@@ -1,4 +1,4 @@
-# Owns: Intel and AMD media-driver installation and render-device reporting.
+# Owns: install_* — Intel and AMD media-driver installation and render-device reporting.
 # Sources: gpu.sh render-device helpers, apt helpers, and common.sh logging.
 install_intel_drivers() {
     local render_device
@@ -9,7 +9,7 @@ install_intel_drivers() {
 
     if ! dpkg -l intel-media-va-driver-non-free &>/dev/null 2>&1; then
         log_info "Installing Intel media drivers for hardware transcoding..."
-        if ! ensure_debian_nonfree; then
+        if ! nvidia_driver_ensure_debian_nonfree; then
             return 1
         fi
         if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then
@@ -37,7 +37,7 @@ install_amd_drivers() {
 
     if ! dpkg -l mesa-va-drivers &>/dev/null 2>&1; then
         log_info "Installing AMD VAAPI drivers for hardware transcoding..."
-        if ! ensure_debian_nonfree; then
+        if ! nvidia_driver_ensure_debian_nonfree; then
             return 1
         fi
         if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then

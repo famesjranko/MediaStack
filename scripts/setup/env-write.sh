@@ -1,11 +1,11 @@
 # =============================================================================
 # MediaStack Setup — .env generation (write_env)
 # =============================================================================
-# Sourced by scripts/setup/env_gen.sh. Split out once write_env alone reached
-# the line cap. Depends on env_gen.sh's globals/helpers (_ENV_*, _WIZ_*,
+# Sourced by scripts/setup/env-gen.sh. Split out once write_env alone reached
+# the line cap. Depends on env-gen.sh's globals/helpers (_ENV_*, _WIZ_*,
 # _env_quote_preserved_secret, _nvidia_resolve_driver_mode,
 # repair_ddns_updater_config_permissions) and ddns_render_config_json from
-# scripts/lib/ddns_providers.sh.
+# scripts/lib/ddns-providers.sh.
 
 write_env() {
     local remote_web_state="${_WIZ_REMOTE_WEB_STATE:-}"

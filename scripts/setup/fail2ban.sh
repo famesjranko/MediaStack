@@ -85,7 +85,7 @@ EOF
 }
 
 # Install (or refresh) the watcher daemon + the 6h fallback timer. Gated by the
-# caller on `container_running fail2ban` (fail2ban only runs on remote-access
+# caller on `service_container_running fail2ban` (fail2ban only runs on remote-access
 # installs). Fail-soft everywhere: a missing tool / no sudo / systemctl error
 # warns and returns 0 — never hard-fails setup, never hangs a non-TTY path.
 f2b_install_reload_watcher() {

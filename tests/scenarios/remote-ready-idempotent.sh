@@ -3,7 +3,7 @@
 # Uses fixture DNS and Pebble ACME inside DinD. This does not prove public WAN,
 # real DDNS propagation, or production Let's Encrypt issuance.
 
-source tests/assertions/remote_gating.sh
+source tests/assertions/remote-gating.sh
 
 remote_ready_idempotent_seed_env() {
     local jf_password='Gate!$tack"with\special#chars^&*'
@@ -103,7 +103,7 @@ SCRIPT_DIR=/root/MediaStack
 source scripts/lib/common.sh
 source scripts/lib/network.sh
 source scripts/lib/validators.sh
-source scripts/setup/env_gen.sh
+source scripts/setup/env-gen.sh
 source scripts/setup/stack.sh
 source scripts/setup/wizard.sh
 source scripts/setup/stages/stage2.sh

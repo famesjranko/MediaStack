@@ -23,12 +23,12 @@ printf '%s\n' '<Config><ApiKey>sonarr-key</ApiKey></Config>' >"$SCRIPT_DIR/confi
 printf '%s\n' '<Config><ApiKey>radarr-key</ApiKey></Config>' >"$SCRIPT_DIR/config/radarr/config.xml"
 
 source "$REPO_ROOT/scripts/lib/json.sh"
-source "$REPO_ROOT/scripts/services/seerr/arr_connect.sh"
+source "$REPO_ROOT/scripts/services/seerr/arr-connect.sh"
 
 log_skip() { :; }
 log_warn() { :; }
 
-get_api_key() {
+api_get_key() {
     case "$1" in
         *sonarr*) printf '%s\n' "sonarr-key" ;;
         *radarr*) printf '%s\n' "radarr-key" ;;
@@ -69,7 +69,7 @@ print(json.dumps([
     esac
 }
 
-js_post() {
+http_json_post() {
     case "$1" in
         Sonarr) printf '%s' "$3" >"$SONARR_BODY" ;;
         Radarr) printf '%s' "$3" >"$RADARR_BODY" ;;
