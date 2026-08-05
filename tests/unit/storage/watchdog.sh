@@ -35,6 +35,7 @@ storage_pause_watchdog_for_install() {
     WATCHDOG_INSTALL_PAUSED=true
     return 0
 }
+# shellcheck disable=SC2034 # consumed by storage_is_nas/storage_watchdog_enabled in storage/core.sh, sourced below
 STORAGE_MODE=nas STORAGE_WATCHDOG=false
 if storage_install_watchdog >/dev/null 2>&1 && $WATCHDOG_INSTALL_PAUSED; then
     pass "storage_install_watchdog: disabled flag skips install and tears down stale unit"
@@ -73,6 +74,7 @@ assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "disable mediastack-storage-w
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "is-active mediastack-storage-watchdog.service" "watchdog install pause: verifies service is inactive after stop"
 : >"$WATCHDOG_SYSTEMCTL_LOG"
 STORAGE_MODE=local
+# shellcheck disable=SC2034 # consumed by storage_manual_wiring in storage/core.sh, sourced below
 STORAGE_APP_WIRING=manual
 storage_pause_watchdog_for_install
 assert_contains "$(cat "$WATCHDOG_SYSTEMCTL_LOG")" "stop mediastack-storage-watchdog.service" "watchdog install pause: local/manual fallback still stops stale watchdog"
@@ -110,10 +112,15 @@ EOF
 chmod +x "$WATCHDOG_FAKEBIN/docker"
 MEDIASTACK_WATCHDOG_SOURCE_ONLY=1
 STORAGE_MODE=nas
+# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_MOUNTPOINT="$TMP_DIR"
+# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_EXPECTED_SOURCE="192.0.2.10:/exports/mediastack-fixture"
+# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_EXPECTED_FSTYPE="nfs4"
+# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_SENTINEL="$TMP_DIR/.mediastack-storage-ready"
+# shellcheck disable=SC2034 # consumed by storage_data_services in storage/core.sh, sourced below
 BAZARR_ENABLED=false
 PATH="$WATCHDOG_FAKEBIN:$PATH"
 source "$REPO_ROOT/scripts/storage-watchdog.sh"

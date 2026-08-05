@@ -3,13 +3,18 @@
 # tests/unit/storage.sh; inherits its preamble.
 
 DATA_DIR="$TMP_DIR/mount-repair"
+# shellcheck disable=SC2034 # consumed by storage_mode in storage/core.sh, sourced below
 STORAGE_MODE=nas
+# shellcheck disable=SC2034 # consumed by storage_mountpoint in storage/core.sh, sourced below
 STORAGE_MOUNTPOINT="$DATA_DIR"
 STORAGE_NFS_HOST=192.0.2.10
 STORAGE_NFS_EXPORT=/exports/media
 STORAGE_NFS_OPTS=vers=4.2
+# shellcheck disable=SC2034 # consumed by storage_expected_source in storage/core.sh, sourced below
 STORAGE_EXPECTED_SOURCE="192.0.2.10:/exports/media"
+# shellcheck disable=SC2034 # consumed by storage_expected_fstype in storage/core.sh, sourced below
 STORAGE_EXPECTED_FSTYPE=nfs4
+# shellcheck disable=SC2034 # consumed by storage_sentinel_path in storage/core.sh, sourced below
 STORAGE_SENTINEL="$DATA_DIR/.mediastack-storage-ready"
 mkdir -p "$DATA_DIR"
 MOUNT_REPAIR_CALLS="$TMP_DIR/mount-repair-calls"
@@ -104,7 +109,9 @@ log_ok() { :; }
 log_info() { :; }
 log_error() { :; }
 log_warn() { :; }
+# shellcheck disable=SC2034 # consumed by storage_probe_nas in storage/mount.sh, sourced below
 STORAGE_NFS_HOST=192.0.2.10
+# shellcheck disable=SC2034 # consumed by storage_probe_nas in storage/mount.sh, sourced below
 STORAGE_NFS_EXPORT=/exports/mediastack
 STORAGE_NFS_OPTS="vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec"
 PROBE_NC_RC=0 PROBE_MOUNT_RC=0
@@ -142,4 +149,3 @@ fi
 
 unset -f ui_spin nc sudo log_ok log_info log_error log_warn
 unset STORAGE_NFS_HOST STORAGE_NFS_EXPORT STORAGE_NFS_OPTS PROBE_NC_RC PROBE_MOUNT_RC _STORAGE_PROBE_CLASS
-

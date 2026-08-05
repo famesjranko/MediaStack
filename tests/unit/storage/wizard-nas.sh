@@ -204,7 +204,9 @@ sudo() {
 STAGE1_REPAIR_SUDO_LOG="$TMP_DIR/stage1-repair-cleanup-sudo.log"
 STAGE1_REPAIR_SOURCE="192.0.2.99:/exports/old"
 STAGE1_REPAIR_FSTYPE="nfs4"
+# shellcheck disable=SC2034 # consumed by storage_expected_source in storage/core.sh, sourced below
 STORAGE_EXPECTED_SOURCE="$STAGE1_REPAIR_SOURCE"
+# shellcheck disable=SC2034 # consumed by storage_expected_fstype in storage/core.sh, sourced below
 STORAGE_EXPECTED_FSTYPE="$STAGE1_REPAIR_FSTYPE"
 _WIZ_PREV_DATA_DIR="$TMP_DIR/local-root-7"
 _WIZ_DATA_DIR="$TMP_DIR/repaired-conflict-nas"

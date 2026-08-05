@@ -2,7 +2,6 @@
 # storage_guard_before_start. Sourced by tests/unit/storage.sh; inherits its
 # preamble (TMP_DIR, source of storage.sh/stack.sh/stage1.sh/env_gen.sh, assert lib).
 
-
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -23,10 +22,14 @@ rm -rf "${TMP_DIR:?}"/*
 touch "$TMP_DIR/torrents"
 assert_eq "conflict:torrents" "$(storage_classify_data_root "$TMP_DIR")" "storage classify: torrents file conflict"
 
+# shellcheck disable=SC2034 # consumed by storage_mountpoint in storage/core.sh, sourced below
 DATA_DIR="$TMP_DIR"
+# shellcheck disable=SC2034 # consumed by storage_mode in storage/core.sh, sourced below
 STORAGE_MODE=nas
+# shellcheck disable=SC2034 # consumed by storage_mountpoint in storage/core.sh, sourced below
 STORAGE_MOUNTPOINT="$TMP_DIR"
 STORAGE_EXPECTED_SOURCE="192.0.2.10:/exports/mediastack-fixture"
+# shellcheck disable=SC2034 # consumed by storage_expected_fstype in storage/core.sh, sourced below
 STORAGE_EXPECTED_FSTYPE="nfs4"
 STORAGE_SENTINEL="$TMP_DIR/.mediastack-storage-ready"
 touch "$STORAGE_SENTINEL"
@@ -70,6 +73,7 @@ fi
 
 # --- STORAGE_WATCHDOG opt-out gate (findmnt still stubbed; sentinel is outside
 # the mountpoint from the block above, so storage_nas_ok fails here) ---
+# shellcheck disable=SC2034 # consumed by storage_expected_source in storage/core.sh, sourced below
 STORAGE_EXPECTED_SOURCE="192.0.2.10:/exports/mediastack-fixture"
 unset STORAGE_WATCHDOG
 if storage_watchdog_enabled; then
@@ -91,6 +95,7 @@ else
     fail "storage_guard_before_start: watchdog off -> allows start despite failing nas_ok"
 fi
 
+# shellcheck disable=SC2034 # consumed by storage_watchdog_enabled in storage/core.sh, sourced below
 STORAGE_WATCHDOG=true
 if storage_guard_before_start 2>/dev/null; then
     fail "storage_guard_before_start: watchdog on -> refuses start when nas_ok fails"

@@ -37,6 +37,7 @@ fi
 SCRIPT_DIR="$REPO_ROOT"
 DATA_DIR="$TMP_DIR/manual-root"
 STORAGE_MODE=local
+# shellcheck disable=SC2034 # consumed by storage_manual_wiring in storage/core.sh, sourced below
 STORAGE_APP_WIRING=manual
 SUDO_CALLS="$TMP_DIR/sudo-calls"
 mkdir -p "$DATA_DIR"
@@ -79,6 +80,7 @@ case "$services_without_bazarr" in
     *bazarr*) fail "storage services: excludes Bazarr when subtitles are disabled" ;;
     *) pass "storage services: excludes Bazarr when subtitles are disabled" ;;
 esac
+# shellcheck disable=SC2034 # consumed by storage_data_services in storage/core.sh, sourced below
 BAZARR_ENABLED=true
 assert_contains "$(storage_data_services)" "bazarr" "storage services: includes Bazarr when subtitles are enabled"
 unset BAZARR_ENABLED
@@ -89,10 +91,15 @@ cat >"$SCRIPT_DIR/.env" <<'ENV'
 STORAGE_MODE=nas
 ENV
 DATA_DIR="$TMP_DIR/preflight-nas"
+# shellcheck disable=SC2034 # consumed by storage_is_nas in storage/core.sh, sourced below
 STORAGE_MODE=nas
+# shellcheck disable=SC2034 # consumed by storage_mountpoint in storage/core.sh, sourced below
 STORAGE_MOUNTPOINT="$DATA_DIR"
+# shellcheck disable=SC2034 # consumed by the real storage_mount_nfs in storage/mount.sh; stubbed here
 STORAGE_NFS_HOST=127.0.0.1
+# shellcheck disable=SC2034 # consumed by the real storage_mount_nfs in storage/mount.sh; stubbed here
 STORAGE_NFS_EXPORT=/exports/media
+# shellcheck disable=SC2034 # consumed by the real storage_mount_nfs in storage/mount.sh; stubbed here
 STORAGE_NFS_OPTS=vers=4.2
 STORAGE_SENTINEL="$DATA_DIR/.mediastack-storage-ready"
 SUDO_CALLS="$TMP_DIR/preflight-sudo-calls"
