@@ -11,7 +11,7 @@
 # auth handshakes, or config drift across restarts — the api-matrix layer
 # (image-backed) and the DinD battery stay responsible for those.
 #
-# Coverage beyond the sonarr/radarr pilot (ticket 21): bazarr's configurator
+# Coverage beyond the sonarr/radarr pilot: bazarr's configurator
 # makes exactly one HTTP call (GET /api/system/settings, a static API key
 # known upfront from config.yaml — no login dance), so it fits the same
 # static-credential shape as sonarr/radarr and is added here.
@@ -25,9 +25,10 @@
 # one auth shape per service, checked on every endpoint including that one —
 # so the mock's shape check would 401 the very call that is supposed to
 # establish the session, before the credential it checks for exists. That
-# login/session dance is exactly the case tests/mock/README.md and TARGET.md
-# reserve for tests/api-matrix/ (already covered there: bazarr.sh, jackett.sh,
-# qbittorrent.sh, jellyfin.sh, seerr.sh under tests/api-matrix/). Representing
+# login/session dance is exactly the case tests/mock/README.md reserves for
+# tests/api-matrix/ (covered there: jackett.sh, qbittorrent.sh, jellyfin.sh,
+# seerr.sh; npm has no api-matrix module — its live behavior is exercised by
+# the dedicated npm-heal scenario and the stage2 flows instead). Representing
 # a per-endpoint auth exemption would mean a schema extension serving five
 # services' worth of one-off shape, or a per-service branch in serve.py —
 # both against this ticket's hard constraints — so this is recorded as a seam

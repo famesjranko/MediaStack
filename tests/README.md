@@ -421,8 +421,7 @@ service behavior:
   Seerr). Image-backed; runs in the image-bump preflight
   (`docs/operations/upgrades.md`), never the PR gate.
 
-Division of labor is a hard constraint (TARGET.md "API contracts and
-mocks"): contracts declare data only, the mock proves our scripts speak the
+Division of labor is a hard constraint: contracts declare data only, the mock proves our scripts speak the
 contract, drift proves the contract still matches reality, and
 `tests/api-matrix/` keeps proving live behavior none of the above can (auth
 dances, seeding, retries, day-2 effects). Logic in a contract, a

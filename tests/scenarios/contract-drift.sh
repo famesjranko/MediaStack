@@ -1,8 +1,7 @@
 # tests/scenarios/contract-drift.sh — live contract-drift replay.
 #
 # Image-bump preflight / scheduled drift-alert scenario, NOT the PR gate (see
-# docs/operations/upgrades.md "Preflight a candidate image" and TARGET.md's
-# "CI placement is fixed"). Brings up the same API-bearing services
+# docs/operations/upgrades.md "Preflight a candidate image"). Brings up the same API-bearing services
 # tests/scenarios/api-matrix.sh already brings up (tests/api-matrix/bringup.sh
 # — one bring-up, reused, never duplicated) and runs tests/contracts/replay.py
 # in live mode against all six API-bearing services' real APIs, diffing only

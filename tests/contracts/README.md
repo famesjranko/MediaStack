@@ -18,7 +18,7 @@ endpoints:
 ```
 
 `openapi` is optional. It is present when an upstream specification is
-available for ticket 18; its absence means the service is live-replay-only.
+available upstream; its absence means the service is live-replay-only.
 `base_path` is the API prefix omitted from endpoint `path` values. `auth`
 describes the service's normal request authentication shape. The inventory is
 per service, and helpers under `scripts/lib/` are attributed to the service

@@ -45,8 +45,8 @@ schema and `tests/README.md` "Contract mocks and drift replay" for how the
 - **Statelessness.** The mock never remembers what a previous request
   created — a `GET` list endpoint returns the same fixture body regardless
   of an earlier `POST` to the "create" endpoint. A flow that needs
-  read-your-writes belongs in `tests/api-matrix/`, not here (TARGET.md
-  "Prescribed decisions").
+  read-your-writes belongs in `tests/api-matrix/`, not here (see
+  `tests/README.md` "Division of labor").
 
 ## Running standalone
 

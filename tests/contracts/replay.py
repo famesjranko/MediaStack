@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """tests/contracts/replay.py — drift replayer for tests/contracts/*.yml.
 
-Two modes, matching TARGET.md's "Drift diffs only declared fields" rule —
-never whole-spec or whole-response validation:
+Two modes; both diff only the fields each contract declares — never
+whole-spec or whole-response validation:
 
   spec   For each contract carrying an `openapi:` URL, fetch (or reuse a
          local cache of) the upstream spec and check that every declared
@@ -33,7 +33,7 @@ never whole-spec or whole-response validation:
 
 Contract file format: tests/contracts/README.md. This file never runs the
 mock (tests/mock/serve.py) — that is the mock-mode scenario's job, not
-drift's (division of labor, TARGET.md).
+drift's (division of labor, tests/README.md).
 """
 
 from __future__ import annotations
