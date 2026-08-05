@@ -3,9 +3,8 @@
 #
 # Regression proof for tests/structure.sh: the service-module shape gate
 # (every scripts/services/<svc>/main.sh defines configure_<svc>()) and the
-# import-direction gate (no cross-service source, no peer scripts/setup
-# module source, and a non-setup file sourcing a setup module is not a
-# violation). A gate that cannot be shown to fail is a gate nobody can
+# import-direction gate (no cross-service source, no service module
+# sourcing a setup module, no peer scripts/setup module source). A gate that cannot be shown to fail is a gate nobody can
 # trust, so every rule is probed with one fabricated violation.
 #
 # The fixture is a throwaway git repo built from `git archive HEAD`: the gate
@@ -100,15 +99,17 @@ run_gate
 assert_rc 0 "sourcing a module's own concern directory stays clean"
 reset_fixture
 
-# A non-setup file sourcing a top-level scripts/setup module is the
-# sanctioned setup.sh -> scripts/setup/* direction, not a violation — the
-# gate only forbids a setup module sourcing a *peer* setup module.
+# A service module sourcing a setup module crosses the phase trees; the
+# sanctioned setup.sh -> scripts/setup/* direction belongs to setup.sh
+# alone, and shared logic belongs in lib/.
 {
     printf '_STRUCTURE_PROBE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
     printf 'source "$_STRUCTURE_PROBE_DIR/../../setup/packages.sh"\n'
 } >>"$FIXTURE/scripts/services/bazarr/main.sh"
 run_gate
-assert_rc 0 "a non-setup module sourcing a setup module is not a violation"
+assert_rc 1 "a service module sourcing a setup module is a violation"
+assert_contains "$OUT" "may not source a setup module" \
+    "the service-to-setup violation names its own diagnosis"
 reset_fixture
 
 # The sanctioned-seam list is not a place to leave dead entries.
@@ -121,7 +122,7 @@ reset_fixture
 run_gate
 assert_rc 0 "the fixture is green again after every probe"
 
-expected=20
+expected=21
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

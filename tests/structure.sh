@@ -44,9 +44,10 @@ done
 
 # -----------------------------------------------------------------------------
 # Import-direction gate over docs/project/structure.md "Dependency Direction":
-# a service module may not source another service's files, and a module
-# under scripts/setup/ may not source a peer top-level scripts/setup/*.sh
-# module. Only the sanctioned seams below are exempt; each is documented in
+# a service module may not source another service's files or any setup
+# module (the phase trees stay apart; shared logic belongs in lib/), and a
+# module under scripts/setup/ may not source a peer top-level
+# scripts/setup/*.sh module. Only the sanctioned seams below are exempt; each is documented in
 # structure.md, and a listed seam that no longer exists is a stale entry that
 # fails.
 #
@@ -124,6 +125,8 @@ for file in "${import_files[@]}"; do
             dst_svc="${target#scripts/services/}"
             [[ "${src_svc%%/*}" == "${dst_svc%%/*}" ]] \
                 || reason="a service module may not source another service"
+        elif [[ "$file" == scripts/services/* && "$target" == scripts/setup/* ]]; then
+            reason="a service module may not source a setup module — shared logic belongs in lib/"
         elif [[ "$file" == scripts/setup/* && "$target" == scripts/setup/*.sh && "$target" != */*/*/* && "$file" != "$target" ]]; then
             reason="a setup module may not source a peer scripts/setup module"
         fi
