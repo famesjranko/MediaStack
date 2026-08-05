@@ -127,6 +127,8 @@ tests/
   Dockerfile.dind + entrypoint      Debian-based DinD image
   Dockerfile.dry-run                Image for the --dry-run UI explorer
   lib/                              Shared harness libraries and the publication guard modules
+  contracts/                        Per-service HTTP API contracts (*.yml) + check.py/replay.py; README.md holds the schema
+  mock/                             Contract-driven stdlib mock server (serve.py) + fixtures/, driven by the contract-mock scenario
   assertions/                       Per-service assertion modules (sourced by scenarios)
   api-matrix/                       Per-service direct-API modules for the api-matrix layer
   scenarios/                        One file per scenario; tests/README.md documents each
@@ -173,6 +175,25 @@ scripts/setup/*                   → lib/common.sh (via setup.sh sourcing)
 scripts/setup/*                   ↛ scripts/setup/* (no cross-module imports)
 tests/scenarios/*                 → tests/lib/* + tests/assertions/*
 ```
+
+Two of these directions are machine-checked by `./tests/check.sh naming`
+(`tests/naming.sh`): no service module may `source` another service's files,
+and nothing under `scripts/setup/` may `source` a peer top-level
+`scripts/setup/*.sh` module. Sourcing files inside the module's own directory
+(`npm/main.sh` → `npm/certs.sh`, `hardening.sh` → `hardening/*.sh`) and the
+orchestrator → stage seam (`wizard.sh`/`recovery.sh` → `stages/*.sh`) are the
+sanctioned directions, not violations. Four top-level pairs predate the gate
+and are exempted by name in its sanctioned-seam list; a seam listed there whose
+import has gone fails as a stale entry:
+
+```
+scripts/setup/hardening.sh        → gpu.sh, storage.sh, fail2ban.sh   (uninstall dispatches to the module that owns each host artefact)
+scripts/setup/env-gen.sh          → env-write.sh                       (a size split of env-gen.sh, not an independent module)
+```
+
+The gate resolves a `source` argument only when its directory variable is
+derived from `${BASH_SOURCE[0]}` or `$SCRIPT_DIR`; an import assembled some
+other way is invisible to it.
 
 Cross-service logic that touches 2+ configurators goes in `scripts/flows/*.sh`
 (loaded by configure.sh; empty today).

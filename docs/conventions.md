@@ -121,6 +121,8 @@ Python module name must also be a valid import identifier.
 | Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell filename is kebab-case, tracked python filename is snake_case | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), with no exceptions: the grandfathered offenders have all been renamed and `tests/shell-naming.allowlist` deleted | `lint-shellcheck` |
 | A `scripts/*.sh` module (or the root `mediastack` dispatcher) that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |
+| Every `scripts/services/<svc>/main.sh` defines `configure_<svc>()` (directory hyphens map to underscores) | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), proved against fabricated violations by `tests/unit/naming-gate.sh` | `lint-shellcheck` |
+| No service module sources another service, and nothing under `scripts/setup/` sources a peer top-level `scripts/setup/*.sh` module | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`); the sanctioned seams are named in `project/structure.md` "Dependency Direction" | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
@@ -178,8 +180,10 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 
 - **Unit-test naming.** The 1:1 source-to-`tests/unit/<name>.sh` basename rule
   is a convention; no checker currently verifies the correspondence.
-- **Service-module shape.** The required `main.sh` with optional `render/` and
-  `templates/` layout is a convention; no checker currently verifies it.
+- **The optional half of the service-module shape.** That
+  `scripts/services/<svc>/main.sh` exists and defines `configure_<svc>()` is
+  checked by `tests/naming.sh`; that the optional `render/` and `templates/`
+  directories are used for what they say is not.
 - **New-file header contract.** The two-line `Owns`/`Sources` header is a
   convention; no checker currently verifies it.
 - **Shell function-prefix discipline for undeclared modules.** The naming gate
@@ -197,17 +201,25 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **The "Adding a New Service" checklist** in `project/structure.md`. Nothing
   verifies that the tree section, the `config.yml` section, or the
   `scripts/configure.sh` loop entry were updated alongside a new service.
-- **The dependency-direction rules** in `project/structure.md` (no cross-service
-  imports, no cross-module `scripts/setup/*` imports). No import graph is
-  computed; a violation lints clean.
+- **The dependency-direction rules `tests/naming.sh` does not reach.** The two
+  `source` rules (no cross-service imports, no peer `scripts/setup/*` imports)
+  are enforced, but only over `source` arguments whose directory variable the
+  gate can resolve from `${BASH_SOURCE[0]}` or `$SCRIPT_DIR`. Every other
+  direction in `project/structure.md` — which `scripts/lib/` files a module may
+  reach for, imports between two concern subdirectories — is unchecked.
+
+- **Tree-vs-disk sync for `project/structure.md`.** The tree is a reader's map,
+  not a manifest: nothing notices a new file that was never listed or a listed
+  file that is gone. A manifest checker costs more than the map is worth, so
+  stale entries are fixed by hand when a reader trips over one.
 - **The "Bumping a Service Version" preflight.** `tests/unit/upgrades-manifest.sh`
   checks that the manifest's claims are internally consistent with compose and
   the digest lock. It cannot tell whether the preflight scenario was actually
   run before the tag changed.
-- **The `project/structure.md` tree, the `project/stack.md` service table and
-  host-dependency list, and the documented container/configurator counts.**
-  Nothing derives any of them from `docker-compose.yml` or `scripts/`, so a
-  service added or removed leaves every one of them stale and green.
+- **The `project/stack.md` service table and host-dependency list, and the
+  documented container/configurator counts.** Nothing derives any of them from
+  `docker-compose.yml` or `scripts/`, so a service added or removed leaves
+  every one of them stale and green.
 - **Prose claims with no single mechanical source** — the wall-clock scenario
   budgets, the CI summary in `project/stack.md`, the per-service "what gets
   configured" table in `README.md`. Judgement, re-read when the thing changes.
