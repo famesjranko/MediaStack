@@ -72,7 +72,7 @@ net_port_gate_classify() {
     local dns_state="${2:-ok}"
     local hint="${3:-}"
     local port_state
-    port_state=$(stage2_check_http_ports)
+    port_state=$(net_check_http_ports)
     if [[ "$port_state" == "ok" ]]; then
         printf 'ok'
         return 0

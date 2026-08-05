@@ -75,7 +75,7 @@ stage2_le_classify() {
         return 1
     fi
 
-    port_state=$(stage2_check_http_ports 2>/dev/null || printf 'unknown')
+    port_state=$(net_check_http_ports 2>/dev/null || printf 'unknown')
     if [[ "$port_state" == "closed:80" || "$port_state" == "closed:80,443" ]]; then
         STAGE2_LE_CLASSIFICATION="config-port"
         printf '%s\n' "$STAGE2_LE_CLASSIFICATION"

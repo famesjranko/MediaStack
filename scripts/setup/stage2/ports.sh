@@ -14,7 +14,7 @@ _stage2_port_gate() {
     local port_state failure action attempt
     while true; do
         for attempt in $(seq 1 "$STAGE2_PORT_PROBE_MAX_ATTEMPTS"); do
-            port_state=$(stage2_check_http_ports)
+            port_state=$(net_check_http_ports)
             if [[ "$port_state" == "ok" ]]; then
                 if ((attempt == 1)); then
                     ui_log ok "TCP ports 80 and 443 appear reachable from this host."

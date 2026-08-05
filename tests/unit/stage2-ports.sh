@@ -38,7 +38,7 @@ sudo() { "$@"; }
 
 STAGE2_PORT80_OPEN=1
 STAGE2_PORT443_OPEN=1
-# stage2_check_http_ports now uses net_check_tcp_port_external (true
+# net_check_http_ports now uses net_check_tcp_port_external (true
 # external probe via portchecker.io / canyouseeme.org / yougetsignal),
 # replacing the old hairpin-NAT-dependent net_check_tcp_port. Tests
 # stub the external probe since these are unit tests with no network.
@@ -61,22 +61,22 @@ if ! type validate_wireguard_port >/dev/null 2>&1; then
 fi
 
 STAGE2_PORT80_OPEN=1 STAGE2_PORT443_OPEN=1
-assert_eq "ok" "$(stage2_check_http_ports)" "TCP 80 and 443 open classifies as ok"
+assert_eq "ok" "$(net_check_http_ports)" "TCP 80 and 443 open classifies as ok"
 
 STAGE2_PORT80_OPEN=0 STAGE2_PORT443_OPEN=1
-assert_eq "closed:80" "$(stage2_check_http_ports)" "closed TCP 80 is reported"
+assert_eq "closed:80" "$(net_check_http_ports)" "closed TCP 80 is reported"
 
 STAGE2_PORT80_OPEN=1 STAGE2_PORT443_OPEN=0
-assert_eq "closed:443" "$(stage2_check_http_ports)" "closed TCP 443 is reported"
+assert_eq "closed:443" "$(net_check_http_ports)" "closed TCP 443 is reported"
 
 STAGE2_PORT80_OPEN=2 STAGE2_PORT443_OPEN=1
-assert_eq "probe-unavailable:80" "$(stage2_check_http_ports)" "external probe failure is not reported as closed TCP 80"
+assert_eq "probe-unavailable:80" "$(net_check_http_ports)" "external probe failure is not reported as closed TCP 80"
 
 STAGE2_PORT80_OPEN=1 STAGE2_PORT443_OPEN=2
-assert_eq "probe-unavailable:443" "$(stage2_check_http_ports)" "external probe failure is not reported as closed TCP 443"
+assert_eq "probe-unavailable:443" "$(net_check_http_ports)" "external probe failure is not reported as closed TCP 443"
 
 STAGE2_PORT80_OPEN=2 STAGE2_PORT443_OPEN=2
-assert_eq "probe-unavailable:80,443" "$(stage2_check_http_ports)" "both external probe failures are reported separately"
+assert_eq "probe-unavailable:80,443" "$(net_check_http_ports)" "both external probe failures are reported separately"
 
 STAGE2_PORT80_OPEN=0 STAGE2_PORT443_OPEN=0
 assert_eq "cgnat" "$(net_classify_port_failure "100.64.10.2" "ok" "closed:80,443")" "RFC6598 public IP classifies as cgnat"
@@ -91,7 +91,7 @@ printf '0\n' >"$STAGE2_PORT_GATE_TMP/calls"
 printf '\n' >"$STAGE2_PORT_GATE_TMP/default"
 ui_section() { :; }
 sleep() { :; }
-stage2_check_http_ports() {
+net_check_http_ports() {
     local calls
     calls=$(cat "$STAGE2_PORT_GATE_TMP/calls")
     calls=$((calls + 1))
@@ -112,7 +112,7 @@ else
 fi
 assert_eq "2" "$(cat "$STAGE2_PORT_GATE_TMP/default")" "UI_DEMO defaults port probe-unavailable to manual verification"
 assert_eq "3" "$(cat "$STAGE2_PORT_GATE_TMP/calls")" "UI_DEMO does not loop after probe-unavailable menu"
-unset -f ui_section sleep stage2_check_http_ports ui_choose
+unset -f ui_section sleep net_check_http_ports ui_choose
 rm -rf "$STAGE2_PORT_GATE_TMP"
 
 reset_warn

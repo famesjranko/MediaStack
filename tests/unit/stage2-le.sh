@@ -32,7 +32,7 @@ net_dns_classify() {
     printf '%s' "${STAGE2_LE_DNS:-ok}"
     [[ "${STAGE2_LE_DNS:-ok}" == "ok" ]]
 }
-stage2_check_http_ports() { printf '%s' "${STAGE2_LE_PORTS:-ok}"; }
+net_check_http_ports() { printf '%s' "${STAGE2_LE_PORTS:-ok}"; }
 _stage2_probe_https_ready() { return 0; }
 _stage2_le_ready_hosts() { printf '%s\n' ${STAGE2_LE_READY_HOSTS_FIXTURE:-}; }
 _stage2_le_log_text() { printf '%s\n' "${STAGE2_LE_LOG_FIXTURE:-}"; }
