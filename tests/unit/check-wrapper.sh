@@ -242,6 +242,16 @@ else
 fi
 assert_contains "$SELECTOR_OUT" "1 grandfathered functions" "the reconcile reports the grandfathered count"
 
+make_fixture c901-all-clean
+add_python_file
+set_findings "All checks passed!"
+run_selector ruff
+if ((SELECTOR_RC == 0)); then
+    pass "a fully clean tree with no allowlist passes the reconcile"
+else
+    fail "a fully clean tree with no allowlist passes the reconcile" "exit $SELECTOR_RC: $SELECTOR_OUT"
+fi
+
 make_fixture c901-grown
 add_python_file
 set_findings "sample.py:1:5: C901 \`grown\` is too complex (12 > 10)"

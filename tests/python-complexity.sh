@@ -66,7 +66,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         key="${BASH_REMATCH[1]}"$'\t'"${BASH_REMATCH[2]}"
         observed["$key"]="${BASH_REMATCH[3]}"
         observed_line["$key"]="$line"
-    elif [[ -n "$line" && ! "$line" =~ ^(Found\ |\[\*\]) ]]; then
+    elif [[ -n "$line" && "$line" != "All checks passed!" && ! "$line" =~ ^(Found\ |\[\*\]) ]]; then
         printf '%s\n' "$line" >&2
         failed=true
     fi
