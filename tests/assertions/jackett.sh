@@ -1,6 +1,6 @@
 assert_jackett_configured() {
     local jackett_key
-    jackett_key=$(get_jackett_api_key)
+    jackett_key=$(api_get_jackett_key)
     if [[ -n "$jackett_key" && ${#jackett_key} -ge 20 ]]; then
         pass "step 2 Jackett: API key present (${jackett_key:0:8}…)"
     else

@@ -54,7 +54,7 @@ npm_remote_container_running
 stopped_rc=$?
 assert_eq "1" "$stopped_rc" "npm_remote_container_running: returns false for stopped npm"
 source "$REPO_ROOT/scripts/lib/npm-remote.sh"
-assert_eq "function" "$(type -t container_running)" "npm-remote.sh: sources common.sh and is repeat-source safe"
+assert_eq "function" "$(type -t service_container_running)" "npm-remote.sh: sources common.sh and is repeat-source safe"
 
 FAKE_HOSTS='[
   {"id": 1, "domain_names": ["jellyfin.old.test"], "forward_host": "jellyfin", "forward_port": 8096, "enabled": true},

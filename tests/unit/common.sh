@@ -67,53 +67,53 @@ source_env_value() {
 
 reset_env
 special_value='abc&def|ghi/jkl'
-save_api_key TEST_API_KEY "$special_value"
+env_save_api_key TEST_API_KEY "$special_value"
 rc=$?
-assert_eq "0" "$rc" "save_api_key: special value write succeeds"
-assert_eq "TEST_API_KEY='$special_value'" "$(grep '^TEST_API_KEY=' "$SCRIPT_DIR/.env")" "save_api_key: quotes ampersand pipe and slash value"
-assert_eq "$special_value" "$(source_env_value "$SCRIPT_DIR/.env" TEST_API_KEY)" "save_api_key: written special value is sourceable"
-assert_eq "$special_value" "${TEST_API_KEY:-}" "save_api_key: exports updated value"
-assert_eq "OTHER_KEY=keep" "$(grep '^OTHER_KEY=' "$SCRIPT_DIR/.env")" "save_api_key: preserves unrelated lines"
+assert_eq "0" "$rc" "env_save_api_key: special value write succeeds"
+assert_eq "TEST_API_KEY='$special_value'" "$(grep '^TEST_API_KEY=' "$SCRIPT_DIR/.env")" "env_save_api_key: quotes ampersand pipe and slash value"
+assert_eq "$special_value" "$(source_env_value "$SCRIPT_DIR/.env" TEST_API_KEY)" "env_save_api_key: written special value is sourceable"
+assert_eq "$special_value" "${TEST_API_KEY:-}" "env_save_api_key: exports updated value"
+assert_eq "OTHER_KEY=keep" "$(grep '^OTHER_KEY=' "$SCRIPT_DIR/.env")" "env_save_api_key: preserves unrelated lines"
 
 append_value='https://jellyfin.example.test/a/b?x=1&y=2'
-save_api_key NEW_API_KEY "$append_value"
+env_save_api_key NEW_API_KEY "$append_value"
 rc=$?
-assert_eq "0" "$rc" "save_api_key: append succeeds"
-assert_eq "NEW_API_KEY='$append_value'" "$(grep '^NEW_API_KEY=' "$SCRIPT_DIR/.env")" "save_api_key: appends quoted missing key"
-assert_eq "$append_value" "$(source_env_value "$SCRIPT_DIR/.env" NEW_API_KEY)" "save_api_key: appended value is sourceable"
+assert_eq "0" "$rc" "env_save_api_key: append succeeds"
+assert_eq "NEW_API_KEY='$append_value'" "$(grep '^NEW_API_KEY=' "$SCRIPT_DIR/.env")" "env_save_api_key: appends quoted missing key"
+assert_eq "$append_value" "$(source_env_value "$SCRIPT_DIR/.env" NEW_API_KEY)" "env_save_api_key: appended value is sourceable"
 
 reset_env
 same_value='abc&def|ghi/jkl'
 printf '%s\n' "TEST_API_KEY=$same_value" "OTHER_KEY=keep" >"$SCRIPT_DIR/.env"
-save_api_key TEST_API_KEY "$same_value"
+env_save_api_key TEST_API_KEY "$same_value"
 rc=$?
-assert_eq "0" "$rc" "save_api_key: canonicalizes existing unquoted value"
-assert_eq "TEST_API_KEY='$same_value'" "$(grep '^TEST_API_KEY=' "$SCRIPT_DIR/.env")" "save_api_key: rewrites existing match as quoted"
+assert_eq "0" "$rc" "env_save_api_key: canonicalizes existing unquoted value"
+assert_eq "TEST_API_KEY='$same_value'" "$(grep '^TEST_API_KEY=' "$SCRIPT_DIR/.env")" "env_save_api_key: rewrites existing match as quoted"
 
 reset_env
 before=$(<"$SCRIPT_DIR/.env")
-save_api_key TEST_API_KEY $'bad\nvalue' >/dev/null 2>&1
+env_save_api_key TEST_API_KEY $'bad\nvalue' >/dev/null 2>&1
 rc=$?
 after=$(<"$SCRIPT_DIR/.env")
-assert_eq "1" "$rc" "save_api_key: rejects newline values"
-assert_eq "$before" "$after" "save_api_key: preserves .env on newline rejection"
-assert_eq "" "${TEST_API_KEY:-}" "save_api_key: rejected newline value is not exported"
-assert_contains "$LAST_WARN" "contains a newline" "save_api_key: newline rejection warns"
+assert_eq "1" "$rc" "env_save_api_key: rejects newline values"
+assert_eq "$before" "$after" "env_save_api_key: preserves .env on newline rejection"
+assert_eq "" "${TEST_API_KEY:-}" "env_save_api_key: rejected newline value is not exported"
+assert_contains "$LAST_WARN" "contains a newline" "env_save_api_key: newline rejection warns"
 
 reset_env
 before=$(<"$SCRIPT_DIR/.env")
-save_api_key TEST_API_KEY "bad'value" >/dev/null 2>&1
+env_save_api_key TEST_API_KEY "bad'value" >/dev/null 2>&1
 rc=$?
 after=$(<"$SCRIPT_DIR/.env")
-assert_eq "1" "$rc" "save_api_key: rejects single quote values"
-assert_eq "$before" "$after" "save_api_key: preserves .env on single quote rejection"
-assert_eq "" "${TEST_API_KEY:-}" "save_api_key: rejected quote value is not exported"
-assert_contains "$LAST_WARN" "single quote" "save_api_key: single quote rejection warns"
+assert_eq "1" "$rc" "env_save_api_key: rejects single quote values"
+assert_eq "$before" "$after" "env_save_api_key: preserves .env on single quote rejection"
+assert_eq "" "${TEST_API_KEY:-}" "env_save_api_key: rejected quote value is not exported"
+assert_contains "$LAST_WARN" "single quote" "env_save_api_key: single quote rejection warns"
 
 # ---------------------------------------------------------------------------
 # _set_env_var (the launcher's .env writer) — must round-trip nasty values
 # byte-exact through a re-source and never disturb unrelated keys. It shares
-# the one hardened writer with save_api_key, so the same quoting/atomic
+# the one hardened writer with env_save_api_key, so the same quoting/atomic
 # guarantees apply.
 # ---------------------------------------------------------------------------
 # Stand in the launcher's shoes: it defines _set_env_var inline, so mirror the

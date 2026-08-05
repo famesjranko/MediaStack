@@ -13,29 +13,29 @@ source "$_HTTP_LIB_DIR/common.sh"
 # strings and properly JSON-escaped (quotes, backslashes, control chars) —
 # safe for user-supplied input like passwords. For nested objects, numeric
 # fields, or arrays, build via python3 directly rather than extending this.
-# Usage: json_body key1 value1 [key2 value2 ...]
-json_body() {
+# Usage: http_json_body key1 value1 [key2 value2 ...]
+http_json_body() {
     python3 -c '
 import sys, json
 pairs = sys.argv[1:]
 if len(pairs) % 2:
-    sys.exit("json_body: odd number of args")
+    sys.exit("http_json_body: odd number of args")
 print(json.dumps(dict(zip(pairs[0::2], pairs[1::2]))))
 ' "$@"
 }
 
-# Build a JSON object from key/type/value triples, for bodies json_body (all
+# Build a JSON object from key/type/value triples, for bodies http_json_body (all
 # strings) cannot express. Types: str; int; bool ("true"/"1"/"yes"/"on" -> true,
 # anything else -> false); json (a raw JSON literal for nested/array/null, e.g.
-# '{}', '[1,2]', 'null'). Like json_body, values reach python via argv, so they
+# '{}', '[1,2]', 'null'). Like http_json_body, values reach python via argv, so they
 # are JSON-escaped and never string-formatted into the program text.
-# Usage: json_obj key1 type1 value1 [key2 type2 value2 ...]
-json_obj() {
+# Usage: http_json_obj key1 type1 value1 [key2 type2 value2 ...]
+http_json_obj() {
     python3 -c '
 import sys, json
 args = sys.argv[1:]
 if len(args) % 3:
-    sys.exit("json_obj: args must be key type value triples")
+    sys.exit("http_json_obj: args must be key type value triples")
 out = {}
 for k, t, v in zip(args[0::3], args[1::3], args[2::3]):
     if t == "str":
@@ -47,7 +47,7 @@ for k, t, v in zip(args[0::3], args[1::3], args[2::3]):
     elif t == "json":
         out[k] = json.loads(v)
     else:
-        sys.exit("json_obj: unknown type " + t)
+        sys.exit("http_json_obj: unknown type " + t)
 print(json.dumps(out))
 ' "$@"
 }
@@ -182,7 +182,7 @@ wait_for_jellyfin_auth() {
 # half-configured instance.
 #
 # Args: <label> <endpoint> <json-payload> <cookiejar-path>
-js_post() {
+http_json_post() {
     local label="$1" endpoint="$2" payload="$3" cookiejar="$4"
     local resp_file http_code
     resp_file=$(mktemp)

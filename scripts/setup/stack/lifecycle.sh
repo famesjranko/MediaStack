@@ -73,20 +73,20 @@ start_stack() {
     # profile, so a domain→local switch would leave NPM/fail2ban running.
     if [[ ! " ${profiles[*]} " =~ " --profile proxy " ]]; then
         for svc in npm fail2ban ddns-updater; do
-            if container_running "$svc"; then
+            if service_container_running "$svc"; then
                 log_info "Stopping leftover $svc (proxy profile no longer active)..."
                 docker stop "$svc" >/dev/null 2>&1 && docker rm "$svc" >/dev/null 2>&1 || true
             fi
         done
     fi
     if [[ ! " ${profiles[*]} " =~ " --profile subtitles " ]]; then
-        if container_running bazarr; then
+        if service_container_running bazarr; then
             log_info "Stopping leftover bazarr (subtitles profile no longer active)..."
             docker stop bazarr >/dev/null 2>&1 && docker rm bazarr >/dev/null 2>&1 || true
         fi
     fi
     if [[ ! " ${profiles[*]} " =~ " --profile autoheal " ]]; then
-        if container_running autoheal; then
+        if service_container_running autoheal; then
             log_info "Stopping leftover autoheal (AUTOHEAL_ENABLED=false)..."
             docker stop autoheal >/dev/null 2>&1 && docker rm autoheal >/dev/null 2>&1 || true
         fi

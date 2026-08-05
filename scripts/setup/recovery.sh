@@ -200,7 +200,7 @@ run_remote_ready_recovery() {
     wait_all_healthy
     # Remote access just came up → install the fail2ban log-rotation reload
     # watcher. Sudo is primed above (prompt_sudo_cache).
-    if container_running fail2ban; then
+    if service_container_running fail2ban; then
         f2b_install_reload_watcher
     fi
     (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage,ddns-updater,wireguard)

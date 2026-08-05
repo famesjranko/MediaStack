@@ -15,7 +15,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 CURL_LOG="$TMP_DIR/curl.log"
 
 source "$REPO_ROOT/scripts/lib/json.sh"
-# http.sh provides json_body / json_obj (used to build request bodies); the
+# http.sh provides http_json_body / http_json_obj (used to build request bodies); the
 # real curl / wait_for_service are stubbed below. Matches runtime, where
 # configure.sh sources http.sh before the service configurators.
 source "$REPO_ROOT/scripts/lib/http.sh"
@@ -37,7 +37,7 @@ log_skip() { SKIP_MESSAGES+=("$1"); }
 log_info() { :; }
 wait_for_service() { return 0; }
 docker() { return 0; }
-save_api_key() { SAVED_KEYS+=("$1=$2"); }
+env_save_api_key() { SAVED_KEYS+=("$1=$2"); }
 
 reset_fixture() {
     : >"$CURL_LOG"

@@ -65,7 +65,7 @@ scripts/
     ddns-providers.sh               DDNS provider registry + config.json renderer (6 providers; shared wizard/day-2)
     dry-run.sh                      `--dry-run` UI explorer: walks the real wizard/launcher with side effects neutralised
     health.sh                       Day-2 silent-failure health checks (fail2ban drift, cert renewal, DDNS drift, disk, UFW, Docker)
-    http.sh                         wait_for_service, js_post (cookie-session)
+    http.sh                         wait_for_service, http_json_post (cookie-session)
     json.sh                         json_get, json_path, json_has_name, json_array_nonempty
     network.sh                      Compatibility entry point and source-time state for shared network helpers
     network/                        Public IP, DNS, DDNS, port-gate, and WireGuard access helpers

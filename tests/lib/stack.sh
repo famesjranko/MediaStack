@@ -28,7 +28,7 @@ get_api_key_from_xml() {
 }
 
 # Read Jackett APIKey from ServerConfig.json inside DinD.
-get_jackett_api_key() {
+api_get_jackett_key() {
     dind_exec "python3 -c \"import json; print(json.load(open('config/jackett/Jackett/ServerConfig.json')).get('APIKey',''))\"" | tr -d '\r\n'
 }
 

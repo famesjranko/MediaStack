@@ -40,7 +40,7 @@ configure_jellyfin_networking() {
     case "$action" in
         SKIP)
             log_skip "Jellyfin networking already configured"
-            save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
+            env_save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
             if [[ "$published_url_changed" == "true" ]]; then
                 log_info "Recreating Jellyfin for PublishedServerUrl change..."
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
@@ -56,7 +56,7 @@ configure_jellyfin_networking() {
             echo "$result" | tail -n +2 | while IFS= read -r msg; do
                 log_drift "Jellyfin networking: $msg - not overwriting (changed in UI?)"
             done
-            save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
+            env_save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
             if [[ "$published_url_changed" == "true" ]]; then
                 log_info "Recreating Jellyfin for PublishedServerUrl change..."
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
@@ -94,7 +94,7 @@ configure_jellyfin_networking() {
         -d "$body" >/dev/null; then
 
         # Write JELLYFIN_PUBLISHED_URL to .env for docker-compose
-        save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
+        env_save_api_key "JELLYFIN_PUBLISHED_URL" "$published_url"
 
         log_ok "Jellyfin networking configured (AutoDiscovery, KnownProxies, PublishedServerUriBySubnet)"
 

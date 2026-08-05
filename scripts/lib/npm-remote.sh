@@ -14,7 +14,7 @@ _NPM_REMOTE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_NPM_REMOTE_LIB_DIR/common.sh"
 
 npm_remote_container_running() {
-    container_running npm
+    service_container_running npm
 }
 
 npm_remote_cert_material_ready() {

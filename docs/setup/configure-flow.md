@@ -13,7 +13,7 @@ scripts/
 ├── configure.sh              # thin entrypoint: env load, lib+service sourcing, main() orchestration
 ├── lib/
 │   ├── common.sh             # colours, logging, cfg_* YAML readers, api_get/api_post/api_put, *_api_key helpers
-│   ├── http.sh               # wait_for_service, json_body, js_post (cookie-session POST with body capture)
+│   ├── http.sh               # wait_for_service, http_json_body, http_json_post (cookie-session POST with body capture)
 │   ├── json.sh               # json_get, json_path, json_has_name, json_array_nonempty
 │   └── arr/
 │       ├── main.sh           # configure_quality_profile, configure_quality_definitions, configure_arr_custom_formats, configure_arr_format_scores, configure_arr_indexers, configure_arr_disk_threshold
@@ -25,7 +25,7 @@ scripts/
 │       │   ├── format_scores.py         # compare profile formatItems, emit match/empty/drift status
 │       │   └── torznab_caps.py          # parse caps XML → filtered category list per app
 │       └── templates/
-│           └── indexer.json  # legacy static template; variable JSON is rendered with Python/json_body
+│           └── indexer.json  # legacy static template; variable JSON is rendered with Python/http_json_body
 └── services/
     ├── qbittorrent/main.sh              # no templates — setPreferences payload built inline via python3 json.dumps
     ├── jackett/main.sh                  # no templates — mostly auth loops, no extractable payloads
@@ -41,7 +41,7 @@ scripts/
     └── beszel/main.sh
 ```
 
-**Template rendering convention:** Variable-bearing JSON payloads are built with `python3 json.dumps` or the `json_body` helper so quotes, backslashes, `$`, and control characters are escaped safely. Static payload files with no variable substitution may be posted directly with `curl -d @file`.
+**Template rendering convention:** Variable-bearing JSON payloads are built with `python3 json.dumps` or the `http_json_body` helper so quotes, backslashes, `$`, and control characters are escaped safely. Static payload files with no variable substitution may be posted directly with `curl -d @file`.
 
 Growth paths are documented in `docs/project/structure.md`. The service-loader loop in `scripts/configure.sh` supports both `services/<svc>/main.sh` (directory form, used by all services) and legacy flat `services/<svc>.sh`. Genuine cross-service orchestration lands in `scripts/flows/*.sh`.
 
@@ -74,10 +74,10 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 - `wait_for_service NAME URL` in `scripts/lib/http.sh` — 90-second curl loop; used only by `main()` before the 10 steps.
 - `api_get URL KEY` / `api_post URL KEY BODY` / `api_put URL KEY BODY` in `scripts/lib/common.sh` — curl wrappers for *arr APIs with `X-Api-Key` header. `api_put` is used by `configure_quality_definitions` to update individual quality definitions; `api_post` for everything else.
-- `get_api_key PATH` in `scripts/lib/common.sh` — regex-extract `<ApiKey>` from Sonarr/Radarr `config.xml`.
-- `get_jackett_api_key` in `scripts/lib/common.sh` — JSON parse `config/jackett/Jackett/ServerConfig.json`.
-- `save_api_key NAME VALUE` in `scripts/lib/common.sh` — `sed -i` writes into `.env`, logs if changed. Also `export` so later steps in the same invocation see the new value without re-sourcing.
-- `js_post LABEL ENDPOINT PAYLOAD COOKIEJAR` in `scripts/lib/http.sh` — POST JSON within a cookie-authenticated session and surface the rejection body on non-2xx. Hoisted from a nested function inside the old Seerr step during the refactor; explicit `COOKIEJAR` arg (4th) because bash dynamic scoping was its only prior binding.
+- `api_get_key PATH` in `scripts/lib/common.sh` — regex-extract `<ApiKey>` from Sonarr/Radarr `config.xml`.
+- `api_get_jackett_key` in `scripts/lib/common.sh` — JSON parse `config/jackett/Jackett/ServerConfig.json`.
+- `env_save_api_key NAME VALUE` in `scripts/lib/common.sh` — `sed -i` writes into `.env`, logs if changed. Also `export` so later steps in the same invocation see the new value without re-sourcing.
+- `http_json_post LABEL ENDPOINT PAYLOAD COOKIEJAR` in `scripts/lib/http.sh` — POST JSON within a cookie-authenticated session and surface the rejection body on non-2xx. Hoisted from a nested function inside the old Seerr step during the refactor; explicit `COOKIEJAR` arg (4th) because bash dynamic scoping was its only prior binding.
 
 ## Pre-step wait (top of `main()` in `scripts/configure.sh`)
 
@@ -121,7 +121,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 - Torznab indexers — delegates to shared `configure_arr_indexers` with TV categories from `config.yml`.
 - **Forms auth** — delegates to shared `configure_arr_auth` (see below).
 
-**Writeback:** `save_api_key "SONARR_API_KEY" "$sonarr_key"`.
+**Writeback:** `env_save_api_key "SONARR_API_KEY" "$sonarr_key"`.
 
 ## Step 4 — Radarr (`scripts/services/radarr/main.sh`)
 
@@ -133,7 +133,7 @@ Structural mirror of Sonarr — both delegate to the same shared helpers (includ
 - Quality definitions set is the same shape as Sonarr's; Remux-1080p is not configured.
 - Naming conventions use movie-specific format (`{Movie CleanTitle} ({Release Year}) [imdbid-{ImdbId}]`). Skipped if `renameMovies` is already True. Inline in radarr/main.sh.
 
-**Writeback:** `save_api_key "RADARR_API_KEY" "$radarr_key"`.
+**Writeback:** `env_save_api_key "RADARR_API_KEY" "$radarr_key"`.
 
 ## Shared *arr helpers (`scripts/lib/arr/main.sh` + topical modules + `render/*.py` + `templates/*.json`)
 
@@ -232,7 +232,7 @@ Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/net
 - **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see the static-octet map in the `mediastack` network block of `docker-compose.yml`).
 - **`PublishedServerUriBySubnet`** — `["internal=http://<HOST_IP>:8096"]` always; adds `"external=https://jellyfin.<DOMAIN>"` only when `REMOTE_WEB_STATE=ready`. Unchecked or skipped remote state stays LAN-only even if `DOMAIN` is real.
 
-**Idempotency:** GET current, compare each field. `log_skip` on match. `log_warn` on drift (non-default values that differ from expected — user changed in UI). POST only when values are at defaults. Writes `JELLYFIN_PUBLISHED_URL` to `.env` via `save_api_key`.
+**Idempotency:** GET current, compare each field. `log_skip` on match. `log_warn` on drift (non-default values that differ from expected — user changed in UI). POST only when values are at defaults. Writes `JELLYFIN_PUBLISHED_URL` to `.env` via `env_save_api_key`.
 
 **Restart:** `KnownProxies` and `AutoDiscovery` are startup-config (ASP.NET `ForwardedHeadersOptions` and UDP listener, respectively). After successful POST: `docker compose up -d --no-deps --force-recreate jellyfin`, poll `/health` for up to 60s. `--force-recreate` ensures the container is recreated (picks up `.env` changes); `--no-deps` avoids pulling in other services. Skip/drift normally avoids restart, except when `JELLYFIN_PUBLISHED_URL` changes; that value is a compose environment variable, so the Jellyfin container is force-recreated to pick up the new LAN or HTTPS URL even when the network API write itself is skipped or drift-protected.
 
@@ -246,9 +246,9 @@ The longest step — Seerr's bootstrap involves three moving API surfaces (its o
 4. **Library readiness poll**. Read the Jellyfin API key Seerr generated for itself (from the `apiKey` field in `GET /api/v1/settings/jellyfin`), then poll Jellyfin's `GET /Library/MediaFolders` with it for 60s until the `Movies` and `TV Shows` folders appear. Poll count is 30 x 2s. This is the correct gate — Seerr's sync calls Jellyfin's `/Library/MediaFolders` internally, *not* the refresh task status.
 5. **Library sync** — `GET /api/v1/settings/jellyfin/library?sync=true`. Captures HTTP code + body so real failures (`404 SYNC_ERROR_NO_LIBRARIES`, `501 SYNC_ERROR_GROUPED_FOLDERS`) surface instead of being masked. A previous implementation used `|| echo "[]"` and silently lost errors.
 6. **Enable libraries** — `GET /api/v1/settings/jellyfin/library?enable=<comma-ids>`.
-7. **Connect Sonarr + Radarr** via `js_post` (defined in `scripts/lib/http.sh`), which captures the response body on non-2xx. Payload includes `activeProfileName`, `activeDirectory`, `activeLanguageProfileId` (Sonarr) — Seerr 2.7.x silently accepts an incomplete payload but the connection won't work without these fields.
+7. **Connect Sonarr + Radarr** via `http_json_post` (defined in `scripts/lib/http.sh`), which captures the response body on non-2xx. Payload includes `activeProfileName`, `activeDirectory`, `activeLanguageProfileId` (Sonarr) — Seerr 2.7.x silently accepts an incomplete payload but the connection won't work without these fields.
 8. **Mark setup complete** — `POST /api/v1/settings/initialize`, then re-fetch `/api/v1/settings/public` to verify `initialized=true`.
-9. **Extract API key** — from the `apiKey` field of `GET /api/v1/settings/main` (fetched for permissions check below). Saved to `.env` as `SEERR_API_KEY` via `save_api_key`. Used by the Homepage widget in Step 8.
+9. **Extract API key** — from the `apiKey` field of `GET /api/v1/settings/main` (fetched for permissions check below). Saved to `.env` as `SEERR_API_KEY` via `env_save_api_key`. Used by the Homepage widget in Step 8.
 10. **Set default permissions + quotas** — `POST /api/v1/settings/main` with `defaultPermissions: 32` (REQUEST only) and `defaultQuotas` from `config.yml` (`seerr.quotas.movie` and `seerr.quotas.tv`). Bits 128/256/512 (auto-approve movies/TV/4K) are NOT set, so all requests require admin approval. Quotas default to unlimited (`limit: 0`) in the shipped `config.yml`.
 
 Heredoc-stdin hazard (commented in the source near the `lib_ids` extraction): `python3 - <<'PY'` rebinds stdin, so using it in a pipeline like `echo $libs | python3 - <<'PY'` silently gives Python an EOF — the `echo`'s output never reaches `sys.stdin`. Use `python3 -c '…'` inside pipes.
@@ -358,7 +358,7 @@ Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; i
 
 **Auth:** `POST /api/collections/users/auth-with-password` with `NPM_ADMIN_EMAIL` / `JELLYFIN_ADMIN_PASSWORD`. The hub auto-creates this user from `USER_EMAIL`/`USER_PASSWORD` env vars on first container start — no API call needed for initial user creation.
 
-**SSH key retrieval:** `GET /api/beszel/getkey` with Bearer auth returns the hub's ed25519 public key. This key is stable across restarts (generated once, persisted in `/beszel_data`). Saved to `.env` as `BESZEL_AGENT_KEY` via `save_api_key`.
+**SSH key retrieval:** `GET /api/beszel/getkey` with Bearer auth returns the hub's ed25519 public key. This key is stable across restarts (generated once, persisted in `/beszel_data`). Saved to `.env` as `BESZEL_AGENT_KEY` via `env_save_api_key`.
 
 **Agent recreate:** When the key changes, `docker compose up -d beszel-agent` recreates the agent container with the new `KEY` env var. `docker restart` would NOT pick up the new key (same pattern as the Unpackerr recreate at the end of `main()`).
 

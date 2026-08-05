@@ -7,7 +7,7 @@ configure_jackett() {
     echo -e "${BOLD}Configuring Jackett indexers...${NC}"
 
     local jackett_key
-    jackett_key=$(get_jackett_api_key)
+    jackett_key=$(api_get_jackett_key)
     if [[ -z "$jackett_key" ]]; then
         log_warn "Cannot read Jackett API key"
         return 0

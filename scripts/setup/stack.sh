@@ -63,8 +63,8 @@ PY
 _stack_save_env_value() {
     local key="$1" value="$2"
     export "${key}=${value}"
-    if [[ -f "$SCRIPT_DIR/.env" ]] && declare -F save_api_key >/dev/null; then
-        save_api_key "$key" "$value"
+    if [[ -f "$SCRIPT_DIR/.env" ]] && declare -F env_save_api_key >/dev/null; then
+        env_save_api_key "$key" "$value"
     fi
 }
 

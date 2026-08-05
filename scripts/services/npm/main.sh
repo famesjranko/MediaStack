@@ -104,14 +104,14 @@ print(json.dumps({
             log_skip "NPM admin already has non-default credentials"
         else
             local user_update_body rotate_body
-            user_update_body=$(json_body name Administrator nickname Admin email "$npm_email")
+            user_update_body=$(http_json_body name Administrator nickname Admin email "$npm_email")
             curl -sf -X PUT "$npm_api/users/me" \
                 -H "Authorization: Bearer $default_token" \
                 -H "Content-Type: application/json" \
                 -d "$user_update_body" \
                 >/dev/null 2>&1 || true
 
-            rotate_body=$(json_body type password current changeme secret "$npm_pw")
+            rotate_body=$(http_json_body type password current changeme secret "$npm_pw")
             if curl -sf -X PUT "$npm_api/users/me/auth" \
                 -H "Authorization: Bearer $default_token" \
                 -H "Content-Type: application/json" \
@@ -130,7 +130,7 @@ print(json.dumps({
 
     # Authenticate to get a token for proxy host management.
     local npm_token tokens_body
-    tokens_body=$(json_body identity "$npm_email" secret "$npm_pw")
+    tokens_body=$(http_json_body identity "$npm_email" secret "$npm_pw")
     npm_token=$(curl -sf -X POST "$npm_api/tokens" \
         -H "Content-Type: application/json" \
         -d "$tokens_body" 2>/dev/null \
@@ -156,7 +156,7 @@ for s in json.load(sys.stdin):
 ' 2>/dev/null)
         if [[ "$default_site_value" == "congratulations" ]]; then
             local ds_body ds_http
-            ds_body=$(json_obj value str 404 meta json '{}')
+            ds_body=$(http_json_obj value str 404 meta json '{}')
             ds_http=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
                 "$npm_api/settings/default-site" \
                 -H "Authorization: Bearer $npm_token" \

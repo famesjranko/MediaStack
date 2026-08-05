@@ -97,7 +97,7 @@ explaining and are not checked for completeness by anything.
 - docker-ce, docker-compose-plugin
 - python3, python3-yaml (config.yml parsing)
 - curl (API calls + healthchecks + the wizard's primary connection speed test via Cloudflare)
-- envsubst (gettext-base — legacy shell-template compatibility; variable JSON uses Python/json_body)
+- envsubst (gettext-base — legacy shell-template compatibility; variable JSON uses Python/http_json_body)
 - openssl (password/hash generation)
 - git (nvidia-patch reviewed commit fetch/checkout)
 - htop (interactive process/CPU/memory monitor)

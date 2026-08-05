@@ -1,5 +1,5 @@
 # Owns: save_jellyfin_api_key and configure_jellyfin_libraries — permanent API key persistence and library provisioning after the first-run wizard.
-# Sources: main.sh (auth/session context), api helpers, save_api_key and log_* from scripts/lib/common.sh.
+# Sources: main.sh (auth/session context), api helpers, env_save_api_key and log_* from scripts/lib/common.sh.
 
 # Create (or reuse) a permanent Jellyfin API key and save it to .env.
 # Session tokens from AuthenticateByName are transient and change every run;
@@ -18,7 +18,7 @@ keys = [k['AccessToken'] for k in items if k.get('AppName')=='MediaStack']
 print(keys[0] if keys else '')" 2>/dev/null || echo "")
 
     if [[ -n "$existing_key" ]]; then
-        save_api_key "JELLYFIN_API_KEY" "$existing_key"
+        env_save_api_key "JELLYFIN_API_KEY" "$existing_key"
         return 0
     fi
 
@@ -35,10 +35,10 @@ keys = [k['AccessToken'] for k in items if k.get('AppName')=='MediaStack']
 print(keys[0] if keys else '')" 2>/dev/null || echo "")
 
     if [[ -n "$new_key" ]]; then
-        save_api_key "JELLYFIN_API_KEY" "$new_key"
+        env_save_api_key "JELLYFIN_API_KEY" "$new_key"
     else
         log_warn "Could not create permanent Jellyfin API key, saving session token"
-        save_api_key "JELLYFIN_API_KEY" "$session_token"
+        env_save_api_key "JELLYFIN_API_KEY" "$session_token"
     fi
 }
 

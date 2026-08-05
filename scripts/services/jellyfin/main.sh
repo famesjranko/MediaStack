@@ -37,7 +37,7 @@ configure_jellyfin() {
     # json.dumps escapes quotes, backslashes, and control chars. The previous
     # envsubst-into-template pattern was unsafe for passwords containing " or \.
     local auth_body
-    auth_body=$(json_body Username "$jf_user" Pw "$jf_pw")
+    auth_body=$(http_json_body Username "$jf_user" Pw "$jf_pw")
 
     if [[ -z "$startup_info" ]]; then
         # Wizard already completed — wait for the auth subsystem to become
@@ -92,10 +92,10 @@ configure_jellyfin() {
     # but the admin is never persisted.
     http_check "Jellyfin /Startup/User (init)" "$jf_url/Startup/User" >/dev/null || return 1
 
-    # User body built via json_body so passwords with " \ or control chars are
+    # User body built via http_json_body so passwords with " \ or control chars are
     # properly escaped instead of breaking the JSON payload.
     local startup_user_body
-    startup_user_body=$(json_body Name "$jf_user" Password "$jf_pw")
+    startup_user_body=$(http_json_body Name "$jf_user" Password "$jf_pw")
     http_check "Jellyfin /Startup/User (create admin)" \
         -X POST "$jf_url/Startup/User" \
         -H "Content-Type: application/json" \

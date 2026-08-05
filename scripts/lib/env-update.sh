@@ -2,7 +2,7 @@
 # MediaStack .env updater: atomic KEY=value rewrites and API-key persistence
 # =============================================================================
 # Owns: _env_write_kv (the one .env-mutation primitive), _env_write_kv_warn
-# (shared failure-to-log_warn mapping), and save_api_key (the configure-time
+# (shared failure-to-log_warn mapping), and env_save_api_key (the configure-time
 # convenience wrapper). Sourced by scripts/lib/common.sh so every existing
 # common.sh consumer keeps these names with zero call-site churn.
 # Depends on log_warn/log_ok (common.sh) and $SCRIPT_DIR being exported by
@@ -30,7 +30,7 @@ _MS_ENV_WRITE_SH=1
 #   write-error:<reason>                             -> rc non-zero
 # Side-effect-free beyond the file write: it does NOT log or export — callers
 # decide how to surface the outcome. This is the one .env-mutation writer;
-# save_api_key, the launcher's _set_env_var, storage_env_set, and the stage2/
+# env_save_api_key, the launcher's _set_env_var, storage_env_set, and the stage2/
 # stage3 rewriters all route through it (no second hand-rolled implementation).
 _env_write_kv() {
     local env_file="$1"
@@ -162,7 +162,7 @@ _env_write_kv_warn() {
     esac
 }
 
-save_api_key() {
+env_save_api_key() {
     local key_name="$1" key_value="$2" env_file="$SCRIPT_DIR/.env"
     [[ -f "$env_file" ]] || return
 

@@ -65,7 +65,7 @@ curl() {
 
 docker() { return 0; }
 
-save_api_key() { :; }
+env_save_api_key() { :; }
 
 reset_logs() {
     OK_MESSAGES=()

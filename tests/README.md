@@ -475,7 +475,7 @@ Current DinD wizard UI coverage:
 2. The function has access to everything sourced by `run.sh`:
    - **Assertions** (`lib/assert.sh`): `pass`, `fail`, `skip`, `assert_eq`, `assert_contains`, `assert_http`.
    - **DinD control** (`lib/dind.sh`): `dind_exec "<cmd>"` (runs inside DinD with `/root/MediaStack` as CWD), `dind_logs <service>`, `dind_exec_tty` for manual poking.
-   - **Stack helpers** (`lib/stack.sh`): `wait_healthy <svc> [timeout]`, `get_api_key_from_xml <path>`, `get_jackett_api_key`, `env_set KEY VALUE` (writes to `.env` via Python — safe with `$` and special chars), `env_get KEY`, `create_config_dirs_in_dind`.
+   - **Stack helpers** (`lib/stack.sh`): `wait_healthy <svc> [timeout]`, `get_api_key_from_xml <path>`, `api_get_jackett_key`, `env_set KEY VALUE` (writes to `.env` via Python — safe with `$` and special chars), `env_get KEY`, `create_config_dirs_in_dind`.
    - **PTY wizard driver** (`lib/wizard_pty.py`): drive interactive prompt
      flows from JSON steps when pipe-based input would miss terminal behavior.
    - **Stage 1 wizard fixtures** (`lib/wizard-stage1-common.sh`): shared stubs
