@@ -779,7 +779,7 @@ command by hand:
 
 ```bash
 ./tests/check.sh          # default: fast + tests/unit.sh + image-free wizard scenarios
-./tests/check.sh fast     # static tier: shellcheck, line cap, shfmt, ruff, mypy, contracts, secrets.
+./tests/check.sh fast     # static tier: shellcheck, line cap, naming, shfmt, ruff, mypy, contracts, secrets.
 ./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
 ./tests/check.sh install  # one-time per machine: fetch + verify every pinned dev
                           # tool (shellcheck, shfmt, gitleaks) into the local cache
@@ -790,7 +790,8 @@ the exact underlying command so it can be re-run in isolation. It wraps the runn
 below; it does not reimplement their file discovery or logic:
 
 - **fast** — `./tests/lint.sh --severity=warning` (shellcheck),
-  `./tests/shell-line-cap.sh` (the 500-line ratchet), `./tests/format.sh check`
+  `./tests/shell-line-cap.sh` (the 500-line ratchet), `./tests/naming.sh`
+  (tracked shell/python filename casing), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
   pinned gitleaks over this repository's tree. It starts
   no DinD or service containers; ShellCheck runs from a native or cached pinned

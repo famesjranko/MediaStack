@@ -12,6 +12,7 @@
 #   ./tests/check.sh full     # everything, including the complete DinD battery.
 #   ./tests/check.sh lint     # single stage: shellcheck sweep only.
 #   ./tests/check.sh line-cap # single stage: tracked shell line cap only.
+#   ./tests/check.sh naming   # single stage: tracked filename casing only.
 #   ./tests/check.sh shfmt    # single stage: shell formatting only.
 #   ./tests/check.sh ruff     # single stage: python lint + format check only.
 #   ./tests/check.sh mypy     # single stage: type check only.
@@ -34,7 +35,8 @@
 #   ./tests/check.sh -h       # this help
 #
 # Tiers are cumulative and run in the fixed order below:
-#   fast    - lint (tests/lint.sh), shell line cap, shell formatting
+#   fast    - lint (tests/lint.sh), shell line cap, filename casing
+#             (tests/naming.sh), shell formatting
 #             (tests/format.sh), python lint + format (ruff), python types
 #             (mypy), API contract coverage, and the secret scan
 #             over the working tree (tests/secret-scan.sh). It starts no DinD
@@ -47,7 +49,7 @@
 #             This is the PR gate's local equivalent.
 #   full    - default + tests/battery.sh (the complete DinD scenario battery).
 #
-# lint/line-cap/shfmt/ruff/mypy/contracts/secrets/secrets-history/unit/wizard/warm-python/install
+# lint/line-cap/naming/shfmt/ruff/mypy/contracts/secrets/secrets-history/unit/wizard/warm-python/install
 # are single-stage selectors, not tiers: each
 # runs exactly one stage and nothing else, so a caller (CI) can spread the
 # pipeline across parallel jobs without a stage running twice. tests/unit.sh
@@ -71,7 +73,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.." || exit 2
 
 if (($# > 1)); then
-    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|line-cap|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
     exit 2
 fi
 
@@ -83,9 +85,9 @@ case "$arg" in
         exit 0
         ;;
     fast | default | full) TIER="$arg" ;;
-    lint | line-cap | shfmt | ruff | mypy | contracts | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
+    lint | line-cap | naming | shfmt | ruff | mypy | contracts | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
     *)
-        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|line-cap|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
         exit 2
         ;;
 esac
@@ -287,6 +289,9 @@ if [[ -n "$STAGE" ]]; then
             stage line-cap "lint: shell file line cap" "./tests/shell-line-cap.sh" \
                 ./tests/shell-line-cap.sh
             ;;
+        naming)
+            stage naming "lint: file naming" "./tests/naming.sh" ./tests/naming.sh
+            ;;
         shfmt)
             stage shfmt "format: shfmt" "./tests/format.sh check" \
                 ./tests/format.sh check
@@ -345,6 +350,7 @@ stage fast "lint: shellcheck" "./tests/lint.sh --severity=warning" \
     ./tests/lint.sh --severity=warning
 stage fast "lint: shell file line cap" "./tests/shell-line-cap.sh" \
     ./tests/shell-line-cap.sh
+stage fast "lint: file naming" "./tests/naming.sh" ./tests/naming.sh
 stage fast "format: shfmt" "./tests/format.sh check" \
     ./tests/format.sh check
 stage fast "python: ruff" \
