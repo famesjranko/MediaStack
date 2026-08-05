@@ -154,7 +154,7 @@ wg_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   _apply_service_update(){ APPLIED+="$1 "; }
   ui_confirm(){ return 0; }
   ui_log(){ :; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   tsv=$(printf "jellyfin\tlatest\tmanual\tUpdate available\ttrue\nsonarr\tstable\tdefault\tUp to date\tfalse\nwireguard\tlatest\tmanual\tUpdate available\ttrue\n")
   _menu_update_all "$tsv"
   echo "APPLIED=[$APPLIED]"
@@ -257,7 +257,7 @@ reset_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   LABELS=$(mktemp)
   ui_log(){ :; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Back"; }
   _reset_service_to_default(){ echo "RESET:$1"; }
   # jellyfin: manual + installed; sonarr: no override (installed image); bazarr: manual but Not installed.

@@ -38,7 +38,7 @@ for view in "f2b_banned_menu" "f2b_ip_actions 203.0.113.5" "f2b_stats_menu"; do
     rhythm=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DOCKER_STUB="$DOCKER_STUB" VIEW="$view" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     eval "$DOCKER_STUB"
-    clear(){ :; }; ui_kv(){ :; }; ui_log(){ :; }; pause_for_menu(){ :; }
+    clear(){ :; }; ui_kv(){ :; }; ui_log(){ :; }; launcher_pause_for_menu(){ :; }
     N=0
     ui_box(){ N=$((N+1)); }
     ui_choose(){ echo "Back"; }
@@ -75,7 +75,7 @@ seed_jail "$WLROOT/config/fail2ban/jail.d/mediastack.conf"
 menu8=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" WLROOT="$WLROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   SCRIPT_DIR="$WLROOT"
-  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; pause_for_menu(){ :; }
+  clear(){ :; }; ui_box(){ :; }; ui_kv(){ :; }; launcher_pause_for_menu(){ :; }
   ui_log(){ echo "$1: ${*:2}"; }
   LABELS=$(mktemp)
   ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Back"; }

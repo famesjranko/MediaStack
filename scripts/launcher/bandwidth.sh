@@ -15,12 +15,12 @@ action_adjust_bandwidth() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     if ! _service_is_running qbittorrent; then
         ui_log warn "qBittorrent isn't running - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -46,12 +46,12 @@ action_adjust_bandwidth() {
 
     if [[ "$new_dl" == "$cur_dl" && "$new_ul" == "$cur_ul" ]]; then
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     ui_confirm "Apply download ${new_dl} MB/s / upload ${new_ul} MB/s to qBittorrent now?" yes || {
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     }
 
@@ -70,7 +70,7 @@ action_adjust_bandwidth() {
         _reload_env
     fi
     _show_action_result "$rc" "Adjust bandwidth limits"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 # Atomically write + secure a DDNS config.json payload to the live path, reusing

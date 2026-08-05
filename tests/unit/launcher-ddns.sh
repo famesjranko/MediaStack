@@ -132,7 +132,7 @@ run_banner() {
     # $1 = _ddns_status echo value
     MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" DST="$1" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
-    is_installed(){ return 0; }
+    launcher_is_installed(){ return 0; }
     _docker_reachable(){ return 0; }
     _compose_running_summary(){ echo "19/20"; }
     _detect_lan_ip(){ echo "192.168.1.2"; }
@@ -159,32 +159,32 @@ fi
 
 # ---------------------------------------------------------------------------
 # 6. "Refresh status" main-menu row: present, and its dispatch invalidates the
-#    session IP caches so the next banner render re-detects. (menu_post is single
+#    session IP caches so the next banner render re-detects. (launcher_menu_post is single
 #    pass — the loop lives in main() — so the flags can be read after it returns.)
 # ---------------------------------------------------------------------------
 menu_labels=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   LABELS=$(mktemp)
-  is_installed(){ return 0; }
+  launcher_is_installed(){ return 0; }
   storage_is_nas(){ return 1; }
   _warn_gpu_runtime_fallback(){ :; }
   ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Noop"; }
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   cat "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
-assert_contains "$menu_labels" "Refresh status" "menu_post: Refresh status row present"
+assert_contains "$menu_labels" "Refresh status" "launcher_menu_post: Refresh status row present"
 
 refresh_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
-  is_installed(){ return 0; }
+  launcher_is_installed(){ return 0; }
   storage_is_nas(){ return 1; }
   _warn_gpu_runtime_fallback(){ :; }
   ui_choose(){ echo "Refresh status (re-check public IP & DDNS)"; }
   _MS_PUBLIC_IP_CHECKED=1
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   echo "PUB=$_MS_PUBLIC_IP_CHECKED"
 ' 2>&1)
-assert_contains "$refresh_out" "PUB=0" "menu_post: Refresh status invalidates the public-IP cache"
+assert_contains "$refresh_out" "PUB=0" "launcher_menu_post: Refresh status invalidates the public-IP cache"
 
 # ---------------------------------------------------------------------------
 # 7. render_banner cross-render probe budget. A warm-cache flag that does not
@@ -204,7 +204,7 @@ probe_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   export IPF; IPF=$(mktemp); export DIGF; DIGF=$(mktemp); echo 0 > "$IPF"; echo 0 > "$DIGF"
   net_detect_public_ip(){ echo $(( $(cat "$IPF") + 1 )) > "$IPF"; _NET_PUBLIC_IP="1.2.3.4"; return 0; }
   _resolve_ddns_ip(){ echo $(( $(cat "$DIGF") + 1 )) > "$DIGF"; printf "1.2.3.4"; }
-  is_installed(){ return 0; }
+  launcher_is_installed(){ return 0; }
   _docker_reachable(){ return 0; }
   _ddns_configured(){ return 0; }
   _service_is_running(){ return 0; }

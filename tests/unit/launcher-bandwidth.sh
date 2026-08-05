@@ -77,7 +77,7 @@ run_band() {
     # Pre-defined stub: the handler will find it via `type` and skip sourcing
     # the qBittorrent module. Captures args + returns the requested rc.
     qbt_set_speed_limits(){ echo "QBT_SET $*" >> "$CAPTURE"; return "${QBT_RC:-0}"; }
-    ui_log(){ :; }; pause_for_menu(){ :; }
+    ui_log(){ :; }; launcher_pause_for_menu(){ :; }
     _show_action_result(){ echo "RESULT rc=$1 label=$2" >> "$CAPTURE"; }
     _reload_env                       # load INIT into shell vars
     action_adjust_bandwidth
@@ -126,7 +126,7 @@ run_guard() {
     qbt_set_speed_limits(){ echo "QBT_SET $*" >> "$CAPTURE"; }
     ui_input_validated(){ echo "9"; }   # would change if reached
     ui_confirm(){ return 0; }
-    pause_for_menu(){ :; }
+    launcher_pause_for_menu(){ :; }
     WARN=""; ui_log(){ [[ "$1" == "warn" ]] && WARN="$WARN $*"; echo "$*"; }
     _reload_env
     action_adjust_bandwidth
@@ -161,7 +161,7 @@ run_real_input() {
       _service_is_running(){ return 0; }
       qbt_set_speed_limits(){ echo "QBT_SET $*" >> "$CAPTURE"; }
       ui_confirm(){ return 0; }
-      ui_log(){ :; }; pause_for_menu(){ :; }; _show_action_result(){ :; }
+      ui_log(){ :; }; launcher_pause_for_menu(){ :; }; _show_action_result(){ :; }
       # ui_input_validated is the REAL primitive — its read sees EOF from </dev/null.
       _reload_env
       action_adjust_bandwidth </dev/null

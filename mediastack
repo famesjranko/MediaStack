@@ -75,7 +75,7 @@ else
     # No .env = not installed. Clear state vars that a prior launcher exported
     # (set -a) and that this process inherited through exec — e.g. right after
     # --uninstall re-execs the launcher. The .env file is the source of truth;
-    # a stale exported STAGE_1_COMPLETE must not keep is_installed / the menus
+    # a stale exported STAGE_1_COMPLETE must not keep launcher_is_installed / the menus
     # showing an installed state after the file has been removed.
     unset STAGE_1_COMPLETE DOMAIN JELLYFIN_GPU NVIDIA_DRIVER_MODE REMOTE_WEB_STATE
 fi
@@ -110,7 +110,7 @@ source "$SCRIPT_DIR/scripts/launcher/manage-updates.sh" || exit 1
 # State detection
 # =============================================================================
 
-is_installed() {
+launcher_is_installed() {
     [[ "${STAGE_1_COMPLETE:-}" == "1" ]]
 }
 
@@ -118,11 +118,11 @@ is_installed() {
 # Banner
 # =============================================================================
 
-action_install() {
+launcher_action_install() {
     ui_confirm "Run the full installer now (~5-10 min, uses sudo)?" no || return 0
     _run_setup_return 1 "Install"
 }
-action_install_gum() {
+launcher_action_install_gum() {
     echo ""
     ui_log info "Installing GUM for enhanced arrow-key menus..."
     sudo -v
@@ -141,10 +141,10 @@ action_install_gum() {
         exec "$0"
     else
         ui_log error "GUM installation failed. Check internet connectivity and try again."
-        pause_for_menu
+        launcher_pause_for_menu
     fi
 }
-menu_pre() {
+launcher_menu_pre() {
     echo ""
     local choice options=()
     options+=(
@@ -165,17 +165,17 @@ menu_pre() {
     choice=$(ui_choose "What would you like to do?" "${options[@]}")
 
     case "$choice" in
-        "Install MediaStack"*) action_install ;;
+        "Install MediaStack"*) launcher_action_install ;;
         "System readiness check"*)
             diag_readiness
-            pause_for_menu
+            launcher_pause_for_menu
             ;;
         "Test port forwarding"*) action_port_check ;;
         "Check domain DNS"*)
             diag_dns_check
-            pause_for_menu
+            launcher_pause_for_menu
             ;;
-        "Get enhanced menus"*) action_install_gum ;;
+        "Get enhanced menus"*) launcher_action_install_gum ;;
         "Uninstall MediaStack"*) action_uninstall ;;
         "Quit"*)
             echo
@@ -186,7 +186,7 @@ menu_pre() {
     esac
 }
 
-menu_post() {
+launcher_menu_post() {
     # Options are grouped by how often a day-2 user reaches for them, most
     # frequent first (reorder only — no visible band headers; a header as a
     # ui_choose item would consume a selection index and shift the position-based
@@ -219,7 +219,7 @@ menu_post() {
         "Diagnostics (ports, public IP, DNS, readiness)"
         "Refresh status (re-check public IP & DDNS)"
     )
-    # Offer the GUM installer only when it's missing (mirrors menu_pre:2161).
+    # Offer the GUM installer only when it's missing (mirrors launcher_menu_pre:2161).
     # MUST stay before "Uninstall"/"Quit": inserting it after Uninstall would
     # shift the numeric selection PTY tests target the wrong item (see
     # tests/scenarios/wizard-ui-uninstall.sh, tests/unit/dry-run.sh). The
@@ -239,7 +239,7 @@ menu_post() {
     case "$choice" in
         "View access info"*)
             action_access_info
-            pause_for_menu
+            launcher_pause_for_menu
             ;;
         "View storage"*) submenu_storage ;;
         "Manage updates"*) submenu_manage_updates ;;
@@ -255,7 +255,7 @@ menu_post() {
         "Refresh status"*) _MS_PUBLIC_IP_CHECKED=0 ;;
         "Features"*) submenu_features ;;
         "Manage stack"*) submenu_manage_stack ;;
-        "Get enhanced menus"*) action_install_gum ;;
+        "Get enhanced menus"*) launcher_action_install_gum ;;
         "Uninstall"*) action_uninstall ;;
         "Quit"*)
             echo
@@ -270,7 +270,7 @@ menu_post() {
 # Main loop
 # =============================================================================
 
-pause_for_menu() {
+launcher_pause_for_menu() {
     echo ""
     # `|| :` so EOF on piped stdin doesn't kill the launcher (2026-05-04 lesson).
     read -rp "  Press Enter to return to menu..." _ || :
@@ -294,10 +294,10 @@ main() {
     while true; do
         clear 2>/dev/null || printf '\033[2J\033[H'
         render_banner
-        if is_installed; then
-            menu_post
+        if launcher_is_installed; then
+            launcher_menu_post
         else
-            menu_pre
+            launcher_menu_pre
         fi
     done
 }

@@ -24,12 +24,12 @@ action_change_quality() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     if ! _service_is_running sonarr || ! _service_is_running radarr; then
         ui_log warn "Sonarr and Radarr both need to be running - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -44,7 +44,7 @@ action_change_quality() {
         # rename (QP_RENAME_FROM would match nothing, and configure.sh would
         # refuse rather than orphan). Bail with a clear message instead.
         ui_log warn "Couldn't read the current quality profile from your settings - can't change it safely. No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     ui_log info "Current quality profile: ${cur_name}"
@@ -59,7 +59,7 @@ action_change_quality() {
     local new_res new_size
     if ! quality_select_pick new_res new_size "$def_res" "$def_size"; then
         ui_log warn "Could not read the quality menu - no change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -74,12 +74,12 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
 ' 2>/dev/null)
     if [[ -z "$new_name" ]]; then
         ui_log warn "Could not compose the chosen quality cell - no change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     if [[ "$new_name" == "$cur_name" ]]; then
         ui_log info "Already on '${new_name}'. No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -88,7 +88,7 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
     ui_log info "Your existing profile is renamed in place ('${cur_name}' -> '${new_name}') - no duplicate profile is created."
     ui_confirm "Apply '${new_name}' to Sonarr and Radarr now?" no || {
         ui_log info "No change."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     }
 
@@ -131,5 +131,5 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
     else
         _show_action_result 0 "Change quality profile"
     fi
-    pause_for_menu
+    launcher_pause_for_menu
 }

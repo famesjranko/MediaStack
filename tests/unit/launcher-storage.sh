@@ -24,10 +24,10 @@ nas_menu=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   LABELS=$(mktemp)
   ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Noop"; }
   _warn_gpu_runtime_fallback(){ :; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   STAGE_1_COMPLETE=1
   STORAGE_MODE=nas
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   echo "LABELS=[$(tr "\n" "|" < "$LABELS")]"
   rm -f "$LABELS"
 ' 2>&1)
@@ -40,10 +40,10 @@ local_menu=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   LABELS=$(mktemp)
   ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Noop"; }
   _warn_gpu_runtime_fallback(){ :; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   STAGE_1_COMPLETE=1
   STORAGE_MODE=local
-  menu_post >/dev/null 2>&1
+  launcher_menu_post >/dev/null 2>&1
   echo "LABELS=[$(tr "\n" "|" < "$LABELS")]"
   rm -f "$LABELS"
 ' 2>&1)
@@ -83,7 +83,7 @@ assert_contains "$dispatch_out" "ACTION_RECHECK" \
 fail_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   storage_nas_ok(){ return 1; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   _show_action_result(){ echo "RESULT rc=$1 label=$2"; }
   action_recheck_nas
 ' 2>&1)
@@ -94,7 +94,7 @@ assert_contains "$fail_out" "RESULT rc=1 label=Re-check NAS" \
 ok_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   storage_nas_ok(){ return 0; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   _show_action_result(){ echo "RESULT rc=$1 label=$2"; }
   action_recheck_nas
 ' 2>&1)

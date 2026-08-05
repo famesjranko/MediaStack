@@ -98,7 +98,7 @@ STUB
     # Deterministic pick via nameref, ignoring the menu entirely.
     quality_select_pick(){ local -n _r=$1; local -n _s=$2; _r="$PICK_RES"; _s="$PICK_SIZE"; return 0; }
     ui_confirm(){ return 0; }
-    ui_log(){ :; }; pause_for_menu(){ :; }
+    ui_log(){ :; }; launcher_pause_for_menu(){ :; }
     _show_action_result(){ echo "RESULT rc=$1 label=$2" >> "$CAPTURE"; }
 
     action_change_quality
@@ -138,7 +138,7 @@ run_guard() {
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     eval "$GUARD"
     quality_select_pick(){ echo "PICKER_RAN" >> "$CAPTURE"; local -n _r=$1; local -n _s=$2; _r=720p; _s=large; }
-    ui_log(){ :; }; pause_for_menu(){ :; }
+    ui_log(){ :; }; launcher_pause_for_menu(){ :; }
     _show_action_result(){ :; }
     action_change_quality
     cat "$CAPTURE"; rm -rf "$tmp"
@@ -182,7 +182,7 @@ STUB
   chmod +x "$tmp/scripts/configure.sh"
   _docker_reachable(){ return 0; }
   _service_is_running(){ return 0; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   _show_action_result(){ echo "RESULT rc=$1" >> "$CAPTURE"; }
   action_change_quality </dev/null >/dev/null 2>&1
   echo "RETURNED"; cat "$CAPTURE"; rm -rf "$tmp"
@@ -219,7 +219,7 @@ STUB
   chmod +x "$tmp/scripts/configure.sh"
   _docker_reachable(){ return 0; }
   _service_is_running(){ return 0; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   _show_action_result(){ echo "RESULT rc=$1" >> "$CAPTURE"; }
   action_change_quality </dev/null >/dev/null 2>&1
   echo "RETURNED"; cat "$CAPTURE"; rm -rf "$tmp"
@@ -259,7 +259,7 @@ STUB
   _service_is_running(){ return 0; }
   quality_select_pick(){ local -n _r=$1; local -n _s=$2; _r="720p"; _s="large"; return 0; }
   ui_confirm(){ return 0; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   action_change_quality 2>&1
   rm -rf "$tmp"
 ' 2>&1)
@@ -282,7 +282,7 @@ noname_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   _service_is_running(){ return 0; }
   cfg_field(){ echo ""; }   # config.yml has no readable quality_profile.name
   quality_select_pick(){ echo "PICKER_RAN" >> "$CAPTURE"; local -n _r=$1; local -n _s=$2; _r=720p; _s=large; }
-  ui_log(){ :; }; pause_for_menu(){ :; }
+  ui_log(){ :; }; launcher_pause_for_menu(){ :; }
   _show_action_result(){ :; }
   action_change_quality
   cat "$CAPTURE"; rm -rf "$tmp"
@@ -317,7 +317,7 @@ STUB
   _service_is_running(){ return 0; }
   quality_select_pick(){ local -n _r=$1; local -n _s=$2; _r="720p"; _s="large"; return 0; }
   ui_confirm(){ return 0; }
-  pause_for_menu(){ :; }
+  launcher_pause_for_menu(){ :; }
   mktemp(){ return 1; }   # only the handler status-file mktemp fails now
   action_change_quality 2>&1
   rm -rf "$tmp"

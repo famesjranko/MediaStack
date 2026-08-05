@@ -38,7 +38,7 @@ _docker_reachable(){ return 0; }
 _service_is_running(){ return 0; }
 qbt_set_speed_limits(){ echo \"APPLIED dl=\$1 ul=\$2\"; return 0; }
 
-menu_post
+launcher_menu_post
 BASH
 chmod +x $fixture"
 

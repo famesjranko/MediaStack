@@ -27,7 +27,7 @@ sed -i \"s#^JELLYFIN_ADMIN_PASSWORD=.*#JELLYFIN_ADMIN_PASSWORD='REVEALME123'#\" 
 sed '/if \[\[ \$EUID -eq 0 \]\]; then/,/^fi\$/d' mediastack > .ms-launcher-test.sh
 source ./.ms-launcher-test.sh
 
-menu_post
+launcher_menu_post
 BASH
 chmod +x $fixture"
 

@@ -133,7 +133,7 @@ dry_run_launch() {
 # ----------------------------------------------------------------------------
 
 # Seed simulated on-disk state in the container copy so the real disk/var reads
-# (is_installed, DOMAIN/banner, run_wizard self-skip guard, detect_existing_install)
+# (launcher_is_installed, DOMAIN/banner, run_wizard self-skip guard, detect_existing_install)
 # land on the chosen profile. Writes only inside the container — never the host.
 _dry_run_seed_state() {
     [[ -f .env ]] || { [[ -f .env.example ]] && cp .env.example .env; }
@@ -344,7 +344,7 @@ dry_run_begin() {
     _dry_run_install_stubs
     _dry_run_overwrite_subprocess_scripts
     _dry_run_seed_state
-    # Re-load the seeded .env so is_installed / DOMAIN / banner reflect the
+    # Re-load the seeded .env so launcher_is_installed / DOMAIN / banner reflect the
     # simulated state — mediastack/setup.sh sourced .env (or found none) before
     # this point, so the seeded keys are not yet in the shell.
     if [[ -f .env ]]; then

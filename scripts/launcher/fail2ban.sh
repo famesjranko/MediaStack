@@ -10,13 +10,13 @@ submenu_fail2ban() {
     if ! _docker_reachable; then
         echo ""
         ui_log warn "Docker isn't reachable - start the stack first."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     if ! _health_f2b_running; then
         echo ""
         ui_log info "fail2ban isn't running. It only runs when you have a domain / remote access set up; LAN-only installs don't expose services to the internet, so there's nothing to protect."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     while true; do
@@ -104,7 +104,7 @@ f2b_banned_menu() {
                 else
                     ui_log info "Cancelled - nothing changed."
                 fi
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "Back") return 0 ;;
             *) f2b_ip_actions "${choice%%  (*}" ;;
@@ -135,11 +135,11 @@ f2b_ip_actions() {
     case "$choice" in
         "Unban + always"*)
             f2b_whitelist_apply add "$ip" "$SCRIPT_DIR/config/fail2ban/jail.d/mediastack.conf"
-            pause_for_menu
+            launcher_pause_for_menu
             ;;
         "Unban ("*)
             f2b_do_unban "$ip"
-            pause_for_menu
+            launcher_pause_for_menu
             ;;
         *) return 0 ;;
     esac
@@ -153,7 +153,7 @@ f2b_stats_menu() {
         [[ -z "$status" ]] && {
             echo ""
             ui_log warn "Couldn't read fail2ban status - is the container up?"
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         }
         jails=$(sed -n 's/.*Jail list:[[:space:]]*//p' <<<"$status" | tr ',' ' ')
@@ -188,7 +188,7 @@ f2b_stats_menu() {
         case "$choice" in
             "Recent ban history"*)
                 f2b_show_recent
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "Back") return 0 ;;
             *) f2b_jail_detail "$choice" ;;
@@ -205,7 +205,7 @@ f2b_jail_detail() {
         if [[ -z "$jstat" ]]; then
             echo ""
             ui_log warn "Couldn't read status for $jail."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         fi
         local now tot fnow ftot files iplist
@@ -256,7 +256,7 @@ f2b_whitelist_menu() {
         echo ""
         if [[ -z "$content" ]]; then
             ui_log warn "Couldn't read $jail_file - whitelist can't be shown."
-            pause_for_menu
+            launcher_pause_for_menu
             return 0
         fi
         line=$(grep -m1 '^ignoreip[[:space:]]*=' <<<"$content")
@@ -281,11 +281,11 @@ f2b_whitelist_menu() {
         case "$choice" in
             "Add an IP"*)
                 f2b_whitelist_add "$jail_file"
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             "Remove "*)
                 f2b_whitelist_remove "${choice#Remove }" "$jail_file"
-                pause_for_menu
+                launcher_pause_for_menu
                 ;;
             *) return 0 ;;
         esac

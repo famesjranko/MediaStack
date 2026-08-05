@@ -129,7 +129,7 @@ _service_is_running() {
 _recreate_service() {
     local svc="$1" done_msg="$2"
     # Profile flag(s) as a proper array — matches the `${profiles[@]}` pattern
-    # used everywhere else (and _build_profile_args) and removes the
+    # used everywhere else (and profiles_build_args) and removes the
     # word-splitting hazard of an unquoted $pflag. read -ra on an empty string
     # yields an empty array, so a profile-less service passes no extra args.
     local pflag=()
@@ -337,7 +337,7 @@ _menu_update_selected() {
     done <<<"$tsv"
     if ((${#labels[@]} == 0)); then
         ui_log info "No services have an available update."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     labels+=("Back")
@@ -345,7 +345,7 @@ _menu_update_selected() {
     choice=$(ui_choose "Update which service?" "${labels[@]}")
     [[ "$choice" == "Back" ]] && return 0
     _apply_service_update "${choice%% *}"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 _menu_update_all() {
@@ -367,7 +367,7 @@ _menu_update_all() {
         else
             ui_log info "No updates available."
         fi
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     ui_log warn "About to update ${#svcs[@]} service(s) to the newest upstream image."
@@ -376,7 +376,7 @@ _menu_update_all() {
     ((wg_updatable)) && ui_log info "WireGuard is excluded (remote access) - update it explicitly if needed."
     ui_confirm "Proceed?" no || {
         ui_log info "Cancelled."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     }
     local s
@@ -389,7 +389,7 @@ _menu_update_all() {
     # (the per-service offer is suppressed under skip_confirm=1). No extra prompt.
     declare -F health_present_fail2ban_updates >/dev/null 2>&1 || source "$SCRIPT_DIR/scripts/lib/health.sh"
     health_present_fail2ban_updates "${svcs[@]}"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 _menu_reset_default() {
@@ -405,7 +405,7 @@ _menu_reset_default() {
     done <<<"$tsv"
     if ((${#labels[@]} == 0)); then
         ui_log info "No services have an update to revert."
-        pause_for_menu
+        launcher_pause_for_menu
         return 1
     fi
     labels+=("Back")
@@ -413,7 +413,7 @@ _menu_reset_default() {
     choice=$(ui_choose "Revert which service to its installed image?" "${labels[@]}")
     [[ "$choice" == "Back" ]] && return 1
     _reset_service_to_default "${choice%% *}"
-    pause_for_menu
+    launcher_pause_for_menu
     return 0
 }
 
@@ -430,7 +430,7 @@ submenu_manage_updates() {
     echo ""
     if ! _docker_reachable; then
         ui_log warn "Docker isn't reachable - cannot check for image updates."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     # ui_spin (background, killable): _render_spin runs the scan as a background
@@ -442,7 +442,7 @@ submenu_manage_updates() {
     local -a _MU_APPLIED=()
     if ! _mu_scan; then
         ui_log error "Could not read update status (is python3 + python3-yaml installed?)."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
 
@@ -478,7 +478,7 @@ submenu_manage_updates() {
         if ((_mu_rescan)); then
             _mu_scan || {
                 ui_log warn "Could not refresh update status; showing last known."
-                pause_for_menu
+                launcher_pause_for_menu
             }
         else
             local _s

@@ -116,7 +116,7 @@ plain="$(mktemp)"
 # and "Get enhanced menus (install GUM)" + "Refresh status" are appended before
 # Uninstall, so the order is ... Health & security(5), Manage fail2ban(6), Manage
 # hardware(7), Diagnostics(8), Refresh(9), GUM(10), Uninstall(11), Quit(12). Keep
-# in sync with menu_post ordering.
+# in sync with launcher_menu_post ordering.
 printf '%s\n' '[{"expect":"What would you like to do"},{"send":"12\n"}]' >"$steps"
 
 walk_rc=0

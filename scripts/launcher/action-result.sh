@@ -49,7 +49,7 @@ render_banner() {
     # and _docker_reachable is an un-memoized `docker info`; both the DDNS line and
     # the status line below need it.
     local _dockup=0
-    is_installed && _docker_reachable && _dockup=1
+    launcher_is_installed && _docker_reachable && _dockup=1
 
     # DDNS status — shown ONLY when a provider is configured AND its container is
     # running (the status helper returns off/stopped otherwise, which we skip). The
@@ -75,7 +75,7 @@ render_banner() {
     fi
 
     local lines=()
-    if is_installed; then
+    if launcher_is_installed; then
         if ((_dockup)); then
             local summary
             if summary=$(_compose_running_summary); then
@@ -155,7 +155,7 @@ _stack_system_lines() {
 
 _render_service_list() {
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     local rows
     rows=$(docker compose "${profiles[@]}" ps --format json 2>/dev/null | python3 -c '
 import sys, json, re
@@ -296,7 +296,7 @@ _run_setup_return() {
         unset MEDIASTACK_LAUNCHER_RESULT
     fi
     _show_action_result "$rc" "$label" "$outcome" "$strict"
-    pause_for_menu
+    launcher_pause_for_menu
     exec "$SCRIPT_DIR/mediastack"
 }
 
@@ -306,7 +306,7 @@ action_service_stop() {
     mapfile -t svcs < <(docker compose ps --filter status=running --format '{{.Name}}' 2>/dev/null || true)
     if ((${#svcs[@]} == 0)); then
         ui_log info "No services are running."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     svcs+=("Back")
@@ -315,7 +315,7 @@ action_service_stop() {
     [[ "$choice" == "Back"* ]] && return 0
     docker compose stop "$choice" 2>&1 || rc=$?
     _show_action_result "$rc" "Stop $choice"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_service_start() {
@@ -324,7 +324,7 @@ action_service_start() {
     mapfile -t svcs < <(docker compose ps --filter status=exited --format '{{.Name}}' 2>/dev/null || true)
     if ((${#svcs[@]} == 0)); then
         ui_log info "No stopped services."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     svcs+=("Back")
@@ -332,12 +332,12 @@ action_service_start() {
     choice=$(ui_choose "Start which service?" "${svcs[@]}")
     [[ "$choice" == "Back"* ]] && return 0
     if ! storage_guard_before_start; then
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     docker compose start "$choice" 2>&1 || rc=$?
     _show_action_result "$rc" "Start $choice"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_stack_stop() {
@@ -351,12 +351,12 @@ action_stack_stop() {
     ids=$(docker compose ps -q 2>/dev/null || true)
     if [[ -z "$ids" ]]; then
         ui_log info "No MediaStack services are running - nothing to stop."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     if ! ui_confirm "Stop all MediaStack services now?" no; then
         ui_log info "Left services running."
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     ui_log info "Stopping all MediaStack services..."
@@ -364,31 +364,31 @@ action_stack_stop() {
     # actually stop. `--profile all` is a literal name, not a wildcard, so
     # without explicit profile args those containers survive `down`.
     # No --remove-orphans: the profile set is now disk-fresh (shared
-    # _build_profile_args), so plain `down` stops exactly the selected services
+    # profiles_build_args), so plain `down` stops exactly the selected services
     # without risking removal of containers that look orphaned to a stale profile.
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     local rc=0
     docker compose "${profiles[@]}" down 2>&1 || rc=$?
     _show_action_result "$rc" "Stop stack"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_stack_start() {
     echo ""
     if ! storage_guard_before_start; then
-        pause_for_menu
+        launcher_pause_for_menu
         return 0
     fi
     ui_log info "Starting MediaStack services..."
     # Pass profile args so optional services (npm, bazarr, wireguard, autoheal)
     # come back up — not just default-profile ones.
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     local rc=0
     docker compose "${profiles[@]}" up -d 2>&1 || rc=$?
     _show_action_result "$rc" "Start stack"
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 action_stack_logs() {
@@ -401,12 +401,12 @@ action_stack_logs() {
     # receives it via the process group and exits cleanly.
     trap '' INT
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     docker compose "${profiles[@]}" logs -f --tail=200 2>&1 || true
     trap 'echo; echo "  Goodbye."; exit 0' INT
     echo ""
     ui_log info "Logs stream ended."
-    pause_for_menu
+    launcher_pause_for_menu
 }
 
 submenu_manage_stack() {
