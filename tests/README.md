@@ -574,7 +574,7 @@ Current units:
 - **launcher-uninstall / uninstall-system-cleanup** — cover launcher routing/result reporting, root-only ledger reads, selective UFW/APT/sysctl/Samba cleanup, teardown failure rollback, and Stage 3 routing precedence.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
 - **lint-sweep** — checks the `tests/lint.sh` single-sweep contract against a fixture repo with a stub shellcheck: the sweep is invoked exactly once over the whole discovered file list, covers every file in it, and still propagates a non-zero result. Pure bash + git, no Docker and no network; run directly with `./tests/unit/lint-sweep.sh`.
-- **naming-gate** — proves the structural halves of `tests/naming.sh` fail on a fabricated violation: a `scripts/services/<svc>/main.sh` missing its `configure_<svc>()` (including the hyphen→underscore mapping a literal comparison would get wrong), a service module sourcing another service, a `scripts/setup/` module sourcing a peer top-level module, and a sanctioned seam whose import has gone. The fixture is a throwaway git repo built from `git archive HEAD` with the working-tree gate copied in; the real tree is never written to. Pure bash + git, no Docker and no network; run directly with `./tests/unit/naming-gate.sh`.
+- **structure-gate** — proves `tests/structure.sh` fails on a fabricated violation: a `scripts/services/<svc>/main.sh` missing its `configure_<svc>()` (including the hyphen→underscore mapping a literal comparison would get wrong), a service module sourcing another service, a `scripts/setup/` module sourcing a peer top-level module, a non-setup module sourcing a top-level `scripts/setup/*.sh` module (not a violation), and a sanctioned seam whose import has gone. The fixture is a throwaway git repo built from `git archive HEAD` with the working-tree gate copied in; the real tree is never written to. Pure bash + git, no Docker and no network; run directly with `./tests/unit/structure-gate.sh`.
 - **contracts-gate** — proves the failure paths of `tests/contracts/check.py` route to a remedy: a fabricated API call no contract covers must report `missing contract`, say the call needs an entry (or is malformed) and name `tests/contracts/`; a fabricated endpoint nothing calls must report `dead contract entry` and steer to deleting it. The fixture is a throwaway copy of `git archive HEAD` with the working-tree checker copied in. Pure bash + python3 + git, no Docker and no network; run directly with `./tests/unit/contracts-gate.sh`.
 - **line-cap-gate** — proves the two ratchet refusals in `tests/shell-line-cap.sh` (`new allowlist entry is not permitted`, `allowlist count increased`) carry the same routing as the main violation: shrink-only grandfather list, split the file, see `docs/conventions.md` "Shell structure". The tree's allowlist was emptied and deleted, so neither refusal is reproducible here; both are probed against a fabricated allowlist in a throwaway repository, and nothing recreates one in the tree. Pure bash + git, no Docker and no network; run directly with `./tests/unit/line-cap-gate.sh`.
 - **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.
@@ -791,7 +791,7 @@ command by hand:
 
 ```bash
 ./tests/check.sh          # default: fast + tests/unit.sh + image-free wizard scenarios
-./tests/check.sh fast     # static tier: shellcheck, line cap, naming, shfmt, ruff, mypy, contracts, secrets.
+./tests/check.sh fast     # static tier: shellcheck, line cap, naming, structure, shfmt, ruff, mypy, contracts, secrets.
 ./tests/check.sh full     # default + the complete DinD battery (tests/battery.sh)
 ./tests/check.sh install  # one-time per machine: fetch + verify every pinned dev
                           # tool (shellcheck, shfmt, gitleaks) into the local cache
@@ -805,7 +805,9 @@ below; it does not reimplement their file discovery or logic:
   `./tests/shell-line-cap.sh` (the 500-line ratchet), `./tests/naming.sh`
   (tracked shell/python filename casing, plus declared `<prefix>_*` function
   conformance for any `scripts/*.sh` module that opts in via its `# Owns:`
-  line), `./tests/format.sh check`
+  line), `./tests/structure.sh` (every `scripts/services/<svc>/main.sh` defines
+  its `configure_<svc>()`, plus the import-direction rules over
+  `scripts/services/` and `scripts/setup/`), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check (findings reconciled by
   `./tests/python-complexity.sh` against the C901 shrink-only allowlist), the
   pinned mypy invocation, and the

@@ -157,8 +157,8 @@ adding the next gate.
 | Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`), its ratchet refusals proved against a fabricated allowlist by `tests/unit/line-cap-gate.sh` | `lint-shellcheck` |
 | Tracked shell filename is kebab-case, tracked python filename is snake_case | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), with no exceptions: the grandfathered offenders have all been renamed and `tests/shell-naming.allowlist` deleted | `lint-shellcheck` |
 | A `scripts/*.sh` module (or the root `mediastack` dispatcher) that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |
-| Every `scripts/services/<svc>/main.sh` defines `configure_<svc>()` (directory hyphens map to underscores) | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), proved against fabricated violations by `tests/unit/naming-gate.sh` | `lint-shellcheck` |
-| No service module sources another service, and nothing under `scripts/setup/` sources a peer top-level `scripts/setup/*.sh` module | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`); the sanctioned seams are named in `project/structure.md` "Dependency Direction" | `lint-shellcheck` |
+| Every `scripts/services/<svc>/main.sh` defines `configure_<svc>()` (directory hyphens map to underscores) | `./tests/check.sh structure` → `tests/structure.sh` (also in `fast`), proved against fabricated violations by `tests/unit/structure-gate.sh` | `lint-shellcheck` |
+| No service module sources another service, and no module under `scripts/setup/` sources a peer top-level `scripts/setup/*.sh` module | `./tests/check.sh structure` → `tests/structure.sh` (also in `fast`); the sanctioned seams are named in `project/structure.md` "Dependency Direction" | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
 | Python function complexity is at or under 10, with no `C901` or bare `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
@@ -219,7 +219,7 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
   is a convention; no checker currently verifies the correspondence.
 - **The optional half of the service-module shape.** That
   `scripts/services/<svc>/main.sh` exists and defines `configure_<svc>()` is
-  checked by `tests/naming.sh`; that the optional `render/` and `templates/`
+  checked by `tests/structure.sh`; that the optional `render/` and `templates/`
   directories are used for what they say is not.
 - **New-file header contract.** The two-line `Owns`/`Sources` header is a
   convention; no checker currently verifies it.
@@ -238,7 +238,7 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **The "Adding a New Service" checklist** in `project/structure.md`. Nothing
   verifies that the tree section, the `config.yml` section, or the
   `scripts/configure.sh` loop entry were updated alongside a new service.
-- **The dependency-direction rules `tests/naming.sh` does not reach.** The two
+- **The dependency-direction rules `tests/structure.sh` does not reach.** The two
   `source` rules (no cross-service imports, no peer `scripts/setup/*` imports)
   are enforced, but only over `source` arguments whose directory variable the
   gate can resolve from `${BASH_SOURCE[0]}` or `$SCRIPT_DIR`. Every other

@@ -176,10 +176,13 @@ scripts/setup/*                   ↛ scripts/setup/* (no cross-module imports)
 tests/scenarios/*                 → tests/lib/* + tests/assertions/*
 ```
 
-Two of these directions are machine-checked by `./tests/check.sh naming`
-(`tests/naming.sh`): no service module may `source` another service's files,
-and nothing under `scripts/setup/` may `source` a peer top-level
-`scripts/setup/*.sh` module. Sourcing files inside the module's own directory
+Two of these directions are machine-checked by `./tests/check.sh structure`
+(`tests/structure.sh`): no service module may `source` another service's
+files, and no module under `scripts/setup/` may `source` a peer top-level
+`scripts/setup/*.sh` module — the rule applies only within `scripts/setup/`
+itself; a file outside it (`setup.sh`, a service module) sourcing a setup
+module is the sanctioned `setup.sh → scripts/setup/*` direction, not a
+violation. Sourcing files inside the module's own directory
 (`npm/main.sh` → `npm/certs.sh`, `hardening.sh` → `hardening/*.sh`) and the
 orchestrator → stage seam (`wizard.sh`/`recovery.sh` → `stages/*.sh`) are the
 sanctioned directions, not violations. Four top-level pairs predate the gate

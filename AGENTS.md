@@ -52,7 +52,7 @@ and low maintenance.
 | Anything, before a PR | `./tests/check.sh` | Same coverage as the CI gate |
 | Container behaviour | `./tests/check.sh full` | Complete DinD battery — slow, needs Docker |
 
-Single-stage selectors (lint, line-cap, naming, shfmt, ruff, mypy, secrets, unit, wizard) are
+Single-stage selectors (lint, line-cap, naming, structure, shfmt, ruff, mypy, secrets, unit, wizard) are
 documented in the usage header of [tests/check.sh](tests/check.sh).
 
 ## Build
