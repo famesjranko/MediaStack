@@ -65,16 +65,20 @@ def _declarations(expected_path: str, mode: str) -> list[str]:
     # would read as stale); the history gate strips the marker and holds them
     # to the same reconciliation as every other declaration.
     expected_lines = []
-    with open(expected_path) as handle:
-        for raw in handle:
-            line = raw.rstrip("\n")
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            if line.startswith("history-only\t"):
-                if mode == "history":
-                    expected_lines.append(line[len("history-only\t") :])
-                continue
-            expected_lines.append(line)
+    try:
+        with open(expected_path) as handle:
+            for raw in handle:
+                line = raw.rstrip("\n")
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                if line.startswith("history-only\t"):
+                    if mode == "history":
+                        expected_lines.append(line[len("history-only\t") :])
+                    continue
+                expected_lines.append(line)
+    except OSError as exc:
+        print(f"SCAN-ERROR\tunreadable declarations: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
     return expected_lines
 
 
@@ -111,6 +115,9 @@ def main(argv: list[str]) -> int:
         )
         return 2
     report_path, expected_path, root, mode = argv
+    if mode not in ("tree", "history"):
+        print(f"SCAN-ERROR\tunknown mode {mode!r}: expected tree or history", file=sys.stderr)
+        return 2
 
     actual = collections.Counter(identity(f, root) for f in _load_findings(report_path))
     expected = collections.Counter(_declarations(expected_path, mode))

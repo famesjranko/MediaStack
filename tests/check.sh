@@ -377,7 +377,7 @@ stage fast "lint: structure" "./tests/structure.sh" ./tests/structure.sh
 stage fast "format: shfmt" "./tests/format.sh check" \
     ./tests/format.sh check
 stage fast "python: ruff" \
-    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check --output-format=concise <tracked-python> | ./tests/python-complexity.sh && ... format --check <tracked-python>" \
+    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check --output-format=concise <tracked-python> >findings; ./tests/python-complexity.sh findings && ... format --check <tracked-python>" \
     ruff_python_check
 stage fast "type: mypy" \
     "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==<tools.toml [mypy] version> --with types-PyYAML==<tools.toml [mypy] types_pyyaml_version> mypy --python-version 3.9 <tracked-python>" \
