@@ -35,15 +35,12 @@ AWS_CANARY="AKIA""MNBVCXZASDFGH234"
 SECOND_AWS_CANARY="AKIA""ZXCVBNMLKJHG7654"
 GENERIC_CANARY="Xq7Vn2ZmT4bK9wLd""Rj5cHs8PyG3uEaMt"
 
-# RC/OUT are globals: a command substitution would run the scan in a subshell
-# and leave the caller reading a stale exit code.
-RC=0
-OUT=""
-run_scan() {
-    OUT=$("$@" 2>&1)
-    RC=$?
-}
+run_scan() { run_cmd "$@"; }
 
+# Overrides the shared tests/lib/assert.sh assert_rc: never echoes $OUT on a
+# mismatch, since OUT can carry a scanner finding built from a canary value —
+# the point of this suite is that no such value survives into output a
+# reviewer might paste.
 assert_rc() {
     local expected="$1" name="$2"
     if [[ "$RC" == "$expected" ]]; then
@@ -291,18 +288,21 @@ rm -f "$FIXTURE_ROOT/canary/.gitleaksignore"
 
 # --- tampered pin / ruleset ------------------------------------------------
 
-# A standalone copy of the scanner: it resolves its pin manifest, its config and
-# its helper modules from its own location, so a mutated copy exercises the
-# guards in isolation. tests/lib is copied wholesale rather than file by file:
-# a named-file list silently goes stale when the scanner gains a helper, and
-# these probes all die in the self-test before a missing one would be reached.
+# A standalone copy of the scanner: it resolves its pin manifest, its config
+# and its helper modules from its own location, so a mutated copy exercises
+# the guards in isolation. Only the helpers tests/secret-scan.sh actually
+# sources are copied — tests/lib/secret-scan-install.sh (the install/self-test
+# logic) and tests/lib/secret_scan_reconcile.py (reconciliation) — not
+# tests/lib wholesale, which would drag in unrelated helpers this scanner
+# never reaches.
 fake_root() {
     local dir="$FIXTURE_ROOT/$1"
     mkdir -p "$dir/tests/lib" || return 1
     cp "$REPO_ROOT/tools.toml" "$dir/tools.toml"
     cp "$REPO_ROOT/.gitleaks.toml" "$dir/.gitleaks.toml"
     cp "$SCANNER" "$dir/tests/secret-scan.sh"
-    cp -R "$REPO_ROOT/tests/lib/." "$dir/tests/lib/"
+    cp "$REPO_ROOT/tests/lib/secret-scan-install.sh" "$dir/tests/lib/secret-scan-install.sh"
+    cp "$REPO_ROOT/tests/lib/secret_scan_reconcile.py" "$dir/tests/lib/secret_scan_reconcile.py"
     printf '%s\n' "$dir"
 }
 

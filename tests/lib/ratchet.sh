@@ -63,6 +63,7 @@ ratchet_read_base() {
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" ]] && continue
         ratchet_split_key_value "$line" || continue
+        # shellcheck disable=SC2034  # out_ref is a nameref; shellcheck can't see the caller's array take the write
         out_ref["$RATCHET_KEY"]="$RATCHET_VALUE"
     done < <(git -C "$repo_root" show "$base_ref:$path_in_repo")
 }

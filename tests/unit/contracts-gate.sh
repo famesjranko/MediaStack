@@ -23,30 +23,14 @@ scenario_begin "$CURRENT_SCENARIO"
 FIXTURE=$(mktemp -d)
 trap 'rm -rf "$FIXTURE"' EXIT
 
-git -C "$REPO_ROOT" archive HEAD | tar -x -C "$FIXTURE" || {
-    fail "fixture tree is exported" "git archive failed"
-    summary
-    exit 1
-}
+export_fixture_tree "$REPO_ROOT" "$FIXTURE"
 # The checker under test is the working-tree copy, not HEAD's.
 cp "$REPO_ROOT/tests/contracts/check.py" "$FIXTURE/tests/contracts/check.py"
 
-# RC/OUT are globals: a command substitution would run the checker in a
-# subshell and leave the caller reading a stale exit code.
-RC=0
-OUT=""
+# A `cd` first, so this cannot just be run_cmd's argv form.
 run_gate() {
     OUT=$(cd "$FIXTURE" && python3 tests/contracts/check.py 2>&1)
     RC=$?
-}
-
-assert_rc() {
-    local expected="$1" name="$2"
-    if [[ "$RC" == "$expected" ]]; then
-        pass "$name"
-    else
-        fail "$name" "expected rc $expected, got $RC: $OUT"
-    fi
 }
 
 PROBED_CALLER="$FIXTURE/scripts/lib/health.sh"

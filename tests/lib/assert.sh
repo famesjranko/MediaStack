@@ -108,6 +108,41 @@ assert_http() {
     fi
 }
 
+# run_cmd CMD... — runs a probed command and captures its output/exit code
+# for assert_rc. RC/OUT are globals: a command substitution would run the
+# probed command in a subshell and leave the caller reading a stale exit
+# code. A caller with its own invocation shape (e.g. a `cd` into a fixture
+# first) sets RC/OUT itself instead of calling run_cmd.
+: "${RC:=0}"
+: "${OUT:=}"
+run_cmd() {
+    OUT=$("$@" 2>&1)
+    RC=$?
+}
+
+assert_rc() {
+    local expected="$1" name="$2"
+    if [[ "$RC" == "$expected" ]]; then
+        pass "$name"
+    else
+        fail "$name" "expected rc $expected, got $RC: $OUT"
+    fi
+}
+
+# export_fixture_tree REPO_ROOT DEST — exports HEAD into DEST via `git
+# archive`, for a gate whose population comes from `git ls-files` and needs a
+# real, throwaway repository copy of the tree; the real tree is never written
+# to. Fails the scenario and exits 1 if the export fails, since nothing after
+# it has a tree to run the gate against.
+export_fixture_tree() {
+    local repo_root="$1" dest="$2"
+    git -C "$repo_root" archive HEAD | tar -x -C "$dest" || {
+        fail "fixture tree is exported" "git archive failed"
+        summary
+        exit 1
+    }
+}
+
 scenario_begin() {
     CURRENT_SCENARIO="$1"
     SCENARIO_START=$SECONDS
