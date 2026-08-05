@@ -1,4 +1,4 @@
-# Owns: Stage 3 static wizard copy: offer/tell-me-more/skip-summary/retry choice text and the guarded final-summary call.
+# Owns: stage3_* — Stage 3 static wizard copy: offer/tell-me-more/skip-summary/retry choice text and the guarded final-summary call.
 # Sources: print_final_summary (stack.sh, when defined).
 
 _stage3_print_final_summary() {

@@ -1,4 +1,4 @@
-# Owns: Post-driver-install configure/verify for NVIDIA/Intel/AMD, reboot prompt, and post-reboot finalize-nvidia sequence.
+# Owns: stage3_* — Post-driver-install configure/verify for NVIDIA/Intel/AMD, reboot prompt, and post-reboot finalize-nvidia sequence.
 # Sources: stage3_* marker/state/transcode/jellyfin helpers; scripts/setup/gpu/* driver modules.
 
 _stage3_configure_and_verify() {

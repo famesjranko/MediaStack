@@ -1,4 +1,4 @@
-# Owns: post-wizard UFW rules for configurable torrent and WireGuard ports.
+# Owns: setup_* — post-wizard UFW rules for configurable torrent and WireGuard ports.
 # Sources: hardening.sh globals and firewall.sh's _ms_ufw_allow.
 # Globals: TORRENT_PORT, DOMAIN, and WG_PORT (optional .env inputs).
 

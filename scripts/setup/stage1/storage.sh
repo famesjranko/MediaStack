@@ -1,4 +1,4 @@
-# Owns: Stage 1 local, manual, and managed-NAS storage collection.
+# Owns: stage1_* — Stage 1 local, manual, and managed-NAS storage collection.
 # Sources: storage helpers, wizard UI, validators, `DEFAULT_NFS_OPTS`, and `_WIZ_*`/`_WIZ_PREV_*` state.
 
 _stage1_collect_storage() {

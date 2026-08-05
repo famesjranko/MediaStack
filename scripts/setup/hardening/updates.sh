@@ -1,4 +1,4 @@
-# Owns: MediaStack's unattended security-upgrade files and their teardown.
+# Owns: setup_* uninstall_* — MediaStack's unattended security-upgrade files and their teardown.
 # Sources: hardening.sh ledger paths and common.sh state/hash helpers.
 # Globals: MEDIASTACK_APT_AUTO_CONF and MEDIASTACK_APT_POLICY_CONF.
 

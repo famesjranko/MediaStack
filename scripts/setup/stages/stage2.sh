@@ -1,4 +1,4 @@
-# Owns: Stage 2 remote-access flow ordering and completion-state routing.
+# Owns: run_* — Stage 2 remote-access flow ordering and completion-state routing.
 # Sources: stage2/* concern modules, shared remote helpers, and setup globals.
 # =============================================================================
 # MediaStack Setup -- Stage 2 controller (Remote Access)

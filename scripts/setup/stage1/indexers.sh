@@ -1,4 +1,4 @@
-# Owns: Stage 1 example public-tracker indexer choice and review.
+# Owns: stage1_* — Stage 1 example public-tracker indexer choice and review.
 # Sources: wizard UI and Stage 1 wizard state.
 
 # Search indexers: its own section (public trackers are a search feature, not a

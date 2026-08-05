@@ -1,4 +1,4 @@
-# Owns: Stage 2 Jellyfin remote-streaming bitrate collection.
+# Owns: stage2_* — Stage 2 Jellyfin remote-streaming bitrate collection.
 # Sources: Stage 2 UI and the Mbps validators.
 
 _stage2_collect_jellyfin_remote_bitrate() {

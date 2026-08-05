@@ -1,4 +1,4 @@
-# Owns: Stage 1 detected-system screen and timezone choice.
+# Owns: stage1_* — Stage 1 detected-system screen and timezone choice.
 # Sources: wizard UI helpers, `_ENV_*`/`_NET_*`/`GPU_TYPE` detection globals, and Stage 1 state.
 
 stage1_show_system() {

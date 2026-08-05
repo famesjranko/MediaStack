@@ -1,4 +1,4 @@
-# Owns: Stage 2 remote-access confirmation screen and action selection.
+# Owns: stage2_* — Stage 2 remote-access confirmation screen and action selection.
 # Sources: Stage 2 DDNS display helpers, WireGuard state, and interactive UI.
 
 _stage2_confirm() {

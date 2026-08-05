@@ -1,4 +1,4 @@
-# Owns: Public-IP detection and speed-test helpers.
+# Owns: net_* speedtest_* — Public-IP detection and speed-test helpers.
 # Sources: scripts/lib/network.sh state plus curl, python3, and optional librespeed-cli.
 net_detect_public_ip() {
     _NET_PUBLIC_IP=""

@@ -1,4 +1,4 @@
-# Owns: Stage 1 install-plan rendering and confirmation choice.
+# Owns: stage1_* — Stage 1 install-plan rendering and confirmation choice.
 # Sources: Docker Compose, wizard UI, `SCRIPT_DIR`/`AUTOHEAL_ENABLED`, and `_WIZ_*` state.
 
 _stage1_confirm() {

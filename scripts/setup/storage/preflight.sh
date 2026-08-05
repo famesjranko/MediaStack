@@ -1,4 +1,4 @@
-# Owns: env persistence, data-root classification, and the NAS preflight/
+# Owns: storage_* — env persistence, data-root classification, and the NAS preflight/
 # guard-before-start orchestration. Sourced by scripts/setup/storage.sh;
 # depends on storage/core.sh and storage/mount.sh helpers.
 

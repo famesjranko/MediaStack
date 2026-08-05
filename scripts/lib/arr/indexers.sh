@@ -1,4 +1,4 @@
-# Owns: Sonarr/Radarr Jackett indexer discovery and configuration.
+# Owns: configure_* — Sonarr/Radarr Jackett indexer discovery and configuration.
 # Sources: scripts/lib/arr/main.sh state plus lib/common.sh, lib/json.sh, curl, and the Torznab renderer.
 configure_arr_indexers() {
     local app="$1" base="$2" key="$3" fallback_categories="$4"

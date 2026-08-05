@@ -1,4 +1,4 @@
-# Owns: optional SMB share setup, skip/warn behavior, and Samba teardown.
+# Owns: setup_* uninstall_* — optional SMB share setup, skip/warn behavior, and Samba teardown.
 # Sources: hardening.sh Samba paths, ledger helpers, and firewall helpers.
 # Globals: SAMBA_* paths, SMB_ENABLED, SMB_SHARE_SCOPE, DATA_DIR, PGID, and admin .env values.
 

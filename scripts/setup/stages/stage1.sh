@@ -1,4 +1,4 @@
-# Owns: Stage 1 flow ordering and completion-marker skip routing.
+# Owns: run_* — Stage 1 flow ordering and completion-marker skip routing.
 # Sources: stage1/* concern modules, wizard helpers, and setup globals.
 # =============================================================================
 # MediaStack Setup — Stage 1 controller (Core LAN)

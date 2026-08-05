@@ -1,4 +1,4 @@
-# Owns: Stage 1 baseline installation, health proof, marker, and LAN integration.
+# Owns: stage1_* — Stage 1 baseline installation, health proof, marker, and LAN integration.
 # Sources: env generation, storage, hardening, stack, configure.sh, `SCRIPT_DIR`/`_ENV_HOST_ADDRESS`, color globals, and Stage 1 state.
 
 _stage1_install() {

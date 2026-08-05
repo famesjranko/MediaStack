@@ -791,7 +791,9 @@ below; it does not reimplement their file discovery or logic:
 
 - **fast** — `./tests/lint.sh --severity=warning` (shellcheck),
   `./tests/shell-line-cap.sh` (the 500-line ratchet), `./tests/naming.sh`
-  (tracked shell/python filename casing), `./tests/format.sh check`
+  (tracked shell/python filename casing, plus declared `<prefix>_*` function
+  conformance for any `scripts/*.sh` module that opts in via its `# Owns:`
+  line), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
   pinned gitleaks over this repository's tree. It starts
   no DinD or service containers; ShellCheck runs from a native or cached pinned

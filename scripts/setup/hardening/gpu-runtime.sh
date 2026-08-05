@@ -1,4 +1,4 @@
-# Owns: pre-wizard NVIDIA Docker runtime verification.
+# Owns: verify_* — pre-wizard NVIDIA Docker runtime verification.
 # Sources: hardening.sh globals, common.sh logging, and host python3.
 # Globals: GPU_TYPE (optional persisted hardware choice).
 

@@ -1,4 +1,4 @@
-# Owns: GPU .env state writers: stage3_set_gpu_env and stage3_set_state.
+# Owns: stage3_* — GPU .env state writers: stage3_set_gpu_env and stage3_set_state.
 # Sources: Only bash builtins; writes $SCRIPT_DIR/.env.
 
 stage3_set_gpu_env() {

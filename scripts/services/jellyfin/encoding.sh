@@ -1,4 +1,4 @@
-# Owns: configure_jellyfin_encoding — hardware transcoding (encoding.xml) via the System/Configuration/encoding API.
+# Owns: configure_* — configure_jellyfin_encoding — hardware transcoding (encoding.xml) via the System/Configuration/encoding API.
 # Sources: main.sh (auth/session context), api helpers and log_* from scripts/lib/common.sh.
 
 configure_jellyfin_encoding() {

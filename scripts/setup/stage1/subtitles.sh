@@ -1,4 +1,4 @@
-# Owns: Stage 1 Bazarr enablement and subtitle-language collection.
+# Owns: stage1_* — Stage 1 Bazarr enablement and subtitle-language collection.
 # Sources: wizard UI, validator, and Stage 1 wizard state.
 
 _stage1_collect_subtitles() {

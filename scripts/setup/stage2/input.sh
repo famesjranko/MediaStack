@@ -1,4 +1,4 @@
-# Owns: Escapable Stage 2 input collection for domains and DDNS credentials.
+# Owns: stage2_* — Escapable Stage 2 input collection for domains and DDNS credentials.
 # Sources: Stage 2 interactive UI and validators.
 
 # Collect a required input (a domain, a DDNS credential) WITH a graceful escape

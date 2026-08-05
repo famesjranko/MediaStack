@@ -1,4 +1,4 @@
-# Owns: Intel and AMD media-driver installation and render-device reporting.
+# Owns: install_* — Intel and AMD media-driver installation and render-device reporting.
 # Sources: gpu.sh render-device helpers, apt helpers, and common.sh logging.
 install_intel_drivers() {
     local render_device

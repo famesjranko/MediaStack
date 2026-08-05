@@ -1,4 +1,4 @@
-# Owns: Sonarr/Radarr root-folder, disk-threshold, and download-client configuration.
+# Owns: configure_* — Sonarr/Radarr root-folder, disk-threshold, and download-client configuration.
 # Sources: scripts/lib/arr/main.sh state plus lib/common.sh, lib/json.sh, and the target app APIs.
 configure_arr_root_folder() {
     local app="$1" base="$2" key="$3"

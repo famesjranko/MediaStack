@@ -1,4 +1,4 @@
-# Owns: Stage 1 qBittorrent limit and peer-port collection.
+# Owns: stage1_* — Stage 1 qBittorrent limit and peer-port collection.
 # Sources: wizard UI, validator, network, and discovery helpers.
 
 _stage1_mbps_to_mbs() {

@@ -1,4 +1,4 @@
-# Owns: Stage 2 remote-access persistence, stack start, configuration, and LE handoff.
+# Owns: stage2_* — Stage 2 remote-access persistence, stack start, configuration, and LE handoff.
 # Sources: Stage 2 defaults, DDNS, LE, stack, fail2ban, and setup helpers.
 
 _stage2_install() {

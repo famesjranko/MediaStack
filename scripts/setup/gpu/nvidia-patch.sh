@@ -1,4 +1,4 @@
-# Owns: NVIDIA Unlock patch application and patch-state marker handling.
+# Owns: apply_* — NVIDIA Unlock patch application and patch-state marker handling.
 # Sources: gpu.sh globals, nvidia-patch.sh, and NVIDIA driver helpers.
 apply_nvidia_patch() {
     local _marker="$SCRIPT_DIR/.nvidia-nvenc-unpatched" _rc=0

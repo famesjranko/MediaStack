@@ -1,4 +1,4 @@
-# Owns: configure_jellyfin_networking — PublishedServerUrl and KnownProxies via the System/Configuration/network API.
+# Owns: configure_* — configure_jellyfin_networking — PublishedServerUrl and KnownProxies via the System/Configuration/network API.
 # Sources: main.sh (auth/session context), api helpers and log_* from scripts/lib/common.sh.
 
 configure_jellyfin_networking() {

@@ -1,4 +1,4 @@
-# Owns: Stage 2 Cloudflare CIDR and DNS classification helpers.
+# Owns: net_* — Stage 2 Cloudflare CIDR and DNS classification helpers.
 # Sources: scripts/lib/network.sh state plus curl, dig, awk, and python3.
 net_fetch_cloudflare_ips_v4() {
     if [[ -n "${STAGE2_CLOUDFLARE_IPS_TEXT:-}" ]]; then

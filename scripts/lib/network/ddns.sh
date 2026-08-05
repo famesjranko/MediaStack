@@ -1,4 +1,4 @@
-# Owns: Disposable DDNS credential verification through the updater container.
+# Owns: ddns_* — Disposable DDNS credential verification through the updater container.
 # Sources: scripts/lib/network.sh state plus Docker, curl, and standard host utilities.
 ddns_verify_via_container() {
     local config_json="$1" body_file="${2:-}"

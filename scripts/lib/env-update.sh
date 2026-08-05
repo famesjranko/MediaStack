@@ -1,7 +1,7 @@
 # =============================================================================
 # MediaStack .env updater: atomic KEY=value rewrites and API-key persistence
 # =============================================================================
-# Owns: _env_write_kv (the one .env-mutation primitive), _env_write_kv_warn
+# Owns: env_* — _env_write_kv (the one .env-mutation primitive), _env_write_kv_warn
 # (shared failure-to-log_warn mapping), and env_save_api_key (the configure-time
 # convenience wrapper). Sourced by scripts/lib/common.sh so every existing
 # common.sh consumer keeps these names with zero call-site churn.

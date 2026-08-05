@@ -1,4 +1,4 @@
-# Owns: NPM post-publication nginx reload and rate-limit jail verification.
+# Owns: npm_* — NPM post-publication nginx reload and rate-limit jail verification.
 # Sources: main.sh for SCRIPT_DIR/NPM_* globals and logging/config helpers; hidden caller locals: http_top_created, rate_enabled.
 
 # shellcheck disable=SC2154

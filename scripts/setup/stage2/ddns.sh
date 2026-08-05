@@ -1,4 +1,4 @@
-# Owns: Stage 2 DDNS provider selection, credential collection, and preflight.
+# Owns: stage2_* — Stage 2 DDNS provider selection, credential collection, and preflight.
 # Sources: Stage 2 input helper and the DDNS provider registry/renderers.
 
 # Trim leading/trailing whitespace (e.g. from a pasted credential).

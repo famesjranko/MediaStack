@@ -1,4 +1,4 @@
-# Owns: Stage 2 Let's Encrypt readiness classification and failure gate.
+# Owns: stage2_* — Stage 2 Let's Encrypt readiness classification and failure gate.
 # Sources: Stage 2 shared helpers, NPM remote helpers, and network/stack helpers.
 
 _stage2_le_ready_hosts() {

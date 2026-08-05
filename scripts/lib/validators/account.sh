@@ -1,4 +1,4 @@
-# Owns: Admin account field validators (username, email, password).
+# Owns: validate_* — Admin account field validators (username, email, password).
 # Sources: scripts/lib/validators.sh state; sourced by scripts/lib/validators.sh.
 
 validate_admin_user() {

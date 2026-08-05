@@ -1,4 +1,4 @@
-# Owns: Sonarr/Radarr quality profile and quality-definition configuration.
+# Owns: configure_* qp_* — Sonarr/Radarr quality profile and quality-definition configuration.
 # Sources: scripts/lib/arr/main.sh state plus lib/common.sh, lib/json.sh, and arr renderers.
 # Day-2 rename status channel. When the launcher's "Change quality
 # profile" action drives configure.sh, it sets QP_RENAME_STATUS to a writable

@@ -1,4 +1,4 @@
-# Owns: Sonarr/Radarr custom-format definitions and profile score configuration.
+# Owns: configure_* — Sonarr/Radarr custom-format definitions and profile score configuration.
 # Sources: scripts/lib/arr/main.sh state plus lib/common.sh, lib/json.sh, and arr renderers.
 # Create curated custom format definitions in Sonarr/Radarr from the developer-
 # managed custom_formats.yml. Only formats whose names appear in config.yml's

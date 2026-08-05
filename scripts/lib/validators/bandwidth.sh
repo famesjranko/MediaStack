@@ -1,4 +1,4 @@
-# Owns: Bandwidth field validators (Mbps whole/decimal, MB/s).
+# Owns: validate_* — Bandwidth field validators (Mbps whole/decimal, MB/s).
 # Sources: scripts/lib/validators.sh state; sourced by scripts/lib/validators.sh.
 
 # Whole-number Mbps (upload bandwidth used to size the streaming table). Kept

@@ -1,4 +1,4 @@
-# Owns: Stage 2 safe HTTPS-skip persistence path.
+# Owns: stage2_* — Stage 2 safe HTTPS-skip persistence path.
 # Sources: Stage 2 defaults, env generation, and marker helpers.
 
 _stage2_skip_https() {

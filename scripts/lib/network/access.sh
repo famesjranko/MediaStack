@@ -1,4 +1,4 @@
-# Owns: Stage 2 port-failure classification, LAN detection, and WireGuard access tiers.
+# Owns: net_* wg_* — Stage 2 port-failure classification, LAN detection, and WireGuard access tiers.
 # Sources: scripts/lib/network.sh state plus ip, python3, and Docker-compose port policy.
 net_is_rfc6598() {
     local ip="$1"

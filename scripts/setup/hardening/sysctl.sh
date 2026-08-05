@@ -1,4 +1,4 @@
-# Owns: kernel sysctl hardening configuration and owned-value teardown.
+# Owns: setup_* uninstall_* — kernel sysctl hardening configuration and owned-value teardown.
 # Sources: hardening.sh ledger paths and common.sh state/hash helpers.
 # Globals: MEDIASTACK_SYSCTL_CONF.
 

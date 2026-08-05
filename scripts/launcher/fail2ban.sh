@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Owns: The day-2 fail2ban menu, ban actions, statistics, and whitelist management.
+# Owns: f2b_* submenu_* — The day-2 fail2ban menu, ban actions, statistics, and whitelist management.
 # Sources: launcher globals, .env, scripts/lib/ui.sh, setup/fail2ban.sh, and Docker helpers.
 
 submenu_fail2ban() {

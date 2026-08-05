@@ -96,5 +96,49 @@ done
 
 ((fail == 0)) || exit 1
 
-printf 'naming: %s tracked shell/python files checked (%s allowlisted)\n' \
-    "${#tracked_files[@]}" "${#allowed[@]}"
+# -----------------------------------------------------------------------------
+# Declared function-prefix gate: a module under scripts/ opts in by putting a
+# `<prefix>_*` token on its `# Owns:` line (first 5 lines) — see
+# docs/conventions.md "Identifier and file naming". Once declared, every
+# function def in that file must start with a declared prefix, allowing one
+# optional leading `_` for a file-private helper; `main` is the entry-point
+# exemption. Fails closed: zero declaring files proves nothing.
+# -----------------------------------------------------------------------------
+TOKEN_PATTERN='[a-z][a-z0-9_]*_\*'
+DEF_PATTERN='^_?[a-z0-9_]+[[:space:]]*\(\)'
+
+prefix_files_list=$(mktemp) || die "cannot create prefix-file list"
+trap 'rm -f "$tracked_file_list" "$base_allowlist" "$prefix_files_list"' EXIT
+git -C "$REPO_ROOT" ls-files -z 'scripts/*.sh' >"$prefix_files_list" \
+    || die "scripts/*.sh discovery failed"
+
+declared_files=()
+mapfile -d '' -t declared_candidates <"$prefix_files_list"
+
+prefix_fail=0
+for file in "${declared_candidates[@]}"; do
+    tokens=$(sed -n '1,5p' "$REPO_ROOT/$file" | grep '^# Owns:' | grep -oE "$TOKEN_PATTERN" | sort -u)
+    [[ -n "$tokens" ]] || continue
+    declared_files+=("$file")
+    pattern=$(sed 's/_\*$//' <<<"$tokens" | paste -sd '|' -)
+    while IFS=: read -r lineno defline; do
+        name="${defline%%(*}"
+        name="${name%%[[:space:]]*}"
+        name="${name#_}"
+        [[ "$name" == "main" ]] && continue
+        if ! [[ "$name" =~ ^($pattern)_ ]]; then
+            printf 'naming: %s:%s: %s() does not match declared prefix(es) [%s] — see docs/conventions.md "Identifier and file naming"\n' \
+                "$file" "$lineno" "$name" "$(tr '\n' ' ' <<<"$tokens")" >&2
+            prefix_fail=1
+        fi
+    done < <(grep -nE "$DEF_PATTERN" "$REPO_ROOT/$file")
+done
+
+if ((${#declared_files[@]} == 0)); then
+    die "no scripts/*.sh file declares a function prefix — empty population"
+fi
+
+((prefix_fail == 0)) || exit 1
+
+printf 'naming: %s tracked shell/python files checked (%s allowlisted); %s scripts/*.sh files checked for declared function prefixes\n' \
+    "${#tracked_files[@]}" "${#allowed[@]}" "${#declared_files[@]}"

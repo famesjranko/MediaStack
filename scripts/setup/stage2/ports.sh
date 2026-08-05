@@ -1,4 +1,4 @@
-# Owns: Stage 2 router port reachability gate and retry flow.
+# Owns: stage2_* — Stage 2 router port reachability gate and retry flow.
 # Sources: Stage 2 skip helper, network port probes, and interactive UI.
 
 _stage2_port_gate() {

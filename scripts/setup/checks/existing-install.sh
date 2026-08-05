@@ -1,4 +1,4 @@
-# Owns: existing-install detection and the three-way keep/wipe/abort prompt.
+# Owns: detect_* — existing-install detection and the three-way keep/wipe/abort prompt.
 # Sources: $SCRIPT_DIR and scripts/lib/common.sh, loaded by the caller
 # (scripts/setup/checks.sh, sourced from setup.sh). Calls into
 # show_existing_install_menu (scripts/setup/recovery.sh) and

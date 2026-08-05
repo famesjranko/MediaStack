@@ -1,4 +1,4 @@
-# Owns: DDNS credential/token/API-key/zone-ID field validators.
+# Owns: validate_* — DDNS credential/token/API-key/zone-ID field validators.
 # Sources: scripts/lib/validators.sh state; sourced by scripts/lib/validators.sh.
 
 validate_ddns_credential() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Owns: The day-2 quality-profile picker and Sonarr/Radarr apply path.
+# Owns: action_* quality_* — The day-2 quality-profile picker and Sonarr/Radarr apply path.
 # Sources: launcher globals, .env, scripts/lib/ui.sh, wizard_apply.py, and configure.sh.
 
 _quality_keys_for_name() {

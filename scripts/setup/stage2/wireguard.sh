@@ -1,4 +1,4 @@
-# Owns: Stage 2 WireGuard opt-in and access-tier collection.
+# Owns: stage2_* — Stage 2 WireGuard opt-in and access-tier collection.
 # Sources: Stage 2 defaults, network detection, WireGuard validators, and UI.
 
 _stage2_collect_wireguard() {

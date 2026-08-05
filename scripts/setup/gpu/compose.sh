@@ -1,4 +1,4 @@
-# Owns: generated Compose output, resource limits, image policy, and GPU wiring.
+# Owns: generate_* — generated Compose output, resource limits, image policy, and GPU wiring.
 # Sources: override.sh memory/image helpers and gpu.sh vendor helpers.
 generate_override() {
     local gpu_type="${1:-none}"

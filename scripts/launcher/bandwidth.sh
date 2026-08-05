@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Owns: The qBittorrent bandwidth-limit day-2 action.
+# Owns: action_* — The qBittorrent bandwidth-limit day-2 action.
 # Sources: launcher globals, .env, scripts/lib/ui.sh, validators.sh, and qBittorrent helpers.
 
 # Guided day-2 adjust of qBittorrent download/upload speed limits (MB/s; the knob

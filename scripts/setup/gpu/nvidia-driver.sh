@@ -1,4 +1,4 @@
-# Owns: NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
+# Owns: nvidia_* — NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
 # Sources: gpu.sh globals, common.sh logging, and nvidia-patch.sh helpers.
 # shellcheck disable=SC2154 # _nvidia_tmp is a documented caller-owned workspace.
 nvidia_driver_check_secure_boot() {

@@ -1,4 +1,4 @@
-# Owns: NPM nginx drift detection and bounded self-healing.
+# Owns: npm_* — NPM nginx drift detection and bounded self-healing.
 # Sources: main.sh/rendered.sh for SCRIPT_DIR/NPM_* globals, logging, and service helpers; no hidden inputs.
 
 # Pre-flight self-heal for proxy_host/N.conf vs cert-disk drift.

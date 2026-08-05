@@ -1,4 +1,4 @@
-# Owns: save_jellyfin_api_key and configure_jellyfin_libraries — permanent API key persistence and library provisioning after the first-run wizard.
+# Owns: configure_* save_* — save_jellyfin_api_key and configure_jellyfin_libraries — permanent API key persistence and library provisioning after the first-run wizard.
 # Sources: main.sh (auth/session context), api helpers, env_save_api_key and log_* from scripts/lib/common.sh.
 
 # Create (or reuse) a permanent Jellyfin API key and save it to .env.

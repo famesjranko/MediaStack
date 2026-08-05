@@ -1,4 +1,4 @@
-# Owns: NPM stale-managed-host detection and warning-only drift reporting.
+# Owns: npm_* — NPM stale-managed-host detection and warning-only drift reporting.
 # Sources: main.sh for logging helpers; it performs no mutation and has no hidden inputs.
 
 _npm_warn_stale_managed_hosts() {

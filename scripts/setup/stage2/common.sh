@@ -1,4 +1,4 @@
-# Owns: Stage 2 shared defaults, choice labels, state helpers, and HTTPS probes.
+# Owns: stage2_* — Stage 2 shared defaults, choice labels, state helpers, and HTTPS probes.
 # Sources: setup globals, scripts/lib/common.sh, scripts/lib/npm-remote.sh, and scripts/lib/ddns-providers.sh.
 
 stage2_offer_choices() {

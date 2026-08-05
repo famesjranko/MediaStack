@@ -1,4 +1,4 @@
-# Owns: Stage 1 NAS preflight, environment handoff, and install-time NAS recovery.
+# Owns: stage1_* — Stage 1 NAS preflight, environment handoff, and install-time NAS recovery.
 # Sources: storage helpers, wizard UI, env generation, `SCRIPT_DIR`, `DATA_DIR`/`STORAGE_*`, and `_WIZ_*` state.
 
 _stage1_preflight_nas_choice() {

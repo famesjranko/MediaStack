@@ -1,4 +1,4 @@
-# Owns: Stage 2 domain, DNS, and remote-access collection flow.
+# Owns: stage2_* — Stage 2 domain, DNS, and remote-access collection flow.
 # Sources: Stage 2 DDNS and input helpers, network helpers, and interactive UI.
 
 # The remote-access offer is a yes/no gate, not a data-collection step, so it
