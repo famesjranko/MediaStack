@@ -57,6 +57,17 @@ the entry may be removed), and the file may not grow past its recorded count;
 an entry for a missing file or a file now at or under the cap is stale and fails
 the gate. Remove entries as files are brought under the cap.
 
+When a file reaches the cap, prefer the smallest honest change: often one
+helper has outgrown the file and belongs nearer its callers or in its own
+topic file. Split into a module directory only when the file genuinely holds
+several concerns; then move function bodies verbatim (prove it — `declare -f`
+old vs new), leave a thin entry point that sources the topic files with
+`# shellcheck source=` directives above each `source` line, split the unit
+mirror along the same topic lines, and update `tests/contracts/` caller paths
+for any API call site that moved. A split whose only achievement is
+satisfying the number is worse than the long file — reviewers should reject
+it.
+
 The source-to-unit naming rule is that a unit suite names the source module it
 covers, in one of three shapes: `tests/unit/<name>.sh` (the source basename),
 `tests/unit/<area>-<name>.sh` where the basename alone is ambiguous (e.g.

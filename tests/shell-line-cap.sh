@@ -92,7 +92,7 @@ for file in "${tracked_files[@]}"; do
     current="${tracked_counts["$file"]}"
     ((current <= CAP)) && continue
     [[ -n "${allowed_counts["$file"]+allowlisted}" ]] \
-        || die "$file is $current lines; add it to $ALLOWLIST with its current count"
+        || die "$file is $current lines (cap $CAP); shrink it — see docs/conventions.md 'Shell structure' for the split strategy"
 done
 
 printf 'shell-line-cap: %s tracked shell files checked (cap %s)\n' \
