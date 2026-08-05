@@ -160,6 +160,8 @@ unset WG_PORT
 unset -f ss docker
 
 reset_warn
+# Consumed by _validators_wireguard_port_is_mediastack in scripts/lib/validators/network.sh.
+# shellcheck disable=SC2034
 WG_PORT="51820"
 ss() {
     printf 'Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:Port Process\n'
