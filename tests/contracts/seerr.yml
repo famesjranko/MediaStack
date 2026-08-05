@@ -9,7 +9,12 @@ endpoints:
   - {id: jellyfin-settings, method: GET, path: /settings/jellyfin, sends: [], reads: [apiKey], callers: [scripts/services/seerr/main.sh]}
   - {id: jellyfin-library, method: GET, path: /settings/jellyfin/library, sends: [sync, enable], reads: [id], callers: [scripts/services/seerr/main.sh]}
   - {id: initialization, method: POST, path: /settings/initialize, sends: [], reads: [], callers: [scripts/services/seerr/main.sh]}
-  - {id: main-settings-get, method: GET, path: /settings/main, sends: [], reads: [apiKey, defaultPermissions, defaultQuotas.movie.quotaLimit, defaultQuotas.tv.quotaLimit], callers: [scripts/services/seerr/main.sh]}
+  # `defaultQuotas.{movie,tv}.quotaLimit` dropped from `reads` 2026-08-05 by
+  # replay.py live mode: scripts/services/seerr/main.sh reads both via
+  # `json_path ... 0` — a defended-optional path, absent on a fresh install
+  # (or any run with quotas unset in config.yml, the common case), not a
+  # live-shape guarantee to diff.
+  - {id: main-settings-get, method: GET, path: /settings/main, sends: [], reads: [apiKey, defaultPermissions], callers: [scripts/services/seerr/main.sh]}
   - {id: main-settings-update, method: POST, path: /settings/main, sends: [defaultPermissions, defaultQuotas], reads: [], callers: [scripts/services/seerr/main.sh]}
   - {id: network-settings-get, method: GET, path: /settings/network, sends: [], reads: [trustProxy], callers: [scripts/services/seerr/main.sh]}
   - {id: network-settings-update, method: POST, path: /settings/network, sends: [trustProxy], reads: [], callers: [scripts/services/seerr/main.sh]}

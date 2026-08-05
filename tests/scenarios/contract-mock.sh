@@ -1,8 +1,8 @@
 # tests/scenarios/contract-mock.sh — configurators against tests/mock/serve.py.
 #
-# Image-free (--no-preload) proof that the Sonarr/Radarr configurator code
-# speaks its declared contract: no service containers, no compose. The mock
-# binds localhost:8989 (sonarr) and localhost:7878 (radarr) — the exact
+# Image-free (--no-preload) proof that configurator code speaks its declared
+# contract: no service containers, no compose. The mock binds localhost:8989
+# (sonarr), localhost:7878 (radarr) and localhost:6767 (bazarr) — the exact
 # fixed ports scripts/lib/common.sh's service_local_url() always resolves —
 # so scripts/configure.sh reaches it through the same "port a user has" it
 # always uses, with no test-only branch added to scripts/.
@@ -10,21 +10,48 @@
 # What this does NOT exercise: real container startup/health, first-run
 # auth handshakes, or config drift across restarts — the api-matrix layer
 # (image-backed) and the DinD battery stay responsible for those.
+#
+# Coverage beyond the sonarr/radarr pilot: bazarr's configurator
+# makes exactly one HTTP call (GET /api/system/settings, a static API key
+# known upfront from config.yaml — no login dance), so it fits the same
+# static-credential shape as sonarr/radarr and is added here.
+#
+# Excluded — jackett, qbittorrent, jellyfin, seerr, npm. Each configurator's
+# first call is the credential-acquisition/session-establishing request
+# itself (Jackett's cookie-seeding POST /UI/Dashboard, qBittorrent's
+# POST /auth/login, Jellyfin's unauthenticated /Startup/* wizard before an
+# admin exists, Seerr's POST /auth/jellyfin bootstrap, NPM's unauthenticated
+# POST /api/users seeding the first admin). tests/contracts/*.yml declares
+# one auth shape per service, checked on every endpoint including that one —
+# so the mock's shape check would 401 the very call that is supposed to
+# establish the session, before the credential it checks for exists. That
+# login/session dance is exactly the case tests/mock/README.md reserves for
+# tests/api-matrix/ (covered there: jackett.sh, qbittorrent.sh, jellyfin.sh,
+# seerr.sh; npm has no api-matrix module — its live behavior is exercised by
+# the dedicated npm-heal scenario and the stage2 flows instead). Representing
+# a per-endpoint auth exemption would mean a schema extension serving five
+# services' worth of one-off shape, or a per-service branch in serve.py —
+# both against this ticket's hard constraints — so this is recorded as a seam
+# finding rather than implemented here.
 
 CONTRACT_MOCK_JOURNAL=/tmp/contract-mock-journal.jsonl
+
+# Pinned by digest, same image already used by tests/scenarios/autoheal.sh and
+# unpackerr.sh for lightweight container-presence fixtures — no new pin.
+CONTRACT_MOCK_BAZARR_FIXTURE_IMAGE=busybox@sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028
 
 contract_mock_start_server() {
     dind_exec "[ -f /tmp/contract-mock.pid ] && kill \"\$(cat /tmp/contract-mock.pid)\" 2>/dev/null; sleep 1
 rm -f $CONTRACT_MOCK_JOURNAL
 nohup python3 tests/mock/serve.py \
-    --service sonarr:8989 --service radarr:7878 \
+    --service sonarr:8989 --service radarr:7878 --service bazarr:6767 \
     --journal $CONTRACT_MOCK_JOURNAL \
     --ready-file /tmp/contract-mock.ready \
     >/tmp/contract-mock.log 2>&1 & echo \$! > /tmp/contract-mock.pid" >/dev/null 2>&1
 }
 
 contract_mock_stop_server() {
-    dind_exec "[ -f /tmp/contract-mock.pid ] && kill \"\$(cat /tmp/contract-mock.pid)\" 2>/dev/null; rm -f /tmp/contract-mock.pid /tmp/contract-mock.ready" >/dev/null 2>&1
+    dind_exec "[ -f /tmp/contract-mock.pid ] && kill \"\$(cat /tmp/contract-mock.pid)\" 2>/dev/null; rm -f /tmp/contract-mock.pid /tmp/contract-mock.ready; docker rm -f bazarr >/dev/null 2>&1 || true" >/dev/null 2>&1
 }
 
 contract_mock_wait_ready() {
@@ -51,15 +78,58 @@ cat > config/radarr/config.xml <<'XML'
 XML"
 }
 
+# Seed the real first-boot state Bazarr's configurator reads: config.yaml
+# (v1.5+ stores everything there, including the API key normally minted on
+# first start) already showing sonarr/radarr connected and general settings
+# applied — matching tests/mock/fixtures/bazarr/system-settings.json exactly
+# — plus a bazarr.db with one language-profile row. Both already-applied, so
+# the configurator takes its documented skip paths only: it never reaches
+# the `docker compose restart bazarr` branch, which has nothing to restart
+# in this image-free scenario.
+contract_mock_seed_bazarr() {
+    dind_exec "mkdir -p config/bazarr/config config/bazarr/db
+cat > config/bazarr/config/config.yaml <<'YAML'
+auth:
+  apikey: mock-bazarr-key
+sonarr:
+  apikey: mock-sonarr-key
+radarr:
+  apikey: mock-radarr-key
+general:
+  use_sonarr: true
+  use_radarr: true
+YAML
+python3 -c \"
+import sqlite3
+conn = sqlite3.connect('config/bazarr/db/bazarr.db')
+conn.execute('CREATE TABLE table_languages_profiles (profileId INTEGER, name TEXT, items TEXT, cutoff TEXT, mustContain TEXT, mustNotContain TEXT, originalFormat TEXT)')
+conn.execute(\\\"INSERT INTO table_languages_profiles VALUES (1, 'English', '[]', NULL, '[]', '[]', 'False')\\\")
+conn.commit()
+conn.close()
+\""
+}
+
+# configure_bazarr is gated behind container_running bazarr (scripts/configure.sh)
+# — a real check against a real docker container, not something reachable
+# through config.yml/.env. No compose is up in this image-free scenario, so a
+# minimal placeholder container stands in for it; all HTTP traffic still goes
+# to the mock on localhost:6767, not to this container. Recorded as a seam
+# finding: bazarr is the only configurator gated on live container state
+# rather than the service being reachable.
+contract_mock_seed_bazarr_container() {
+    dind_exec "docker rm -f bazarr >/dev/null 2>&1
+docker run -d --name bazarr $CONTRACT_MOCK_BAZARR_FIXTURE_IMAGE sleep 600" >/dev/null 2>&1
+}
+
 run_scenario() {
     create_config_dirs_in_dind
-    # Earlier scenarios in a shared battery mutate the DinD copy: wizard
-    # scenarios overwrite scripts/configure.sh with a no-op stub
-    # (tests/lib/wizard_stub_common.sh) and rewrite config.yml. Restore the
-    # real configurator from the host tree and reseed config.yml from its
-    # template so this scenario always exercises fresh-install paths.
-    docker cp "$(pwd)/scripts/configure.sh" "$DIND_NAME:/root/MediaStack/scripts/configure.sh"
-    dind_exec "chmod +x scripts/configure.sh"
+    # The runner (tests/run.sh --reset-between, wired into every caller of this
+    # scenario) restores a pristine repo copy — including scripts/configure.sh —
+    # before this scenario runs, so no defensive docker-cp restore is needed
+    # here even after a wizard scenario stubbed configure.sh earlier in the
+    # same battery. See tests/README.md "DinD state between scenarios". This
+    # scenario still seeds its own preconditions: config.yml/.env don't exist
+    # in a pristine repo copy (only the templates do).
     dind_exec "cp config/examples/config.yml config.yml"
     dind_exec "cp .env.example .env"
     env_set TZ Etc/UTC
@@ -71,6 +141,8 @@ run_scenario() {
     env_set JELLYFIN_ADMIN_PASSWORD ContractMockAdminPw123
 
     contract_mock_seed_api_keys
+    contract_mock_seed_bazarr
+    contract_mock_seed_bazarr_container
 
     if contract_mock_start_server && contract_mock_wait_ready; then
         pass "contract-mock: serve.py listening on sonarr/radarr ports"
@@ -86,11 +158,11 @@ run_scenario() {
 set -a
 source .env
 set +a
-./scripts/configure.sh --only sonarr,radarr
+./scripts/configure.sh --only sonarr,radarr,bazarr
 '" >"$log_path" 2>&1; then
-        pass "contract-mock: scripts/configure.sh --only sonarr,radarr exits 0"
+        pass "contract-mock: scripts/configure.sh --only sonarr,radarr,bazarr exits 0"
     else
-        fail "contract-mock: scripts/configure.sh --only sonarr,radarr exits 0"
+        fail "contract-mock: scripts/configure.sh --only sonarr,radarr,bazarr exits 0"
         tail -80 "$log_path"
         contract_mock_stop_server
         return 1
@@ -124,7 +196,8 @@ set +a
         radarr:download-client-list radarr:download-client-create \
         radarr:quality-profile-list radarr:quality-profile-create \
         radarr:config-naming-get radarr:config-naming-update \
-        radarr:host-config-get; do
+        radarr:host-config-get \
+        bazarr:system-settings; do
         local service="${expected_endpoint%%:*}" endpoint="${expected_endpoint#*:}"
         if echo "$journal" | python3 -c "
 import json, sys

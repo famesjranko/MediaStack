@@ -407,18 +407,21 @@ service behavior:
 - **`tests/contracts/replay.py`** — the drift replayer. `spec` mode checks
   every endpoint of a contract with an `openapi:` URL still exists in the
   upstream spec (cached locally; offline is a reported SKIP, never a
-  failure). `live` mode replays a contract's safe (`GET`, no `{id}`)
-  endpoints against a real running container and diffs only the declared
+  failure). `live` mode replays a contract's safe (`GET`, no `{id}`, declared
+  `reads`) endpoints against a real running container and diffs only those
   `reads` fields — mutating endpoints are covered by `spec` mode's
   method+path check instead, so a drift run never mutates a preflight
-  container. `tests/scenarios/contract-drift.sh` reuses
-  `tests/api-matrix/bringup.sh` (the same bring-up `api-matrix.sh` uses — one
-  bring-up, not duplicated) and runs `live` mode against Sonarr/Radarr.
-  Image-backed; runs in the image-bump preflight
+  container. Request auth is shape-driven from each contract's own `auth:`
+  block (header/bearer/cookie/query, `tests/contracts/README.md`), never a
+  per-service branch in `replay.py` itself. `tests/scenarios/contract-drift.sh`
+  reuses `tests/api-matrix/bringup.sh` (the same bring-up `api-matrix.sh`
+  uses — one bring-up, not duplicated), applies each service's own product
+  configurator to get real credentials, and runs `live` mode against all six
+  API-bearing services (Sonarr, Radarr, qBittorrent, Jackett, Jellyfin,
+  Seerr). Image-backed; runs in the image-bump preflight
   (`docs/operations/upgrades.md`), never the PR gate.
 
-Division of labor is a hard constraint (TARGET.md "API contracts and
-mocks"): contracts declare data only, the mock proves our scripts speak the
+Division of labor is a hard constraint: contracts declare data only, the mock proves our scripts speak the
 contract, drift proves the contract still matches reality, and
 `tests/api-matrix/` keeps proving live behavior none of the above can (auth
 dances, seeding, retries, day-2 effects). Logic in a contract, a
@@ -816,6 +819,44 @@ shares one DinD via `run.sh --reset-between` — images sideloaded once, state
 `image-override`, which patches the compose for the whole DinD and so runs
 alone on its own DinD. Discovery is by glob, so a new scenario file is picked
 up without editing the runner.
+
+### DinD state between scenarios
+
+Any multi-scenario run that passes `--reset-between` to `tests/run.sh`
+(`tests/battery.sh`'s main run, and `tests/check.sh`'s `default`/`wizard`
+tiers over `tests/ci-scenarios.sh`) restores a pristine DinD before every
+scenario after the first: `dind_reset` (`tests/lib/dind.sh`) removes every
+container, prunes anonymous volumes and custom networks, and re-copies the
+repo from the host tree — undoing anything a prior scenario stubbed
+(`scripts/configure.sh`, via `tests/lib/wizard_stub_common.sh`) or rewrote
+(`config.yml`, `.env`, any other file under the repo copy) — then re-applies
+image overrides/strips so those survive the reset too.
+
+That guarantee is what lets a scenario be written without worrying about
+what an *earlier* scenario in the same battery left behind. It does not cover:
+
+- **A scenario's own runtime state within its run.** Starting/stopping a
+  background process it launched (e.g. `contract-mock`'s mock server) is
+  still that scenario's job.
+- **Preconditions that were never part of the pristine repo copy.** e.g.
+  `config.yml`/`.env` don't exist until a scenario copies them from their
+  `config/examples/`/`.env.example` templates — a scenario still seeds those
+  itself; the reset only guarantees they're back to that pristine (absent or
+  template) state, not populated.
+- **Runs without `--reset-between`.** A bare `tests/run.sh a b c` (no flag)
+  shares one DinD with no reset, matching the historical behavior — pick this
+  only when the scenarios are known not to mutate shared state.
+  `tests/ci-scenarios.sh`'s header documents scenarios it deliberately
+  excludes from the shared image-free run for this reason (`demo-lan`,
+  `existing-install-nuke`, `nas-storage`, `image-override`).
+
+A scenario that mutates `scripts/configure.sh`, `config.yml`, `.env`, or other
+repo-copy state must NOT carry its own defensive docker-cp/restore logic —
+that duplicates what the runner already guarantees under `--reset-between`
+and silently masks a reset regression instead of failing loudly. Rely on the
+runner reset and make sure the scenario only runs in a `--reset-between`
+battery (`tests/battery.sh`'s glob-discovered `MAIN` set, or
+`tests/check.sh`'s wizard tier via `tests/ci-scenarios.sh`).
 
 ## Focused staged-setup scenarios
 

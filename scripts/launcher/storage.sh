@@ -60,11 +60,14 @@ _storage_info() {
 action_recheck_nas() {
     echo ""
     echo "  Checking NAS storage…"
-    if storage_nas_ok; then
+    local rc=0
+    storage_nas_ok || rc=$?
+    if ((rc == 0)); then
         ui_log ok "NAS is mounted and verified."
     else
         ui_log warn "NAS is not currently mounted/verified. The watchdog keeps retrying — check the NAS is powered on and reachable on the network."
     fi
+    _show_action_result "$rc" "Re-check NAS"
     pause_for_menu
 }
 

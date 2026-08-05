@@ -6,8 +6,8 @@ shape-checking auth, and returning a canned fixture response. Zero
 per-service branches: every per-service detail (routes, auth shape, canned
 bodies) lives in tests/contracts/*.yml and tests/mock/fixtures/, never here.
 
-Stateless by design (see tests/contracts/README.md "Target shape" and
-TARGET.md "Prescribed decisions"): every request is answered purely from the
+Stateless by design (see tests/contracts/README.md and tests/mock/README.md
+"Statelessness"): every request is answered purely from the
 matched contract endpoint's fixture file, and every request is appended to a
 JSONL journal so scenarios can assert on the sequence and fields sent. The
 one bounded exception is the ordered-`responses:` cursor below, which exists
@@ -94,8 +94,8 @@ def check_auth(auth: dict[str, Any], headers: Any, path: str, body: Any) -> bool
     """Shape-check only: does the request carry the declared credential?
 
     Never simulates a token dance or session lifecycle — that stays the
-    api-matrix layer's job (TARGET.md "Auth is shape-checked, never
-    simulated").
+    api-matrix layer's job (tests/mock/README.md: auth is shape-checked,
+    never simulated).
     """
     kind = auth.get("type", "none")
     name = str(auth.get("name", ""))

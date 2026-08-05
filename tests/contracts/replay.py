@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """tests/contracts/replay.py — drift replayer for tests/contracts/*.yml.
 
-Two modes, matching TARGET.md's "Drift diffs only declared fields" rule —
-never whole-spec or whole-response validation:
+Two modes; both diff only the fields each contract declares — never
+whole-spec or whole-response validation:
 
   spec   For each contract carrying an `openapi:` URL, fetch (or reuse a
          local cache of) the upstream spec and check that every declared
@@ -11,7 +11,7 @@ never whole-spec or whole-response validation:
          labelled SKIP, not an error — this mode must degrade gracefully
          offline (see the ticket's "graceful, clearly-reported skip").
 
-  live   Against a real running container (base URL + API key supplied by
+  live   Against a real running container (base URL + credential supplied by
          the caller — the image-bump preflight's bring-up, never the mock),
          replay each contract's safe, idempotent GET endpoints (no `{id}`
          path substitution, so nothing caller-specific is guessed) and diff
@@ -21,9 +21,19 @@ never whole-spec or whole-response validation:
          mode's method+path check instead; this is a deliberate scope line,
          not an oversight (see tests/contracts/README.md).
 
+         Request auth is entirely shape-driven from each contract's own
+         `auth:` block (`header`, `bearer`, `cookie`, `query`, optionally a
+         `format` template for a structured header value) — see
+         `_apply_auth`. A service needing a supplementary session cookie
+         alongside its primary credential (Jackett: `apikey` query param
+         *and* a UI session) takes one via `--cookie NAME:RAW_COOKIE_HEADER`.
+         Only GET endpoints with a declared `reads` field are eligible
+         (nothing else to diff, and forcing a request anyway would false-fail
+         on routes that don't answer generically outside their own flow).
+
 Contract file format: tests/contracts/README.md. This file never runs the
 mock (tests/mock/serve.py) — that is the mock-mode scenario's job, not
-drift's (division of labor, TARGET.md).
+drift's (division of labor, tests/README.md).
 """
 
 from __future__ import annotations
@@ -167,59 +177,150 @@ def _get_dotted(value: Any, parts: list[str]) -> tuple[bool, Any]:
     return _get_dotted(value[head], rest) if rest else (True, value[head])
 
 
-def _auth_header(auth: dict[str, Any], api_key: str) -> dict[str, str]:
+def _apply_auth(auth: dict[str, Any], credential: str, url: str) -> tuple[str, dict[str, str]]:
+    """Shape-driven request auth: returns the (possibly query-amended) URL and
+    the headers to send, from the contract's own `auth:` block — never a
+    per-service branch here. Recognised `type` values:
+
+      header  Sets header `name` to `credential`, or to `format` with the
+              literal substring `{key}` replaced by `credential` when the
+              upstream needs a structured header value (e.g. Jellyfin's
+              `MediaBrowser Client="...", Token="{key}"` scheme).
+      bearer  Sets header `name` to `Bearer <credential>`.
+      cookie  Sets the `Cookie` header to `<name>=<credential>`.
+      query   Appends `<name>=<credential>` to the URL's query string.
+
+    Unrecognised/absent `type` sends no auth at all (`type: none`, matching
+    spec mode's already-established convention)."""
     kind = auth.get("type", "none")
     name = str(auth.get("name", ""))
     if kind == "header":
-        return {name: api_key}
+        fmt = auth.get("format")
+        value = str(fmt).replace("{key}", credential) if fmt else credential
+        return url, {name: value}
     if kind == "bearer":
-        return {name: f"Bearer {api_key}"}
-    return {}
+        return url, {name: f"Bearer {credential}"}
+    if kind == "cookie":
+        return url, {"Cookie": f"{name}={credential}"}
+    if kind == "query":
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}{name}={credential}", {}
+    return url, {}
 
 
 def _parse_service_arg(value: str) -> tuple[str, str, str]:
     parts = value.split(":", 2)
     if len(parts) != 3:
-        raise argparse.ArgumentTypeError("expected NAME:BASE_URL:API_KEY")
+        raise argparse.ArgumentTypeError("expected NAME:BASE_URL:CREDENTIAL")
     name, scheme_rest = parts[0], f"{parts[1]}:{parts[2]}"
-    base_url, _, api_key = scheme_rest.rpartition(":")
-    if not base_url or not api_key:
-        raise argparse.ArgumentTypeError("expected NAME:BASE_URL:API_KEY")
-    return name, base_url, api_key
+    base_url, _, credential = scheme_rest.rpartition(":")
+    if not base_url or not credential:
+        raise argparse.ArgumentTypeError("expected NAME:BASE_URL:CREDENTIAL")
+    return name, base_url, credential
 
 
-def run_live_mode(targets: list[tuple[str, str, str]]) -> int:
+def _parse_cookie_arg(value: str) -> tuple[str, str]:
+    """`--cookie NAME:RAW_COOKIE_HEADER` — a supplementary `Cookie` header
+    sent alongside a service's primary auth (e.g. Jackett, which needs both
+    its `apikey` query credential AND a UI session cookie the API alone
+    doesn't carry). Split on the first `:` only: the header value itself may
+    legitimately contain further `:` or `;`-separated cookie pairs."""
+    name, sep, header = value.partition(":")
+    if not sep or not name or not header:
+        raise argparse.ArgumentTypeError("expected NAME:RAW_COOKIE_HEADER")
+    return name, header
+
+
+def _missing_reads(endpoint: dict[str, Any], body: Any) -> list[str]:
+    if isinstance(body, list):
+        if not body:
+            return []  # empty list: nothing to diff, not a drift
+        body = body[0]
+    elif isinstance(body, dict) and body and all(isinstance(v, dict) for v in body.values()):
+        # A collection keyed by id/name rather than indexed by position (e.g.
+        # qBittorrent's GET /torrents/categories, keyed by category name) —
+        # the same "diff the first member" rule as a list, generalized to a
+        # mapping shape. Only fires when EVERY top-level value is itself a
+        # mapping — a plain object with one nested field among scalar
+        # siblings (e.g. Seerr's settings/main) never matches this.
+        body = next(iter(body.values()))
+    missing = []
+    for field in endpoint.get("reads", []):
+        present, _ = _get_dotted(body, str(field).split("."))
+        if not present:
+            missing.append(str(field))
+    return missing
+
+
+def _eligible_endpoints(contract: dict[str, Any]) -> list[dict[str, Any]]:
+    """Safe, idempotent, diffable: GET, no `{id}` (caller-scoped/mutating —
+    spec mode's job), and at least one declared `reads` field (nothing else
+    to diff, and forcing a request anyway risks a false failure on an
+    endpoint that isn't meant to answer generically outside its own flow —
+    e.g. Jackett's HTML dashboard page, or Jellyfin's Startup/* routes once
+    the setup wizard has locked them)."""
+    return [
+        e
+        for e in contract.get("endpoints", [])
+        if str(e.get("method", "")).upper() == "GET"
+        and "{id}" not in str(e.get("path", ""))
+        and e.get("reads")
+    ]
+
+
+def _replay_endpoint(
+    service: str,
+    base_url: str,
+    base_path: str,
+    auth: dict[str, Any],
+    credential: str,
+    extra_cookie: str | None,
+    endpoint: dict[str, Any],
+) -> str | None:
+    """Replay one endpoint. Returns an error string, or None on success."""
+    path = str(endpoint.get("path", ""))
+    full_url = base_url.rstrip("/") + _join_path(base_path, path)
+    url, headers = _apply_auth(auth, credential, full_url)
+    if extra_cookie:
+        existing = headers.get("Cookie")
+        headers["Cookie"] = f"{existing}; {extra_cookie}" if existing else extra_cookie
+    try:
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:
+            body = json.loads(response.read())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, ValueError) as exc:
+        return f"{service} {endpoint.get('id')}: GET {url} failed: {exc}"
+    missing = _missing_reads(endpoint, body)
+    if missing:
+        fields = ", ".join(missing)
+        return f"{service} {endpoint.get('id')}: reads field(s) '{fields}' missing live"
+    return None
+
+
+def run_live_mode(targets: list[tuple[str, str, str]], cookies: dict[str, str]) -> int:
     contracts = _load_contracts([name for name, _, _ in targets])
     errors: list[str] = []
     skips: list[str] = []
     checked = 0
-    for service, base_url, api_key in targets:
+    for service, base_url, credential in targets:
         contract = contracts.get(service)
         if contract is None:
             skips.append(f"{service}: no contract file")
             continue
         base_path = str(contract.get("base_path", ""))
         auth = contract.get("auth") or {}
-        for endpoint in contract.get("endpoints", []):
-            method = str(endpoint.get("method", "")).upper()
-            path = str(endpoint.get("path", ""))
-            if method != "GET" or "{id}" in path:
-                continue  # mutating / caller-scoped endpoints: spec mode only
+        extra_cookie = cookies.get(service)
+        endpoints = _eligible_endpoints(contract)
+        if not endpoints:
+            skips.append(f"{service}: no eligible GET endpoints (GET, no {{id}}, declared reads)")
+            continue
+        for endpoint in endpoints:
             checked += 1
-            url = base_url.rstrip("/") + _join_path(base_path, path)
-            request = urllib.request.Request(url, headers=_auth_header(auth, api_key))
-            try:
-                with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:
-                    body = json.loads(response.read())
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
-                errors.append(f"{service} {endpoint.get('id')}: {method} {url} failed: {exc}")
-                continue
-            for field in endpoint.get("reads", []):
-                present, _ = _get_dotted(body, str(field).split("."))
-                if not present:
-                    errors.append(
-                        f"{service} {endpoint.get('id')}: reads field '{field}' missing live"
-                    )
+            error = _replay_endpoint(
+                service, base_url, base_path, auth, credential, extra_cookie, endpoint
+            )
+            if error:
+                errors.append(error)
     for skip in skips:
         print(f"replay: live: SKIP {skip}", file=sys.stderr)
     for error in errors:
@@ -249,13 +350,21 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         required=True,
         type=_parse_service_arg,
-        metavar="NAME:BASE_URL:API_KEY",
+        metavar="NAME:BASE_URL:CREDENTIAL",
+    )
+    live_parser.add_argument(
+        "--cookie",
+        dest="cookies",
+        action="append",
+        default=[],
+        type=_parse_cookie_arg,
+        metavar="NAME:RAW_COOKIE_HEADER",
     )
 
     args = parser.parse_args(argv)
     if args.mode == "spec":
         return run_spec_mode(args.services, args.cache_dir)
-    return run_live_mode(args.targets)
+    return run_live_mode(args.targets, dict(args.cookies))
 
 
 if __name__ == "__main__":

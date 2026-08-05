@@ -4,8 +4,7 @@
 # Owns: compose pull/up + health wait + Sonarr/Radarr API key extraction,
 # used by BOTH tests/scenarios/api-matrix.sh (behavioral matrix) and
 # tests/scenarios/contract-drift.sh (live drift replay) — one bring-up, not
-# duplicated, per TARGET.md's "existing tests/api-matrix/ live layer is
-# reused, never duplicated."
+# duplicated: the existing live layer is reused, never duplicated.
 #
 # Sets (after a successful call): API_MATRIX_SONARR_KEY, API_MATRIX_RADARR_KEY
 # (empty string if that key could not be read). Returns non-zero only on a
