@@ -15,6 +15,7 @@ Closes #
 - [ ] `bash -n` is clean on changed shell scripts
 - [ ] `./tests/check.sh` passes (or I've stated below which narrower checks I could run)
 - [ ] Compose still validates (the default check renders it with `.env.example`)
+- [ ] New behavior is covered by a test
 - [ ] Docs updated where commands, service behavior, config keys, or test surfaces changed
 - [ ] No `.env`, live `config/<service>/` files, or generated NVIDIA patch/download trees committed
 
