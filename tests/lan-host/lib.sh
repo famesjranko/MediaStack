@@ -6,7 +6,7 @@
 # FAILS[] summary, the Stage 2 wizard input contract) so both live-host surfaces
 # read the same way. See tests/lan-host/README.md.
 
-# Resolve repo root from this lib's location: tests/lan-host/_lib.sh -> repo root.
+# Resolve repo root from this lib's location: tests/lan-host/lib.sh -> repo root.
 LANHOST_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$LANHOST_LIB_DIR/../.." && pwd)"
 ENV_FILE="${LANHOST_ENV_FILE:-$REPO_ROOT/tests/.env.lan-host}"
@@ -168,7 +168,7 @@ drive_wizard() {
     [[ -s "$local_steps" ]] \
         || die "drive_wizard: steps file '$local_steps' missing/empty (run-fresh.sh generates it pre-wipe)"
 
-    # Push the steps that run-fresh.sh generated from the LOCAL wizard-steps.py — the copy
+    # Push the steps that run-fresh.sh generated from the LOCAL wizard_steps.py — the copy
     # under review — and which already validated the matrix cell BEFORE any destruction.
     # Single generation point, no dependence on the target's (possibly stale) checkout.
     step "Push wizard steps to target ($r_steps)"

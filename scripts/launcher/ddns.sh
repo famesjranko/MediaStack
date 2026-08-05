@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Owns: DDNS status, credential updates, live verification, and rollback.
-# Sources: launcher globals, .env, scripts/lib/ui.sh, network.sh, env_gen.sh, and service helpers.
+# Sources: launcher globals, .env, scripts/lib/ui.sh, network.sh, env-gen.sh, and service helpers.
 
 _resolve_ddns_ip() {
     local _dom="${DOMAIN:-}" _ip=""
@@ -90,10 +90,10 @@ action_change_ddns() {
         return 0
     fi
 
-    # The shared DDNS registry/renderer + config-write helpers live in env_gen.sh
+    # The shared DDNS registry/renderer + config-write helpers live in env-gen.sh
     # (which also sources the provider registry). Load it lazily; the guard keeps a
     # repeat visit cheap. ddns_verify_via_container is already sourced via network.sh.
-    type ddns_render_config_json &>/dev/null || source "$SCRIPT_DIR/scripts/setup/env_gen.sh"
+    type ddns_render_config_json &>/dev/null || source "$SCRIPT_DIR/scripts/setup/env-gen.sh"
 
     local domain="${DOMAIN:-}"
     if [[ -z "$domain" ]]; then

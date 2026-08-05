@@ -6,7 +6,7 @@
 # stage2_classify_port_failure is stubbed to a fixed class so the warning copy
 # is deterministic and no external probe service is contacted.
 
-source tests/lib/wizard_stage2_common.sh
+source tests/lib/wizard-stage2-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage2-port-gate-skip.sh"

@@ -132,7 +132,7 @@ matrix_jellyfin() {
     # ------------------------------------------------------------------
     # State 1: first-run wizard creates the config.yml-driven libraries
     # ------------------------------------------------------------------
-    if dind_exec "bash tests/api-matrix/push_jellyfin.sh seed-config 'Movies:movies:/data/media/movies' 'TV Shows:tvshows:/data/media/tv'"; then
+    if dind_exec "bash tests/api-matrix/push-jellyfin.sh seed-config 'Movies:movies:/data/media/movies' 'TV Shows:tvshows:/data/media/tv'"; then
         pass "Jellyfin api-matrix: throwaway config seeded with default libraries"
     else
         fail "Jellyfin api-matrix: throwaway config seeded with default libraries"
@@ -140,7 +140,7 @@ matrix_jellyfin() {
         return
     fi
 
-    apply_log=$(dind_exec "bash tests/api-matrix/push_jellyfin.sh apply" 2>&1)
+    apply_log=$(dind_exec "bash tests/api-matrix/push-jellyfin.sh apply" 2>&1)
     if [[ $? -eq 0 ]]; then
         pass "Jellyfin api-matrix: product configurator applied (first-run wizard)"
     else
@@ -189,7 +189,7 @@ matrix_jellyfin() {
     # library (absent -> created). One apply call exercises all three
     # branches of configure_jellyfin_libraries at once.
     # ------------------------------------------------------------------
-    if dind_exec "bash tests/api-matrix/push_jellyfin.sh seed-config 'Movies:movies:/data/media/movies' 'TV Shows:tvshows:/data/media/tv-renamed' 'Music:music:/data/media/music'"; then
+    if dind_exec "bash tests/api-matrix/push-jellyfin.sh seed-config 'Movies:movies:/data/media/movies' 'TV Shows:tvshows:/data/media/tv-renamed' 'Music:music:/data/media/music'"; then
         pass "Jellyfin api-matrix: throwaway config re-seeded with match+drift+absent cells"
     else
         fail "Jellyfin api-matrix: throwaway config re-seeded with match+drift+absent cells"
@@ -197,7 +197,7 @@ matrix_jellyfin() {
         return
     fi
 
-    apply_log=$(dind_exec "bash tests/api-matrix/push_jellyfin.sh apply" 2>&1)
+    apply_log=$(dind_exec "bash tests/api-matrix/push-jellyfin.sh apply" 2>&1)
     if [[ $? -eq 0 ]]; then
         pass "Jellyfin api-matrix: product configurator re-applied"
     else
@@ -241,7 +241,7 @@ matrix_jellyfin() {
             trigger_field=onDownload
         fi
 
-        apply_log=$(dind_exec "bash tests/api-matrix/push_jellyfin.sh connect $app '$base' '$key'" 2>&1)
+        apply_log=$(dind_exec "bash tests/api-matrix/push-jellyfin.sh connect $app '$base' '$key'" 2>&1)
         if [[ $? -eq 0 ]]; then
             pass "Jellyfin api-matrix: ${app} -> Jellyfin connection applied"
         else
@@ -282,7 +282,7 @@ matrix_jellyfin() {
         # ------------------------------------------------------------
         local before_entry after_notif after_entry
         before_entry="$entry"
-        apply_log=$(dind_exec "bash tests/api-matrix/push_jellyfin.sh connect $app '$base' '$key'" 2>&1)
+        apply_log=$(dind_exec "bash tests/api-matrix/push-jellyfin.sh connect $app '$base' '$key'" 2>&1)
         if [[ $? -eq 0 ]]; then
             pass "Jellyfin api-matrix: ${app} -> Jellyfin connection re-applied (idempotent)"
         else

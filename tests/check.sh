@@ -263,7 +263,7 @@ warm_python_tools() {
 # on an empty set rather than letting run.sh fall back to its image-pulling
 # default with no scenario arguments. --reset-between: these scenarios share
 # one DinD, and wizard scenarios stub scripts/configure.sh and rewrite
-# config.yml/.env (tests/lib/wizard_stub_common.sh) — without a reset, a later
+# config.yml/.env (tests/lib/wizard-stub-common.sh) — without a reset, a later
 # scenario (e.g. contract-mock) inherits that mutated state. See tests/README.md
 # "DinD state between scenarios".
 wizard_scenarios() {

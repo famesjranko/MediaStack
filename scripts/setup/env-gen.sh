@@ -8,14 +8,14 @@
 # write_env()   — writes .env from globals set by detect_env + wizard.
 
 # ddns_render_config_json (the DDNS config.json renderer used by write_env)
-# lives in scripts/lib/ddns_providers.sh. Sourced here — not in wizard.sh —
-# because env_gen.sh is the one lib every setup + stage entrypoint (and their
+# lives in scripts/lib/ddns-providers.sh. Sourced here — not in wizard.sh —
+# because env-gen.sh is the one lib every setup + stage entrypoint (and their
 # unit tests) already source. Resolve from BASH_SOURCE, not $SCRIPT_DIR: some
 # callers (and the ddns-seed / stage2-flow tests) set SCRIPT_DIR *after*
 # sourcing this file.
 _env_gen_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/ddns_providers.sh
-source "$_env_gen_dir/../lib/ddns_providers.sh"
+# shellcheck source=scripts/lib/ddns-providers.sh
+source "$_env_gen_dir/../lib/ddns-providers.sh"
 
 # The wizard's collected DDNS credential fields (name -> value); the config.json
 # writer below reads it. Declared here too (idempotent; `declare -gA` on an
@@ -30,7 +30,7 @@ declare -gA _WIZ_DDNS_FIELDS
 # has no wizard_completed key, so a reinstall runs the wizard fresh. Called at the
 # top of run_wizard AND run_stage1/run_stage2 (the stages that read/mutate it) so
 # the wizard-ui PTY fixtures — which invoke run_stageN directly, bypassing
-# run_wizard — get a config.yml too. Defined here because env_gen.sh is the one
+# run_wizard — get a config.yml too. Defined here because env-gen.sh is the one
 # lib every setup + stage entrypoint (and their unit tests) already source. No-op
 # if the template is missing (minimal unit-test fixtures) so it never trips set -e.
 seed_root_config() {
@@ -135,6 +135,6 @@ _nvidia_resolve_driver_mode() {
     esac
 }
 
-# write_env (the .env writer) lives in env_write.sh — see its header for why.
-# shellcheck source=scripts/setup/env_write.sh
-source "$_env_gen_dir/env_write.sh"
+# write_env (the .env writer) lives in env-write.sh — see its header for why.
+# shellcheck source=scripts/setup/env-write.sh
+source "$_env_gen_dir/env-write.sh"

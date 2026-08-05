@@ -1,5 +1,5 @@
 # Owns: NPM certificate identity, material, and issuance wait helpers.
-# Sources: main.sh for NPM_* timing globals and npm_remote.sh for remote reads; no hidden inputs.
+# Sources: main.sh for NPM_* timing globals and npm-remote.sh for remote reads; no hidden inputs.
 # shellcheck disable=SC2154
 # --- Cert identity vs cert usability -------------------------------------
 #

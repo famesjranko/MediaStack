@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # tests/unit/ui-color-leak.sh
 #
-# Regression guard. The UI palette (scripts/lib/ui_render_fallback.sh) and the
+# Regression guard. The UI palette (scripts/lib/ui-render-fallback.sh) and the
 # configure-time log_* helpers (scripts/lib/common.sh) used to hardcode ANSI
 # colour with no gating, so anyone who piped the installer to `tee setup.log`,
 # redirected it for a bug report, or ran in a non-TTY captured escape-code soup
-# (^[[0;36m ...). term_caps.sh:_color_enabled now blanks the palette unless the
+# (^[[0;36m ...). term-caps.sh:_color_enabled now blanks the palette unless the
 # output is a real TTY (or colour is force-enabled), so captured output is clean.
 #
 # These tests render ui_log + log_* in a NON-TTY subprocess (a command
@@ -24,8 +24,8 @@ CURRENT_SCENARIO="ui-color-leak"
 scenario_begin "$CURRENT_SCENARIO"
 
 ESC=$'\033'
-UI="$REPO_ROOT/scripts/lib/ui.sh"         # sources ui_render_fallback.sh (-> term_caps.sh)
-COMMON="$REPO_ROOT/scripts/lib/common.sh" # sources term_caps.sh
+UI="$REPO_ROOT/scripts/lib/ui.sh"         # sources ui-render-fallback.sh (-> term-caps.sh)
+COMMON="$REPO_ROOT/scripts/lib/common.sh" # sources term-caps.sh
 
 # Render a snippet with ui.sh + common.sh sourced, in a clean subprocess whose
 # stdout/stderr are the command-substitution pipe (i.e. NOT a TTY) — the exact

@@ -1,6 +1,6 @@
 # Common fixture helpers for Stage 2 (remote access) PTY wizard scenarios.
 #
-# Mirrors wizard_stage1_common.sh. Writes a fixture that sources setup.sh,
+# Mirrors wizard-stage1-common.sh. Writes a fixture that sources setup.sh,
 # seeds a post-Stage-1 .env baseline (STAGE_1_COMPLETE=1 + admin/storage values
 # so _stage2_seed_wizard_defaults has coherent inputs), and stubs every slow,
 # networked, or dangerous operation Stage 2 would otherwise perform: image
@@ -31,11 +31,11 @@ sed -i \
 
 source ./setup.sh
 
-# Shared executor stubs live in one place — tests/lib/wizard_stub_common.sh.
+# Shared executor stubs live in one place — tests/lib/wizard-stub-common.sh.
 # Sourced AFTER setup.sh so the stubs shadow the real functions; Stage 2 keeps a
 # plain no-op configure.sh (no api key) and adds the remote-access services to the
 # compose-config stub.
-source tests/lib/wizard_stub_common.sh
+source tests/lib/wizard-stub-common.sh
 ms_stub_core
 ms_stub_common_env
 ms_stub_service_lifecycle
@@ -63,7 +63,7 @@ BASH"
 
 # Shared step-builder (prompt regexes live in tests/lib/wizard_prompts.json). The stage-2
 # scenarios call wizard_stage2_steps; the implementation is wizard_build_steps.
-source tests/lib/wizard_steps_common.sh
+source tests/lib/wizard-steps-common.sh
 wizard_stage2_steps() { wizard_build_steps "$@"; }
 
 wizard_stage2_run_pty() {

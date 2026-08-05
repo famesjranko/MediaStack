@@ -23,7 +23,7 @@ validate_ddns_password() {
 
 # Multi-provider DDNS field validators. Consumed by the wizard's per-provider
 # field loop AND the day-2 change-provider action; the config renderer in
-# scripts/lib/ddns_providers.sh emits JSON and does not itself validate. Tokens/keys are
+# scripts/lib/ddns-providers.sh emits JSON and does not itself validate. Tokens/keys are
 # opaque, contiguous secrets. SURROUNDING whitespace from a dashboard paste
 # (trailing newline/space) is trimmed here so it validates — both call sites store
 # the trimmed value — while an INTERNAL space (almost always a copy error), the

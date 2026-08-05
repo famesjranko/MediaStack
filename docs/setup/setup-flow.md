@@ -19,7 +19,7 @@ Entry point for the entire project. Common modes:
 | `scripts/setup/packages.sh` | `install_base_packages`, `install_docker` | Base packages + Docker (--full) |
 | `scripts/setup/gpu.sh` + `scripts/setup/gpu/*` | `detect_gpu`, `check_secure_boot`, `nvidia_driver_source`, `ensure_debian_nonfree`, `install_nvidia_drivers_apt` (Standard), `install_nvidia_drivers` + `apply_nvidia_patch` (Unlock), `install_intel_drivers`, `install_amd_drivers`, `verify_gpu_usable` | GPU detection, drivers, patches, verification, and generated Compose GPU wiring |
 | `scripts/setup/override.sh` + `scripts/setup/gpu/compose.sh` | `detect_host_memory`, `compute_mem_limit`, `generate_override` | Host memory, image policy, and Compose override |
-| `scripts/setup/env_gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
+| `scripts/setup/env-gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
 | `scripts/setup/storage.sh` | `storage_preflight_nas`, `storage_guard_before_start`, `storage_install_watchdog` | Storage mode state, NFS guard, NAS watchdog installation |
 | `scripts/setup/wizard.sh` | `run_wizard` | Core LAN, hardware transcoding add-on, remote access flow (`DEMO=1` non-interactive mode) |
 | `scripts/setup/recovery.sh` | `require_stage1_complete`, `run_remote_recovery`, `run_remote_ready_recovery`, `run_transcoding_recovery`, `show_existing_install_menu` | Recovery Hooks routing for `--remote`, `--transcoding`, and existing-install add-stage menu |
@@ -58,7 +58,7 @@ The interactive path is:
 | 4 | Optional `--transcoding` recovery hook | `run_transcoding_recovery` | recovery.sh |
 | 5 | Existing install check + add-stage menu | `detect_existing_install`, `show_existing_install_menu`, `nuke_existing_install` | checks.sh, recovery.sh |
 | 6 | Docker/base validation | `check_docker`, `check_compose`, `check_disk_space` | checks.sh |
-| 7 | Host detection | `detect_host_memory`, `detect_env`, `stash_gpu_type` | override.sh, env_gen.sh, gpu.sh |
+| 7 | Host detection | `detect_host_memory`, `detect_env`, `stash_gpu_type` | override.sh, env-gen.sh, gpu.sh |
 | 8 | *(--full only)* Base packages + Docker | `install_base_packages`, `install_docker` | packages.sh |
 | 9 | GPU runtime check + hardening re-affirm | `verify_gpu_runtime` (always); `setup_hardening` only on a completed re-run (`STAGE_1_COMPLETE=1`) | hardening.sh + hardening/* |
 | 10 | Wizard | `run_stage1`, `run_hardware_transcoding_addon`, `run_stage2`, final reboot gate | wizard.sh, stages/*.sh |
@@ -143,7 +143,7 @@ NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pe
 
 `install_amd_drivers` — installs `mesa-va-drivers vainfo` from non-free. No reboot required. Same verification as Intel (a usable `/dev/dri/renderD*` render device, resolved by GPU vendor when sysfs exposes it).
 
-`apply_nvidia_patch` verifies `github.com/keylase/nvidia-patch` at the pinned commit in `scripts/lib/nvidia_patch.sh`, rejects dirty or unexpected local patch trees, exports the reviewed commit to a temporary execution directory, checks driver version compatibility, then applies NVENC (removes encoding session limit on consumer GPUs) and NvFBC patches from that exported tree. Requires drivers already loaded, so the hardware engine runs it only after NVIDIA runtime verification.
+`apply_nvidia_patch` verifies `github.com/keylase/nvidia-patch` at the pinned commit in `scripts/lib/nvidia-patch.sh`, rejects dirty or unexpected local patch trees, exports the reviewed commit to a temporary execution directory, checks driver version compatibility, then applies NVENC (removes encoding session limit on consumer GPUs) and NvFBC patches from that exported tree. Requires drivers already loaded, so the hardware engine runs it only after NVIDIA runtime verification.
 
 ## Reboot and resume
 
@@ -200,7 +200,7 @@ Managed NAS mode never recursively `chown`s the NAS root. It creates missing Med
 
 ## Environment detection
 
-`detect_env` (in `scripts/setup/env_gen.sh`) auto-detects host-specific values without user interaction:
+`detect_env` (in `scripts/setup/env-gen.sh`) auto-detects host-specific values without user interaction:
 
 - `TZ` via `timedatectl show --property=Timezone` (fallback `Etc/UTC`)
 - `PUID`/`PGID` via `id -u`/`id -g`
@@ -208,7 +208,7 @@ Managed NAS mode never recursively `chown`s the NAS root. It creates missing Med
 
 These are stored in shell variables (`_ENV_*`) for the wizard to use as defaults. No files are written — `detect_env` is idempotent and side-effect-free.
 
-`write_env` (also in `env_gen.sh`) writes the complete `.env` file from wizard-set globals (`_WIZ_*`) and auto-detected values (`_ENV_*`). Called by the wizard apply phase to materialize the current selections, replacing any pre-seeded `.env` values with the finalized wizard state. It seeds default Docker bridge values (`MEDIASTACK_NETWORK_PREFIX=172.28.0`, `/24` subnet, gateway, and NPM IP); `start_stack` then runs the collision selector and rewrites those values before container start if a LAN/VPN/Docker route already uses the default subnet. Also seeds the DDNS `config.json` after Dynu credentials pass the Stage 2 preflight.
+`write_env` (also in `env-gen.sh`) writes the complete `.env` file from wizard-set globals (`_WIZ_*`) and auto-detected values (`_ENV_*`). Called by the wizard apply phase to materialize the current selections, replacing any pre-seeded `.env` values with the finalized wizard state. It seeds default Docker bridge values (`MEDIASTACK_NETWORK_PREFIX=172.28.0`, `/24` subnet, gateway, and NPM IP); `start_stack` then runs the collision selector and rewrites those values before container start if a LAN/VPN/Docker route already uses the default subnet. Also seeds the DDNS `config.json` after Dynu credentials pass the Stage 2 preflight.
 
 ## Setup wizard (after `detect_env`)
 
@@ -239,7 +239,7 @@ The interactive wizard requires the user to set the admin password directly — 
 
 ### WireGuard INIT_PASSWORD propagation (v15)
 
-wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only. WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stage2/wireguard.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` in `scripts/setup/stage2/install.sh` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env_gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
+wg-easy v15 reads the admin credentials from the unattended-setup `INIT_*` env block at first boot only. WireGuard is opt-in: `_stage2_collect_wireguard` in `scripts/setup/stage2/wireguard.sh` asks whether to set up the VPN (`_WIZ_WG_ENABLED`, default yes) and only collects the port/tier/LAN-CIDR when enabled. The init password is committed on the **install path only** — `_stage2_install` in `scripts/setup/stage2/install.sh` sets `_WIZ_WG_INIT_PASSWORD` from the confirmed admin password when `_WIZ_WG_ENABLED` is true (and clears it when false); `env-gen.sh` writes it to `.env` as `WG_INIT_PASSWORD='…'`. Committing at install rather than during collection means a confirm-time "Skip remote access" — or declining the WireGuard toggle — cannot leave a password behind that would silently activate the WG profile (which is gated on `WG_INIT_PASSWORD` alone). Single quotes are mandatory because the plaintext value can contain `$`, `"`, or `\` which Docker Compose interpolates inside unquoted values.
 
 After `/etc/wireguard/wg-easy.db` exists, `INIT_*` vars are inert. Subsequent wizard re-runs leave the in-container admin password unchanged; rotate it in the wg-easy UI instead. The configurator (`scripts/services/wireguard/main.sh`) detects this on its readiness probe and logs `[SKIP]` for an existing initial peer.
 

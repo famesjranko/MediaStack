@@ -16,7 +16,7 @@ TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 source "$REPO_ROOT/scripts/lib/common.sh"
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
 
 set +e

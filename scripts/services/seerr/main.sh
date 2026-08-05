@@ -3,7 +3,7 @@
 # =============================================================================
 
 _SEERR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$_SEERR_DIR/arr_connect.sh"
+source "$_SEERR_DIR/arr-connect.sh"
 
 configure_seerr() {
     echo ""

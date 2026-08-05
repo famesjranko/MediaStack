@@ -102,7 +102,7 @@ ui_log() {
     fi
 }
 
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
 source "$REPO_ROOT/scripts/lib/validators.sh"
 
@@ -177,7 +177,7 @@ seed_stage2_env_vars() {
 
 # v15 wg-easy takes plaintext INIT_PASSWORD; no bcrypt step. The wizard sets
 # _WIZ_WG_INIT_PASSWORD from _WIZ_ADMIN_PW inside _stage2_collect_wireguard and
-# env_gen.sh persists it. The Stage 2 skip path should leave it empty so the
+# env-gen.sh persists it. The Stage 2 skip path should leave it empty so the
 # remote profile stays inactive.
 seed_stage2_env_vars
 seed_jf_pw="$_WIZ_ADMIN_PW"
@@ -316,7 +316,7 @@ ui_input() {
 }
 _stage2_offer_ddns "true" >/dev/null
 assert_eq "good-secret" "${_WIZ_DDNS_FIELDS[password]}" "field loop rejects single quote, keeps good password"
-assert_eq "mediastack" "$(bash -c 'source scripts/lib/ddns_providers.sh; declare -A f=([domain]=d.test [password]=x); ddns_render_config_json dynu f' | python3 -c 'import sys,json; print(json.load(sys.stdin)["settings"][0]["username"])')" "Dynu renders the constant username placeholder (no prompt)"
+assert_eq "mediastack" "$(bash -c 'source scripts/lib/ddns-providers.sh; declare -A f=([domain]=d.test [password]=x); ddns_render_config_json dynu f' | python3 -c 'import sys,json; print(json.load(sys.stdin)["settings"][0]["username"])')" "Dynu renders the constant username placeholder (no prompt)"
 assert_eq "true" "$_WIZ_DDNS_PREFLIGHT_OK" "AUDIT: verify-accepted marks creds verified (messaging tier only)"
 assert_eq "2" "$(cat "$DDNS_PW_INPUT_COUNT_FILE")" "password field re-prompts after invalid single quote"
 assert_contains "$(cat "$LAST_WARN_FILE")" "single quote" "password validation explains single quote rejection"

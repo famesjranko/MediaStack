@@ -53,7 +53,7 @@ diag_readiness() {
         log_warn "Docker: not installed (will be installed on first install run)"
     fi
 
-    # GUM: optional binary that unlocks arrow-key menus (ui_render_gum.sh backend).
+    # GUM: optional binary that unlocks arrow-key menus (ui-render-gum.sh backend).
     if command -v gum &>/dev/null; then
         log_ok "GUM (optional): $(gum --version 2>/dev/null || echo installed) — arrow-key menus active"
     else

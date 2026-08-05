@@ -1,4 +1,4 @@
-# tests/assertions/remote_gating.sh — remote publication gates.
+# tests/assertions/remote-gating.sh — remote publication gates.
 #
 # Sourced by tests/scenarios/remote-gating.sh.
 

@@ -5,7 +5,7 @@
 # DinD/Docker/network:
 #   1. override.sh per-service policy: floating one service drops only its digest
 #      pin (compose tag preserved) while the rest stay pinned; mem/header intact.
-#   2. image-drift.py status: the channel-agnostic 2-state truth table and
+#   2. image_drift.py status: the channel-agnostic 2-state truth table and
 #      the hardened running-digest extraction (image-object RepoDigests, repo-matched).
 #   3. mediastack launcher: apply floats a pinned service to its compose tag
 #      (decided by effective channel, not status text), the flip/reset helpers, and
@@ -68,12 +68,12 @@ assert_contains "$ov_out" "STABLE_PINS=19" "override: clearing the override re-p
 assert_contains "$ov_out" "LATEST_PINS=0" "override: global latest pins nothing"
 
 # ---------------------------------------------------------------------------
-# 2. image-drift.py status: truth table + hardened running-digest extraction
+# 2. image_drift.py status: truth table + hardened running-digest extraction
 # ---------------------------------------------------------------------------
 status_out=$(
     REPO_ROOT="$REPO_ROOT" python3 - <<'PY' 2>&1
 import importlib.util, os, sys, json
-path = os.path.join(os.environ["REPO_ROOT"], "scripts/image-drift.py")
+path = os.path.join(os.environ["REPO_ROOT"], "scripts/image_drift.py")
 spec = importlib.util.spec_from_file_location("idrift", path)
 m = importlib.util.module_from_spec(spec); sys.modules["idrift"] = m; spec.loader.exec_module(m)
 

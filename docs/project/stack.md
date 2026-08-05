@@ -146,11 +146,11 @@ explaining and are not checked for completeness by anything.
 # Day-2 change quality profile: ./mediastack → "Features & settings" → "Change quality profile" (resolution × size, renamed in place, no orphan)
 # Day-2 uninstall: ./mediastack → "Uninstall MediaStack" (transactional teardown; removes only recorded MediaStack host changes; data/ and config/ preserved)
 # Per-service update-availability scan (table / TSV):
-python3 scripts/image-drift.py --status
-python3 scripts/image-drift.py --status-tsv
+python3 scripts/image_drift.py --status
+python3 scripts/image_drift.py --status-tsv
 
 # README Stable-baseline badge guard (no network; derives from docs/operations/image-digests.lock):
-python3 scripts/image-drift.py --check-readme-badges README.md
+python3 scripts/image_drift.py --check-readme-badges README.md
 
 # Re-apply NVIDIA patch after driver update
 ./scripts/nvidia-repatch.sh

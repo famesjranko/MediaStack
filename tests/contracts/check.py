@@ -189,7 +189,7 @@ _CONTRACT_REQUIRED_CALLERS = {
     *_ARR_CONTRACT_CALLERS,
     "scripts/lib/health.sh",
     "scripts/lib/http.sh",
-    "scripts/lib/npm_remote.sh",
+    "scripts/lib/npm-remote.sh",
 }
 
 

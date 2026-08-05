@@ -7,7 +7,7 @@
 #   NAME in: containers fail2ban sonarr radarr jackett qbittorrent channel bazarr quality indexers gpu
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/_lib.sh"
+source "$HERE/lib.sh"
 
 SERVICE="" NV_AUTOHEAL=0
 while (($#)); do

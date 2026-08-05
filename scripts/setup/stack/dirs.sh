@@ -6,7 +6,7 @@ create_data_dirs() {
     # Default to the operator's actual uid/gid, NOT a hardcoded 1000.
     # On hosts where the operator isn't the first user (so they're uid
     # 1001+), defaulting to 1000 chowns /data to a different account and
-    # the operator gets "not writable". env_gen.sh:12 already does this
+    # the operator gets "not writable". env-gen.sh:12 already does this
     # — keep them aligned. Explicit PUID/PGID env vars still win when set.
     local puid="${PUID:-$(id -u)}"
     local pgid="${PGID:-$(id -g)}"

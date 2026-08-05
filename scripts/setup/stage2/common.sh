@@ -1,5 +1,5 @@
 # Owns: Stage 2 shared defaults, choice labels, state helpers, and HTTPS probes.
-# Sources: setup globals, scripts/lib/common.sh, scripts/lib/npm_remote.sh, and scripts/lib/ddns_providers.sh.
+# Sources: setup globals, scripts/lib/common.sh, scripts/lib/npm-remote.sh, and scripts/lib/ddns-providers.sh.
 
 stage2_offer_choices() {
     printf '%s\n' "Enable remote access" "Skip for now" "Tell me more"

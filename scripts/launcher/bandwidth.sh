@@ -78,7 +78,7 @@ action_adjust_bandwidth() {
 # symlink-guarded, sudo fallback). The temp file lives OUTSIDE config/ddns-updater/
 # (that dir is writable by the uid-1000 container). Used for both the new write and
 # the rollback, so verify-first apply and restore share one code path. Returns
-# non-zero on any failure. Requires env_gen.sh to have been sourced by the caller.
+# non-zero on any failure. Requires env-gen.sh to have been sourced by the caller.
 # Set by _ddns_write_live_config to 1 the instant the live config.json is replaced
 # (the mv lands), before the perms repair. Lets action_change_ddns tell a write
 # that never touched the file (mv failed -> old config still intact) from one that

@@ -1,6 +1,6 @@
 # tests/scenarios/wizard-ui-stage1-nas-existing-share.sh — NAS share classification UX.
 
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 wizard_share_case_steps() {
     local path="$1"

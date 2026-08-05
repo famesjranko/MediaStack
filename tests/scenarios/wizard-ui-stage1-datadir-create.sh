@@ -6,7 +6,7 @@
 # so this is the only scenario that drives the create-it confirmation. Asserts
 # the directory is created, validation continues, and DATA_DIR persists.
 
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage1-datadir-create.sh"

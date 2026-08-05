@@ -30,7 +30,7 @@ _stage2_ddns_field_prompt() {
     if [[ "$provider" == "dynu" ]]; then
         case "$name" in
             # Dynu no longer collects a username (Dynu ignores it; the
-            # placeholder is auto-filled in ddns_providers.sh). Password only.
+            # placeholder is auto-filled in ddns-providers.sh). Password only.
             password)
                 printf 'Dynu account password (or IP Update Password if you set one)'
                 return

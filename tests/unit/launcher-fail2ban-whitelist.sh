@@ -51,7 +51,7 @@ done
 # --- 7k. gum height clamp: --height = min(item count, max(3, rows-4)) ---------
 GA=$(mktemp)
 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" GA="$GA" bash -c '
-  source "$REPO_ROOT/scripts/lib/ui_render_gum.sh"
+  source "$REPO_ROOT/scripts/lib/ui-render-gum.sh"
   gum(){ printf "%s\n" "$*" >> "$GA"; echo "x"; }
   tput(){ echo 24; }               # rows=24 -> max(3, 20)=20
   big=(); for i in $(seq 1 40); do big+=("item$i"); done

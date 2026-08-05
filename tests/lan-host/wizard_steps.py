@@ -58,7 +58,7 @@ EMAIL = env("LANHOST_ADMIN_EMAIL", "admin@lan.test")
 DETECT, STEP, INSTALL, POST, DRIVER, UNLOCK = 900, 60, 900, 300, 1200, 1800
 
 # Menu orderings, confirmed against scripts/setup/stages/stage1.sh and the shared
-# two-axis picker scripts/lib/quality_select.sh. LANHOST_QUALITY is a combined
+# two-axis picker scripts/lib/quality-select.sh. LANHOST_QUALITY is a combined
 # "<resolution>-<size>" token (e.g. 1080p-balanced); the two prompts are walked
 # in order (resolution, then size).
 RESOLUTION_CHOICE = {"720p": "1", "1080p": "2"}

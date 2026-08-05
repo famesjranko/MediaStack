@@ -5,7 +5,7 @@
 # the reboot prompt; the user picks "Reboot manually later". Asserts the pending
 # state + marker are recorded (no actual reboot — `reboot` is stubbed).
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-nvidia-reboot.sh"

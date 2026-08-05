@@ -1,7 +1,7 @@
 # =============================================================================
 # MediaStack UI library — public API and orchestration
 # =============================================================================
-# Selects and loads a rendering backend (ui_render_*.sh), then provides the
+# Selects and loads a rendering backend (ui-render-*.sh), then provides the
 # full public ui_* API with all orchestration logic: demo mode, non-TTY
 # handling, validation retry loops, and input exhaustion signalling.
 #
@@ -21,7 +21,7 @@ UI_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Exported so it survives the trap subshell at call sites.
 export UI_EXIT_INPUT_EXHAUSTED=3
 
-# Backend selection — sources ui_render_<backend>.sh which provides all
+# Backend selection — sources ui-render-<backend>.sh which provides all
 # _render_* and _render_spin_demo primitives.
 #   auto      (default) gum if binary present + stdin is a TTY + not demo mode,
 #             else fallback.
@@ -43,7 +43,7 @@ _ui_select_backend() {
             backend="fallback"
         fi
     fi
-    source "$UI_LIB_DIR/ui_render_${backend}.sh"
+    source "$UI_LIB_DIR/ui-render-${backend}.sh"
 }
 _ui_select_backend
 unset -f _ui_select_backend

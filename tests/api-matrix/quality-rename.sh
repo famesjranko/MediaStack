@@ -8,7 +8,7 @@
 #
 # Unlike test-1 (apply_cell.py — a test transport that PRESERVES formatItems and
 # never asserts scores), this drives configure_quality_profile's rename branch +
-# configure_arr_format_scores via tests/api-matrix/push_quality.sh — the exact
+# configure_arr_format_scores via tests/api-matrix/push-quality.sh — the exact
 # product functions the launcher action triggers through configure.sh. It is the
 # only place the "rename + re-score in place, no orphan" contract is proven
 # end-to-end through product code.
@@ -19,7 +19,7 @@
 # libs are bash and dind_exec is `sh -c`). rename_from empty = initial create.
 _qr_push() {
     local app="$1" base="$2" key="$3" res="$4" size="$5" rename_from="$6"
-    dind_exec "bash tests/api-matrix/push_quality.sh $app $base $key $res $size '$rename_from'" >/dev/null 2>&1
+    dind_exec "bash tests/api-matrix/push-quality.sh $app $base $key $res $size '$rename_from'" >/dev/null 2>&1
 }
 
 # Push, then verify the expected profile name actually landed; retry on miss.

@@ -37,8 +37,8 @@ jobs:
         id: check
         run: |
           rc=0
-          python3 scripts/image-drift.py --require-previous >drift.md 2>drift.err || rc=$?
-          # image-drift.py exits 2 for drift, but argparse also exits 2 on a
+          python3 scripts/image_drift.py --require-previous >drift.md 2>drift.err || rc=$?
+          # image_drift.py exits 2 for drift, but argparse also exits 2 on a
           # bad flag — with an empty report and the complaint on stderr. Remap
           # that to an error so a workflow typo fails red instead of filing an
           # empty drift issue.

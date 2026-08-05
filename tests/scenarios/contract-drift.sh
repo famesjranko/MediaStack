@@ -12,7 +12,7 @@
 #   qbittorrent       Cookie session (SID) — the SAME login api-matrix.sh's
 #                     own qBittorrent module authenticates with, after
 #                     applying the product configurator (idempotent, its own
-#                     throwaway config — tests/api-matrix/push_qbt.sh).
+#                     throwaway config — tests/api-matrix/push-qbt.sh).
 #   jackett           `apikey` query param AND a UI session cookie — the
 #                     management API rejects the apikey alone (302 ->
 #                     /UI/Login; see scripts/services/jackett/main.sh's own
@@ -94,7 +94,7 @@ _cd_cookie_value() {
 # with, written to $1.
 _cd_qbittorrent_credential() {
     local out="$1"
-    if ! dind_exec "bash tests/api-matrix/push_qbt.sh apply" >/tmp/contract-drift-qbt-apply.out 2>&1; then
+    if ! dind_exec "bash tests/api-matrix/push-qbt.sh apply" >/tmp/contract-drift-qbt-apply.out 2>&1; then
         fail "contract-drift: qBittorrent configurator applied"
         cat /tmp/contract-drift-qbt-apply.out
         return 1
@@ -120,7 +120,7 @@ _cd_qbittorrent_credential() {
 # needs the two as separate --service/--cookie values.
 _cd_jackett_credential() {
     local key_out="$1" cookie_out="$2"
-    if ! dind_exec "bash tests/api-matrix/push_jackett.sh apply" >/tmp/contract-drift-jackett-apply.out 2>&1; then
+    if ! dind_exec "bash tests/api-matrix/push-jackett.sh apply" >/tmp/contract-drift-jackett-apply.out 2>&1; then
         fail "contract-drift: Jackett configurator applied"
         cat /tmp/contract-drift-jackett-apply.out
         return 1
@@ -146,7 +146,7 @@ _cd_jackett_credential() {
 # saved to .env by the product configurator itself), written to $1.
 _cd_jellyfin_credential() {
     local out="$1"
-    if ! dind_exec "bash tests/api-matrix/push_jellyfin.sh apply" >/tmp/contract-drift-jellyfin-apply.out 2>&1; then
+    if ! dind_exec "bash tests/api-matrix/push-jellyfin.sh apply" >/tmp/contract-drift-jellyfin-apply.out 2>&1; then
         fail "contract-drift: Jellyfin configurator applied (first-run wizard)"
         cat /tmp/contract-drift-jellyfin-apply.out
         return 1
@@ -166,7 +166,7 @@ _cd_jellyfin_credential() {
 # written to $1.
 _cd_seerr_credential() {
     local out="$1"
-    if ! dind_exec "bash tests/api-matrix/push_seerr.sh apply" >/tmp/contract-drift-seerr-apply.out 2>&1; then
+    if ! dind_exec "bash tests/api-matrix/push-seerr.sh apply" >/tmp/contract-drift-seerr-apply.out 2>&1; then
         fail "contract-drift: Seerr configurator applied"
         cat /tmp/contract-drift-seerr-apply.out
         return 1

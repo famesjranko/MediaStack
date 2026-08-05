@@ -3,7 +3,7 @@
 # Uses Pebble and fixture DNS only. Production Let's Encrypt and real Dynu
 # credentials are intentionally outside this DinD scenario.
 
-source tests/assertions/remote_gating.sh
+source tests/assertions/remote-gating.sh
 
 stage2_ready_assert_fixture_postconditions() {
     local token proxy_hosts ready_check
@@ -81,7 +81,7 @@ SCRIPT_DIR=/root/MediaStack
 source scripts/lib/common.sh
 source scripts/lib/network.sh
 source scripts/lib/validators.sh
-source scripts/setup/env_gen.sh
+source scripts/setup/env-gen.sh
 source scripts/setup/stack.sh
 source scripts/setup/wizard.sh
 source scripts/setup/stages/stage2.sh

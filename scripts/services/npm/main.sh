@@ -3,7 +3,7 @@
 # =============================================================================
 
 if ! type npm_remote_hosts_ready >/dev/null 2>&1; then
-    source "$SCRIPT_DIR/scripts/lib/npm_remote.sh"
+    source "$SCRIPT_DIR/scripts/lib/npm-remote.sh"
 fi
 
 : "${NPM_CERT_WAIT_MAX_POLLS:=120}"

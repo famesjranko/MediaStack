@@ -1,6 +1,6 @@
 # tests/scenarios/wizard-ui-stage3-multi-gpu.sh — detected-only vendor selection.
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-multi-gpu.sh"

@@ -114,7 +114,7 @@ print(d["settings"][0]["password"], end="")
     dind_exec 'rm -f config/ddns-updater/config.json && bash -c '\''
 set -e
 source scripts/lib/common.sh
-source scripts/setup/env_gen.sh
+source scripts/setup/env-gen.sh
 SCRIPT_DIR=/root/MediaStack
 _ENV_TZ=Etc/UTC
 _ENV_PUID=1001
@@ -166,7 +166,7 @@ write_env
     dind_exec 'bash -c '\''
 set -e
 source scripts/lib/common.sh
-source scripts/setup/env_gen.sh
+source scripts/setup/env-gen.sh
 SCRIPT_DIR=/root/MediaStack
 _ENV_TZ=Etc/UTC
 _ENV_PUID=1001
@@ -212,7 +212,7 @@ write_env
 
     dind_exec 'rm -rf /tmp/ddns-dir-target && mkdir -p /tmp/ddns-dir-target && mv config/ddns-updater config/ddns-updater.real && ln -s /tmp/ddns-dir-target config/ddns-updater'
     local dir_symlink_repair_rc
-    dind_exec "bash -c 'source scripts/lib/common.sh && source scripts/setup/env_gen.sh && SCRIPT_DIR=/root/MediaStack repair_ddns_updater_config_permissions'" >/dev/null 2>&1
+    dind_exec "bash -c 'source scripts/lib/common.sh && source scripts/setup/env-gen.sh && SCRIPT_DIR=/root/MediaStack repair_ddns_updater_config_permissions'" >/dev/null 2>&1
     dir_symlink_repair_rc=$?
     if ((dir_symlink_repair_rc != 0)); then
         pass "DDNS permission repair rejects symlinked config directory"
@@ -221,7 +221,7 @@ write_env
     fi
     dind_exec 'bash -c '\''
 source scripts/lib/common.sh
-source scripts/setup/env_gen.sh
+source scripts/setup/env-gen.sh
 SCRIPT_DIR=/root/MediaStack
 _ENV_TZ=Etc/UTC
 _ENV_PUID=1001
@@ -264,7 +264,7 @@ write_env
     dind_exec 'rm config/ddns-updater && mv config/ddns-updater.real config/ddns-updater'
 
     dind_exec "chown 1001:1001 config/ddns-updater/config.json && chmod 600 config/ddns-updater/config.json"
-    if dind_exec "bash -c 'source scripts/lib/common.sh && source scripts/setup/env_gen.sh && SCRIPT_DIR=/root/MediaStack repair_ddns_updater_config_permissions'" >/dev/null 2>&1; then
+    if dind_exec "bash -c 'source scripts/lib/common.sh && source scripts/setup/env-gen.sh && SCRIPT_DIR=/root/MediaStack repair_ddns_updater_config_permissions'" >/dev/null 2>&1; then
         pass "DDNS permission repair handles legacy non-1000 config.json"
     else
         fail "DDNS permission repair handles legacy non-1000 config.json"
@@ -380,7 +380,7 @@ PY
     # heredoc into `bash` so no shell-quoting fights the assoc literals.
     # ------------------------------------------------------------------
     docker exec -i -w /root/MediaStack "$DIND_NAME" bash >/tmp/ddns-render-loop.out 2>/dev/null <<'SH'
-source scripts/lib/ddns_providers.sh
+source scripts/lib/ddns-providers.sh
 fail=0
 render() { local key="$1"; shift; local -A f=([domain]="ddns.test"); while (( $# )); do f["$1"]="$2"; shift 2; done; ddns_render_config_json "$key" f; }
 declare -A vals=([dynu]="password p" [duckdns]="token t" [desec]="token t" [dynv6]="token t" [cloudflare]="zone_identifier 0123456789abcdef0123456789abcdef token t" [porkbun]="api_key k secret_api_key s")
@@ -402,7 +402,7 @@ SH
     docker exec -i -w /root/MediaStack "$DIND_NAME" bash >/dev/null 2>&1 <<'SH'
 set -e
 source scripts/lib/common.sh
-source scripts/setup/env_gen.sh
+source scripts/setup/env-gen.sh
 SCRIPT_DIR=/root/MediaStack
 _ENV_TZ=Etc/UTC; _ENV_PUID=1001; _ENV_PGID=1001; _ENV_HOST_ADDRESS=127.0.0.1
 _WIZ_TZ=Etc/UTC; _WIZ_DATA_DIR=/data; _WIZ_ADMIN_USER=admin; _WIZ_ADMIN_PW=GeneratedPassword123

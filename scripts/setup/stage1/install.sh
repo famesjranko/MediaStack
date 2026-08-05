@@ -60,7 +60,7 @@ _stage1_install() {
     # Record the digest each service was installed running, so day-2 "Revert to
     # installed image" has a channel-independent target. Overwrites
     # on every install run to re-baseline a rebuild; best-effort and never fatal.
-    python3 "$SCRIPT_DIR/scripts/image-drift.py" \
+    python3 "$SCRIPT_DIR/scripts/image_drift.py" \
         --compose "$SCRIPT_DIR/docker-compose.yml" \
         --record-install "$SCRIPT_DIR/config/state/image-install.tsv" || true
 

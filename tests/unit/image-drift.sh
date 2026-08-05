@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unit test - scripts/image-drift.py snapshot and accept flow.
+# Unit test - scripts/image_drift.py snapshot and accept flow.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,7 +34,7 @@ cat >"$TMP_DIR/upgrades.md" <<'EOF'
 <!-- upgrades-manifest:end -->
 EOF
 
-badges=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+badges=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
     --readme-badges 2>&1)
 rc=$?
@@ -52,7 +52,7 @@ stale badges
 <!-- stable-image-badges:end -->
 EOF
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
     --write-readme-badges "$TMP_DIR/README.md" 2>&1)
 rc=$?
@@ -62,7 +62,7 @@ assert_eq "0" "$rc" "image-drift README badge write exits zero"
 assert_contains "$output" "updated" "image-drift README badge write reports update"
 assert_contains "$readme_text" "Stable image baseline: 1 pinned digests" "image-drift README badge write replaces marked block"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
     --check-readme-badges "$TMP_DIR/README.md" 2>&1)
 rc=$?
@@ -71,7 +71,7 @@ assert_eq "0" "$rc" "image-drift README badge check exits zero when current"
 assert_contains "$output" "current" "image-drift README badge check reports current"
 
 sed -i 's/1%20pinned/2%20pinned/' "$TMP_DIR/README.md"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
     --check-readme-badges "$TMP_DIR/README.md" 2>&1)
 rc=$?
@@ -79,7 +79,7 @@ rc=$?
 assert_eq "1" "$rc" "image-drift README badge check fails when stale"
 assert_contains "$output" "out of date" "image-drift README badge check explains stale block"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
     --upgrades "$TMP_DIR/upgrades.md" \
     --current-file "$TMP_DIR/current.tsv" \
@@ -93,7 +93,7 @@ assert_file_contains "$TMP_DIR/snapshot.tsv" \
     "image-drift snapshot writes exact current digest"
 
 accepted="$TMP_DIR/accepted.tsv"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
     --upgrades "$TMP_DIR/upgrades.md" \
     --current-file "$TMP_DIR/snapshot.tsv" \
@@ -109,7 +109,7 @@ assert_file_contains "$accepted" \
     $'jellyfin\tjellyfin/jellyfin:latest\tsha256:2222222222222222222222222222222222222222222222222222222222222222\t2026-06-01T00:00:00Z\tscenario:fresh-install' \
     "image-drift accept writes exact preflighted snapshot"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/previous.tsv" \
     --upgrades "$TMP_DIR/upgrades.md" \
     --write-current "$TMP_DIR/unsafe.tsv" \
@@ -169,7 +169,7 @@ sel_base=(--previous "$TMP_DIR/sel-previous.tsv" --upgrades "$TMP_DIR/sel-upgrad
 
 # Selective accept of one drifted service writes that row and preserves the rest.
 merged="$TMP_DIR/sel-merged.tsv"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$merged" \
     --no-verify-preflight \
     --accept-services sonarr --tested-at 2026-06-01T00:00:00Z 2>&1)
@@ -192,7 +192,7 @@ assert_file_contains "$merged" "$exp_jackett" \
 
 # Multiple services, comma-separated: both accepted, the unchanged row preserved.
 merged2="$TMP_DIR/sel-merged2.tsv"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$merged2" \
     --no-verify-preflight \
     --accept-services sonarr,radarr --tested-at 2026-06-01T00:00:00Z 2>&1)
@@ -206,7 +206,7 @@ else
 fi
 
 # A snapshot that adds a service is refused (structural change needs --accept-current).
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-added.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
     --accept-services sonarr 2>&1)
 rc=$?
@@ -215,7 +215,7 @@ assert_contains "$output" "added: homepage" "image-drift selective accept names 
 assert_contains "$output" "--accept-current" "image-drift selective accept points added services at full accept"
 
 # A snapshot that removes a service is refused too.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-removed.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
     --accept-services sonarr 2>&1)
 rc=$?
@@ -223,21 +223,21 @@ assert_eq "1" "$rc" "image-drift selective accept refuses a removed service"
 assert_contains "$output" "removed: jackett" "image-drift selective accept names the removed service"
 
 # Invalid selectors fail clearly.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
     --accept-services bogus 2>&1)
 rc=$?
 assert_eq "1" "$rc" "image-drift selective accept rejects an unknown service"
 assert_contains "$output" "unknown service 'bogus'" "image-drift selective accept explains the unknown service"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
     --accept-services sonarr,sonarr 2>&1)
 rc=$?
 assert_eq "1" "$rc" "image-drift selective accept rejects a duplicate selector"
 assert_contains "$output" "duplicate service" "image-drift selective accept explains the duplicate"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/sel-x.tsv" \
     --accept-services jackett 2>&1)
 rc=$?
@@ -245,19 +245,19 @@ assert_eq "1" "$rc" "image-drift selective accept rejects a non-drifted service"
 assert_contains "$output" "has not drifted" "image-drift selective accept explains the non-drifted selector"
 
 # Arg guards: mutual exclusion is reported before the current-file requirement.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --accept-services sonarr --accept-current 2>&1)
 rc=$?
 assert_eq "1" "$rc" "image-drift selective accept is mutually exclusive with full accept"
 assert_contains "$output" "mutually exclusive" "image-drift selective accept explains the mutual exclusion first"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --write-current "$TMP_DIR/sel-x.tsv" --accept-services sonarr 2>&1)
 rc=$?
 assert_eq "1" "$rc" "image-drift selective accept requires a frozen current-file"
 assert_contains "$output" "requires --current-file" "image-drift selective accept explains the current-file requirement"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --accept-services sonarr 2>&1)
 rc=$?
 assert_eq "1" "$rc" "image-drift selective accept requires a write-current destination"
@@ -265,21 +265,21 @@ assert_contains "$output" "requires --write-current" "image-drift selective acce
 
 # The drift summary offers a copy-paste selective-accept command for the drifted
 # services, but only when no service was added or removed.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" 2>&1)
 rc=$?
 assert_eq "2" "$rc" "image-drift summary exits 2 on unaccepted drift"
 assert_contains "$output" "--accept-services sonarr,radarr" "image-drift summary offers a selective-accept command"
 assert_contains "$output" "--write-readme-badges README.md" "image-drift summary closes with the README badge regen step"
 
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-added.tsv" 2>&1)
 assert_not_contains "$output" "--accept-services" \
     "image-drift summary omits the selective command when the service set changed"
 
 # The badge-regen closing step only makes sense when there was drift to accept;
 # the no-drift early return must stay a plain one-liner.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-previous.tsv" 2>&1)
 rc=$?
 assert_eq "0" "$rc" "image-drift summary exits zero when nothing drifted"
@@ -295,7 +295,7 @@ rec_out=$(
     python3 - "$REPO_ROOT" "$TMP_DIR" <<'PY' 2>&1
 import sys, pathlib, importlib.util
 repo, tmp = sys.argv[1], pathlib.Path(sys.argv[2])
-spec = importlib.util.spec_from_file_location("idrift", f"{repo}/scripts/image-drift.py")
+spec = importlib.util.spec_from_file_location("idrift", f"{repo}/scripts/image_drift.py")
 m = importlib.util.module_from_spec(spec)
 sys.modules["idrift"] = m
 spec.loader.exec_module(m)
@@ -327,7 +327,7 @@ assert_contains "$rec_out" "POLICY_OK" "image-drift read_policy accepts a digest
 assert_contains "$rec_out" "RECORD_OK" "image-drift --record-install writes the service/image/digest set, skipping undigestable services"
 
 # --- preflight-receipt accept gate ------------------------------------------
-# image-drift.py refuses to accept a drifted digest into the lock unless
+# image_drift.py refuses to accept a drifted digest into the lock unless
 # tests/run.sh recorded a passing preflight for that exact image@digest under the
 # service's manifest scenario. Reuses the selective-accept baseline above
 # (sonarr SHA_A->SHA_C, radarr SHA_B->SHA_D, both scenario:fresh-install).
@@ -335,7 +335,7 @@ gate_receipt="$TMP_DIR/receipt.tsv"
 
 # (a) No receipt -> selective accept is refused, naming the service + run command,
 # and the lock is never written.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-x.tsv" \
     --preflight-receipt "$TMP_DIR/no-such-receipt.tsv" \
     --accept-services sonarr 2>&1)
@@ -347,7 +347,7 @@ assert_file_absent "$TMP_DIR/gate-x.tsv" "image-drift accept gate leaves the loc
 
 # (b) A matching receipt (image, digest, scenario) unblocks the accept.
 printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tfresh-install\n' "$SHA_C" >"$gate_receipt"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-ok.tsv" \
     --preflight-receipt "$gate_receipt" \
     --accept-services sonarr --tested-at 2026-06-01T00:00:00Z 2>&1)
@@ -357,7 +357,7 @@ assert_contains "$output" "Selectively accepted drifted services: sonarr" "image
 
 # (c) A receipt for the right digest but the wrong scenario does not vouch.
 printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tsmoke\n' "$SHA_C" >"$gate_receipt"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-x2.tsv" \
     --preflight-receipt "$gate_receipt" \
     --accept-services sonarr 2>&1)
@@ -366,7 +366,7 @@ assert_eq "1" "$rc" "image-drift accept gate rejects a receipt from the wrong sc
 assert_contains "$output" "no passing local preflight receipt" "image-drift accept gate ignores a wrong-scenario receipt"
 
 # (d) --no-verify-preflight bypasses the gate with a loud warning.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-bypass.tsv" \
     --preflight-receipt "$TMP_DIR/no-such-receipt.tsv" --no-verify-preflight \
     --accept-services sonarr 2>&1)
@@ -375,7 +375,7 @@ assert_eq "0" "$rc" "image-drift accept gate is bypassable with --no-verify-pref
 assert_contains "$output" "no-verify-preflight" "image-drift accept gate warns loudly when bypassed"
 
 # (e) accept-current is gated the same way; only drifted rows need a receipt.
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-ac.tsv" \
     --preflight-receipt "$TMP_DIR/no-such-receipt.tsv" \
     --accept-current 2>&1)
@@ -388,7 +388,7 @@ assert_file_absent "$TMP_DIR/gate-ac.tsv" "image-drift accept-current gate leave
     printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tfresh-install\n' "$SHA_C"
     printf 'radarr\tlinuxserver/radarr:latest\t%s\tfresh-install\n' "$SHA_D"
 } >"$gate_receipt"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-ac-ok.tsv" \
     --preflight-receipt "$gate_receipt" \
     --accept-current --tested-at 2026-06-01T00:00:00Z 2>&1)
@@ -413,7 +413,7 @@ cat >"$TMP_DIR/nonscn-upgrades.md" <<'EOF'
 | demo | latest | stable | compose-only | x |
 <!-- upgrades-manifest:end -->
 EOF
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/nonscn-previous.tsv" --upgrades "$TMP_DIR/nonscn-upgrades.md" \
     --current-file "$TMP_DIR/nonscn-current.tsv" --write-current "$TMP_DIR/nonscn-ok.tsv" \
     --preflight-receipt "$TMP_DIR/no-such-receipt.tsv" \
@@ -442,7 +442,7 @@ cat >"$TMP_DIR/orphan-upgrades.md" <<'EOF'
 | sonarr | latest | stable | scenario:fresh-install | x |
 <!-- upgrades-manifest:end -->
 EOF
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/orphan-previous.tsv" --upgrades "$TMP_DIR/orphan-upgrades.md" \
     --current-file "$TMP_DIR/orphan-current.tsv" --write-current "$TMP_DIR/orphan-out.tsv" \
     --preflight-receipt "$TMP_DIR/no-such-receipt.tsv" \
@@ -456,14 +456,14 @@ assert_file_absent "$TMP_DIR/orphan-out.tsv" "image-drift accept gate leaves the
 # fresh baseline warns that the digests are unverified unless --no-verify-preflight
 # vouches for them by hand.
 printf 'service\timage\tdigest\ttested_at_utc\tpreflight\n' >"$TMP_DIR/empty-previous.tsv"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/empty-previous.tsv" --upgrades "$TMP_DIR/orphan-upgrades.md" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/bootstrap.tsv" \
     --accept-current --tested-at 2026-06-01T00:00:00Z 2>&1)
 rc=$?
 assert_eq "0" "$rc" "image-drift records a fresh baseline when no previous lock exists"
 assert_contains "$output" "no prior lock to gate against" "image-drift warns a fresh baseline is unverified by the gate"
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" \
     --previous "$TMP_DIR/empty-previous.tsv" --upgrades "$TMP_DIR/orphan-upgrades.md" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/bootstrap2.tsv" \
     --accept-current --no-verify-preflight --tested-at 2026-06-01T00:00:00Z 2>&1)
@@ -477,7 +477,7 @@ fi
 # not an accept — it must refuse rather than smuggle a drifted digest into the lock
 # past the receipt gate, and leave the lock unwritten. (sel-matched drifts sonarr and
 # radarr off sel-previous.)
-output=$(python3 "$REPO_ROOT/scripts/image-drift.py" "${sel_base[@]}" \
+output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/nowrite.tsv" 2>&1)
 rc=$?
 assert_eq "1" "$rc" "image-drift --write-current with drift and no accept flag is refused"

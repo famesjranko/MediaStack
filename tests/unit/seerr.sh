@@ -23,7 +23,7 @@ printf '%s\n' '<Config><ApiKey>sonarr-key</ApiKey></Config>' >"$SCRIPT_DIR/confi
 printf '%s\n' '<Config><ApiKey>radarr-key</ApiKey></Config>' >"$SCRIPT_DIR/config/radarr/config.xml"
 
 source "$REPO_ROOT/scripts/lib/json.sh"
-source "$REPO_ROOT/scripts/services/seerr/arr_connect.sh"
+source "$REPO_ROOT/scripts/services/seerr/arr-connect.sh"
 
 log_skip() { :; }
 log_warn() { :; }

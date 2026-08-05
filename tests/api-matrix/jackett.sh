@@ -59,7 +59,7 @@ matrix_jackett() {
 
     # State 1: seed two already-CI-proven public indexers plus one bogus id,
     # apply the product configurator once.
-    if dind_exec "bash tests/api-matrix/push_jackett.sh seed-config eztv:tv yts:movies definitely-not-a-real-indexer-xyz:general"; then
+    if dind_exec "bash tests/api-matrix/push-jackett.sh seed-config eztv:tv yts:movies definitely-not-a-real-indexer-xyz:general"; then
         pass "Jackett api-matrix: throwaway config seeded with 2 valid + 1 bogus indexer"
     else
         fail "Jackett api-matrix: throwaway config seeded with 2 valid + 1 bogus indexer"
@@ -67,7 +67,7 @@ matrix_jackett() {
         return
     fi
 
-    apply_log=$(dind_exec "bash tests/api-matrix/push_jackett.sh apply" 2>&1)
+    apply_log=$(dind_exec "bash tests/api-matrix/push-jackett.sh apply" 2>&1)
     if [[ $? -eq 0 ]]; then
         pass "Jackett api-matrix: product configurator applied"
     else
@@ -127,7 +127,7 @@ matrix_jackett() {
     # take its skip path. Prove the skip path actually ran via its log lines,
     # not just "the field didn't change" (which a lucky no-op could also
     # produce).
-    apply_log=$(dind_exec "bash tests/api-matrix/push_jackett.sh apply" 2>&1)
+    apply_log=$(dind_exec "bash tests/api-matrix/push-jackett.sh apply" 2>&1)
     if [[ $? -eq 0 ]]; then
         pass "Jackett api-matrix: product configurator re-applied (idempotent)"
     else

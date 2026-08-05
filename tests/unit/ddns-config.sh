@@ -2,11 +2,11 @@
 # tests/unit/ddns-config.sh
 #
 # Contract tests for the shared DDNS provider registry + config.json renderer
-# (scripts/lib/ddns_providers.sh). No live credentials — fixture
+# (scripts/lib/ddns-providers.sh). No live credentials — fixture
 # values only. Proves all 6 providers render valid typed JSON, dynv6 carries
 # no inert ipv4 key (ddns-updater detects and sends the IP itself), missing/
 # unknown inputs fail, and the Dynu render is byte-identical to the inline
-# writer it replaces in env_gen.sh.
+# writer it replaces in env-gen.sh.
 
 set -uo pipefail
 
@@ -17,7 +17,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="ddns-config"
 scenario_begin "$CURRENT_SCENARIO"
 
-source "$REPO_ROOT/scripts/lib/ddns_providers.sh"
+source "$REPO_ROOT/scripts/lib/ddns-providers.sh"
 
 set +e
 set +u

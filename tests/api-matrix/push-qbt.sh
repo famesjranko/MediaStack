@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# tests/api-matrix/push_qbt.sh — drive the PRODUCT qBittorrent configurators
+# tests/api-matrix/push-qbt.sh — drive the PRODUCT qBittorrent configurators
 # against a live qBittorrent, inside DinD. Reuses product code only; this file
 # owns no API logic of its own.
 #
-#   push_qbt.sh apply                  # configure_qbittorrent (config.yml-driven)
-#   push_qbt.sh speedlimit <dl_mb> <ul_mb>   # day-2 qbt_set_speed_limits
+#   push-qbt.sh apply                  # configure_qbittorrent (config.yml-driven)
+#   push-qbt.sh speedlimit <dl_mb> <ul_mb>   # day-2 qbt_set_speed_limits
 set -uo pipefail
 
 mode="$1"
@@ -21,14 +21,14 @@ set +a
 
 # Throwaway config so we never touch the repo's tracked config.yml. Seeded once
 # from it; matrix_qbittorrent reads cfg_field/cfg_qbt_categories against this
-# SAME file for its expected values (mirrors push_quality.sh's pattern).
+# SAME file for its expected values (mirrors push-quality.sh's pattern).
 CONFIG_FILE="/tmp/ms-qbt-matrix.yml"
 export CONFIG_FILE
 [[ -f "$CONFIG_FILE" ]] || cp "$SCRIPT_DIR/config.yml" "$CONFIG_FILE"
 
 if [[ "$mode" == "seed-config" ]]; then
     [[ $# -eq 2 ]] || {
-        echo "usage: push_qbt.sh seed-config <download_mb> <upload_mb>" >&2
+        echo "usage: push-qbt.sh seed-config <download_mb> <upload_mb>" >&2
         exit 2
     }
     python3 - "$CONFIG_FILE" "$1" "$2" <<'PY'
@@ -59,7 +59,7 @@ case "$mode" in
         qbt_set_speed_limits "$1" "$2"
         ;;
     *)
-        echo "usage: push_qbt.sh apply|seed-config <dl_mb> <ul_mb>|speedlimit <dl_mb> <ul_mb>" >&2
+        echo "usage: push-qbt.sh apply|seed-config <dl_mb> <ul_mb>|speedlimit <dl_mb> <ul_mb>" >&2
         exit 2
         ;;
 esac

@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/scripts/lib/network.sh"
 source "$SCRIPT_DIR/scripts/lib/validators.sh"
 # Shared two-axis quality picker (resolution → size); also sourced by ./mediastack
 # for the day-2 "Change quality profile" action so the two surfaces can't drift.
-source "$SCRIPT_DIR/scripts/lib/quality_select.sh"
+source "$SCRIPT_DIR/scripts/lib/quality-select.sh"
 
 _wizard_load_existing_env() {
     _WIZ_PREV_TZ=""
@@ -158,7 +158,7 @@ source "$SCRIPT_DIR/scripts/setup/stages/stage2.sh"
 source "$SCRIPT_DIR/scripts/setup/stages/stage3.sh"
 
 run_wizard() {
-    seed_root_config # seed live config.yml from template (defined in env_gen.sh)
+    seed_root_config # seed live config.yml from template (defined in env-gen.sh)
     # Self-skip only when config.yml, .env, and the Stage 1 completion marker
     # all agree. `_wizard_apply_settings` writes `wizard_completed: true`
     # before Stage 1 starts containers and proves Jellyfin is usable; if setup

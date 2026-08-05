@@ -5,7 +5,7 @@
 # install reporting no reboot needed and verification passing, the flow reaches
 # the verified/complete state. Asserts NVIDIA_DRIVER_MODE=standard is recorded.
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-nvidia-standard.sh"

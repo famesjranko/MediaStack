@@ -21,14 +21,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# --- Dry-run UI explorer (containerised; see scripts/lib/dry_run.sh) ---
+# --- Dry-run UI explorer (containerised; see scripts/lib/dry-run.sh) ---
 # On a real host (no sandbox marker) --dry-run spawns a throwaway container and
 # re-invokes inside it; inside the sandbox the in-container dispatch near the
 # --demo block below turns the real wizard/recovery into a no-op walk. --dry-run
 # is a modifier: any remaining args (--remote / --transcoding) are passed through.
 if [[ "${1:-}" == "--dry-run" || "${1:-}" == "--ui-preview" ]]; then
-    # shellcheck source=scripts/lib/dry_run.sh
-    source "$SCRIPT_DIR/scripts/lib/dry_run.sh"
+    # shellcheck source=scripts/lib/dry-run.sh
+    source "$SCRIPT_DIR/scripts/lib/dry-run.sh"
     if ! dry_run_in_sandbox; then
         dry_run_launch setup.sh "${@:2}"
         exit $?
@@ -38,7 +38,7 @@ fi
 # Demo mode renders the UI for review / screenshots, usually through a pipe
 # (non-TTY) and sometimes with NO_COLOR set. Force the full colour + glyph
 # render BEFORE the UI libs below freeze their palette + glyph vocabulary at
-# source time — ui_demo.sh also sets these, but it is sourced too late to win.
+# source time — ui-demo.sh also sets these, but it is sourced too late to win.
 [[ " $* " == *" --demo "* ]] && export UI_DEMO=1 UI_FORCE_COLOR=1 UI_FORCE_GLYPHS=1
 
 source "$SCRIPT_DIR/scripts/lib/common.sh"
@@ -49,7 +49,7 @@ source "$SCRIPT_DIR/scripts/setup/checks.sh"
 source "$SCRIPT_DIR/scripts/setup/packages.sh"
 source "$SCRIPT_DIR/scripts/setup/gpu.sh"
 source "$SCRIPT_DIR/scripts/setup/override.sh"
-source "$SCRIPT_DIR/scripts/setup/env_gen.sh"
+source "$SCRIPT_DIR/scripts/setup/env-gen.sh"
 source "$SCRIPT_DIR/scripts/setup/storage.sh"
 source "$SCRIPT_DIR/scripts/setup/fail2ban.sh"
 source "$SCRIPT_DIR/scripts/setup/wizard.sh"
@@ -417,8 +417,8 @@ main() {
 
 # --- Dry-run UI explorer: in-container dispatch (host path handled near the top) ---
 if [[ "${1:-}" == "--dry-run" || "${1:-}" == "--ui-preview" ]]; then
-    # shellcheck source=scripts/lib/dry_run.sh
-    source "$SCRIPT_DIR/scripts/lib/dry_run.sh"
+    # shellcheck source=scripts/lib/dry-run.sh
+    source "$SCRIPT_DIR/scripts/lib/dry-run.sh"
     dry_run_begin wizard
     dry_run_dispatch_setup "${@:2}"
     exit 0
@@ -426,7 +426,7 @@ fi
 
 # --- Demo mode: exercise UI components without touching the system ---
 if [[ "${1:-}" == "--demo" ]]; then
-    source "$SCRIPT_DIR/scripts/lib/ui_demo.sh"
+    source "$SCRIPT_DIR/scripts/lib/ui-demo.sh"
     run_demo "${2:-auto}"
     exit 0
 fi

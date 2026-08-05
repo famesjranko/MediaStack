@@ -3,7 +3,7 @@
 # This focused scenario reuses remote-gating assertions to prove that skipping
 # Stage 2 leaves LAN consumers intact and creates no public hosts.
 
-source tests/assertions/remote_gating.sh
+source tests/assertions/remote-gating.sh
 
 stage2_skip_assert_test03_postconditions() {
     local state homepage_check network_json known_proxies published

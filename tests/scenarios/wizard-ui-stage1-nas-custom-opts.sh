@@ -4,7 +4,7 @@
 # recommended NFS options and enters their own. Those options are unproven, so
 # the wizard must re-run the probe with them before accepting. This asserts the
 # custom value lands in .env and the probe ran a second time (initial + reprobe).
-source tests/lib/wizard_stage1_common.sh
+source tests/lib/wizard-stage1-common.sh
 
 wizard_ui_stage1_nas_custom_opts_write_fixture() {
     wizard_stage1_write_base_fixture "/tmp/wizard-stage1-nas-custom.sh" "wizard-nas-custom-key"

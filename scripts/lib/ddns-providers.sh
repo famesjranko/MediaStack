@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/lib/ddns_providers.sh
+# scripts/lib/ddns-providers.sh
 # =============================================================================
 # MediaStack DDNS provider registry + config.json renderer
 # =============================================================================
@@ -8,8 +8,8 @@
 # day-2 "Update DDNS provider / credentials" action, so adding a provider is registry cells +
 # a validator + a test fixture + docs — never flow-code edits.
 #
-# Flat parallel arrays indexed together (model scripts/lib/quality_select.sh),
-# not a TAB-record declare -gA blob. Sourced by scripts/setup/env_gen.sh (the
+# Flat parallel arrays indexed together (model scripts/lib/quality-select.sh),
+# not a TAB-record declare -gA blob. Sourced by scripts/setup/env-gen.sh (the
 # universal setup source-point); safe to source anywhere — nothing runs at
 # source time except the array literals, and the functions reach for ui/log
 # helpers only when called.

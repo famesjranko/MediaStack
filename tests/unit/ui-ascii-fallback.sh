@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/ui-ascii-fallback.sh
 #
-# Proves the unicode-capability gate (scripts/lib/term_caps.sh:_glyphs_enabled)
+# Proves the unicode-capability gate (scripts/lib/term-caps.sh:_glyphs_enabled)
 # degrades the whole TUI to ASCII when the terminal cannot render glyphs — a
 # non-UTF-8 locale (LANG=C, common on minimal/netinst Debian) or the bare Linux
 # console (TERM=linux) — so a first-time installer never sees mojibake.

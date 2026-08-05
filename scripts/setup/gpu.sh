@@ -1,5 +1,5 @@
 # Owns: GPU entry wiring, source-time paths, and ordered concern loading.
-# Sources: common.sh, lib/render-device.sh, lib/nvidia_patch.sh, and gpu/*.
+# Sources: common.sh, lib/render-device.sh, lib/nvidia-patch.sh, and gpu/*.
 # =============================================================================
 # MediaStack Setup — GPU detection, driver install, and verification
 # =============================================================================
@@ -12,8 +12,8 @@
 _GPU_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib/render-device.sh
 source "$_GPU_HELPER_DIR/lib/render-device.sh"
-# shellcheck source=../lib/nvidia_patch.sh
-source "$_GPU_HELPER_DIR/lib/nvidia_patch.sh"
+# shellcheck source=../lib/nvidia-patch.sh
+source "$_GPU_HELPER_DIR/lib/nvidia-patch.sh"
 unset _GPU_HELPER_DIR
 
 # apt sources this module owns. Single source of truth so install and uninstall

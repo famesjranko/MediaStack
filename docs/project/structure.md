@@ -28,7 +28,7 @@ AGENTS.md, CLAUDE.md                Shared agent router + Claude Code adapter
 scripts/
   configure.sh                      Configuration entrypoint — sources lib/ + services/
   update.sh                         Update containers using the selected Stable or Latest image channel
-  image-drift.py                    CI/local check for remote image digest drift (no pulls, no DinD)
+  image_drift.py                    CI/local check for remote image digest drift (no pulls, no DinD)
   port-check.sh                     Port forwarding verification (DNS, TCP 80/443/6881, UDP 51820)
   nvidia-repatch.sh                 Re-apply NVENC patch after driver update
   storage-watchdog.sh               NAS mount/sentinel watchdog for managed network storage
@@ -40,7 +40,7 @@ scripts/
     gpu.sh                          GPU entry wiring; concern implementations live under gpu/
     gpu/                             Detection, NVIDIA phases, Intel/AMD, verification, Compose output
     override.sh                     Host memory detection, image policy, and helper loading for Compose output
-    env_gen.sh                      Interactive .env generation
+    env-gen.sh                      Interactive .env generation
     fail2ban.sh                     Installs/uninstalls the fail2ban log-rotation reload watcher systemd units
     storage.sh                      Storage mode helpers, NAS preflight, watchdog install
     wizard.sh                       Interactive setup wizard (quality tier, GPU, subtitles)
@@ -62,19 +62,19 @@ scripts/
   lib/
     common.sh                       Logging, cfg_* YAML readers, api_get/api_post, key mgmt
     render-device.sh                Shared internal GPU render-device resolution helpers
-    ddns_providers.sh               DDNS provider registry + config.json renderer (6 providers; shared wizard/day-2)
-    dry_run.sh                      `--dry-run` UI explorer: walks the real wizard/launcher with side effects neutralised
+    ddns-providers.sh               DDNS provider registry + config.json renderer (6 providers; shared wizard/day-2)
+    dry-run.sh                      `--dry-run` UI explorer: walks the real wizard/launcher with side effects neutralised
     health.sh                       Day-2 silent-failure health checks (fail2ban drift, cert renewal, DDNS drift, disk, UFW, Docker)
     http.sh                         wait_for_service, js_post (cookie-session)
     json.sh                         json_get, json_path, json_has_name, json_array_nonempty
     network.sh                      Compatibility entry point and source-time state for shared network helpers
     network/                        Public IP, DNS, DDNS, port-gate, and WireGuard access helpers
-    npm_remote.sh                   Shared NPM remote-readiness checks, sourceable without the full npm/main.sh
-    nvidia_patch.sh                 Shared nvidia-patch pinning and verified execution helpers
+    npm-remote.sh                   Shared NPM remote-readiness checks, sourceable without the full npm/main.sh
+    nvidia-patch.sh                 Shared nvidia-patch pinning and verified execution helpers
     profiles.sh                     Single source of truth for compose profile args, derived from `.env` (installer + launcher)
-    quality_select.sh               Two-axis (resolution × size) quality picker, shared by the wizard and day-2 "Change quality profile"
-    term_caps.sh                    Terminal capability detection (colour/glyph support), shared by common.sh and ui_render_fallback.sh
-    ui.sh + ui_render_fallback.sh + ui_render_gum.sh + ui_demo.sh   Interactive prompts: public API/orchestration, pure-bash backend, gum backend, demo-mode walkthrough
+    quality-select.sh               Two-axis (resolution × size) quality picker, shared by the wizard and day-2 "Change quality profile"
+    term-caps.sh                    Terminal capability detection (colour/glyph support), shared by common.sh and ui-render-fallback.sh
+    ui.sh + ui-render-fallback.sh + ui-render-gum.sh + ui-demo.sh   Interactive prompts: public API/orchestration, pure-bash backend, gum backend, demo-mode walkthrough
     validators.sh                   Compatibility entry point for Stage 1 input-contract validators
     validators/                     Topic-split Stage 1 input-contract validators
       account.sh                    Admin username, email, and password validators
@@ -198,7 +198,7 @@ service's pin policy and preflight command. To bump a service safely:
    (most services use `fresh-install`; wireguard → `wireguard`, npm → `npm-heal`, fail2ban →
    `fail2ban-drift`, ddns-updater → `ddns-seed`; always read the service's row for the exact token).
 3. If the API/env/config shape changed, update the touchpoint files (service `main.sh`, and where
-   relevant `scripts/setup/env_gen.sh`, `stages/stage2.sh`, `scripts/lib/`, pre-seeded `config/`)
+   relevant `scripts/setup/env-gen.sh`, `stages/stage2.sh`, `scripts/lib/`, pre-seeded `config/`)
    and explain the rationale in the PR when the change is behavioral.
 4. Edit the tag in `docker-compose.yml`. If the pin **level** changed (e.g. `:latest` → exact patch),
    update the service's `docs/operations/upgrades.md` pin-policy token and the matching image-pin policy note.
@@ -217,6 +217,6 @@ scenarios).
 - Service main.sh > 200 lines → extract helpers within the service dir
 - Feature touches 2+ services → `scripts/flows/*.sh`, not inline in a service
 - New shared Sonarr/Radarr pattern → `scripts/lib/arr/`
-- New DDNS provider → registry cells in `scripts/lib/ddns_providers.sh` (`_DDNS_*` parallel arrays) + a field validator in `scripts/lib/validators.sh` + a `tests/unit/ddns-config.sh` fixture + docs. No wizard/day-2 flow-code edits — that is the whole point of the shared registry.
+- New DDNS provider → registry cells in `scripts/lib/ddns-providers.sh` (`_DDNS_*` parallel arrays) + a field validator in `scripts/lib/validators.sh` + a `tests/unit/ddns-config.sh` fixture + docs. No wizard/day-2 flow-code edits — that is the whole point of the shared registry.
 - New test scenario → `tests/scenarios/<name>.sh` + register in run.sh case statement
 - Pre-seeded config for a new service → add the template under `config/examples/defaults/<svc>/…` (tracked) and gitignore the live `config/<svc>/` copy; `seed_config_from_templates` copies it on install automatically

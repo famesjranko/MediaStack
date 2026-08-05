@@ -35,7 +35,7 @@ action_change_quality() {
 
     # Shared two-axis picker — the SAME one the setup wizard uses, so the two
     # surfaces can never drift. Sourced lazily (guard makes repeat visits cheap).
-    type quality_select_pick &>/dev/null || source "$SCRIPT_DIR/scripts/lib/quality_select.sh"
+    type quality_select_pick &>/dev/null || source "$SCRIPT_DIR/scripts/lib/quality-select.sh"
 
     local cur_name
     cur_name=$(CONFIG_FILE="$SCRIPT_DIR/config.yml" cfg_field "quality_profile.name" 2>/dev/null)

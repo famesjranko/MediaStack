@@ -1,4 +1,4 @@
-# tests/lib/wizard_stub_common.sh — shared executor stubs for the DinD wizard PTY fixtures.
+# tests/lib/wizard-stub-common.sh — shared executor stubs for the DinD wizard PTY fixtures.
 #
 # Single home for the side-effect stubs the Stage 1/2/3 fixture builders
 # (wizard_stage{1,2,3}_common.sh) install. Each fixture sources this file at RUN
@@ -11,11 +11,11 @@
 # data dirs are really created), stubbing only the slow / networked / dangerous
 # steps so the interactive flow advances and the generated state can be asserted.
 #
-# This is the deliberate OPPOSITE of scripts/lib/dry_run.sh:_dry_run_install_stubs,
+# This is the deliberate OPPOSITE of scripts/lib/dry-run.sh:_dry_run_install_stubs,
 # which ANNOUNCES every side effect ("would ...") for the no-op preview surface
 # (non-root, no network, keeps print_access_info real). The two stub sets are
 # intentionally parallel and cannot share bodies. When you add a new wizard
-# side-effect function, stub it in BOTH this file and scripts/lib/dry_run.sh.
+# side-effect function, stub it in BOTH this file and scripts/lib/dry-run.sh.
 
 # Services / images the `docker compose config ...` stub reports. Stage 1 is the
 # only stage that queries these today, but they are kept faithful and redefinable

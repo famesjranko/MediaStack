@@ -322,7 +322,7 @@ install_nvidia_drivers_apt() {
         return 1
     fi
 
-    # Read by env_gen.sh / stage3.sh / nvidia-repatch.sh, not within gpu.sh.
+    # Read by env-gen.sh / stage3.sh / nvidia-repatch.sh, not within gpu.sh.
     # shellcheck disable=SC2034
     NVIDIA_DRIVER_MODE="standard"
     # The Debian package blacklists nouveau and builds the module via DKMS, but a

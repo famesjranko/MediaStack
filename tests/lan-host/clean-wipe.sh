@@ -11,7 +11,7 @@
 # usage: clean-wipe.sh [--nvidia] [--data] [--yes]
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/_lib.sh"
+source "$HERE/lib.sh"
 
 WIPE_NVIDIA=0 WIPE_DATA=0 ASSUME_YES=0
 while (($#)); do

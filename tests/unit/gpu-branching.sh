@@ -163,7 +163,7 @@ assert_eq "" "$(_nvidia_resolve_driver_mode "bogus" "")" "_nvidia_resolve_driver
 _rp=$(mktemp -d)
 mkdir -p "$_rp/scripts/lib" "$_rp/bin"
 cp "$REPO_ROOT/scripts/nvidia-repatch.sh" "$_rp/scripts/"
-cp "$REPO_ROOT/scripts/lib/nvidia_patch.sh" "$_rp/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/nvidia-patch.sh" "$_rp/scripts/lib/"
 printf '#!/usr/bin/env bash\nexit 1\n' >"$_rp/bin/nvidia-smi"
 chmod +x "$_rp/bin/nvidia-smi"
 printf 'NVIDIA_DRIVER_MODE=standard\n' >"$_rp/.env"

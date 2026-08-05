@@ -105,7 +105,7 @@ python3 tests/lib/wizard_pty.py --command './mediastack --dry-run' --steps /tmp/
     --cwd "$PWD" --raw-log /tmp/raw.log --plain-log /tmp/plain.log --expect-exit 0
 ```
 
-The driver + fidelity stubs live in `scripts/lib/dry_run.sh`; `tests/unit/dry-run.sh`
+The driver + fidelity stubs live in `scripts/lib/dry-run.sh`; `tests/unit/dry-run.sh`
 asserts the safety invariants (no bind mount, `--network none`, non-root,
 recursion guard) and walks the launcher when Docker is available.
 
@@ -478,7 +478,7 @@ Current DinD wizard UI coverage:
    - **Stack helpers** (`lib/stack.sh`): `wait_healthy <svc> [timeout]`, `get_api_key_from_xml <path>`, `get_jackett_api_key`, `env_set KEY VALUE` (writes to `.env` via Python — safe with `$` and special chars), `env_get KEY`, `create_config_dirs_in_dind`.
    - **PTY wizard driver** (`lib/wizard_pty.py`): drive interactive prompt
      flows from JSON steps when pipe-based input would miss terminal behavior.
-   - **Stage 1 wizard fixtures** (`lib/wizard_stage1_common.sh`): shared stubs
+   - **Stage 1 wizard fixtures** (`lib/wizard-stage1-common.sh`): shared stubs
      for PTY Stage 1 scenarios that should avoid image pulls and stack startup.
 3. Return 0 for clean finish; return non-zero to abort that scenario early. Counter updates persist across scenarios.
 4. Run it: `./tests/run.sh <name>`.
@@ -569,14 +569,14 @@ Current units:
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
 - **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening/firewall.sh`.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
-- **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image-drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
+- **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image_drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
 - **launcher-hardware / nvidia-maintenance** — cover the day-2 hardware surface, Unlock-only visibility/dispatch guards, default-No cancellation, resolve-before-stop ordering, unload failure cleanup, one installer/toolkit execution, and expected-version marker persistence. Pure bash; no Docker/network.
 - **launcher-uninstall / uninstall-system-cleanup** — cover launcher routing/result reporting, root-only ledger reads, selective UFW/APT/sysctl/Samba cleanup, teardown failure rollback, and Stage 3 routing precedence.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
 - **lint-sweep** — checks the `tests/lint.sh` single-sweep contract against a fixture repo with a stub shellcheck: the sweep is invoked exactly once over the whole discovered file list, covers every file in it, and still propagates a non-zero result. Pure bash + git, no Docker and no network; run directly with `./tests/unit/lint-sweep.sh`.
 - **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.
 - **remote-web-state** (`tests/unit/remote-web-state.sh`) — exercises `write_env()` remote marker rules and `print_access_info` output for unchecked, ready, skipped, and LAN-only states.
-- **ddns-config** — exercises the shared DDNS provider registry + `config.json` renderer (`scripts/lib/ddns_providers.sh`): all 6 providers render valid typed JSON (Cloudflare `ttl`/`proxied` typed, dynv6 carries no inert `ipv4` key), missing/unknown inputs fail, the Dynu render stays byte-identical to the inline writer it replaced, and the registry accessors (`pick`/`fields`/`verify_tier`/`category`) map correctly. No credentials.
+- **ddns-config** — exercises the shared DDNS provider registry + `config.json` renderer (`scripts/lib/ddns-providers.sh`): all 6 providers render valid typed JSON (Cloudflare `ttl`/`proxied` typed, dynv6 carries no inert `ipv4` key), missing/unknown inputs fail, the Dynu render stays byte-identical to the inline writer it replaced, and the registry accessors (`pick`/`fields`/`verify_tier`/`category`) map correctly. No credentials.
 - **stage2-domain** — exercises domain/DNS classification, Cloudflare proxy detection, and safe routing before publication.
 - **stage2-ports** — exercises local port checks and failure classification without claiming public WAN reachability.
 - **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming / Streaming + requests) plus `detect_lan_cidr` normalization. Tier semantics: [VPN access tiers](../docs/setup/configuration-schema.md).
@@ -829,7 +829,7 @@ tiers over `tests/ci-scenarios.sh`) restores a pristine DinD before every
 scenario after the first: `dind_reset` (`tests/lib/dind.sh`) removes every
 container, prunes anonymous volumes and custom networks, and re-copies the
 repo from the host tree — undoing anything a prior scenario stubbed
-(`scripts/configure.sh`, via `tests/lib/wizard_stub_common.sh`) or rewrote
+(`scripts/configure.sh`, via `tests/lib/wizard-stub-common.sh`) or rewrote
 (`config.yml`, `.env`, any other file under the repo copy) — then re-applies
 image overrides/strips so those survive the reset too.
 

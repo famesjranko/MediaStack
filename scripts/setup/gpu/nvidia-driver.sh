@@ -1,5 +1,5 @@
 # Owns: NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
-# Sources: gpu.sh globals, common.sh logging, and nvidia_patch.sh helpers.
+# Sources: gpu.sh globals, common.sh logging, and nvidia-patch.sh helpers.
 # shellcheck disable=SC2154 # _nvidia_tmp is a documented caller-owned workspace.
 check_secure_boot() {
     if ! command -v mokutil &>/dev/null; then

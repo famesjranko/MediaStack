@@ -152,7 +152,7 @@ matrix_seerr() {
     # and the Sonarr/Radarr connections this module actually covers. The
     # jellyfin module (test-5) already created the SSO admin this needs.
     # ------------------------------------------------------------------
-    apply_log=$(dind_exec "bash tests/api-matrix/push_seerr.sh apply" 2>&1)
+    apply_log=$(dind_exec "bash tests/api-matrix/push-seerr.sh apply" 2>&1)
     if [[ $? -eq 0 ]]; then
         pass "Seerr api-matrix: product configurator applied (first-run setup)"
     else
@@ -238,7 +238,7 @@ matrix_seerr() {
         # --------------------------------------------------------------
         local before_entry after_settings after_entry connect_log
         before_entry="$entry"
-        connect_log=$(dind_exec "bash tests/api-matrix/push_seerr.sh connect $app $cookiejar" 2>&1)
+        connect_log=$(dind_exec "bash tests/api-matrix/push-seerr.sh connect $app $cookiejar" 2>&1)
         if [[ $? -eq 0 ]]; then
             pass "Seerr api-matrix: ${app} connection re-applied (idempotent)"
         else

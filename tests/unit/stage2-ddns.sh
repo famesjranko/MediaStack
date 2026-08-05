@@ -44,7 +44,7 @@ ui_log() {
     fi
 }
 
-source "$REPO_ROOT/scripts/setup/env_gen.sh"
+source "$REPO_ROOT/scripts/setup/env-gen.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
 source "$REPO_ROOT/scripts/lib/validators.sh"
 env_val_from() {

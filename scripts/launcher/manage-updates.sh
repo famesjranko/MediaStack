@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Owns: Per-service image-policy management, update scans, applies, reverts, and menu routing.
-# Sources: launcher globals, .env, override.sh, image-drift.py, compose helpers, and scripts/lib/ui.sh.
+# Sources: launcher globals, .env, override.sh, image_drift.py, compose helpers, and scripts/lib/ui.sh.
 
 _service_profile_flag() {
     case "$1" in
@@ -265,7 +265,7 @@ _reset_service_to_default() {
 }
 
 _update_status_scan() {
-    python3 "$SCRIPT_DIR/scripts/image-drift.py" --status-tsv 2>/dev/null
+    python3 "$SCRIPT_DIR/scripts/image_drift.py" --status-tsv 2>/dev/null
 }
 
 _render_update_table() {

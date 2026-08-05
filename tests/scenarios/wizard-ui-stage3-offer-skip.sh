@@ -6,7 +6,7 @@
 # that declining leaves Jellyfin on software transcoding (JELLYFIN_GPU=none,
 # state=skipped).
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-offer-skip.sh"

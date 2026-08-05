@@ -4,7 +4,7 @@
 # REMOTE_WEB_STATE is not ready. DOMAIN remains the infrastructure/profile
 # switch; REMOTE_WEB_STATE controls HTTPS publication.
 
-source tests/assertions/remote_gating.sh
+source tests/assertions/remote-gating.sh
 
 run_remote_gating_configure() {
     local state="$1"

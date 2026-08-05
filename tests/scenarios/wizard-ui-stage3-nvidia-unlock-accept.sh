@@ -4,7 +4,7 @@
 # driver and the install reporting no reboot needed, the patch-managed path runs
 # the patch + verification and reaches the complete state with mode=unlock.
 
-source tests/lib/wizard_stage3_common.sh
+source tests/lib/wizard-stage3-common.sh
 
 run_scenario() {
     local fixture="/tmp/wizard-stage3-nvidia-unlock-accept.sh"

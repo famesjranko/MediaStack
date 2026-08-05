@@ -2,7 +2,7 @@
 # MediaStack UI — GUM rendering backend
 # =============================================================================
 # Implements all _render_* primitives using charmbracelet/gum.
-# Zero dependency on ui_render_fallback.sh — fully self-contained.
+# Zero dependency on ui-render-fallback.sh — fully self-contained.
 #
 # Requirements: gum binary on PATH, interactive TTY (auto-selected by ui.sh
 # only when both conditions are met). Install: https://github.com/charmbracelet/gum
@@ -12,10 +12,10 @@
 # Orchestration (demo mode, retry loops, non-TTY handling) lives in ui.sh.
 
 # Terminal-capability detection — required for _G_* glyph vars (glyph lint
-# mandates all structural glyphs come from term_caps.sh, not raw literals).
+# mandates all structural glyphs come from term-caps.sh, not raw literals).
 _GUM_TC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=term_caps.sh
-source "$_GUM_TC_DIR/term_caps.sh"
+# shellcheck source=term-caps.sh
+source "$_GUM_TC_DIR/term-caps.sh"
 
 # --- Render primitives (the backend contract) ---
 # Display functions write to stdout (callers use $(ui_kv ...) to compose lines

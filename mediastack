@@ -18,14 +18,14 @@ set -uo pipefail # NOT -e: a failed diagnostic must not kill the loop.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 
-# --- Dry-run UI explorer (containerised; see scripts/lib/dry_run.sh) ---
+# --- Dry-run UI explorer (containerised; see scripts/lib/dry-run.sh) ---
 # Checked before the root/TTY guards below (which apply to the real launcher).
 # On a real host (no sandbox marker) --dry-run spawns a throwaway container and
 # re-invokes inside it; inside the sandbox the marker is present, so we fall
 # through to the in-container dispatch at the bottom (a no-op walk).
 if [[ "${1:-}" == "--dry-run" || "${1:-}" == "--ui-preview" ]]; then
-    # shellcheck source=scripts/lib/dry_run.sh
-    source "$SCRIPT_DIR/scripts/lib/dry_run.sh"
+    # shellcheck source=scripts/lib/dry-run.sh
+    source "$SCRIPT_DIR/scripts/lib/dry-run.sh"
     if ! dry_run_in_sandbox; then
         dry_run_launch mediastack
         exit $?
@@ -307,8 +307,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [[ "${1:-}" == "--dry-run" || "${1:-}" == "--ui-preview" ]]; then
         # In-container dry-run (the host path exited near the top): stub side
         # effects, seed simulated state, then walk the REAL launcher menus.
-        # shellcheck source=scripts/lib/dry_run.sh
-        source "$SCRIPT_DIR/scripts/lib/dry_run.sh"
+        # shellcheck source=scripts/lib/dry-run.sh
+        source "$SCRIPT_DIR/scripts/lib/dry-run.sh"
         dry_run_begin launcher
         main
         exit 0
