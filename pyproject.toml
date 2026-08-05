@@ -10,7 +10,7 @@ extend-exclude = ["config/examples"]
 select = ["E", "W", "F", "I", "UP", "B", "C4", "C901", "SIM", "RET", "RUF", "N"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 12
+max-complexity = 10  # docs/conventions.md "Complexity cap"
 
 [tool.ruff.format]
 quote-style = "double"

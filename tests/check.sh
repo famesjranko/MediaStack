@@ -14,7 +14,8 @@
 #   ./tests/check.sh line-cap # single stage: tracked shell line cap only.
 #   ./tests/check.sh naming   # single stage: tracked filename casing only.
 #   ./tests/check.sh shfmt    # single stage: shell formatting only.
-#   ./tests/check.sh ruff     # single stage: python lint + format check only.
+#   ./tests/check.sh ruff     # single stage: python lint (incl. the C901
+#                             # complexity reconcile) + format check only.
 #   ./tests/check.sh mypy     # single stage: type check only.
 #   ./tests/check.sh contracts
 #                             # single stage: API contract coverage only.
@@ -198,14 +199,25 @@ mypy_type_check() {
 }
 
 # RUFF_CACHE_DIR is set outside the tree since ruff self-ignores .ruff_cache/.
-# The lint pass runs first because its findings explain a format diff.
+# The lint pass runs first because its findings explain a format diff. Its
+# output is reconciled by tests/python-complexity.sh rather than printed
+# straight out: that wrapper matches C901 findings against the shrink-only
+# allowlist, replays every other finding untouched, and appends the steering
+# paragraph when complexity is what failed.
 ruff_python_check() {
-    local cache_dir rc ruff_pin
+    local cache_dir rc ruff_pin findings
     discover_tracked_python || return $?
     ruff_pin=$(tool_pin ruff version) || return 1
     cache_dir=$(mktemp -d) || return 1
-    RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" check "${PYTHON_FILES[@]}"
+    findings=$(mktemp) || {
+        rm -rf "$cache_dir"
+        return 1
+    }
+    RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" check \
+        --output-format=concise "${PYTHON_FILES[@]}" >"$findings" 2>&1
+    ./tests/python-complexity.sh "$findings"
     rc=$?
+    rm -f "$findings"
     if ((rc == 0)); then
         RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" format --check "${PYTHON_FILES[@]}"
         rc=$?
@@ -298,7 +310,7 @@ if [[ -n "$STAGE" ]]; then
             ;;
         ruff)
             stage ruff "python: ruff" \
-                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check <tracked-python> && ... format --check <tracked-python>" \
+                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check --output-format=concise <tracked-python> | ./tests/python-complexity.sh && ... format --check <tracked-python>" \
                 ruff_python_check
             ;;
         mypy)
@@ -354,7 +366,7 @@ stage fast "lint: file naming" "./tests/naming.sh" ./tests/naming.sh
 stage fast "format: shfmt" "./tests/format.sh check" \
     ./tests/format.sh check
 stage fast "python: ruff" \
-    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check <tracked-python> && ... format --check <tracked-python>" \
+    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check --output-format=concise <tracked-python> | ./tests/python-complexity.sh && ... format --check <tracked-python>" \
     ruff_python_check
 stage fast "type: mypy" \
     "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==<tools.toml [mypy] version> --with types-PyYAML==<tools.toml [mypy] types_pyyaml_version> mypy --python-version 3.9 <tracked-python>" \
