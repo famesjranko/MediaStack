@@ -38,7 +38,14 @@ for file in "${tracked_files[@]}"; do
     tracked_counts["$file"]="$(wc -l <"$REPO_ROOT/$file")"
 done
 
-[[ -r "$ALLOWLIST" ]] || die "allowlist is unreadable: $ALLOWLIST"
+# The allowlist file is gone and every file obeys the cap. An absent
+# allowlist means an empty allowed set; if it exists it must be readable,
+# and its entries still ratchet (shrink-only, no new entries).
+if [[ -e "$ALLOWLIST" ]]; then
+    [[ -r "$ALLOWLIST" ]] || die "allowlist is unreadable: $ALLOWLIST"
+else
+    ALLOWLIST=/dev/null
+fi
 
 if git -C "$REPO_ROOT" cat-file -e "$base_ref:tests/shell-line-cap.allowlist" 2>/dev/null; then
     git -C "$REPO_ROOT" show "$base_ref:tests/shell-line-cap.allowlist" >"$base_allowlist" \
@@ -92,7 +99,7 @@ for file in "${tracked_files[@]}"; do
     current="${tracked_counts["$file"]}"
     ((current <= CAP)) && continue
     [[ -n "${allowed_counts["$file"]+allowlisted}" ]] \
-        || die "$file is $current lines; add it to $ALLOWLIST with its current count"
+        || die "$file is $current lines (cap $CAP); shrink it — see docs/conventions.md 'Shell structure' for the split strategy"
 done
 
 printf 'shell-line-cap: %s tracked shell files checked (cap %s)\n' \

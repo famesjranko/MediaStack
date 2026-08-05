@@ -153,10 +153,11 @@ rm -f "$FIXTURE_ROOT/canary/.gitleaksignore"
 # from its own location, so a mutated copy exercises the guards in isolation.
 fake_root() {
     local dir="$FIXTURE_ROOT/$1"
-    mkdir -p "$dir/tests" || return 1
+    mkdir -p "$dir/tests/lib" || return 1
     cp "$REPO_ROOT/tools.toml" "$dir/tools.toml"
     cp "$REPO_ROOT/.gitleaks.toml" "$dir/.gitleaks.toml"
     cp "$SCANNER" "$dir/tests/secret-scan.sh"
+    cp "$REPO_ROOT/tests/lib/secret-scan-install.sh" "$dir/tests/lib/secret-scan-install.sh"
     printf '%s\n' "$dir"
 }
 

@@ -31,7 +31,8 @@
 # the dedicated npm-heal scenario and the stage2 flows instead). Representing
 # a per-endpoint auth exemption would mean a schema extension serving five
 # services' worth of one-off shape, or a per-service branch in serve.py —
-# both against this ticket's hard constraints — so this is recorded as a seam
+# both against the mock harness's hard constraints (generic, no per-service
+# branches) — so this is recorded as a seam
 # finding rather than implemented here.
 
 CONTRACT_MOCK_JOURNAL=/tmp/contract-mock-journal.jsonl
@@ -65,8 +66,8 @@ contract_mock_wait_ready() {
 
 # Seed the API-key XML each service normally writes to config/<app>/config.xml
 # on first boot — the configurator reads it via get_api_key(), and there is no
-# config.yml/env surface for that value (a product seam; see the ticket's
-# Comments), so the scenario has to write the file directly, the same way it
+# config.yml/env surface for that value (a known product seam), so the
+# scenario has to write the file directly, the same way it
 # would exist on a real host after Sonarr/Radarr's own first start.
 contract_mock_seed_api_keys() {
     dind_exec "mkdir -p config/sonarr config/radarr

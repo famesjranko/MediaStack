@@ -383,7 +383,7 @@ day-2 action that mutates a service API should ship with a matrix module here.
 python3 tests/contracts/replay.py spec      # offline-friendly, run anywhere
 ```
 
-Ticket 17's `tests/contracts/<service>.yml` files (schema:
+The `tests/contracts/<service>.yml` files (schema:
 `tests/contracts/README.md`) are the single source of truth for what
 MediaStack calls; two consumers keep them honest without ever reimplementing
 service behavior:

@@ -50,12 +50,25 @@ against one clean and one targeted bad fixture per rule.
 
 ### Shell structure
 
-Every tracked shell file (`*.sh` and the `mediastack` launcher) is capped at 500 lines. The fast-tier line-cap gate
-uses `tests/shell-line-cap.allowlist` for today's existing offenders. An
-allowlist entry is `<path>\t<line-count>`. Recorded counts may only shrink (or
-the entry may be removed), and the file may not grow past its recorded count;
-an entry for a missing file or a file now at or under the cap is stale and fails
-the gate. Remove entries as files are brought under the cap.
+Every tracked shell file (`*.sh` and the `mediastack` launcher) is capped at
+500 lines, with no exceptions: the grandfathered offenders in
+`tests/shell-line-cap.allowlist` have all been brought under the cap and the
+file deleted. The gate (`tests/shell-line-cap.sh`) treats an absent allowlist
+as an empty allowed set and still understands the ratchet format
+(`<path>\t<line-count>`, shrink-only, no new entries against a tracked
+baseline) should one ever need to be read again — but the intended response
+to an over-cap file is to shrink it, not to relist it.
+
+When a file reaches the cap, prefer the smallest honest change: often one
+helper has outgrown the file and belongs nearer its callers or in its own
+topic file. Split into a module directory only when the file genuinely holds
+several concerns; then move function bodies verbatim (prove it — `declare -f`
+old vs new), leave a thin entry point that sources the topic files with
+`# shellcheck source=` directives above each `source` line, split the unit
+mirror along the same topic lines, and update `tests/contracts/` caller paths
+for any API call site that moved. A split whose only achievement is
+satisfying the number is worse than the long file — reviewers should reject
+it.
 
 The source-to-unit naming rule is that a unit suite names the source module it
 covers, in one of three shapes: `tests/unit/<name>.sh` (the source basename),
@@ -84,7 +97,7 @@ header contract:
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
-| Tracked shell file is at or under 500 lines, with an allowlist ratchet for existing offenders | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
+| Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check | `./tests/check.sh ruff` | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |

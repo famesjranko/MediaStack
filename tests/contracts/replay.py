@@ -9,7 +9,7 @@ whole-spec or whole-response validation:
          endpoint's method+path still exists there. Network failure or a
          spec that is not machine-readable JSON is reported as a clearly
          labelled SKIP, not an error — this mode must degrade gracefully
-         offline (see the ticket's "graceful, clearly-reported skip").
+         offline with a graceful, clearly-reported skip.
 
   live   Against a real running container (base URL + credential supplied by
          the caller — the image-bump preflight's bring-up, never the mock),

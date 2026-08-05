@@ -175,8 +175,6 @@ repair_mount_if_needed() {
     if storage_mount_matches; then
         return 0
     fi
-    local mountpoint
-    mountpoint="$(storage_mountpoint)"
     if [[ ! -x "$MOUNT_HELPER" ]]; then
         log "mount repair helper is unavailable: $MOUNT_HELPER"
         return 0
