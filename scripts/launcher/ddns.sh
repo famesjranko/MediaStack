@@ -4,13 +4,13 @@
 
 _resolve_ddns_ip() {
     local _dom="${DOMAIN:-}" _ip=""
-    # BOUNDED: the shared _stage2_dns_lookup_a is unbounded (~30s worst case, fine
+    # BOUNDED: the shared _net_dns_lookup_a is unbounded (~30s worst case, fine
     # for install/on-demand checks, not for a hot render path). Short-timeout digs
     # (system resolver, then 8.8.8.8) via the shared IPv4 extractor. Broken DNS
     # falls to "" -> "not resolving yet", never a frozen menu.
     if [[ -n "$_dom" && "$_dom" != "example.com" ]] && command -v dig &>/dev/null; then
-        _ip=$(dig +short +time=2 +tries=1 A "$_dom" 2>/dev/null | _stage2_first_ipv4)
-        [[ -z "$_ip" ]] && _ip=$(dig +short +time=2 +tries=1 A "$_dom" @8.8.8.8 2>/dev/null | _stage2_first_ipv4)
+        _ip=$(dig +short +time=2 +tries=1 A "$_dom" 2>/dev/null | _net_first_ipv4)
+        [[ -z "$_ip" ]] && _ip=$(dig +short +time=2 +tries=1 A "$_dom" @8.8.8.8 2>/dev/null | _net_first_ipv4)
     fi
     printf '%s' "$_ip"
 }

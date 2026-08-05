@@ -28,7 +28,7 @@ net_detect_public_ip() {
     _NET_PUBLIC_IP="203.0.113.10"
     return 0
 }
-stage2_dns_classify() {
+net_dns_classify() {
     printf '%s' "${STAGE2_LE_DNS:-ok}"
     [[ "${STAGE2_LE_DNS:-ok}" == "ok" ]]
 }

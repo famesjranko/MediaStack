@@ -7,7 +7,7 @@ _stage1_mbps_to_mbs() {
     # speedtest-fed values (which travel through speedtest-cli's JSON output
     # and a Python parser) from ever reaching the eval surface, even if a
     # future speedtest-cli version returns a non-numeric token. Same shape
-    # as stage2_ip_in_cloudflare_v4 in network.sh.
+    # as net_ip_in_cloudflare_v4 in network.sh.
     MBPS="$1" RATIO="$2" python3 -c '
 import os
 mbps = float(os.environ["MBPS"])

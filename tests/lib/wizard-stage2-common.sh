@@ -5,7 +5,7 @@
 # so _stage2_seed_wizard_defaults has coherent inputs), and stubs every slow,
 # networked, or dangerous operation Stage 2 would otherwise perform: image
 # pulls, stack start, NPM/Let's-Encrypt cert issuance, and the DNS / Dynu /
-# router-port probes. Scenarios override individual stubs (stage2_dns_classify,
+# router-port probes. Scenarios override individual stubs (net_dns_classify,
 # ddns_verify_via_container, stage2_check_http_ports, stage2_le_classify, ...) to
 # exercise a specific branch, then append the runner and drive via wizard_pty.
 
@@ -42,10 +42,10 @@ ms_stub_service_lifecycle
 _stub_compose_service_list() { printf '%s\n' jellyfin sonarr radarr jackett qbittorrent seerr homepage portainer unpackerr flaresolverr uptime-kuma npm wireguard ddns-updater; }
 _stub_compose_image_list() { printf '%s\n' i1 i2 i3 i4 i5 i6 i7 i8 i9 i10 i11 i12 i13 i14; }
 # Stage 2 networked/heavy operations — overridable per scenario.
-stage2_dns_classify() { printf 'ok\n'; }
+net_dns_classify() { printf 'ok\n'; }
 stage2_check_http_ports() { printf 'ok\n'; }
 ddns_verify_via_container() { return 0; }
-detect_lan_cidr() { printf '192.168.1.0/24\n'; }
+net_detect_lan_cidr() { printf '192.168.1.0/24\n'; }
 stage2_le_classify() { STAGE2_LE_CLASSIFICATION=ready; STAGE2_LE_READY_HOSTS=\"jellyfin.\$1, seerr.\$1\"; printf 'ready\\n'; return 0; }
 BASH
 chmod +x $fixture_path"

@@ -68,7 +68,7 @@ stage2_le_classify() {
     if [[ -z "${_NET_PUBLIC_IP:-}" ]]; then
         net_detect_public_ip >/dev/null 2>&1 || true
     fi
-    dns_status=$(stage2_dns_classify "$domain" "${_NET_PUBLIC_IP:-}" 2>/dev/null || true)
+    dns_status=$(net_dns_classify "$domain" "${_NET_PUBLIC_IP:-}" 2>/dev/null || true)
     if [[ "$dns_status" != "ok" ]]; then
         STAGE2_LE_CLASSIFICATION="config-dns"
         printf '%s\n' "$STAGE2_LE_CLASSIFICATION"

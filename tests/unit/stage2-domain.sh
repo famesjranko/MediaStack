@@ -76,8 +76,8 @@ curl() {
     esac
 }
 
-if ! type stage2_dns_classify >/dev/null 2>&1; then
-    stage2_dns_classify() { printf '__not_implemented__'; }
+if ! type net_dns_classify >/dev/null 2>&1; then
+    net_dns_classify() { printf '__not_implemented__'; }
 fi
 if ! type validate_domain_name >/dev/null 2>&1; then
     validate_domain_name() { return 99; }
@@ -109,12 +109,12 @@ validate_wireguard_hostname "203.0.113.10"
 rc=$?
 assert_eq "0" "$rc" "validate_wireguard_hostname accepts IPv4 literal"
 
-assert_eq "ok" "$(stage2_dns_classify "ok.test" "203.0.113.10")" "DNS match classifies as ok"
-assert_eq "ok" "$(stage2_dns_classify "system-only.test" "203.0.113.10")" "system resolver success is accepted when Google DNS is unavailable"
-assert_eq "no-a" "$(stage2_dns_classify "no-a.test" "203.0.113.10")" "missing jellyfin A record classifies as no-a"
-assert_eq "mismatch:203.0.113.99" "$(stage2_dns_classify "mismatch.test" "203.0.113.10")" "mismatched A record includes resolved IP"
-assert_eq "cloudflare" "$(stage2_dns_classify "cloudflare.test" "203.0.113.10")" "Cloudflare CIDR match classifies as cloudflare"
-assert_eq "apex-only" "$(stage2_dns_classify "apex-only.test" "203.0.113.10")" "apex-only DNS classifies as apex-only"
+assert_eq "ok" "$(net_dns_classify "ok.test" "203.0.113.10")" "DNS match classifies as ok"
+assert_eq "ok" "$(net_dns_classify "system-only.test" "203.0.113.10")" "system resolver success is accepted when Google DNS is unavailable"
+assert_eq "no-a" "$(net_dns_classify "no-a.test" "203.0.113.10")" "missing jellyfin A record classifies as no-a"
+assert_eq "mismatch:203.0.113.99" "$(net_dns_classify "mismatch.test" "203.0.113.10")" "mismatched A record includes resolved IP"
+assert_eq "cloudflare" "$(net_dns_classify "cloudflare.test" "203.0.113.10")" "Cloudflare CIDR match classifies as cloudflare"
+assert_eq "apex-only" "$(net_dns_classify "apex-only.test" "203.0.113.10")" "apex-only DNS classifies as apex-only"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

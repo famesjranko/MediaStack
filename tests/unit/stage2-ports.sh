@@ -79,12 +79,12 @@ STAGE2_PORT80_OPEN=2 STAGE2_PORT443_OPEN=2
 assert_eq "probe-unavailable:80,443" "$(stage2_check_http_ports)" "both external probe failures are reported separately"
 
 STAGE2_PORT80_OPEN=0 STAGE2_PORT443_OPEN=0
-assert_eq "cgnat" "$(stage2_classify_port_failure "100.64.10.2" "ok" "closed:80,443")" "RFC6598 public IP classifies as cgnat"
-assert_eq "aaaa-mismatch" "$(stage2_classify_port_failure "203.0.113.10" "aaaa-mismatch" "closed:80,443")" "AAAA mismatch is surfaced"
-assert_eq "cloudflare" "$(stage2_classify_port_failure "203.0.113.10" "cloudflare" "closed:80,443")" "Cloudflare DNS state cross-links to port failure"
-assert_eq "hairpin-ambiguous" "$(stage2_classify_port_failure "203.0.113.10" "ok" "closed:80,443" "hairpin")" "closed ports with hairpin caveat are ambiguous"
-assert_eq "carrier-block" "$(stage2_classify_port_failure "203.0.113.10" "ok" "closed:80,443" "carrier")" "carrier/ISP block is classified"
-assert_eq "probe-unavailable" "$(stage2_classify_port_failure "203.0.113.10" "ok" "probe-unavailable:80,443")" "unavailable external probe services classify separately"
+assert_eq "cgnat" "$(net_classify_port_failure "100.64.10.2" "ok" "closed:80,443")" "RFC6598 public IP classifies as cgnat"
+assert_eq "aaaa-mismatch" "$(net_classify_port_failure "203.0.113.10" "aaaa-mismatch" "closed:80,443")" "AAAA mismatch is surfaced"
+assert_eq "cloudflare" "$(net_classify_port_failure "203.0.113.10" "cloudflare" "closed:80,443")" "Cloudflare DNS state cross-links to port failure"
+assert_eq "hairpin-ambiguous" "$(net_classify_port_failure "203.0.113.10" "ok" "closed:80,443" "hairpin")" "closed ports with hairpin caveat are ambiguous"
+assert_eq "carrier-block" "$(net_classify_port_failure "203.0.113.10" "ok" "closed:80,443" "carrier")" "carrier/ISP block is classified"
+assert_eq "probe-unavailable" "$(net_classify_port_failure "203.0.113.10" "ok" "probe-unavailable:80,443")" "unavailable external probe services classify separately"
 
 STAGE2_PORT_GATE_TMP="$(mktemp -d)"
 printf '0\n' >"$STAGE2_PORT_GATE_TMP/calls"

@@ -74,7 +74,7 @@ diag_dns_check() {
     echo ""
     # bind9-dnsutils (dig) is installed by setup.sh's install_base_packages,
     # so post-install this is always present. Pre-install on a bare Debian, dig
-    # may be absent — and stage2_dns_classify silently returns "no-a" when dig
+    # may be absent — and net_dns_classify silently returns "no-a" when dig
     # is missing, which the user reads as "your A-records are wrong" instead of
     # "tool missing". Fail fast with an actionable apt hint.
     if ! command -v dig &>/dev/null; then
@@ -121,7 +121,7 @@ diag_dns_check() {
     echo ""
     ui_log info "Checking jellyfin.${domain} and seerr.${domain} A-records (via 8.8.8.8)..."
     local result
-    result=$(stage2_dns_classify "$domain" "$public_ip")
+    result=$(net_dns_classify "$domain" "$public_ip")
     local rc=$?
 
     case "$result" in

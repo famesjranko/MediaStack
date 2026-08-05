@@ -579,7 +579,7 @@ Current units:
 - **ddns-config** — exercises the shared DDNS provider registry + `config.json` renderer (`scripts/lib/ddns-providers.sh`): all 6 providers render valid typed JSON (Cloudflare `ttl`/`proxied` typed, dynv6 carries no inert `ipv4` key), missing/unknown inputs fail, the Dynu render stays byte-identical to the inline writer it replaced, and the registry accessors (`pick`/`fields`/`verify_tier`/`category`) map correctly. No credentials.
 - **stage2-domain** — exercises domain/DNS classification, Cloudflare proxy detection, and safe routing before publication.
 - **stage2-ports** — exercises local port checks and failure classification without claiming public WAN reachability.
-- **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming / Streaming + requests) plus `detect_lan_cidr` normalization. Tier semantics: [VPN access tiers](../docs/setup/configuration-schema.md).
+- **stage2-wireguard** — exercises the access-tier env mapping (Full LAN / Server / Containers / Streaming / Streaming + requests) plus `net_detect_lan_cidr` normalization. Tier semantics: [VPN access tiers](../docs/setup/configuration-schema.md).
 - **wireguard-service** — checks wg-easy peer provisioning uses the wizard admin username rather than a hardcoded peer name.
 - **stage2-flow** — exercises Stage 2 offer/tell-me-more/skip/confirm flow and persisted remote setup state.
 - **stage2-npm-stale** — exercises stale NPM host warning behavior without automatic reconciliation.

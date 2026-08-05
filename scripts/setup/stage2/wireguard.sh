@@ -72,7 +72,7 @@ _stage2_collect_wireguard() {
     # LAN CIDR question.
     if [[ "$tier" == "full-lan" ]]; then
         local detected
-        detected=$(detect_lan_cidr 2>/dev/null || true)
+        detected=$(net_detect_lan_cidr 2>/dev/null || true)
         if [[ -z "$detected" ]]; then
             detected="${_WIZ_WG_LAN_CIDR:-192.168.1.0/24}"
             ui_log warn "Could not auto-detect LAN CIDR; using '$detected' as a placeholder. Verify before peers connect."
@@ -91,7 +91,7 @@ print(ipaddress.IPv4Network(sys.argv[1], strict=False))
     fi
 
     local env_lines
-    env_lines=$(stage2_wireguard_access_tier_env "$tier" "$_WIZ_WG_LAN_CIDR" "$_WIZ_WG_SERVER_LAN_IP")
+    env_lines=$(net_wireguard_access_tier_env "$tier" "$_WIZ_WG_LAN_CIDR" "$_WIZ_WG_SERVER_LAN_IP")
     while IFS='=' read -r key raw; do
         raw="${raw#\'}"
         raw="${raw%\'}"

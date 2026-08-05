@@ -367,7 +367,7 @@ ddns_verify_via_container() {
     # Reject: the caller clears the fields and re-prompts (like Dynu badauth before).
     return 1
 }
-stage2_dns_classify() {
+net_dns_classify() {
     printf 'no-a'
     return 1
 }
@@ -387,7 +387,7 @@ else
     pass "AUDIT: bad Dynu auth does not write DDNS config.json"
 fi
 
-stage2_dns_classify() {
+net_dns_classify() {
     printf 'ok'
     return 0
 }

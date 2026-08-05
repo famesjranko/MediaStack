@@ -22,52 +22,52 @@ set +e
 set +u
 
 # -----------------------------------------------------------------------------
-# stage2_wireguard_access_tier_env — env-line emission per tier
+# net_wireguard_access_tier_env — env-line emission per tier
 # -----------------------------------------------------------------------------
 
-full_lan_env="$(stage2_wireguard_access_tier_env full-lan "192.168.1.0/24" "192.168.1.50")"
+full_lan_env="$(net_wireguard_access_tier_env full-lan "192.168.1.0/24" "192.168.1.50")"
 assert_contains "$full_lan_env" "WG_ACCESS_TIER='full-lan'" "full-lan persists tier"
 assert_contains "$full_lan_env" "WG_LAN_CIDR='192.168.1.0/24'" "full-lan persists LAN CIDR"
 assert_contains "$full_lan_env" "WG_SERVER_LAN_IP='192.168.1.50'" "full-lan persists server IP"
 assert_contains "$full_lan_env" "WG_INIT_ALLOWED_IPS='192.168.1.0/24'" "full-lan routes LAN CIDR"
 assert_contains "$full_lan_env" "WG_PER_CLIENT_FIREWALL='true'" "full-lan keeps firewall on"
 
-server_env="$(stage2_wireguard_access_tier_env server "" "192.168.1.50")"
+server_env="$(net_wireguard_access_tier_env server "" "192.168.1.50")"
 assert_contains "$server_env" "WG_ACCESS_TIER='server'" "server persists tier"
 assert_contains "$server_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "server routes only server /32"
 assert_contains "$server_env" "WG_PER_CLIENT_FIREWALL='true'" "server keeps firewall on"
 
-containers_env="$(stage2_wireguard_access_tier_env containers "" "192.168.1.50")"
+containers_env="$(net_wireguard_access_tier_env containers "" "192.168.1.50")"
 assert_contains "$containers_env" "WG_ACCESS_TIER='containers'" "containers persists tier"
 assert_contains "$containers_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "containers routes only server /32"
 assert_contains "$containers_env" "WG_PER_CLIENT_FIREWALL='true'" "containers keeps firewall on"
 
-streaming_env="$(stage2_wireguard_access_tier_env streaming "" "192.168.1.50")"
+streaming_env="$(net_wireguard_access_tier_env streaming "" "192.168.1.50")"
 assert_contains "$streaming_env" "WG_ACCESS_TIER='streaming'" "streaming persists tier"
 assert_contains "$streaming_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "streaming routes only server /32"
 assert_contains "$streaming_env" "WG_PER_CLIENT_FIREWALL='true'" "streaming keeps firewall on"
 
-streaming_req_env="$(stage2_wireguard_access_tier_env streaming-requests "" "192.168.1.50")"
+streaming_req_env="$(net_wireguard_access_tier_env streaming-requests "" "192.168.1.50")"
 assert_contains "$streaming_req_env" "WG_ACCESS_TIER='streaming-requests'" "streaming-requests persists tier"
 assert_contains "$streaming_req_env" "WG_INIT_ALLOWED_IPS='192.168.1.50/32'" "streaming-requests routes only server /32"
 assert_contains "$streaming_req_env" "WG_PER_CLIENT_FIREWALL='true'" "streaming-requests keeps firewall on"
 
 # Unknown tier rejected.
-if stage2_wireguard_access_tier_env bogus "" "" 2>/dev/null; then
-    fail "stage2_wireguard_access_tier_env rejects unknown tier"
+if net_wireguard_access_tier_env bogus "" "" 2>/dev/null; then
+    fail "net_wireguard_access_tier_env rejects unknown tier"
 else
-    pass "stage2_wireguard_access_tier_env rejects unknown tier"
+    pass "net_wireguard_access_tier_env rejects unknown tier"
 fi
 
 # full-lan requires lan_cidr.
-if stage2_wireguard_access_tier_env full-lan "" "192.168.1.50" 2>/dev/null; then
+if net_wireguard_access_tier_env full-lan "" "192.168.1.50" 2>/dev/null; then
     fail "full-lan requires non-empty LAN CIDR"
 else
     pass "full-lan requires non-empty LAN CIDR"
 fi
 
 # server tier requires server_ip.
-if stage2_wireguard_access_tier_env server "" "" 2>/dev/null; then
+if net_wireguard_access_tier_env server "" "" 2>/dev/null; then
     fail "server tier requires non-empty server IP"
 else
     pass "server tier requires non-empty server IP"
@@ -107,10 +107,10 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# detect_lan_cidr — normalize host CIDR to network CIDR
+# net_detect_lan_cidr — normalize host CIDR to network CIDR
 # -----------------------------------------------------------------------------
 
-if type detect_lan_cidr >/dev/null 2>&1; then
+if type net_detect_lan_cidr >/dev/null 2>&1; then
     # Stub `ip` so the parsing/normalization path is exercised deterministically.
     _fake_ip() {
         case "$*" in
@@ -120,18 +120,18 @@ if type detect_lan_cidr >/dev/null 2>&1; then
     }
     detected=$(
         ip() { _fake_ip "$@"; }
-        detect_lan_cidr
+        net_detect_lan_cidr
     )
-    assert_eq "192.168.1.0/24" "$detected" "detect_lan_cidr normalizes host CIDR to network CIDR"
+    assert_eq "192.168.1.0/24" "$detected" "net_detect_lan_cidr normalizes host CIDR to network CIDR"
 
     # Failure path: no default route → empty + non-zero.
     if (
         ip() { return 1; }
-        detect_lan_cidr >/dev/null 2>&1
+        net_detect_lan_cidr >/dev/null 2>&1
     ); then
-        fail "detect_lan_cidr returns non-zero when no default route"
+        fail "net_detect_lan_cidr returns non-zero when no default route"
     else
-        pass "detect_lan_cidr returns non-zero when no default route"
+        pass "net_detect_lan_cidr returns non-zero when no default route"
     fi
 fi
 

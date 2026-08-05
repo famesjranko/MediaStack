@@ -29,7 +29,7 @@ _stage2_port_gate() {
             fi
         done
 
-        failure=$(stage2_classify_port_failure "${_NET_PUBLIC_IP:-}" "ok" "$port_state")
+        failure=$(net_classify_port_failure "${_NET_PUBLIC_IP:-}" "ok" "$port_state")
         case "$failure" in
             cgnat) ui_log warn "Your public IP looks like CGNAT. Ask your ISP for a public IPv4 or use VPN-only access." ;;
             cloudflare) ui_log warn "Cloudflare proxy is on. Set the records to DNS-only, then retry." ;;

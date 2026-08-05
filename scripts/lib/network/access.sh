@@ -1,6 +1,6 @@
 # Owns: Stage 2 port-failure classification, LAN detection, and WireGuard access tiers.
 # Sources: scripts/lib/network.sh state plus ip, python3, and Docker-compose port policy.
-stage2_is_rfc6598() {
+net_is_rfc6598() {
     local ip="$1"
     IP="$ip" python3 -c '
 import ipaddress
@@ -15,7 +15,7 @@ sys.exit(0 if ip in ipaddress.ip_network("100.64.0.0/10") else 1)
 ' 2>/dev/null
 }
 
-stage2_classify_port_failure() {
+net_classify_port_failure() {
     local public_ip="$1"
     local dns_state="${2:-ok}"
     local port_state="${3:-closed}"
@@ -36,7 +36,7 @@ stage2_classify_port_failure() {
             ;;
     esac
 
-    if stage2_is_rfc6598 "$public_ip"; then
+    if net_is_rfc6598 "$public_ip"; then
         printf 'cgnat'
         return 0
     fi
@@ -67,7 +67,7 @@ stage2_classify_port_failure() {
     esac
 }
 
-stage2_port_gate_classify() {
+net_port_gate_classify() {
     local public_ip="$1"
     local dns_state="${2:-ok}"
     local hint="${3:-}"
@@ -77,13 +77,13 @@ stage2_port_gate_classify() {
         printf 'ok'
         return 0
     fi
-    stage2_classify_port_failure "$public_ip" "$dns_state" "$port_state" "$hint"
+    net_classify_port_failure "$public_ip" "$dns_state" "$port_state" "$hint"
 }
 
-# detect_lan_cidr — read the host's default-route interface and emit the
+# net_detect_lan_cidr — read the host's default-route interface and emit the
 # normalized network CIDR (e.g. host 192.168.1.50/24 → 192.168.1.0/24).
 # Returns empty + non-zero on failure; caller decides the fallback.
-detect_lan_cidr() {
+net_detect_lan_cidr() {
     local iface host_cidr
     iface=$(ip -4 route show default 2>/dev/null | awk '/default/ {for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
     [[ -z "$iface" ]] && return 1
@@ -151,11 +151,11 @@ wg_firewall_ips_for_tier() {
     esac
 }
 
-# stage2_wireguard_access_tier_env — given the wizard's tier choice plus the
+# net_wireguard_access_tier_env — given the wizard's tier choice plus the
 # detected/confirmed LAN CIDR and server IP, emit the env-key lines the wizard
 # persists. WG_PER_CLIENT_FIREWALL is true for every tier; users wanting full
 # tunnel set both WG_INIT_ALLOWED_IPS and WG_PER_CLIENT_FIREWALL=false in .env.
-stage2_wireguard_access_tier_env() {
+net_wireguard_access_tier_env() {
     local tier="$1" lan_cidr="$2" server_ip="$3"
     local allowed_ips
 
