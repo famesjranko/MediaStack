@@ -21,7 +21,7 @@ die() {
 tracked_file_list=$(mktemp) || die "cannot create tracked-file list"
 trap 'rm -f "$tracked_file_list"' EXIT
 
-base_ref="$(ratchet_base_ref "$REPO_ROOT")"
+base_ref="$(ratchet_base_ref "$REPO_ROOT")" || die "cannot resolve a ratchet baseline"
 
 if ! git -C "$REPO_ROOT" ls-files -z '*.sh' 'mediastack' >"$tracked_file_list"; then
     die "tracked shell discovery failed"
@@ -34,7 +34,8 @@ mapfile -d '' -t tracked_files <"$tracked_file_list"
 declare -A tracked_counts=()
 for file in "${tracked_files[@]}"; do
     [[ -f "$REPO_ROOT/$file" ]] || die "tracked shell file is missing: $file"
-    tracked_counts["$file"]="$(wc -l <"$REPO_ROOT/$file")"
+    # awk NR, not wc -l: a final line without a trailing newline still counts
+    tracked_counts["$file"]="$(awk 'END { print NR }' "$REPO_ROOT/$file")"
 done
 
 # The allowlist file is gone and every file obeys the cap. An absent

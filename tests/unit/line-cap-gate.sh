@@ -90,5 +90,22 @@ printf 'big.sh\t600\n' >"$ALLOWLIST"
 run_gate
 assert_rc 0 "shrinking back to the recorded count restores the gate to green"
 
+# --- a shallow clone with no main fails closed ------------------------------
+#
+# A depth-1 clone (CI's default checkout) has no origin/main, no main and no
+# HEAD^: the baseline would degrade to HEAD — the tree under test — and every
+# allowlist entry would look pre-existing. The gate must refuse, not pass.
+
+git -C "$FIXTURE" add -A
+git -C "$FIXTURE" commit -qm "tip for the shallow probe"
+SHALLOW="$FIXTURE-shallow"
+git clone -q --depth 1 "file://$FIXTURE" "$SHALLOW" 2>/dev/null
+git -C "$SHALLOW" branch -m not-main 2>/dev/null || true
+git -C "$SHALLOW" update-ref -d refs/remotes/origin/main 2>/dev/null || true
+run_cmd "$SHALLOW/tests/shell-line-cap.sh"
+assert_rc 2 "a shallow clone with no reachable main fails closed"
+assert_contains "$OUT" "shallow clone" "the refusal names the shallow clone"
+rm -rf "$SHALLOW"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

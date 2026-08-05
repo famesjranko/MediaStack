@@ -28,7 +28,7 @@ die() {
 tracked_file_list=$(mktemp) || die "cannot create tracked-file list"
 trap 'rm -f "$tracked_file_list"' EXIT
 
-base_ref="$(ratchet_base_ref "$REPO_ROOT")"
+base_ref="$(ratchet_base_ref "$REPO_ROOT")" || die "cannot resolve a ratchet baseline"
 
 if ! git -C "$REPO_ROOT" ls-files -z '*.sh' '*.py' >"$tracked_file_list"; then
     die "tracked file discovery failed"

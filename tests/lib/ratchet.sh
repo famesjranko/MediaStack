@@ -16,8 +16,19 @@
 # a local main, else HEAD^, else HEAD. A merge-base — not a moving branch
 # tip — is what keeps a multi-commit branch from smuggling a new allowlist
 # entry past "no new entries" one commit at a time.
+#
+# Fails (returns 1) in a shallow clone with no reachable main: the fallbacks
+# would degrade the baseline to HEAD itself there — the tree under test —
+# and every allowlist entry would look pre-existing. A depth-1 CI checkout
+# is exactly that environment, so it must fail closed, not pass open.
 ratchet_base_ref() {
     local repo_root="$1" ref
+    if [[ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null)" == true ]] \
+        && ! git -C "$repo_root" rev-parse -q --verify origin/main >/dev/null 2>&1 \
+        && ! git -C "$repo_root" rev-parse -q --verify main >/dev/null 2>&1; then
+        printf 'ratchet: shallow clone with no reachable main — the baseline would be HEAD itself; fetch full history (CI: fetch-depth: 0)\n' >&2
+        return 1
+    fi
     if git -C "$repo_root" rev-parse -q --verify origin/main >/dev/null 2>&1; then
         if ref=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null) && [[ -n "$ref" ]]; then
             printf '%s\n' "$ref"
