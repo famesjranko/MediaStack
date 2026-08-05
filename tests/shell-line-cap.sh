@@ -7,6 +7,9 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAP=500
 ALLOWLIST="$REPO_ROOT/tests/shell-line-cap.allowlist"
+# Both ratchet refusals route where the main violation does: relisting a file
+# is not a remedy, so the steering names the only one there is.
+RATCHET_STEER="the allowlist is a shrink-only grandfather list, never a place to record a new offender — split the file, see docs/conventions.md 'Shell structure' for the split strategy"
 
 die() {
     printf 'shell-line-cap: %s\n' "$1" >&2
@@ -83,9 +86,9 @@ while IFS=$'\t' read -r file recorded extra || [[ -n "$file$recorded$extra" ]]; 
         || die "stale allowlist entry (file is at or under $CAP lines): $file"
     if [[ -n "${base_counts["$file"]+baseline}" ]]; then
         ((recorded <= base_counts["$file"])) \
-            || die "allowlist count increased for $file"
+            || die "allowlist count increased for $file; $RATCHET_STEER"
     elif [[ "$base_allowlist_exists" == true ]]; then
-        die "new allowlist entry is not permitted: $file"
+        die "new allowlist entry is not permitted: $file; $RATCHET_STEER"
     else
         ((recorded == current)) \
             || die "new allowlist entry must record current count: $file"

@@ -278,6 +278,25 @@ def _contract_calls(contracts: dict[str, dict[str, Any]]) -> dict[tuple[str, str
     return expected
 
 
+def _steer(errors: list[str]) -> None:
+    """Route each failure kind to its remediation, not just its symptom."""
+    if any(error.startswith("missing contract:") for error in errors):
+        print(
+            "contract: a missing contract means an API call has no entry covering it "
+            "(or the call is malformed):\ncontract: add the endpoint and its caller to "
+            f"the service's file in {CONTRACT_DIR.relative_to(ROOT)}/ — "
+            "see tests/contracts/README.md.",
+            file=sys.stderr,
+        )
+    if any(error.startswith("dead contract entry:") for error in errors):
+        print(
+            "contract: a dead contract entry means the call it covered is gone: delete "
+            f"the entry from the service's file in {CONTRACT_DIR.relative_to(ROOT)}/ — "
+            "see tests/contracts/README.md.",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     """Run the bidirectional contract coverage check."""
     contracts, errors = _load_contracts()
@@ -308,6 +327,7 @@ def main() -> int:
     for error in errors:
         print(f"contract: error: {error}", file=sys.stderr)
     if errors:
+        _steer(errors)
         return 1
     print(f"contracts: {len(expected)} endpoints, {len(actual)} literal calls")
     return 0

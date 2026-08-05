@@ -427,21 +427,26 @@ if not expected:
     print("SCAN-ERROR\tno declarations in %s" % expected_path, file=sys.stderr)
     sys.exit(2)
 
-rc = 0
+rc, unexpected, absent = 0, False, False
 for line, n in sorted((actual - expected).items()):
     print("UNEXPECTED\t%s\t(x%d)" % (line, n), file=sys.stderr)
-    rc = 1
+    rc, unexpected = 1, True
 for line, n in sorted((expected - actual).items()):
     print("DECLARED-BUT-ABSENT\t%s\t(x%d)" % (line, n), file=sys.stderr)
-    rc = 1
-if rc:
-    print(
-        "%s gate: findings do not match %s - an undeclared finding is a leak "
-        "until proven otherwise; a declaration nothing produced must be deleted"
-        % (mode, expected_path),
-        file=sys.stderr,
-    )
-else:
+    rc, absent = 1, True
+
+# Steering branches by scan mode because the remediations differ: a tree finding
+# can still be removed, a published one cannot. Declaring either is never the fix.
+DOC = "see the secret-scan section of tests/README.md"
+STEER = {
+    "tree": "tree gate: remove the secret from the tree - and rotate it if it was ever real.\nDeclaring it is not the fix: %s grows only under human review, never to make a run pass (%s)." % (expected_path, DOC),
+    "history": "history gate: the commit is published and cannot be taken back - rotating the credential is the only real remediation.\nDeclaring the finding afterwards needs human review; %s never grows to make a run pass (%s)." % (expected_path, DOC),
+}
+if unexpected:
+    print(STEER[mode], file=sys.stderr)
+if absent:
+    print("%s gate: a declaration nothing produced is stale - remove its line from %s (%s)." % (mode, expected_path, DOC), file=sys.stderr)
+if not rc:
     print("%s gate: %d finding(s), all declared" % (mode, sum(actual.values())))
 sys.exit(rc)
 PYEOF

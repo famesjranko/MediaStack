@@ -286,7 +286,26 @@ assert_rc 1 "an undeclared finding fails the gate"
 assert_contains "$OUT" "UNEXPECTED" "the gate names the undeclared finding"
 assert_contains "$OUT" "DECLARED-BUT-ABSENT" "the gate names the declaration nothing produced"
 assert_absent "$OUT" "$AWS_CANARY" "the gate never echoes the matched value"
+assert_contains "$OUT" "remove the secret from the tree" "the tree gate steers to removal"
+assert_contains "$OUT" "grows only under human review" \
+    "the tree gate refuses a declaration added to make a run pass"
+assert_contains "$OUT" "secret-scan section of tests/README.md" \
+    "the tree gate points at the reconciliation contract"
+assert_contains "$OUT" "a declaration nothing produced is stale" \
+    "the stale declaration gets its own direction"
 
+# The same unsatisfiable declaration file in the other mode: the remediation
+# differs, so the steering must too - and must never read as an invitation to
+# rewrite published history.
+run_scan "$SCANNER" gate-history "$DECL" "$gate_repo"
+assert_rc 1 "an undeclared finding fails the history gate"
+assert_contains "$OUT" "cannot be taken back" "the history gate names the published commit"
+assert_contains "$OUT" "rotating the credential is the only real remediation" \
+    "the history gate steers to rotation"
+assert_contains "$OUT" "needs human review" "the history gate defers the declaration to a human"
+assert_absent "$OUT" "rewrit" "the history steering never suggests rewriting history"
+
+run_scan "$SCANNER" gate-tree "$DECL" "$gate_repo"
 declarations_from "$OUT" >"$DECL"
 run_scan "$SCANNER" gate-tree "$DECL" "$gate_repo"
 assert_rc 0 "a fully declared finding set passes the gate"
@@ -339,7 +358,7 @@ sed -i '$d' "$DECL"
 run_scan "$SCANNER" gate-history "$DECL" "$gate_repo"
 assert_rc 0 "the history gate reconciles the history-only declaration"
 
-expected=61
+expected=70
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

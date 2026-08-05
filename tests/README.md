@@ -575,6 +575,8 @@ Current units:
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
 - **lint-sweep** — checks the `tests/lint.sh` single-sweep contract against a fixture repo with a stub shellcheck: the sweep is invoked exactly once over the whole discovered file list, covers every file in it, and still propagates a non-zero result. Pure bash + git, no Docker and no network; run directly with `./tests/unit/lint-sweep.sh`.
 - **naming-gate** — proves the structural halves of `tests/naming.sh` fail on a fabricated violation: a `scripts/services/<svc>/main.sh` missing its `configure_<svc>()` (including the hyphen→underscore mapping a literal comparison would get wrong), a service module sourcing another service, a `scripts/setup/` module sourcing a peer top-level module, and a sanctioned seam whose import has gone. The fixture is a throwaway git repo built from `git archive HEAD` with the working-tree gate copied in; the real tree is never written to. Pure bash + git, no Docker and no network; run directly with `./tests/unit/naming-gate.sh`.
+- **contracts-gate** — proves the failure paths of `tests/contracts/check.py` route to a remedy: a fabricated API call no contract covers must report `missing contract`, say the call needs an entry (or is malformed) and name `tests/contracts/`; a fabricated endpoint nothing calls must report `dead contract entry` and steer to deleting it. The fixture is a throwaway copy of `git archive HEAD` with the working-tree checker copied in. Pure bash + python3 + git, no Docker and no network; run directly with `./tests/unit/contracts-gate.sh`.
+- **line-cap-gate** — proves the two ratchet refusals in `tests/shell-line-cap.sh` (`new allowlist entry is not permitted`, `allowlist count increased`) carry the same routing as the main violation: shrink-only grandfather list, split the file, see `docs/conventions.md` "Shell structure". The tree's allowlist was emptied and deleted, so neither refusal is reproducible here; both are probed against a fabricated allowlist in a throwaway repository, and nothing recreates one in the tree. Pure bash + git, no Docker and no network; run directly with `./tests/unit/line-cap-gate.sh`.
 - **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.
 - **remote-web-state** (`tests/unit/remote-web-state.sh`) — exercises `write_env()` remote marker rules and `print_access_info` output for unchecked, ready, skipped, and LAN-only states.
 - **ddns-config** — exercises the shared DDNS provider registry + `config.json` renderer (`scripts/lib/ddns-providers.sh`): all 6 providers render valid typed JSON (Cloudflare `ttl`/`proxied` typed, dynv6 carries no inert `ipv4` key), missing/unknown inputs fail, the Dynu render stays byte-identical to the inline writer it replaced, and the registry accessors (`pick`/`fields`/`verify_tier`/`category`) map correctly. No credentials.
@@ -681,6 +683,15 @@ a credential. The two gate modes reconcile what they find against
 fails, and a declaration nothing produced fails too. That second direction is the shrink
 path — fixing a false positive means deleting its line in the same commit, so the set cannot
 grow silently and cannot rot into a rubber stamp.
+
+**The declared set grows only under human review, never to make a run pass.** Appending the
+finding a red run just printed is the one move that is always wrong. Remediation branches by
+mode, and the gate says which it is: a **tree** finding is removed from the tree — and
+rotated if the value was ever real — because removal is the fix and declaring it is not; a
+**history** finding is in a commit that cannot be taken back, so rotating the credential is
+the only real remediation, and only after that does declaring it become a question a human
+answers. A `DECLARED-BUT-ABSENT` line is the opposite direction: the declaration is stale,
+so delete it.
 
 A declaration is `<rule-id>`, the repo-relative path, and a fingerprint hashing the rule, the
 path, gitleaks' **redacted** match text and its entropy. It is deliberately not derived from
