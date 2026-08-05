@@ -5,8 +5,13 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/ratchet.sh
+source "$REPO_ROOT/tests/lib/ratchet.sh"
 CAP=500
 ALLOWLIST="$REPO_ROOT/tests/shell-line-cap.allowlist"
+# Both ratchet refusals route where the main violation does: relisting a file
+# is not a remedy, so the steering names the only one there is.
+RATCHET_STEER="the allowlist is a shrink-only grandfather list, never a place to record a new offender — split the file, see docs/conventions.md 'Shell structure' for the split strategy"
 
 die() {
     printf 'shell-line-cap: %s\n' "$1" >&2
@@ -14,15 +19,9 @@ die() {
 }
 
 tracked_file_list=$(mktemp) || die "cannot create tracked-file list"
-base_allowlist=$(mktemp) || die "cannot create base allowlist"
-trap 'rm -f "$tracked_file_list" "$base_allowlist"' EXIT
+trap 'rm -f "$tracked_file_list"' EXIT
 
-base_ref=""
-if base_ref=$(git -C "$REPO_ROOT" rev-parse HEAD^ 2>/dev/null); then
-    :
-else
-    base_ref=HEAD
-fi
+base_ref="$(ratchet_base_ref "$REPO_ROOT")" || die "cannot resolve a ratchet baseline"
 
 if ! git -C "$REPO_ROOT" ls-files -z '*.sh' 'mediastack' >"$tracked_file_list"; then
     die "tracked shell discovery failed"
@@ -35,7 +34,8 @@ mapfile -d '' -t tracked_files <"$tracked_file_list"
 declare -A tracked_counts=()
 for file in "${tracked_files[@]}"; do
     [[ -f "$REPO_ROOT/$file" ]] || die "tracked shell file is missing: $file"
-    tracked_counts["$file"]="$(wc -l <"$REPO_ROOT/$file")"
+    # awk NR, not wc -l: a final line without a trailing newline still counts
+    tracked_counts["$file"]="$(awk 'END { print NR }' "$REPO_ROOT/$file")"
 done
 
 # The allowlist file is gone and every file obeys the cap. An absent
@@ -47,25 +47,13 @@ else
     ALLOWLIST=/dev/null
 fi
 
-if git -C "$REPO_ROOT" cat-file -e "$base_ref:tests/shell-line-cap.allowlist" 2>/dev/null; then
-    git -C "$REPO_ROOT" show "$base_ref:tests/shell-line-cap.allowlist" >"$base_allowlist" \
-        || die "cannot read base allowlist"
-else
-    : >"$base_allowlist"
-fi
-
 base_allowlist_exists=false
 if git -C "$REPO_ROOT" cat-file -e "$base_ref:tests/shell-line-cap.allowlist" 2>/dev/null; then
     base_allowlist_exists=true
 fi
 
 declare -A base_counts=()
-while IFS=$'\t' read -r file recorded extra || [[ -n "$file$recorded$extra" ]]; do
-    [[ -z "$file$recorded$extra" ]] && continue
-    [[ -n "$file" && "$recorded" =~ ^[0-9]+$ && -z "$extra" ]] \
-        || die "malformed base allowlist entry"
-    base_counts["$file"]="$recorded"
-done <"$base_allowlist"
+ratchet_read_base "$REPO_ROOT" "$base_ref" tests/shell-line-cap.allowlist base_counts
 
 declare -A allowed_counts=()
 while IFS=$'\t' read -r file recorded extra || [[ -n "$file$recorded$extra" ]]; do
@@ -83,9 +71,9 @@ while IFS=$'\t' read -r file recorded extra || [[ -n "$file$recorded$extra" ]]; 
         || die "stale allowlist entry (file is at or under $CAP lines): $file"
     if [[ -n "${base_counts["$file"]+baseline}" ]]; then
         ((recorded <= base_counts["$file"])) \
-            || die "allowlist count increased for $file"
+            || die "allowlist count increased for $file; $RATCHET_STEER"
     elif [[ "$base_allowlist_exists" == true ]]; then
-        die "new allowlist entry is not permitted: $file"
+        die "new allowlist entry is not permitted: $file; $RATCHET_STEER"
     else
         ((recorded == current)) \
             || die "new allowlist entry must record current count: $file"

@@ -6,10 +6,16 @@
 # allowlist semantics but with no per-file value to track, so it is a plain
 # path list: an entry may only be removed, never added, and a listed path
 # that is no longer tracked or now conforms is a stale entry that fails.
+#
+# Also owns the declared function-prefix gate (below). The service-module
+# shape and import-direction gates that used to live here have moved to
+# tests/structure.sh.
 
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/ratchet.sh
+source "$REPO_ROOT/tests/lib/ratchet.sh"
 ALLOWLIST="$REPO_ROOT/tests/shell-naming.allowlist"
 SH_PATTERN='^[a-z0-9]+(-[a-z0-9]+)*\.sh$'
 PY_PATTERN='^[a-z0-9_]+\.py$'
@@ -20,15 +26,9 @@ die() {
 }
 
 tracked_file_list=$(mktemp) || die "cannot create tracked-file list"
-base_allowlist=$(mktemp) || die "cannot create base allowlist"
-trap 'rm -f "$tracked_file_list" "$base_allowlist"' EXIT
+trap 'rm -f "$tracked_file_list"' EXIT
 
-base_ref=""
-if base_ref=$(git -C "$REPO_ROOT" rev-parse HEAD^ 2>/dev/null); then
-    :
-else
-    base_ref=HEAD
-fi
+base_ref="$(ratchet_base_ref "$REPO_ROOT")" || die "cannot resolve a ratchet baseline"
 
 if ! git -C "$REPO_ROOT" ls-files -z '*.sh' '*.py' >"$tracked_file_list"; then
     die "tracked file discovery failed"
@@ -59,15 +59,14 @@ done
 base_allowlist_exists=false
 if git -C "$REPO_ROOT" cat-file -e "$base_ref:tests/shell-naming.allowlist" 2>/dev/null; then
     base_allowlist_exists=true
-    git -C "$REPO_ROOT" show "$base_ref:tests/shell-naming.allowlist" >"$base_allowlist" \
-        || die "cannot read base allowlist"
 fi
 
 declare -A base_allowed=()
 while IFS= read -r file || [[ -n "$file" ]]; do
     [[ -z "$file" ]] && continue
     base_allowed["$file"]=1
-done <"$base_allowlist"
+done < <([[ "$base_allowlist_exists" == true ]] \
+    && git -C "$REPO_ROOT" show "$base_ref:tests/shell-naming.allowlist")
 
 declare -A allowed=()
 if [[ -e "$ALLOWLIST" ]]; then
@@ -109,7 +108,7 @@ TOKEN_PATTERN='[a-z][a-z0-9_]*_\*'
 DEF_PATTERN='^_?[a-z0-9_]+[[:space:]]*\(\)'
 
 prefix_files_list=$(mktemp) || die "cannot create prefix-file list"
-trap 'rm -f "$tracked_file_list" "$base_allowlist" "$prefix_files_list"' EXIT
+trap 'rm -f "$tracked_file_list" "$prefix_files_list"' EXIT
 git -C "$REPO_ROOT" ls-files -z 'scripts/*.sh' 'mediastack' >"$prefix_files_list" \
     || die "prefix-population discovery failed"
 

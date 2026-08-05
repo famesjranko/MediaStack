@@ -361,90 +361,11 @@ scan_history() {
     return "$found"
 }
 
-# Stable per-finding identity, printed and compared as
-# "<rule>\t<repo-relative path>\t<fingerprint>". The fingerprint hashes the
-# rule, the path, gitleaks' redacted Match and its Entropy - all properties of
-# the finding's own content, never its line number, so an edit elsewhere in the
-# file leaves it unchanged while a different secret in a file that already
-# carries a declared false positive produces a new identity. Match is already
-# redacted (--redact=100) and only its hash is ever emitted.
+# Reconciliation lives in tests/lib/secret_scan_reconcile.py: it needs only a
+# report, a declaration file, the scan root and the mode, so keeping it out of
+# here lets it be proved directly instead of behind a full pinned-binary scan.
 reconcile() {
-    python3 - "$1" "$2" "$3" "$4" <<'PYEOF'
-import collections, hashlib, json, os, sys
-
-report_path, expected_path, root, mode = sys.argv[1:5]
-
-
-def identity(finding):
-    path = finding.get("File", "")
-    if os.path.isabs(path):
-        path = os.path.relpath(path, root)
-    rule = finding.get("RuleID", "?")
-    entropy = "%.6f" % float(finding.get("Entropy") or 0.0)
-    material = "\0".join([rule, path, finding.get("Match", ""), entropy])
-    return "%s\t%s\t%s" % (rule, path, hashlib.sha256(material.encode()).hexdigest()[:16])
-
-
-# A missing report is the no-findings case; it can never read as a pass,
-# because the caller has already refused to run with an empty declaration set.
-findings = []
-if os.path.isfile(report_path):
-    try:
-        with open(report_path) as handle:
-            findings = json.load(handle)
-    except (OSError, ValueError) as exc:
-        print("SCAN-ERROR\tunreadable report: %s" % exc, file=sys.stderr)
-        sys.exit(2)
-
-actual = collections.Counter(identity(f) for f in findings)
-
-# A "history-only\t" prefix declares a finding that only reachable history
-# produces — a file since deleted or renamed. The tree gate ignores those
-# lines entirely (the tree cannot produce them, so listing them plainly would
-# read as stale); the history gate strips the marker and holds them to the
-# same reconciliation as every other declaration.
-expected_lines = []
-for line in open(expected_path):
-    line = line.rstrip("\n")
-    if not line.strip() or line.lstrip().startswith("#"):
-        continue
-    if line.startswith("history-only\t"):
-        if mode == "history":
-            expected_lines.append(line[len("history-only\t") :])
-        continue
-    expected_lines.append(line)
-expected = collections.Counter(expected_lines)
-
-# History compares distinct identities: every edit of a declared line re-adds
-# it as a new finding, while tree multiplicity is the tree gate's job.
-if mode == "history":
-    actual = collections.Counter(set(actual))
-    expected = collections.Counter(set(expected))
-
-# Fail closed: an all-comment declaration file would otherwise turn the gate
-# into "report whatever you find", which is what a rubber stamp looks like.
-if not expected:
-    print("SCAN-ERROR\tno declarations in %s" % expected_path, file=sys.stderr)
-    sys.exit(2)
-
-rc = 0
-for line, n in sorted((actual - expected).items()):
-    print("UNEXPECTED\t%s\t(x%d)" % (line, n), file=sys.stderr)
-    rc = 1
-for line, n in sorted((expected - actual).items()):
-    print("DECLARED-BUT-ABSENT\t%s\t(x%d)" % (line, n), file=sys.stderr)
-    rc = 1
-if rc:
-    print(
-        "%s gate: findings do not match %s - an undeclared finding is a leak "
-        "until proven otherwise; a declaration nothing produced must be deleted"
-        % (mode, expected_path),
-        file=sys.stderr,
-    )
-else:
-    print("%s gate: %d finding(s), all declared" % (mode, sum(actual.values())))
-sys.exit(rc)
-PYEOF
+    python3 "$REPO_ROOT/tests/lib/secret_scan_reconcile.py" "$1" "$2" "$3" "$4"
 }
 
 # Blocking form: scan this repository and reconcile. Every scanner-level

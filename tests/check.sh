@@ -7,14 +7,20 @@
 #
 # Usage:
 #   ./tests/check.sh          # default tier
-#   ./tests/check.sh fast     # static checks: shellcheck, line cap, shfmt, ruff,
-#                              # mypy, contracts, secrets. No DinD or service containers.
+#   ./tests/check.sh fast     # static checks: shellcheck, line cap, naming,
+#                              # structure, shfmt, ruff, mypy, contracts,
+#                              # secrets. No DinD or service containers.
 #   ./tests/check.sh full     # everything, including the complete DinD battery.
 #   ./tests/check.sh lint     # single stage: shellcheck sweep only.
 #   ./tests/check.sh line-cap # single stage: tracked shell line cap only.
-#   ./tests/check.sh naming   # single stage: tracked filename casing only.
+#   ./tests/check.sh naming   # single stage: tracked filename casing plus
+#                             # declared function-prefix discipline only.
+#   ./tests/check.sh structure
+#                             # single stage: service-module shape plus
+#                             # import-direction only.
 #   ./tests/check.sh shfmt    # single stage: shell formatting only.
-#   ./tests/check.sh ruff     # single stage: python lint + format check only.
+#   ./tests/check.sh ruff     # single stage: python lint (incl. the C901
+#                             # complexity reconcile) + format check only.
 #   ./tests/check.sh mypy     # single stage: type check only.
 #   ./tests/check.sh contracts
 #                             # single stage: API contract coverage only.
@@ -35,21 +41,23 @@
 #   ./tests/check.sh -h       # this help
 #
 # Tiers are cumulative and run in the fixed order below:
-#   fast    - lint (tests/lint.sh), shell line cap, filename casing
-#             (tests/naming.sh), shell formatting
-#             (tests/format.sh), python lint + format (ruff), python types
-#             (mypy), API contract coverage, and the secret scan
-#             over the working tree (tests/secret-scan.sh). It starts no DinD
-#             or service containers; ShellCheck runs from a native or cached
-#             pinned binary (`./tests/check.sh install`) and falls back to
-#             Docker otherwise. History is a separate selector.
+#   fast    - lint (tests/lint.sh), shell line cap, filename casing plus
+#             declared function-prefix discipline (tests/naming.sh),
+#             service-module shape plus import direction (tests/structure.sh),
+#             shell formatting (tests/format.sh), python lint + format
+#             (ruff), python types (mypy), API contract coverage, and the
+#             secret scan over the working tree (tests/secret-scan.sh). It
+#             starts no DinD or service containers; ShellCheck runs from a
+#             native or cached pinned binary (`./tests/check.sh install`)
+#             and falls back to Docker otherwise. History is a separate
+#             selector.
 #   default - fast + tests/unit.sh (adds compose render, host unit tests,
 #             shell syntax and Python bytecode) + the image-free
 #             wizard-ui scenarios (tests/ci-scenarios.sh via tests/run.sh).
 #             This is the PR gate's local equivalent.
 #   full    - default + tests/battery.sh (the complete DinD scenario battery).
 #
-# lint/line-cap/naming/shfmt/ruff/mypy/contracts/secrets/secrets-history/unit/wizard/warm-python/install
+# lint/line-cap/naming/structure/shfmt/ruff/mypy/contracts/secrets/secrets-history/unit/wizard/warm-python/install
 # are single-stage selectors, not tiers: each
 # runs exactly one stage and nothing else, so a caller (CI) can spread the
 # pipeline across parallel jobs without a stage running twice. tests/unit.sh
@@ -73,7 +81,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.." || exit 2
 
 if (($# > 1)); then
-    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|structure|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
     exit 2
 fi
 
@@ -85,9 +93,9 @@ case "$arg" in
         exit 0
         ;;
     fast | default | full) TIER="$arg" ;;
-    lint | line-cap | naming | shfmt | ruff | mypy | contracts | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
+    lint | line-cap | naming | structure | shfmt | ruff | mypy | contracts | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
     *)
-        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|structure|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
         exit 2
         ;;
 esac
@@ -198,14 +206,25 @@ mypy_type_check() {
 }
 
 # RUFF_CACHE_DIR is set outside the tree since ruff self-ignores .ruff_cache/.
-# The lint pass runs first because its findings explain a format diff.
+# The lint pass runs first because its findings explain a format diff. Its
+# output is reconciled by tests/python-complexity.sh rather than printed
+# straight out: that wrapper matches C901 findings against the shrink-only
+# allowlist, replays every other finding untouched, and appends the steering
+# paragraph when complexity is what failed.
 ruff_python_check() {
-    local cache_dir rc ruff_pin
+    local cache_dir rc ruff_pin findings
     discover_tracked_python || return $?
     ruff_pin=$(tool_pin ruff version) || return 1
     cache_dir=$(mktemp -d) || return 1
-    RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" check "${PYTHON_FILES[@]}"
+    findings=$(mktemp) || {
+        rm -rf "$cache_dir"
+        return 1
+    }
+    RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" check \
+        --output-format=concise "${PYTHON_FILES[@]}" >"$findings" 2>&1
+    ./tests/python-complexity.sh "$findings"
     rc=$?
+    rm -f "$findings"
     if ((rc == 0)); then
         RUFF_CACHE_DIR="$cache_dir" uv tool run "ruff@$ruff_pin" format --check "${PYTHON_FILES[@]}"
         rc=$?
@@ -292,13 +311,16 @@ if [[ -n "$STAGE" ]]; then
         naming)
             stage naming "lint: file naming" "./tests/naming.sh" ./tests/naming.sh
             ;;
+        structure)
+            stage structure "lint: structure" "./tests/structure.sh" ./tests/structure.sh
+            ;;
         shfmt)
             stage shfmt "format: shfmt" "./tests/format.sh check" \
                 ./tests/format.sh check
             ;;
         ruff)
             stage ruff "python: ruff" \
-                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check <tracked-python> && ... format --check <tracked-python>" \
+                "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check --output-format=concise <tracked-python> >findings; ./tests/python-complexity.sh findings && ... format --check <tracked-python>" \
                 ruff_python_check
             ;;
         mypy)
@@ -351,10 +373,11 @@ stage fast "lint: shellcheck" "./tests/lint.sh --severity=warning" \
 stage fast "lint: shell file line cap" "./tests/shell-line-cap.sh" \
     ./tests/shell-line-cap.sh
 stage fast "lint: file naming" "./tests/naming.sh" ./tests/naming.sh
+stage fast "lint: structure" "./tests/structure.sh" ./tests/structure.sh
 stage fast "format: shfmt" "./tests/format.sh check" \
     ./tests/format.sh check
 stage fast "python: ruff" \
-    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check <tracked-python> && ... format --check <tracked-python>" \
+    "RUFF_CACHE_DIR=<tmp> uv tool run ruff@<tools.toml [ruff] version> check --output-format=concise <tracked-python> >findings; ./tests/python-complexity.sh findings && ... format --check <tracked-python>" \
     ruff_python_check
 stage fast "type: mypy" \
     "MYPY_CACHE_DIR=<tmp> uv tool run --from mypy==<tools.toml [mypy] version> --with types-PyYAML==<tools.toml [mypy] types_pyyaml_version> mypy --python-version 3.9 <tracked-python>" \

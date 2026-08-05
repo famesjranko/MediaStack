@@ -35,15 +35,12 @@ AWS_CANARY="AKIA""MNBVCXZASDFGH234"
 SECOND_AWS_CANARY="AKIA""ZXCVBNMLKJHG7654"
 GENERIC_CANARY="Xq7Vn2ZmT4bK9wLd""Rj5cHs8PyG3uEaMt"
 
-# RC/OUT are globals: a command substitution would run the scan in a subshell
-# and leave the caller reading a stale exit code.
-RC=0
-OUT=""
-run_scan() {
-    OUT=$("$@" 2>&1)
-    RC=$?
-}
+run_scan() { run_cmd "$@"; }
 
+# Overrides the shared tests/lib/assert.sh assert_rc: never echoes $OUT on a
+# mismatch, since OUT can carry a scanner finding built from a canary value —
+# the point of this suite is that no such value survives into output a
+# reviewer might paste.
 assert_rc() {
     local expected="$1" name="$2"
     if [[ "$RC" == "$expected" ]]; then
@@ -78,6 +75,13 @@ mkdir -p "$FIXTURE_ROOT/clean" "$FIXTURE_ROOT/canary" "$FIXTURE_ROOT/empty"
 printf 'nothing to see\n' >"$FIXTURE_ROOT/clean/readme"
 write_aws_canary "$FIXTURE_ROOT/canary/creds"
 ln -s "$FIXTURE_ROOT/canary" "$FIXTURE_ROOT/canary-link"
+
+# The identity a declaration pins is never transcribed by hand: it hashes
+# gitleaks' redacted match text, so it is always harvested from the
+# reconciler's own UNEXPECTED output.
+declarations_from() {
+    awk -F'\t' '$1 == "UNEXPECTED" { print $2 "\t" $3 "\t" $4 }' <<<"$1"
+}
 
 # --- install + usage -------------------------------------------------------
 
@@ -149,8 +153,13 @@ rm -f "$FIXTURE_ROOT/canary/.gitleaksignore"
 
 # --- tampered pin / ruleset ------------------------------------------------
 
-# A standalone copy of the scanner: it resolves its pin manifest and config
-# from its own location, so a mutated copy exercises the guards in isolation.
+# A standalone copy of the scanner: it resolves its pin manifest, its config
+# and its helper modules from its own location, so a mutated copy exercises
+# the guards in isolation. Only the helpers tests/secret-scan.sh actually
+# sources are copied — tests/lib/secret-scan-install.sh (the install/self-test
+# logic) and tests/lib/secret_scan_reconcile.py (reconciliation) — not
+# tests/lib wholesale, which would drag in unrelated helpers this scanner
+# never reaches.
 fake_root() {
     local dir="$FIXTURE_ROOT/$1"
     mkdir -p "$dir/tests/lib" || return 1
@@ -158,6 +167,7 @@ fake_root() {
     cp "$REPO_ROOT/.gitleaks.toml" "$dir/.gitleaks.toml"
     cp "$SCANNER" "$dir/tests/secret-scan.sh"
     cp "$REPO_ROOT/tests/lib/secret-scan-install.sh" "$dir/tests/lib/secret-scan-install.sh"
+    cp "$REPO_ROOT/tests/lib/secret_scan_reconcile.py" "$dir/tests/lib/secret_scan_reconcile.py"
     printf '%s\n' "$dir"
 }
 
@@ -256,14 +266,10 @@ assert_contains "$OUT" "commit-" "the message finding names the commit it came f
 assert_contains "$OUT" "tag-v0" "the message finding names the annotated tag"
 assert_absent "$OUT" "$AWS_CANARY" "the message finding is redacted"
 
-# --- gate mode: reconciliation against a declared finding set --------------
-# The identity a declaration pins is derived here from the gate's own output
-# rather than transcribed: it hashes gitleaks' redacted match text, so writing
-# one by hand would mean knowing what the scanner saw.
-
-declarations_from() {
-    awk -F'\t' '$1 == "UNEXPECTED" { print $2 "\t" $3 "\t" $4 }' <<<"$1"
-}
+# --- gate mode: the scanner and the reconciler, together -------------------
+# The reconciliation contract is proved directly above. What is left here is
+# the join: that a real scan produces identities the declaration file can pin,
+# and that both gate modes agree on them.
 
 gate_repo=$(new_repo gate)
 printf 'readme\n' >"$gate_repo/readme"
@@ -286,6 +292,9 @@ assert_rc 1 "an undeclared finding fails the gate"
 assert_contains "$OUT" "UNEXPECTED" "the gate names the undeclared finding"
 assert_contains "$OUT" "DECLARED-BUT-ABSENT" "the gate names the declaration nothing produced"
 assert_absent "$OUT" "$AWS_CANARY" "the gate never echoes the matched value"
+# The steering text itself is proved against the reconciler above; this probe
+# only has to show that a real scan reaches it.
+assert_contains "$OUT" "remove the secret from the tree" "the gate reaches the tree steering"
 
 declarations_from "$OUT" >"$DECL"
 run_scan "$SCANNER" gate-tree "$DECL" "$gate_repo"
@@ -339,7 +348,7 @@ sed -i '$d' "$DECL"
 run_scan "$SCANNER" gate-history "$DECL" "$gate_repo"
 assert_rc 0 "the history gate reconciles the history-only declaration"
 
-expected=61
+expected=62
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

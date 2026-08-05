@@ -37,6 +37,9 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+          # The line-cap and naming ratchets baseline on the merge-base with
+          # main; a depth-1 clone has no main, and the gates fail closed on it.
+          fetch-depth: 0
       # tests/lint.sh fetches and sha256-verifies the binary itself on a cold
       # cache, so this cache is a speed optimization, never a trust shortcut.
       # Without it the runner's older native shellcheck fails the version gate
@@ -54,6 +57,8 @@ jobs:
         run: ./tests/check.sh line-cap
       - name: Filename casing
         run: ./tests/check.sh naming
+      - name: Structure
+        run: ./tests/check.sh structure
 
   # The pinned shfmt (tools.toml [shfmt]) over every tracked shell file.
   # tests/format.sh fetches and sha256-verifies the binary itself on a cold
@@ -84,6 +89,9 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+          # The C901 ratchet baselines on the merge-base with main; a depth-1
+          # clone has no main, and the gate fails closed on it.
+          fetch-depth: 0
       - name: Install uv and cache tools
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:

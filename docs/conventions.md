@@ -92,6 +92,38 @@ header contract:
 # Sources: <the files, functions, or environment it depends on>.
 ```
 
+### Complexity cap
+
+Python functions are capped at a cyclomatic complexity of 10 (Ruff `C901`,
+`pyproject.toml` `[tool.ruff.lint.mccabe]`). Complexity is a symptom, so the
+gate steers to a diagnosis rather than to the number. When it fires, work out
+which of three it is before touching anything:
+
+1. **Poor structure or logic** — deep nesting, or the same value branched on
+   in several places. Restructure: invert a guard, hoist the branch, replace a
+   chain with a lookup.
+2. **Too many responsibilities** — the function does several things and the
+   branches belong to different ones. Split along the responsibilities, not at
+   an arbitrary line, and move bodies verbatim.
+3. **Accidental complexity** — a simpler solution exists and this one grew
+   around a shape that was never needed. Find the simpler one.
+
+Raising the cap and suppressing the rule are both refused. `# noqa: C901`,
+bare un-scoped `# noqa`, and the file-level forms — a blanket `# ruff: noqa`
+or `# flake8: noqa`, or a `# ruff: noqa:` list naming C901 — are rejected in
+any tracked Python file by `tests/python-complexity.sh`, in any casing; a
+scoped suppression of another rule (e.g. `# noqa: E402`, line-level or
+file-level) stays legal because it names what it silences.
+
+The functions that were already over the cap when it dropped to 10 are
+grandfathered in `tests/python-complexity.allowlist`, one entry per line as
+`<path>\t<function>\t<recorded-complexity>` — keyed on path *and* function
+because two offenders are both named `main`. The ratchet is shrink-only and
+matches `tests/shell-line-cap.allowlist`: a listed function may stay at or
+drop below its recorded value, never grow; no entry may be added against a
+tracked baseline; and an entry whose function now conforms or has gone is
+stale and fails, so the list can only empty out.
+
 ### Identifier and file naming
 
 Shell functions are snake_case, prefixed with the owning module's prefix
@@ -115,17 +147,26 @@ Python module name must also be a valid import identifier.
 
 ## Enforcement
 
+Every fail-closed gate below shares one shape: a hard check, plus a
+shrink-only ratchet listing wherever existing offenders had to be
+grandfathered, plus steering text on the failure path that points at the
+section of this document explaining what to do instead — copy that shape when
+adding the next gate.
+
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
-| Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`) | `lint-shellcheck` |
+| Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`), its ratchet refusals proved against a fabricated allowlist by `tests/unit/line-cap-gate.sh` | `lint-shellcheck` |
 | Tracked shell filename is kebab-case, tracked python filename is snake_case | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), with no exceptions: the grandfathered offenders have all been renamed and `tests/shell-naming.allowlist` deleted | `lint-shellcheck` |
 | A `scripts/*.sh` module (or the root `mediastack` dispatcher) that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |
+| Every `scripts/services/<svc>/main.sh` defines `configure_<svc>()` (directory hyphens map to underscores) | `./tests/check.sh structure` → `tests/structure.sh` (also in `fast`), proved against fabricated violations by `tests/unit/structure-gate.sh` | `lint-shellcheck` |
+| No service module sources another service or any setup module, and no module under `scripts/setup/` sources a peer top-level `scripts/setup/*.sh` module | `./tests/check.sh structure` → `tests/structure.sh` (also in `fast`); the sanctioned seams are named in `project/structure.md` "Dependency Direction" | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
+| Python function complexity is at or under 10, with no `C901`, bare, or file-level `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
-| API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`) | — |
-| No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled against `tests/secret-scan.expected` | `secret-scan` |
+| API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`), with the missing/dead-entry failure paths proved by `tests/unit/contracts-gate.sh` | — |
+| No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled by `tests/lib/secret_scan_reconcile.py` against `tests/secret-scan.expected` | `secret-scan` |
 | No secret in reachable history | `./tests/check.sh secrets-history` — run before a push that publishes new history, not in any tier | — |
 | Shell parses, Python byte-compiles, compose renders across profiles | `./tests/check.sh unit` → `tests/unit.sh` tiers 1, 3, 5 | `unit-host` |
 | Every `tests/unit/*.sh` suite passes | `tests/unit.sh` tier 6 | `unit-host` |
@@ -178,8 +219,10 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 
 - **Unit-test naming.** The 1:1 source-to-`tests/unit/<name>.sh` basename rule
   is a convention; no checker currently verifies the correspondence.
-- **Service-module shape.** The required `main.sh` with optional `render/` and
-  `templates/` layout is a convention; no checker currently verifies it.
+- **The optional half of the service-module shape.** That
+  `scripts/services/<svc>/main.sh` exists and defines `configure_<svc>()` is
+  checked by `tests/structure.sh`; that the optional `render/` and `templates/`
+  directories are used for what they say is not.
 - **New-file header contract.** The two-line `Owns`/`Sources` header is a
   convention; no checker currently verifies it.
 - **Shell function-prefix discipline for undeclared modules.** The naming gate
@@ -197,17 +240,25 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **The "Adding a New Service" checklist** in `project/structure.md`. Nothing
   verifies that the tree section, the `config.yml` section, or the
   `scripts/configure.sh` loop entry were updated alongside a new service.
-- **The dependency-direction rules** in `project/structure.md` (no cross-service
-  imports, no cross-module `scripts/setup/*` imports). No import graph is
-  computed; a violation lints clean.
+- **The dependency-direction rules `tests/structure.sh` does not reach.** The two
+  `source` rules (no cross-service imports, no peer `scripts/setup/*` imports)
+  are enforced, but only over `source` arguments whose directory variable the
+  gate can resolve from `${BASH_SOURCE[0]}` or `$SCRIPT_DIR`. Every other
+  direction in `project/structure.md` — which `scripts/lib/` files a module may
+  reach for, imports between two concern subdirectories — is unchecked.
+
+- **Tree-vs-disk sync for `project/structure.md`.** The tree is a reader's map,
+  not a manifest: nothing notices a new file that was never listed or a listed
+  file that is gone. A manifest checker costs more than the map is worth, so
+  stale entries are fixed by hand when a reader trips over one.
 - **The "Bumping a Service Version" preflight.** `tests/unit/upgrades-manifest.sh`
   checks that the manifest's claims are internally consistent with compose and
   the digest lock. It cannot tell whether the preflight scenario was actually
   run before the tag changed.
-- **The `project/structure.md` tree, the `project/stack.md` service table and
-  host-dependency list, and the documented container/configurator counts.**
-  Nothing derives any of them from `docker-compose.yml` or `scripts/`, so a
-  service added or removed leaves every one of them stale and green.
+- **The `project/stack.md` service table and host-dependency list, and the
+  documented container/configurator counts.** Nothing derives any of them from
+  `docker-compose.yml` or `scripts/`, so a service added or removed leaves
+  every one of them stale and green.
 - **Prose claims with no single mechanical source** — the wall-clock scenario
   budgets, the CI summary in `project/stack.md`, the per-service "what gets
   configured" table in `README.md`. Judgement, re-read when the thing changes.
