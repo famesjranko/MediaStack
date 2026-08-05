@@ -407,14 +407,18 @@ service behavior:
 - **`tests/contracts/replay.py`** — the drift replayer. `spec` mode checks
   every endpoint of a contract with an `openapi:` URL still exists in the
   upstream spec (cached locally; offline is a reported SKIP, never a
-  failure). `live` mode replays a contract's safe (`GET`, no `{id}`)
-  endpoints against a real running container and diffs only the declared
+  failure). `live` mode replays a contract's safe (`GET`, no `{id}`, declared
+  `reads`) endpoints against a real running container and diffs only those
   `reads` fields — mutating endpoints are covered by `spec` mode's
   method+path check instead, so a drift run never mutates a preflight
-  container. `tests/scenarios/contract-drift.sh` reuses
-  `tests/api-matrix/bringup.sh` (the same bring-up `api-matrix.sh` uses — one
-  bring-up, not duplicated) and runs `live` mode against Sonarr/Radarr.
-  Image-backed; runs in the image-bump preflight
+  container. Request auth is shape-driven from each contract's own `auth:`
+  block (header/bearer/cookie/query, `tests/contracts/README.md`), never a
+  per-service branch in `replay.py` itself. `tests/scenarios/contract-drift.sh`
+  reuses `tests/api-matrix/bringup.sh` (the same bring-up `api-matrix.sh`
+  uses — one bring-up, not duplicated), applies each service's own product
+  configurator to get real credentials, and runs `live` mode against all six
+  API-bearing services (Sonarr, Radarr, qBittorrent, Jackett, Jellyfin,
+  Seerr). Image-backed; runs in the image-bump preflight
   (`docs/operations/upgrades.md`), never the PR gate.
 
 Division of labor is a hard constraint (TARGET.md "API contracts and

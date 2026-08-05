@@ -1,6 +1,10 @@
 service: jellyfin
 base_path: /
-auth: {type: header, name: Authorization}
+# `format` is the literal header value template replay.py's live mode sends,
+# with `{key}` replaced by the supplied credential (the permanent API key
+# configure_jellyfin creates) — Jellyfin's actual Authorization scheme, not a
+# raw token (see scripts/services/jellyfin/main.sh's own `$auth` construction).
+auth: {type: header, name: Authorization, format: 'MediaBrowser Client="ContractDrift", Device="Test", DeviceId="contract-drift", Version="1.0", Token="{key}"'}
 # live-replay-only: the upstream stable OpenAPI omits five endpoints we use
 # and verify live (System/Configuration/{encoding,network}, /health) — found
 # by replay.py spec mode 2026-08-04. Restore an openapi: URL if upstream
@@ -22,6 +26,11 @@ endpoints:
   - {id: encoding-config-update, method: POST, path: /System/Configuration/encoding, sends: [HardwareAccelerationType, EnableHardwareEncoding, HardwareDecodingCodecs, EnableDecodingColorDepth10Hevc, EnableDecodingColorDepth10Vp9, AllowHevcEncoding, AllowAv1Encoding, QsvDevice, VaapiDevice], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: server-config-get, method: GET, path: /System/Configuration, sends: [], reads: [ServerName, RemoteClientBitrateLimit], callers: [scripts/services/jellyfin/main.sh]}
   - {id: server-config-update, method: POST, path: /System/Configuration, sends: [ServerName, RemoteClientBitrateLimit], reads: [], callers: [scripts/services/jellyfin/main.sh]}
-  - {id: network-config-get, method: GET, path: /System/Configuration/network, sends: [], reads: [KnownProxies,EnableRemoteAccess,EnableAutomaticPortMapping,AutoDiscoveryTracing,PublishedServerUriBySubnet], callers: [scripts/services/jellyfin/main.sh]}
-  - {id: network-config-update, method: POST, path: /System/Configuration/network, sends: [KnownProxies,EnableRemoteAccess,EnableAutomaticPortMapping,AutoDiscoveryTracing,PublishedServerUriBySubnet], reads: [], callers: [scripts/services/jellyfin/main.sh]}
+  # reads/sends corrected 2026-08-05 by replay.py live mode: the previous
+  # `EnableAutomaticPortMapping`/`AutoDiscoveryTracing` names don't exist on
+  # this endpoint (neither read by
+  # scripts/services/jellyfin/render/network_policy.py nor present live) —
+  # the real, actually-consumed field is `AutoDiscovery`.
+  - {id: network-config-get, method: GET, path: /System/Configuration/network, sends: [], reads: [KnownProxies, AutoDiscovery, PublishedServerUriBySubnet], callers: [scripts/services/jellyfin/main.sh]}
+  - {id: network-config-update, method: POST, path: /System/Configuration/network, sends: [KnownProxies, AutoDiscovery, PublishedServerUriBySubnet], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: health, method: GET, path: /health, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh, scripts/setup/gpu/compose.sh, scripts/setup/stage1/install.sh]}
