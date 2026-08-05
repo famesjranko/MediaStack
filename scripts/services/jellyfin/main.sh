@@ -4,9 +4,13 @@
 
 _JELLYFIN_SERVICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# shellcheck source=scripts/services/jellyfin/wizard.sh
 source "$_JELLYFIN_SERVICE_DIR/wizard.sh"
+# shellcheck source=scripts/services/jellyfin/encoding.sh
 source "$_JELLYFIN_SERVICE_DIR/encoding.sh"
+# shellcheck source=scripts/services/jellyfin/server.sh
 source "$_JELLYFIN_SERVICE_DIR/server.sh"
+# shellcheck source=scripts/services/jellyfin/network.sh
 source "$_JELLYFIN_SERVICE_DIR/network.sh"
 
 configure_jellyfin() {
