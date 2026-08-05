@@ -55,6 +55,46 @@ assert_contains() {
     esac
 }
 
+assert_not_contains() {
+    local haystack="$1" needle="$2" name="$3"
+    case "$haystack" in
+        *"$needle"*) fail "$name" "'$needle' found" ;;
+        *) pass "$name" ;;
+    esac
+}
+
+# File-content counterparts to assert_contains/assert_not_contains: read the
+# file instead of taking it as an already-captured string, for a case that
+# needs a fixture file's bytes rather than a command's captured output.
+assert_file_contains() {
+    local file="$1" needle="$2" name="$3"
+    if grep -qF -- "$needle" "$file"; then
+        pass "$name"
+    else
+        fail "$name"
+    fi
+}
+
+assert_file_not_contains() {
+    local file="$1" needle="$2" name="$3"
+    if grep -qF -- "$needle" "$file"; then
+        fail "$name"
+    else
+        pass "$name"
+    fi
+}
+
+# A caller that must prove a file was never written (a blocked accept, a
+# refused write) rather than that a written file lacks some content.
+assert_file_absent() {
+    local file="$1" name="$2"
+    if [[ -f "$file" ]]; then
+        fail "$name" "$(basename "$file") exists"
+    else
+        pass "$name"
+    fi
+}
+
 # Hits a URL and asserts response code. Runs curl via the caller's env
 # (e.g. via dind_exec). Args: <url> <expected_http_code> <name>.
 assert_http() {
