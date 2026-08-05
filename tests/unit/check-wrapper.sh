@@ -20,11 +20,15 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 make_fixture() {
     local name="$1" config_mode="${2:-valid}"
     FIXTURE_ROOT="$TMP_DIR/$name"
-    mkdir -p "$FIXTURE_ROOT/bin" "$FIXTURE_ROOT/tests"
+    mkdir -p "$FIXTURE_ROOT/bin" "$FIXTURE_ROOT/tests/lib"
     cp "$REPO_ROOT/tests/check.sh" "$FIXTURE_ROOT/tests/check.sh"
     cp "$REPO_ROOT/tests/python-complexity.sh" "$FIXTURE_ROOT/tests/python-complexity.sh"
+    cp "$REPO_ROOT/tests/lib/ratchet.sh" "$FIXTURE_ROOT/tests/lib/ratchet.sh"
     chmod +x "$FIXTURE_ROOT/tests/check.sh" "$FIXTURE_ROOT/tests/python-complexity.sh"
-    git init -q "$FIXTURE_ROOT"
+    # -b trunk: deterministic default-branch name, independent of the host's
+    # init.defaultBranch, so a scenario that also creates a local "main" ref
+    # (the two-commit-smuggle probe below) is never accidentally on it.
+    git init -q -b trunk "$FIXTURE_ROOT"
 
     case "$config_mode" in
         valid)
@@ -76,7 +80,8 @@ fi
 exit 0
 STUB
     chmod +x "$FIXTURE_ROOT/bin/uv"
-    git -C "$FIXTURE_ROOT" add tests/check.sh tests/python-complexity.sh pyproject.toml tools.toml
+    git -C "$FIXTURE_ROOT" add tests/check.sh tests/python-complexity.sh tests/lib/ratchet.sh \
+        pyproject.toml tools.toml
 }
 
 # One C901 finding in ruff's concise format, for the given function/complexity.
@@ -90,7 +95,9 @@ set_allowlist() {
     printf '%s\n' "$@" >"$FIXTURE_ROOT/tests/python-complexity.allowlist"
 }
 
-# Two commits so the wrapper's HEAD^ baseline resolves to real content.
+# Two commits so the ratchet's baseline (tests/lib/ratchet.sh) resolves to
+# real content: no origin/main or local main exists in this throwaway repo, so
+# it falls back to HEAD^.
 commit_fixture() {
     git -C "$FIXTURE_ROOT" add -A
     git -C "$FIXTURE_ROOT" -c user.email=gate@example.invalid -c user.name=gate \
@@ -323,6 +330,45 @@ if ((SELECTOR_RC == 0)); then
 else
     fail "a scoped suppression of another rule still passes" "exit $SELECTOR_RC: $SELECTOR_OUT"
 fi
+
+# --- ratchet baseline is the merge-base with main, not HEAD^ -----------------
+#
+# A new allowlist entry smuggled in across two commits must still be caught:
+# comparing only against HEAD^ (the second of the two smuggle commits) would
+# see the entry already present there and wave it through. The merge-base
+# with a real "main" ref catches it regardless of how many commits it took.
+
+make_fixture c901-two-commit-smuggle
+add_python_file
+# An allowlist must already exist at the baseline for "no new entries" to be
+# the rule being tested — an allowlist created for the first time is a
+# separate, legitimate case (recorded value must just match current).
+: >"$FIXTURE_ROOT/tests/python-complexity.allowlist"
+git -C "$FIXTURE_ROOT" add tests/python-complexity.allowlist
+commit_fixture
+# "main" is the trunk the smuggle branches from — the two commits below run
+# on top of it without ever moving this ref.
+git -C "$FIXTURE_ROOT" branch main HEAD
+
+set_allowlist "$(printf 'sample.py\tgrown\t11')"
+set_findings "$RUFF_C901"
+git -C "$FIXTURE_ROOT" add -A
+git -C "$FIXTURE_ROOT" -c user.email=gate@example.invalid -c user.name=gate \
+    commit -qm "smuggle step 1: the new allowlist entry"
+
+printf '%s\n' 'value = 2' >>"$FIXTURE_ROOT/sample.py"
+git -C "$FIXTURE_ROOT" add -A
+git -C "$FIXTURE_ROOT" -c user.email=gate@example.invalid -c user.name=gate \
+    commit -qm "smuggle step 2: an unrelated follow-up commit"
+
+run_selector ruff
+if ((SELECTOR_RC != 0)); then
+    pass "a new entry smuggled across two commits still fails"
+else
+    fail "a new entry smuggled across two commits still fails" "exit 0: $SELECTOR_OUT"
+fi
+assert_contains "$SELECTOR_OUT" "new allowlist entry is not permitted" \
+    "the smuggled entry is refused, not just the second commit's diff"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

@@ -5,6 +5,8 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/ratchet.sh
+source "$REPO_ROOT/tests/lib/ratchet.sh"
 CAP=500
 ALLOWLIST="$REPO_ROOT/tests/shell-line-cap.allowlist"
 # Both ratchet refusals route where the main violation does: relisting a file
@@ -17,15 +19,9 @@ die() {
 }
 
 tracked_file_list=$(mktemp) || die "cannot create tracked-file list"
-base_allowlist=$(mktemp) || die "cannot create base allowlist"
-trap 'rm -f "$tracked_file_list" "$base_allowlist"' EXIT
+trap 'rm -f "$tracked_file_list"' EXIT
 
-base_ref=""
-if base_ref=$(git -C "$REPO_ROOT" rev-parse HEAD^ 2>/dev/null); then
-    :
-else
-    base_ref=HEAD
-fi
+base_ref="$(ratchet_base_ref "$REPO_ROOT")"
 
 if ! git -C "$REPO_ROOT" ls-files -z '*.sh' 'mediastack' >"$tracked_file_list"; then
     die "tracked shell discovery failed"
@@ -50,25 +46,13 @@ else
     ALLOWLIST=/dev/null
 fi
 
-if git -C "$REPO_ROOT" cat-file -e "$base_ref:tests/shell-line-cap.allowlist" 2>/dev/null; then
-    git -C "$REPO_ROOT" show "$base_ref:tests/shell-line-cap.allowlist" >"$base_allowlist" \
-        || die "cannot read base allowlist"
-else
-    : >"$base_allowlist"
-fi
-
 base_allowlist_exists=false
 if git -C "$REPO_ROOT" cat-file -e "$base_ref:tests/shell-line-cap.allowlist" 2>/dev/null; then
     base_allowlist_exists=true
 fi
 
 declare -A base_counts=()
-while IFS=$'\t' read -r file recorded extra || [[ -n "$file$recorded$extra" ]]; do
-    [[ -z "$file$recorded$extra" ]] && continue
-    [[ -n "$file" && "$recorded" =~ ^[0-9]+$ && -z "$extra" ]] \
-        || die "malformed base allowlist entry"
-    base_counts["$file"]="$recorded"
-done <"$base_allowlist"
+ratchet_read_base "$REPO_ROOT" "$base_ref" tests/shell-line-cap.allowlist base_counts
 
 declare -A allowed_counts=()
 while IFS=$'\t' read -r file recorded extra || [[ -n "$file$recorded$extra" ]]; do

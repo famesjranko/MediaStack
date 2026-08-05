@@ -22,10 +22,11 @@ scenario_begin "$CURRENT_SCENARIO"
 FIXTURE=$(mktemp -d)
 trap 'rm -rf "$FIXTURE"' EXIT
 
-mkdir -p "$FIXTURE/tests"
+mkdir -p "$FIXTURE/tests/lib"
 # The gate under test is the working-tree copy; it derives its population from
 # `git ls-files`, so the fixture has to be a real repository.
 cp "$REPO_ROOT/tests/shell-line-cap.sh" "$FIXTURE/tests/shell-line-cap.sh"
+cp "$REPO_ROOT/tests/lib/ratchet.sh" "$FIXTURE/tests/lib/ratchet.sh"
 GATE="$FIXTURE/tests/shell-line-cap.sh"
 ALLOWLIST="$FIXTURE/tests/shell-line-cap.allowlist"
 
@@ -47,21 +48,7 @@ git -C "$FIXTURE" add -A
 git -C "$FIXTURE" commit -qm "baseline with a grandfathered offender"
 git -C "$FIXTURE" commit -q --allow-empty -m "head"
 
-RC=0
-OUT=""
-run_gate() {
-    OUT=$("$GATE" 2>&1)
-    RC=$?
-}
-
-assert_rc() {
-    local expected="$1" name="$2"
-    if [[ "$RC" == "$expected" ]]; then
-        pass "$name"
-    else
-        fail "$name" "expected rc $expected, got $RC: $OUT"
-    fi
-}
+run_gate() { run_cmd "$GATE"; }
 
 assert_steering() {
     assert_contains "$OUT" "shrink-only grandfather list" "$1 names the ratchet as shrink-only"

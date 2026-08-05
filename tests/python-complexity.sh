@@ -7,6 +7,8 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/ratchet.sh
+source "$REPO_ROOT/tests/lib/ratchet.sh"
 ALLOWLIST="$REPO_ROOT/tests/python-complexity.allowlist"
 
 die() {
@@ -34,7 +36,7 @@ findings="${1:-}"
 tracked_python=$(mktemp) || die "cannot create tracked-python list"
 trap 'rm -f "$tracked_python"' EXIT
 
-base_ref=$(git -C "$REPO_ROOT" rev-parse HEAD^ 2>/dev/null) || base_ref=HEAD
+base_ref="$(ratchet_base_ref "$REPO_ROOT")"
 
 # Same discovery the ruff and mypy selectors use: no new file dodges the ban.
 git -C "$REPO_ROOT" ls-files -z '*.py' >"$tracked_python" || die "tracked python discovery failed"
@@ -80,11 +82,7 @@ base_exists=false
 git -C "$REPO_ROOT" cat-file -e "$base_ref:tests/python-complexity.allowlist" 2>/dev/null && base_exists=true
 
 declare -A base_scores=()
-while IFS=$'\t' read -r file func recorded extra; do
-    [[ -z "$file$func$recorded$extra" ]] && continue
-    [[ -n "$file" && -n "$func" && "$recorded" =~ ^[0-9]+$ && -z "$extra" ]] || die "malformed base entry"
-    base_scores["$file"$'\t'"$func"]="$recorded"
-done < <([[ "$base_exists" == true ]] && git -C "$REPO_ROOT" show "$base_ref:tests/python-complexity.allowlist")
+ratchet_read_base "$REPO_ROOT" "$base_ref" tests/python-complexity.allowlist base_scores
 
 declare -A allowed=()
 while IFS=$'\t' read -r file func recorded extra || [[ -n "$file$func$recorded$extra" ]]; do
