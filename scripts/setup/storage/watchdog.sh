@@ -38,16 +38,16 @@ set +a
 
 [[ "${STORAGE_MODE:-local}" == "nas" ]] || exit 0
 
-mountpoint="${STORAGE_MOUNTPOINT:-}"
-host="${STORAGE_NFS_HOST:-}"
-export_path="${STORAGE_NFS_EXPORT:-}"
+MOUNTPOINT="${STORAGE_MOUNTPOINT:-}"
+HOST="${STORAGE_NFS_HOST:-}"
+EXPORT_PATH="${STORAGE_NFS_EXPORT:-}"
 # literal: emitted into a standalone script that can't see DEFAULT_NFS_OPTS
-opts="${STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
-expected_source="${STORAGE_EXPECTED_SOURCE:-${host}:${export_path}}"
-expected_fstype="${STORAGE_EXPECTED_FSTYPE:-nfs4}"
-sentinel="${STORAGE_SENTINEL:-${mountpoint}/.mediastack-storage-ready}"
+OPTS="${STORAGE_NFS_OPTS:-vers=4.2,proto=tcp,rw,hard,timeo=600,retrans=2,nosuid,nodev,noexec}"
+EXPECTED_SOURCE="${STORAGE_EXPECTED_SOURCE:-${HOST}:${EXPORT_PATH}}"
+EXPECTED_FSTYPE="${STORAGE_EXPECTED_FSTYPE:-nfs4}"
+SENTINEL="${STORAGE_SENTINEL:-${MOUNTPOINT}/.mediastack-storage-ready}"
 
-[[ -n "$mountpoint" && -n "$host" && -n "$export_path" ]] || exit 1
+[[ -n "$MOUNTPOINT" && -n "$HOST" && -n "$EXPORT_PATH" ]] || exit 1
 
 path_under_mountpoint() {
     python3 - "$1" "$2" <<'PY'
@@ -66,32 +66,32 @@ PY
 
 mount_matches() {
     local live_source live_fstype
-    live_source="$(findmnt -rn -M "$mountpoint" -o SOURCE 2>/dev/null || true)"
-    live_fstype="$(findmnt -rn -M "$mountpoint" -o FSTYPE 2>/dev/null || true)"
-    [[ -n "$live_source" && "$live_source" == "$expected_source" ]] || return 1
-    case "$expected_fstype:$live_fstype" in
+    live_source="$(findmnt -rn -M "$MOUNTPOINT" -o SOURCE 2>/dev/null || true)"
+    live_fstype="$(findmnt -rn -M "$MOUNTPOINT" -o FSTYPE 2>/dev/null || true)"
+    [[ -n "$live_source" && "$live_source" == "$EXPECTED_SOURCE" ]] || return 1
+    case "$EXPECTED_FSTYPE:$live_fstype" in
         nfs4:nfs|nfs4:nfs4|nfs:nfs|nfs:nfs4) return 0 ;;
-        *) [[ "$live_fstype" == "$expected_fstype" ]] ;;
+        *) [[ "$live_fstype" == "$EXPECTED_FSTYPE" ]] ;;
     esac
 }
 
-if ! path_under_mountpoint "$sentinel" "$mountpoint"; then
-    echo "sentinel is outside mountpoint: $sentinel" >&2
+if ! path_under_mountpoint "$SENTINEL" "$MOUNTPOINT"; then
+    echo "sentinel is outside mountpoint: $SENTINEL" >&2
     exit 1
 fi
 
-if ! mount_matches && findmnt -rn -M "$mountpoint" >/dev/null 2>&1; then
-    umount -l "$mountpoint" >/dev/null 2>&1 || true
+if ! mount_matches && findmnt -rn -M "$MOUNTPOINT" >/dev/null 2>&1; then
+    umount -l "$MOUNTPOINT" >/dev/null 2>&1 || true
 fi
 
-mkdir -p "$mountpoint"
+mkdir -p "$MOUNTPOINT"
 if ! mount_matches; then
-    mount -t nfs4 -o "$opts" "${host}:${export_path}" "$mountpoint" \
-        || mount -t nfs -o "$opts" "${host}:${export_path}" "$mountpoint"
+    mount -t nfs4 -o "$OPTS" "${HOST}:${EXPORT_PATH}" "$MOUNTPOINT" \
+        || mount -t nfs -o "$OPTS" "${HOST}:${EXPORT_PATH}" "$MOUNTPOINT"
 fi
 
 mount_matches
-test -e "$sentinel"
+test -e "$SENTINEL"
 EOF
 }
 

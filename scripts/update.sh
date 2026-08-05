@@ -74,23 +74,23 @@ generate_override "${JELLYFIN_GPU:-none}"
 # `set -euo pipefail`. Word boundaries (\b) keep `npm` from matching `pnpm` in
 # seerr's COMMAND column.
 PROFILE_ARGS=""
-proxy_ps=$(docker compose --profile proxy ps --status running 2>/dev/null || true)
-if grep -qE '\b(npm|fail2ban|ddns-updater)\b' <<<"$proxy_ps"; then
+PROXY_PS=$(docker compose --profile proxy ps --status running 2>/dev/null || true)
+if grep -qE '\b(npm|fail2ban|ddns-updater)\b' <<<"$PROXY_PS"; then
     PROFILE_ARGS="$PROFILE_ARGS --profile proxy"
     echo "Proxy profile detected (NPM + fail2ban + DDNS) - updating those too"
 fi
-remote_ps=$(docker compose --profile remote ps --status running 2>/dev/null || true)
-if grep -qE '\bwireguard\b' <<<"$remote_ps"; then
+REMOTE_PS=$(docker compose --profile remote ps --status running 2>/dev/null || true)
+if grep -qE '\bwireguard\b' <<<"$REMOTE_PS"; then
     PROFILE_ARGS="$PROFILE_ARGS --profile remote"
     echo "Remote access profile detected - updating those too"
 fi
-subtitles_ps=$(docker compose --profile subtitles ps --status running 2>/dev/null || true)
-if grep -qE '\bbazarr\b' <<<"$subtitles_ps"; then
+SUBTITLES_PS=$(docker compose --profile subtitles ps --status running 2>/dev/null || true)
+if grep -qE '\bbazarr\b' <<<"$SUBTITLES_PS"; then
     PROFILE_ARGS="$PROFILE_ARGS --profile subtitles"
     echo "Subtitles profile detected (Bazarr) - updating that too"
 fi
-autoheal_ps=$(docker compose --profile autoheal ps --status running 2>/dev/null || true)
-if grep -qE '\bautoheal\b' <<<"$autoheal_ps"; then
+AUTOHEAL_PS=$(docker compose --profile autoheal ps --status running 2>/dev/null || true)
+if grep -qE '\bautoheal\b' <<<"$AUTOHEAL_PS"; then
     PROFILE_ARGS="$PROFILE_ARGS --profile autoheal"
     echo "Autoheal profile detected - updating that too"
 fi
@@ -100,20 +100,20 @@ if [[ "$IMAGE_CHANNEL" == "latest" ]]; then
 else
     echo "Pulling MediaStack-tested stable image digests..."
 fi
-pull_ok=false
-backoff=10
+PULL_OK=false
+BACKOFF=10
 for attempt in 1 2 3; do
     if docker compose $PROFILE_ARGS pull 2>&1; then
-        pull_ok=true
+        PULL_OK=true
         break
     fi
     if ((attempt < 3)); then
-        echo "Pull failed (attempt ${attempt}/3). Retrying in ${backoff}s..."
-        sleep "$backoff"
-        backoff=$((backoff * 2))
+        echo "Pull failed (attempt ${attempt}/3). Retrying in ${BACKOFF}s..."
+        sleep "$BACKOFF"
+        BACKOFF=$((BACKOFF * 2))
     fi
 done
-if ! $pull_ok; then
+if ! $PULL_OK; then
     echo "WARNING: Some images could not be pulled after 3 attempts."
     echo "Continuing with cached images..."
 fi
