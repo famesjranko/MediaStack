@@ -795,7 +795,9 @@ below; it does not reimplement their file discovery or logic:
   (tracked shell/python filename casing, plus declared `<prefix>_*` function
   conformance for any `scripts/*.sh` module that opts in via its `# Owns:`
   line), `./tests/format.sh check`
-  (shfmt), the pinned ruff lint + format check, the pinned mypy invocation, and the
+  (shfmt), the pinned ruff lint + format check (findings reconciled by
+  `./tests/python-complexity.sh` against the C901 shrink-only allowlist), the
+  pinned mypy invocation, and the
   pinned gitleaks over this repository's tree. It starts
   no DinD or service containers; ShellCheck runs from a native or cached pinned
   binary (`./tests/check.sh install`) and only falls back to Docker when neither

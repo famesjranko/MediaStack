@@ -92,6 +92,36 @@ header contract:
 # Sources: <the files, functions, or environment it depends on>.
 ```
 
+### Complexity cap
+
+Python functions are capped at a cyclomatic complexity of 10 (Ruff `C901`,
+`pyproject.toml` `[tool.ruff.lint.mccabe]`). Complexity is a symptom, so the
+gate steers to a diagnosis rather than to the number. When it fires, work out
+which of three it is before touching anything:
+
+1. **Poor structure or logic** — deep nesting, or the same value branched on
+   in several places. Restructure: invert a guard, hoist the branch, replace a
+   chain with a lookup.
+2. **Too many responsibilities** — the function does several things and the
+   branches belong to different ones. Split along the responsibilities, not at
+   an arbitrary line, and move bodies verbatim.
+3. **Accidental complexity** — a simpler solution exists and this one grew
+   around a shape that was never needed. Find the simpler one.
+
+Raising the cap and suppressing the rule are both refused. `# noqa: C901` and
+bare un-scoped `# noqa` are rejected in any tracked Python file by
+`tests/python-complexity.sh`; a scoped suppression of another rule (e.g.
+`# noqa: E402`) stays legal because it names what it silences.
+
+The functions that were already over the cap when it dropped to 10 are
+grandfathered in `tests/python-complexity.allowlist`, one entry per line as
+`<path>\t<function>\t<recorded-complexity>` — keyed on path *and* function
+because two offenders are both named `main`. The ratchet is shrink-only and
+matches `tests/shell-line-cap.allowlist`: a listed function may stay at or
+drop below its recorded value, never grow; no entry may be added against a
+tracked baseline; and an entry whose function now conforms or has gone is
+stale and fails, so the list can only empty out.
+
 ### Identifier and file naming
 
 Shell functions are snake_case, prefixed with the owning module's prefix
@@ -115,6 +145,12 @@ Python module name must also be a valid import identifier.
 
 ## Enforcement
 
+Every fail-closed gate below shares one shape: a hard check, plus a
+shrink-only ratchet listing wherever existing offenders had to be
+grandfathered, plus steering text on the failure path that points at the
+section of this document explaining what to do instead — copy that shape when
+adding the next gate.
+
 | Rule | Enforced by | CI context |
 |---|---|---|
 | Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
@@ -125,6 +161,7 @@ Python module name must also be a valid import identifier.
 | No service module sources another service, and nothing under `scripts/setup/` sources a peer top-level `scripts/setup/*.sh` module | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`); the sanctioned seams are named in `project/structure.md` "Dependency Direction" | `lint-shellcheck` |
 | Tracked shell is shfmt-clean | `./tests/check.sh shfmt` → `tests/format.sh check` | `format-shfmt` |
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
+| Python function complexity is at or under 10, with no `C901` or bare `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
 | API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`) | — |
 | No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled against `tests/secret-scan.expected` | `secret-scan` |
