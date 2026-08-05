@@ -164,7 +164,7 @@ adding the next gate.
 | Python function complexity is at or under 10, with no `C901` or bare `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
 | API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`), with the missing/dead-entry failure paths proved by `tests/unit/contracts-gate.sh` | — |
-| No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled against `tests/secret-scan.expected` | `secret-scan` |
+| No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled by `tests/lib/secret_scan_reconcile.py` against `tests/secret-scan.expected` | `secret-scan` |
 | No secret in reachable history | `./tests/check.sh secrets-history` — run before a push that publishes new history, not in any tier | — |
 | Shell parses, Python byte-compiles, compose renders across profiles | `./tests/check.sh unit` → `tests/unit.sh` tiers 1, 3, 5 | `unit-host` |
 | Every `tests/unit/*.sh` suite passes | `tests/unit.sh` tier 6 | `unit-host` |
