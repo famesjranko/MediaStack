@@ -25,4 +25,3 @@ reset_warn
 validate_mb_per_sec "x"
 rc=$?
 assert_contains "$LAST_WARN" "MB/s" "validate_mb_per_sec: warn copy says MB/s (not Mbps)"
-

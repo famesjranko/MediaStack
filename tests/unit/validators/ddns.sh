@@ -91,4 +91,3 @@ reset_warn
 validate_zone_id "0123456789abcdef0123456789abcdeg"
 rc=$?
 assert_eq "1" "$rc" "validate_zone_id: rejects non-hex character"
-

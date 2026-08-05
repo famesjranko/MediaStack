@@ -140,4 +140,3 @@ reset_warn
 validate_subtitle_langs "zzznotalang"
 rc=$?
 assert_eq "1" "$rc" "validate_subtitle_langs (drift): rejects a non-LANG_MAP sentinel"
-

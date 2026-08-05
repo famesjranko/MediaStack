@@ -221,4 +221,3 @@ validate_storage_sentinel() {
     fi
     return 0
 }
-

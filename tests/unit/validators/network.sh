@@ -63,7 +63,6 @@ rc=$?
 assert_eq "0" "$rc" "validate_smb_port: accepts free port 445"
 unset -f ss
 
-
 # ---------------------------------------------------------------------------
 # Single-IP validator (fail2ban whitelist manual-entry path). Accepts one
 # IPv4/IPv6 host; rejects CIDR / range / hostname / empty.
@@ -83,4 +82,3 @@ for bad in "1.2.3.4/32" "999.1.1.1" "nope" ""; do
     assert_eq "1" "$rc" "validate_ip: rejects '$bad'"
     assert_eq "1" "$WARN_COUNT" "validate_ip: '$bad' warns once"
 done
-

@@ -1,7 +1,6 @@
 # Owns: Bandwidth field validators (Mbps whole/decimal, MB/s).
 # Sources: scripts/lib/validators.sh state; sourced by scripts/lib/validators.sh.
 
-
 # Whole-number Mbps (upload bandwidth used to size the streaming table). Kept
 # integer because the value is fed to python int() in the bitrate recommendation.
 validate_mbps_whole() {
@@ -28,4 +27,3 @@ validate_mb_per_sec() {
     ui_log warn "Enter a number in MB/s (0 = unlimited)."
     return 1
 }
-

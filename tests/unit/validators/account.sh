@@ -99,4 +99,3 @@ reset_warn
 validate_admin_password "bad'quote"
 rc=$?
 assert_eq "1" "$rc" "validate_admin_password: rejects single quote"
-

@@ -86,4 +86,3 @@ validate_admin_password() {
     fi
     return 0
 }
-

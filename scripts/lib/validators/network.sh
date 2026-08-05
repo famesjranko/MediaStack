@@ -229,4 +229,3 @@ validate_ip() {
     fi
     return 0
 }
-

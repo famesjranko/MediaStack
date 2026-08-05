@@ -224,4 +224,3 @@ reset_warn
 validate_storage_sentinel "/data/bad sentinel"
 rc=$?
 assert_eq "1" "$rc" "validate_storage_sentinel: rejects whitespace"
-
