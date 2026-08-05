@@ -32,7 +32,7 @@ scripts/
     ├── sonarr/main.sh    + templates/download-client.json
     ├── radarr/main.sh    + templates/download-client.json
     ├── bazarr/main.sh                   # no templates — API payloads built via python3 json.dumps
-    ├── jellyfin/main.sh  + render/network_policy.py + templates/{startup-config,remote-access,library}.json
+    ├── jellyfin/main.sh, wizard.sh, encoding.sh, server.sh, network.sh + render/network_policy.py + templates/{startup-config,remote-access,library}.json
     ├── seerr/main.sh + templates/{sonarr-server,radarr-server}.json
     ├── portainer/main.sh                # no templates — payloads built inline via python3 json.dumps
     ├── homepage/main.sh
@@ -216,15 +216,15 @@ Dedup by name-substring match. Each addition is `POST /api/v3/indexer` with a To
 
 Skip straight to `POST /Users/AuthenticateByName`, save the returned `AccessToken` as `JELLYFIN_API_KEY`, and fall through to server name / library sync.
 
-### `configure_jellyfin_server_name` (in `scripts/services/jellyfin/main.sh`)
+### `configure_jellyfin_server_name` (in `scripts/services/jellyfin/server.sh`)
 
 Sets Jellyfin's display name (Dashboard header, browser tab) via `GET`/`POST /System/Configuration`. Reads `jellyfin.server_name` from `config.yml` (default `"MediaStack"`). Skips on match; warns on drift (non-empty, non-default value — user changed in UI); applies when empty or docker-default hostname `"jellyfin"`.
 
-### `configure_jellyfin_libraries` (in `scripts/services/jellyfin/main.sh`)
+### `configure_jellyfin_libraries` (in `scripts/services/jellyfin/wizard.sh`)
 
 `POST /Library/VirtualFolders?name=...&collectionType=...` per entry in `cfg_jf_libraries`. Library name is URL-encoded via inline Python.
 
-### `configure_jellyfin_networking` (in `scripts/services/jellyfin/main.sh`)
+### `configure_jellyfin_networking` (in `scripts/services/jellyfin/network.sh`)
 
 Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/network` (a different JSON blob from `/System/Configuration` used by streaming). `render/network_policy.py` compares the live JSON with MediaStack's desired policy and emits the skip/drift/apply decision that the shell wrapper logs and posts. Three fields:
 

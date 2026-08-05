@@ -1,6 +1,5 @@
 scripts/lib/common.sh	506
 scripts/lib/validators.sh	719
-scripts/services/jellyfin/main.sh	636
 scripts/setup/checks.sh	528
 scripts/setup/env_gen.sh	626
 scripts/setup/storage.sh	598
