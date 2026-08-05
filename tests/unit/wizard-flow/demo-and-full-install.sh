@@ -323,4 +323,3 @@ if [[ "$full_order_text" == *"run_wizard"*"stop_existing_stack"* || "$full_order
 else
     pass "main: legacy stack install is skipped after stage install"
 fi
-

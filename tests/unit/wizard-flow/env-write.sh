@@ -265,6 +265,7 @@ cat() { return 1; }
 write_env >/dev/null 2>&1
 atomic_write_rc=$?
 unset -f cat
+# shellcheck disable=SC2034 # read by rerun-resume.sh and demo-and-full-install.sh, sourced after this file
 SCRIPT_DIR="$TMP_DIR"
 
 if [[ "$atomic_write_rc" -ne 0 ]]; then

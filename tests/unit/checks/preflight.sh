@@ -227,6 +227,7 @@ log_warn() { echo "[WARN] $1"; }
 FULL_MODE=true
 out=$(check_internet_reachability 2>&1)
 rc=$?
+# shellcheck disable=SC2034 # read by check_internet_reachability in scripts/setup/checks/preflight.sh, sourced by the suite entry point
 FULL_MODE=false
 log_warn() { :; }
 assert_eq "0" "$rc" "check_internet_reachability: curl missing in --full → defer"

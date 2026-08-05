@@ -17,6 +17,7 @@ fi
 reset_route_state
 seed_script_dir "transcoding-stage3"
 seed_env "skipped" "none" "skipped"
+# shellcheck disable=SC2034 # read by run_transcoding_recovery in scripts/launcher/recovery.sh, sourced by the suite entry point
 GPU_TYPE="intel"
 if is_pending_helper run_transcoding_recovery; then
     skip "run_transcoding_recovery route isolation pending implementation"

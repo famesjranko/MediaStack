@@ -100,6 +100,7 @@ else
 fi
 
 assert_eq "$EXPECTED_RULE_IDS" "$registry_sorted" "rule registry matches the expected rule set"
+# shellcheck disable=SC2154 # assigned in pattern-parity.sh, sourced before this file
 assert_eq "$EXPECTED_PATTERN_NAMES" "$(printf '%s\n' "${pattern_names[@]+"${pattern_names[@]}"}" | sort)" \
     "credential pattern set matches the ported and extended list"
 
@@ -150,15 +151,16 @@ assert_eq "$(sorted_expect "$EXPECTED_HOST_ARTIFACTS")" "$(guard_list HOST_ARTIF
     "host artifact list matches the expected set"
 assert_eq "$(sorted_expect "$EXPECTED_WORKTREE_PATTERNS")" "$(guard_list WORKTREE_RULE_PATTERNS | sort)" \
     "worktree pattern lists match the expected set"
+# shellcheck disable=SC2154 # assigned in list-coverage.sh, sourced before this file
 assert_eq "$(printf '%s\n' "${secret_file_probes[@]#*|}" | sort -u)" \
     "$(guard_list SECRET_FILE_GLOBS | sort -u)" \
     "secret file glob list matches the probed set"
 
 # One term per section, in file order, so a section that stops asserting is
 # visible here rather than absorbed by a tuned constant.
+# shellcheck disable=SC2154 # probe/name arrays assigned in list-coverage.sh and pattern-parity.sh, sourced before this file
 expected=$((1 + 1 + ${#registry[@]} + 1 + 1 + 2 + 1 + 1 + \
     ${#host_probes[@]} + ${#secret_file_probes[@]} + ${#worktree_probes[@]} + \
     ${#pattern_names[@]} + 1 + ${#forbidden_alts[@]} + 2 + 5 + 1 + 6))
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
-

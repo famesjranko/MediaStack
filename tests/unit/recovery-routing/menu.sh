@@ -30,6 +30,7 @@ else
     remote_ready_rc=$?
     assert_eq "1" "$remote_ready_rc" "menu hides remote retry for REMOTE_WEB_STATE=ready"
 
+    # shellcheck disable=SC2034 # read by recovery_menu_remote_available in scripts/launcher/recovery.sh, sourced by the suite entry point
     REMOTE_WEB_STATE=failed
     recovery_menu_remote_available
     remote_failed_rc=$?
@@ -42,6 +43,7 @@ else
     assert_eq "1" "$no_gpu_rc" "menu hides transcoding when no GPU is detected"
 
     GPU_TYPE=intel
+    # shellcheck disable=SC2034 # read by recovery_menu_transcoding_available in scripts/launcher/recovery.sh, sourced by the suite entry point
     STAGE_3_GPU_STATE=complete
     recovery_menu_transcoding_available
     complete_rc=$?
@@ -250,6 +252,7 @@ if ! is_pending_helper show_existing_install_menu; then
     reset_route_state
     seed_script_dir "menu-abort-action"
     seed_env "ready" "none" "complete"
+    # shellcheck disable=SC2034 # read by the recovery menu dispatch in scripts/launcher/recovery.sh, sourced by the suite entry point
     GPU_TYPE="intel"
     MENU_CAPTURE="$SCRIPT_DIR/menu-options"
     MENU_CHOICE="Abort"
@@ -270,6 +273,7 @@ fi
 
 run_wizard() {
     record run_wizard
+    # shellcheck disable=SC2034 # read by the recovery menu dispatch in scripts/launcher/recovery.sh, sourced by the suite entry point
     WIZARD_RAN_INSTALL=true
 }
 
@@ -380,4 +384,3 @@ detect_rc=$?
 assert_eq "0" "$detect_rc" "top-level Abort exits 0"
 assert_eq "aborted" "$(cat "$MEDIASTACK_LAUNCHER_RESULT" 2>/dev/null)" "top-level Abort records 'aborted' for the launcher capstone"
 unset MEDIASTACK_LAUNCHER_RESULT
-

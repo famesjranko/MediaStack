@@ -34,6 +34,7 @@ install_scanner() {
 
     dir="$TOOL_CACHE/gitleaks-$VERSION"
     tmp=$(mktemp -d) || die "mktemp failed"
+    # shellcheck disable=SC2034 # read by cleanup() in tests/secret-scan.sh, which sources this lib
     INSTALL_TMP="$tmp"
     trap cleanup EXIT
     asset="$tmp/${url##*/}"

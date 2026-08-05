@@ -8,7 +8,9 @@ GUARD="$REPO_ROOT/tests/lib/repo_guard.py"
 FIXTURE_ROOT=$(mktemp -d)
 trap 'rm -rf "$FIXTURE_ROOT"' EXIT
 
+# shellcheck disable=SC2034 # appended to by every sibling topic file, sourced after this one
 EXERCISED=()
+# shellcheck disable=SC2034 # used by core-rules.sh and list-coverage.sh, sourced after this one
 TAB=$'\t'
 
 run_guard() { python3 "$GUARD" "$@" 2>&1; }
