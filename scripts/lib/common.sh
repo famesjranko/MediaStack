@@ -250,9 +250,9 @@ get_jackett_api_key() {
 }
 
 # .env-writing concern (atomic key/value rewrite, save_api_key) lives in its
-# own file — see env_write.sh's header for what it owns.
-# shellcheck source=env_write.sh
-source "$_COMMON_TC_DIR/env_write.sh"
+# own file — see env_update.sh's header for what it owns.
+# shellcheck source=env_update.sh
+source "$_COMMON_TC_DIR/env_update.sh"
 
 # =============================================================================
 # Container state

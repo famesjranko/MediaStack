@@ -24,7 +24,7 @@ setup_sandbox() {
     mkdir -p "$TMP_DIR/sandbox/bin" "$TMP_DIR/sandbox/scripts/lib"
     cp "$REPO_ROOT/scripts/port-check.sh" "$TMP_DIR/sandbox/scripts/"
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/"
-    cp "$REPO_ROOT/scripts/lib/env_write.sh" "$TMP_DIR/sandbox/scripts/lib/" # common.sh sources it
+    cp "$REPO_ROOT/scripts/lib/env_update.sh" "$TMP_DIR/sandbox/scripts/lib/" # common.sh sources it
     cp "$REPO_ROOT/scripts/lib/ui.sh" "$TMP_DIR/sandbox/scripts/lib/"
     cp "$REPO_ROOT/scripts/lib/ui_render_fallback.sh" "$TMP_DIR/sandbox/scripts/lib/"
     cp "$REPO_ROOT/scripts/lib/term_caps.sh" "$TMP_DIR/sandbox/scripts/lib/" # common.sh + ui_render_fallback.sh source it
