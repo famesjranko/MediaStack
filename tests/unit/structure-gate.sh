@@ -112,6 +112,20 @@ assert_contains "$OUT" "may not source a setup module" \
     "the service-to-setup violation names its own diagnosis"
 reset_fixture
 
+# An assignment inside an if guard (stage2.sh's real shape) still resolves;
+# a violating edge behind it must not become invisible.
+{
+    printf 'if true; then\n'
+    printf '    _STRUCTURE_HIDDEN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../setup" && pwd)"\n'
+    printf 'fi\n'
+    printf 'source "$_STRUCTURE_HIDDEN_DIR/packages.sh"\n'
+} >>"$FIXTURE/scripts/services/bazarr/main.sh"
+run_gate
+assert_rc 1 "an if-guarded directory variable still resolves its edges"
+assert_contains "$OUT" "may not source a setup module" \
+    "the guarded assignment's violating edge is reported"
+reset_fixture
+
 # The sanctioned-seam list is not a place to leave dead entries.
 sed -i '/env_gen_dir\/env-write.sh/d' "$FIXTURE/scripts/setup/env-gen.sh"
 run_gate
@@ -122,7 +136,7 @@ reset_fixture
 run_gate
 assert_rc 0 "the fixture is green again after every probe"
 
-expected=21
+expected=23
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

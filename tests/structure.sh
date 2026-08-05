@@ -40,7 +40,7 @@ for file in "${service_mains[@]}"; do
     fi
 done
 
-((shape_fail == 0)) || exit 1
+# deferred: import violations still get reported in the same run
 
 # -----------------------------------------------------------------------------
 # Import-direction gate over docs/project/structure.md "Dependency Direction":
@@ -76,6 +76,10 @@ _import_edges() {
     dir="$(dirname "$file")"
     local -A dirvars=([SCRIPT_DIR]=.)
     while IFS= read -r line; do
+        # the assignment may be indented (inside an if guard) or exported
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line#export }"
+        line="${line#"${line%%[![:space:]]*}"}"
         var="${line%%=*}"
         case "$line" in
             *'BASH_SOURCE[0]'*)
@@ -89,7 +93,7 @@ _import_edges() {
                 dirvars["$var"]=$(_join_path "${dirvars["$base"]}" "$suffix")
                 ;;
         esac
-    done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*="\$\(cd ".*&& pwd\)"' "$REPO_ROOT/$file")
+    done < <(grep -E '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*="\$\(cd ".*&& pwd\)"' "$REPO_ROOT/$file")
 
     while IFS= read -r arg; do
         [[ "$arg" == *.sh ]] || continue
@@ -152,7 +156,7 @@ for seam in "${SANCTIONED_SEAMS[@]}"; do
         || die "stale sanctioned seam (that import no longer exists): $seam"
 done
 
-((import_fail == 0)) || exit 1
+((shape_fail == 0 && import_fail == 0)) || exit 1
 
 printf 'structure: %s service modules checked for their configurator; %s import edges checked\n' \
     "${#service_mains[@]}" "$edge_count"
