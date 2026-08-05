@@ -85,7 +85,7 @@ STAGE_1_COMPLETE=
 EXISTING_INSTALL_DETECTED=true
 INSTALL_CALLED=false
 _wizard_run_discovery() { :; }
-_stage1_show_system() { :; }
+stage1_show_system() { :; }
 _stage1_collect_admin() { :; }
 _stage1_collect_storage() { :; }
 _stage1_collect_subtitles() { :; }

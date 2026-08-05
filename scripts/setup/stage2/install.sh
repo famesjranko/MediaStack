@@ -18,7 +18,7 @@ _stage2_install() {
     fi
     _WIZ_REMOTE_WEB_STATE="unchecked"
     write_env || return 1
-    _stage2_preserve_stage1_marker
+    stage2_preserve_stage1_marker
 
     _stage2_source_env
 

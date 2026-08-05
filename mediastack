@@ -57,7 +57,7 @@ source "$SCRIPT_DIR/scripts/lib/network.sh"
 # Input validators (e.g. validate_mb_per_sec for the day-2 bandwidth action);
 # pure function defs, shared with the wizard stages.
 source "$SCRIPT_DIR/scripts/lib/validators.sh"
-# Shared _build_profile_args — the single source of truth for the compose
+# Shared profiles_build_args — the single source of truth for the compose
 # --profile set, also used by the installer (scripts/setup/stack.sh).
 source "$SCRIPT_DIR/scripts/lib/profiles.sh"
 source "$SCRIPT_DIR/scripts/setup/storage.sh"

@@ -33,7 +33,7 @@ _demo_delay() {
     fi
 }
 
-run_demo() {
+demo_run() {
     local mode="${1:-auto}"
     export DEMO_MODE="$mode"
 

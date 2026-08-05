@@ -4,7 +4,7 @@
 # Sourced by setup.sh. Depends on $SCRIPT_DIR and scripts/lib/common.sh
 # being loaded by the caller.
 
-# Shared docker-compose profile-arg builder (_build_profile_args), also used by
+# Shared docker-compose profile-arg builder (profiles_build_args), also used by
 # the ./mediastack launcher so the day-2 menu's stop/start/status always targets
 # the same profile set the installer used. Resolved relative to this file so
 # every sourcer (setup.sh and the unit/scenario tests) finds it regardless of CWD.

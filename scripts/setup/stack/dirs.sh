@@ -60,7 +60,7 @@ stop_existing_stack() {
     # `--profile all` is a literal profile name, not a wildcard — without real
     # profile args, npm/bazarr/wireguard/autoheal survive the down.
     local profiles=()
-    _build_profile_args profiles
+    profiles_build_args profiles
     docker compose "${profiles[@]}" down 2>/dev/null || true
 }
 

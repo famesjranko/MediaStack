@@ -24,7 +24,7 @@ _MS_PROFILES_SH_LOADED=1
 
 # Populate ARRAY_NAME with the `--profile X` flags the .env-declared stack needs.
 #
-#   Usage: _build_profile_args ARRAY_NAME [ENV_FILE]
+#   Usage: profiles_build_args ARRAY_NAME [ENV_FILE]
 #     ARRAY_NAME  caller-provided array variable to fill (reset to () first)
 #     ENV_FILE    .env to read; defaults to ${SCRIPT_DIR:-$PWD}/.env
 #
@@ -33,7 +33,7 @@ _MS_PROFILES_SH_LOADED=1
 #   autoheal   autoheal sidecar  unless AUTOHEAL_ENABLED=false (on by default)
 #   proxy      NPM/DDNS/fail2ban  when a real DOMAIN is set (not the LAN sentinel)
 #   remote     WireGuard          when an init password is set
-_build_profile_args() {
+profiles_build_args() {
     local -n _bpa_out=$1
     local _bpa_env="${2:-${SCRIPT_DIR:-$PWD}/.env}"
     _bpa_out=()

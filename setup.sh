@@ -427,7 +427,7 @@ fi
 # --- Demo mode: exercise UI components without touching the system ---
 if [[ "${1:-}" == "--demo" ]]; then
     source "$SCRIPT_DIR/scripts/lib/ui-demo.sh"
-    run_demo "${2:-auto}"
+    demo_run "${2:-auto}"
     exit 0
 fi
 

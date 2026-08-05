@@ -308,7 +308,7 @@ _stage1_collect_nas_managed() {
 }
 
 # Consolidated review of the managed-NAS choices, shown before the lock-in menu.
-# Reuses the ui_box + ui_kv pattern from _stage1_show_system.
+# Reuses the ui_box + ui_kv pattern from stage1_show_system.
 _stage1_nas_review_box() {
     local wd
     [[ "${_WIZ_STORAGE_WATCHDOG:-true}" == "false" ]] && wd="off" || wd="on"

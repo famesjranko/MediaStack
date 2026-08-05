@@ -322,7 +322,7 @@ NPM ships with an empty user table on first boot. The famous `admin@example.com 
 
 Admin tools (Sonarr, Radarr, Jackett, qBittorrent) are NOT proxied — they stay LAN/VPN-only. Fail2ban protects all proxied traffic via the NPM access log jail (401/403 responses) plus per-service jails for Jellyfin and Seerr.
 
-`DOMAIN` still controls infrastructure startup elsewhere: `scripts/setup/stack.sh::_build_profile_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
+`DOMAIN` still controls infrastructure startup elsewhere: `scripts/setup/stack.sh::profiles_build_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
 
 NPM admin setup, health healing, default-site hardening, the rate-limit step (which only writes the `limit_req_zone` when `rate_limiting.enabled` is true — otherwise it logs a skip; disabled by default — see [`rate_limiting`](configuration-schema.md#rate_limiting)), reload checks, and fail2ban jail validation run even when remote state is unchecked, skipped, or failed. Only public proxy hosts, certificate requests, and cert-backed HTTPS publication are inside the ready/attempt gate. `NPM_LE_SERVER` remains part of the ready path so DinD/Pebble can exercise certificate issuance without production Let's Encrypt. Each Stage 2 remote cert attempt writes `config/state/npm-cert-status-last.json` for persistent forensics.
 

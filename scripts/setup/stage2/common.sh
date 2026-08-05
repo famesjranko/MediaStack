@@ -95,7 +95,7 @@ _stage2_seed_wizard_defaults() {
     _WIZ_USES_DDNS="true"
 }
 
-_stage2_preserve_stage1_marker() {
+stage2_preserve_stage1_marker() {
     if [[ -f "$SCRIPT_DIR/.env" && "${STAGE_1_COMPLETE:-}" == "1" ]]; then
         sed -i 's/^STAGE_1_COMPLETE=$/STAGE_1_COMPLETE=1/' "$SCRIPT_DIR/.env"
     fi

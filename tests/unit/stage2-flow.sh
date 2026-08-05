@@ -192,8 +192,8 @@ STAGE_1_COMPLETE=1
 _stage2_skip_https >/dev/null
 assert_eq "skipped" "$(env_val_from "$SCRIPT_DIR/.env" REMOTE_WEB_STATE)" "AUDIT: Stage 2 immediate skip persists skipped state"
 assert_eq "" "$(env_val_from "$SCRIPT_DIR/.env" WG_INIT_PASSWORD)" "AUDIT: Stage 2 immediate skip leaves WireGuard init password empty"
-_build_profile_args skip_profiles
-# Populated by _build_profile_args via its `local -n` nameref output param.
+profiles_build_args skip_profiles
+# Populated by profiles_build_args via its `local -n` nameref output param.
 # shellcheck disable=SC2154
 case " ${skip_profiles[*]} " in
     *" --profile remote "*) fail "AUDIT: Stage 2 immediate skip leaves remote profile inactive" "profiles=${skip_profiles[*]}" ;;

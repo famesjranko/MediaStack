@@ -61,7 +61,7 @@ run_stage1() {
     ui_banner "MediaStack - Core Media Server" "Working media server in 5-7 minutes"
 
     _wizard_run_discovery
-    _stage1_show_system
+    stage1_show_system
 
     while true; do
         _stage1_collect_admin
