@@ -1,3 +1,0 @@
-tests/secret-scan.sh	543
-tests/unit/image-drift.sh	530
-tests/unit/repository-safety.sh	665
