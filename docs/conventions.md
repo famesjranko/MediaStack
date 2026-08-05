@@ -50,12 +50,14 @@ against one clean and one targeted bad fixture per rule.
 
 ### Shell structure
 
-Every tracked shell file (`*.sh` and the `mediastack` launcher) is capped at 500 lines. The fast-tier line-cap gate
-uses `tests/shell-line-cap.allowlist` for today's existing offenders. An
-allowlist entry is `<path>\t<line-count>`. Recorded counts may only shrink (or
-the entry may be removed), and the file may not grow past its recorded count;
-an entry for a missing file or a file now at or under the cap is stale and fails
-the gate. Remove entries as files are brought under the cap.
+Every tracked shell file (`*.sh` and the `mediastack` launcher) is capped at
+500 lines, with no exceptions: the grandfathered offenders in
+`tests/shell-line-cap.allowlist` have all been brought under the cap and the
+file deleted. The gate (`tests/shell-line-cap.sh`) treats an absent allowlist
+as an empty allowed set and still understands the ratchet format
+(`<path>\t<line-count>`, shrink-only, no new entries against a tracked
+baseline) should one ever need to be read again — but the intended response
+to an over-cap file is to shrink it, not to relist it.
 
 When a file reaches the cap, prefer the smallest honest change: often one
 helper has outgrown the file and belongs nearer its callers or in its own
