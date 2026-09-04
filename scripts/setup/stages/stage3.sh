@@ -43,7 +43,10 @@ run_stage3() {
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
         local prior_gpu="${JELLYFIN_GPU:-none}"
         ui_log skip "Hardware transcoding skipped (no supported GPU detected)."
-        stage3_set_gpu_env "none" "skipped" "" "" || true
+        if ! stage3_set_gpu_env "none" "skipped" "" ""; then
+            ui_log warn "Could not persist skipped hardware-transcoding state; software fallback was not applied."
+            return 1
+        fi
         _stage3_skip_to_software_mode "$prior_gpu"
         _stage3_print_final_summary
         return 0
@@ -68,8 +71,11 @@ run_stage3() {
                 ;;
             *"Skip for now")
                 local prior_gpu="${JELLYFIN_GPU:-none}"
+                if ! stage3_set_gpu_env "none" "skipped" "" ""; then
+                    ui_log warn "Could not persist skipped hardware-transcoding state; software fallback was not applied."
+                    return 1
+                fi
                 GPU_TYPE="none"
-                stage3_set_gpu_env "none" "skipped" "" "" || true
                 ui_log skip "$(stage3_skip_summary_copy)"
                 _stage3_skip_to_software_mode "$prior_gpu"
                 _stage3_print_final_summary

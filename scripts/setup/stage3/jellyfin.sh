@@ -242,9 +242,12 @@ PY
 _stage3_fallback() {
     local vendor="${1:-}"
     local encoder="${2:-}"
+    if ! stage3_set_gpu_env "none" "fallback" "$vendor" "$encoder"; then
+        ui_log warn "Could not persist software fallback state; hardware fallback was not applied."
+        return 1
+    fi
     stage3_remove_nvidia_marker
     GPU_TYPE="none"
-    stage3_set_gpu_env "none" "fallback" "$vendor" "$encoder" || true
     _stage3_configure_jellyfin >/dev/null 2>&1 || true
     if ! _stage3_disable_jellyfin_hardware; then
         ui_log warn "Could not disable Jellyfin hardware transcoding through the API. Check Jellyfin settings before relying on software fallback."
@@ -278,7 +281,10 @@ _stage3_skip_to_software_mode() {
 }
 
 _stage3_nvidia_finalize_failure() {
-    stage3_set_gpu_env "none" "fallback" "nvidia" "nvenc" || true
+    if ! stage3_set_gpu_env "none" "fallback" "nvidia" "nvenc"; then
+        ui_log warn "Could not persist NVIDIA software fallback state; recovery marker retained."
+        return 1
+    fi
     _stage3_configure_jellyfin >/dev/null 2>&1 || true
     if ! _stage3_disable_jellyfin_hardware; then
         ui_log warn "Could not disable Jellyfin hardware transcoding through the API. Check Jellyfin settings before relying on software fallback."

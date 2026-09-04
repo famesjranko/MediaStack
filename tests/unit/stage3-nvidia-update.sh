@@ -98,6 +98,7 @@ unset verify_attempts sleep_calls STAGE3_ENCODING_VERIFY_TIMEOUT STAGE3_ENCODING
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 nvidia_update_dir=$(mktemp -d)
 SCRIPT_DIR="$nvidia_update_dir"
+printf 'JELLYFIN_GPU=none\nSTAGE_3_GPU_STATE=pending\n' >"$SCRIPT_DIR/.env"
 stage3_write_nvidia_marker unlock run-update 550.90
 command() {
     [[ "${1:-}:${2:-}" == "-v:nvidia-smi" ]] && return 0
@@ -107,6 +108,11 @@ nvidia-smi() { return 0; }
 nvidia_driver_version() { printf '535.100'; }
 install_nvidia_drivers() { UPDATE_FINALIZE_INSTALLS=$((UPDATE_FINALIZE_INSTALLS + 1)); }
 apply_nvidia_patch() { UPDATE_FINALIZE_PATCHES=$((UPDATE_FINALIZE_PATCHES + 1)); }
+_env_write_kv() {
+    printf 'changed\n'
+    return 0
+}
+_env_write_kv_warn() { :; }
 _stage3_nvidia_finalize_failure() { UPDATE_FINALIZE_FAILURES=$((UPDATE_FINALIZE_FAILURES + 1)); }
 ui_log() { :; }
 UPDATE_FINALIZE_INSTALLS=0
@@ -125,7 +131,7 @@ stage3_finalize_nvidia
 assert_eq "1" "$UPDATE_FINALIZE_PATCHES" "matching update attempts the Unlock patch once"
 assert_eq "2" "$UPDATE_FINALIZE_FAILURES" "failed Unlock patch uses finalization failure path"
 unset -f command nvidia-smi nvidia_driver_version install_nvidia_drivers apply_nvidia_patch \
-    _stage3_nvidia_finalize_failure ui_log
+    _env_write_kv _env_write_kv_warn _stage3_nvidia_finalize_failure ui_log
 unset UPDATE_FINALIZE_INSTALLS UPDATE_FINALIZE_PATCHES UPDATE_FINALIZE_FAILURES
 rm -rf "$nvidia_update_dir"
 unset nvidia_update_dir

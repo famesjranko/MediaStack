@@ -196,7 +196,10 @@ _stage3_nvidia_use_driver() {
 _stage3_nvidia_queue_reboot() {
     local mode="$1" source="$2" expected_version="${3:-}"
     stage3_write_nvidia_marker "$mode" "$source" "$expected_version"
-    stage3_set_gpu_env "none" "pending" "nvidia" "nvenc" "$mode" || true
+    if ! stage3_set_gpu_env "none" "pending" "nvidia" "nvenc" "$mode"; then
+        ui_log warn "Could not persist NVIDIA pending state; recovery marker retained."
+        return 1
+    fi
     ui_log warn "NVIDIA driver setup is ready for reboot. MediaStack will finish NVENC configuration after the reboot."
     ui_log info "Post-reboot GPU finalization queued: encoder=nvenc, test transcode, final summary."
     _stage3_print_final_summary
@@ -260,7 +263,7 @@ _stage3_run_nvidia() {
                 _stage3_nvidia_use_driver standard "NVIDIA NVENC configured and verified after driver repair."
             else
                 NEEDS_REBOOT=true
-                _stage3_nvidia_queue_reboot standard apt
+                _stage3_nvidia_queue_reboot standard apt || return $?
             fi
             return 0
             ;;
@@ -275,7 +278,7 @@ _stage3_run_nvidia() {
         fi
         if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
             _stage3_nvidia_queue_reboot "standard" "apt"
-            return 0
+            return $?
         fi
         verify_gpu_usable || true
         if [[ "${GPU_TYPE:-none}" == "nvidia" ]]; then
@@ -296,7 +299,7 @@ _stage3_run_nvidia() {
         fi
         if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
             _stage3_nvidia_queue_reboot "unlock" "run"
-            return 0
+            return $?
         fi
     fi
     if ! install_nvidia_drivers; then
@@ -309,7 +312,7 @@ _stage3_run_nvidia() {
     fi
     if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
         _stage3_nvidia_queue_reboot "unlock" "run"
-        return 0
+        return $?
     fi
     # Patch failure keeps hardware NVENC (stock ~3-session limit), matching the
     # finalize path — only a driver-level failure falls back to software. The
