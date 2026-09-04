@@ -28,18 +28,35 @@ fi
 # A valid .yaml workflow counts as a workflow even when no .yml workflow is
 # present. This protects the no-workflow check from recognizing only one
 # supported suffix.
-yaml_only_dir="$FIXTURE_ROOT/yaml-only-workflow"
-make_clean_fixture "$yaml_only_dir"
-rm "$yaml_only_dir/.github/workflows/ci.yml"
-printf 'name: yaml-only\non: [push]\n' >"$yaml_only_dir/.github/workflows/dispatch.yaml"
-git -C "$yaml_only_dir" add -u .github/workflows/ci.yml >/dev/null 2>&1
-git -C "$yaml_only_dir" add .github/workflows/dispatch.yaml >/dev/null 2>&1
-yaml_only_out=$(run_guard "$yaml_only_dir")
-yaml_only_rc=$?
-if ((yaml_only_rc == 0)) && [[ -z "$yaml_only_out" ]]; then
+YAML_ONLY_DIR="$FIXTURE_ROOT/yaml-only-workflow"
+make_clean_fixture "$YAML_ONLY_DIR"
+rm "$YAML_ONLY_DIR/.github/workflows/ci.yml"
+printf 'name: yaml-only\non: [push]\n' >"$YAML_ONLY_DIR/.github/workflows/dispatch.yaml"
+git -C "$YAML_ONLY_DIR" add -u .github/workflows/ci.yml >/dev/null 2>&1
+git -C "$YAML_ONLY_DIR" add .github/workflows/dispatch.yaml >/dev/null 2>&1
+YAML_ONLY_OUT=$(run_guard "$YAML_ONLY_DIR")
+YAML_ONLY_RC=$?
+if ((YAML_ONLY_RC == 0)) && [[ -z "$YAML_ONLY_OUT" ]]; then
     pass "valid .yaml workflow satisfies workflow population"
 else
-    fail "valid .yaml workflow satisfies workflow population" "rc=$yaml_only_rc :: $yaml_only_out"
+    fail "valid .yaml workflow satisfies workflow population" "rc=$YAML_ONLY_RC :: $YAML_ONLY_OUT"
+fi
+
+# Probe malformed .yaml independently of the registered .yml fixture above.
+# Otherwise the .yml parse error could hide a selector regression for .yaml.
+YAML_BAD_DIR="$FIXTURE_ROOT/bad-yaml-workflow-extension"
+make_clean_fixture "$YAML_BAD_DIR"
+rm "$YAML_BAD_DIR/.github/workflows/ci.yml"
+printf 'name: [unclosed\n' >"$YAML_BAD_DIR/.github/workflows/dispatch.yaml"
+git -C "$YAML_BAD_DIR" add -u .github/workflows/ci.yml >/dev/null 2>&1
+git -C "$YAML_BAD_DIR" add .github/workflows/dispatch.yaml >/dev/null 2>&1
+YAML_BAD_OUT=$(run_guard "$YAML_BAD_DIR")
+YAML_BAD_RC=$?
+if ((YAML_BAD_RC == 1)) \
+    && grep -q "^YAML-WORKFLOW${TAB}\.github/workflows/dispatch\.yaml${TAB}yaml=unparseable$" <<<"$YAML_BAD_OUT"; then
+    pass "malformed .yaml workflow is rejected independently"
+else
+    fail "malformed .yaml workflow is rejected independently" "rc=$YAML_BAD_RC :: $YAML_BAD_OUT"
 fi
 
 # --- one targeted bad fixture per rule --------------------------------------
