@@ -149,7 +149,13 @@ _recreate_service() {
         return 0
     fi
     if docker compose "${pflag[@]}" up -d "$svc" 2>&1; then
-        _wait_service_running "$svc"
+        # An explicitly unhealthy container is a failed recreate. The readiness
+        # helper deliberately keeps its existing timeout/still-starting policy
+        # (return 0), so only a reported unhealthy state is propagated here.
+        if ! _wait_service_running "$svc"; then
+            ui_log error "${svc} is unhealthy after recreation."
+            return 1
+        fi
         ui_log ok "$done_msg"
     else
         ui_log error "Failed to recreate ${svc}."

@@ -277,7 +277,6 @@ else
     pass "reset: excludes Not-installed services (never starts them)"
 fi
 assert_contains "$reset_out" "BACK_RC=1" "reset: a no-op revert (Back) returns non-zero so the caller skips a rescan"
-
 # _recreate_service must never start a stopped container: it pulls + stages, but
 # only runs `up -d` when the service is already running.
 guard_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -307,7 +306,8 @@ else
     fail "guard: running service is recreated"
 fi
 assert_contains "$guard_out" "staged and applies next time" "guard: stopped update is staged with a message"
-
+# shellcheck source=manage-updates/unhealthy-recreate.sh
+source "$SCRIPT_DIR/manage-updates/unhealthy-recreate.sh"
 # _mu_flip_row rewrites a just-updated service's row to "Up to date" locally so the
 # Manage-Updates table reflects the action without a fresh registry scan. It re-reads
 # the live policy file: a floated service now has a manual latest row (-> Tracking
