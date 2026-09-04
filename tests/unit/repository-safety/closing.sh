@@ -159,7 +159,7 @@ assert_eq "$(printf '%s\n' "${secret_file_probes[@]#*|}" | sort -u)" \
 # One term per section, in file order, so a section that stops asserting is
 # visible here rather than absorbed by a tuned constant.
 # shellcheck disable=SC2154 # probe/name arrays assigned in list-coverage.sh and pattern-parity.sh, sourced before this file
-expected=$((1 + 1 + ${#registry[@]} + 1 + 1 + 2 + 1 + 1 + \
+expected=$((1 + 1 + ${#registry[@]} + 1 + 1 + 2 + 1 + 1 + 1 + 1 + \
     ${#host_probes[@]} + ${#secret_file_probes[@]} + ${#worktree_probes[@]} + \
     ${#pattern_names[@]} + 1 + ${#forbidden_alts[@]} + 2 + 5 + 1 + 6))
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
