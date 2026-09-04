@@ -208,7 +208,6 @@ EOF
     storage_install_watchdog(){ echo "WATCHDOG_INSTALL" >> "$CAPTURE"; }
     storage_pause_watchdog_for_install(){ echo "WATCHDOG_PAUSE" >> "$CAPTURE"; }
     if [[ "${FAIL_PERSIST:-0}" == 1 ]]; then
-        _set_env_var(){ echo "PERSIST_SINGLE $*" >> "$CAPTURE"; return 7; }
         _set_env_vars(){ echo "PERSIST_ATOMIC $*" >> "$CAPTURE"; return 7; }
     fi
     _reload_env                       # load INIT into shell vars
@@ -303,7 +302,7 @@ fi
 # A failed durable write must stop before reload or live mutation. SMB's flag and
 # scope are one atomic pair, so neither value may be written or applied alone.
 ufw_persist_fail=$(run_toggle action_toggle_ufw "UFW_ENABLED=false" 1)
-assert_contains "$ufw_persist_fail" "PERSIST_SINGLE UFW_ENABLED true" \
+assert_contains "$ufw_persist_fail" "PERSIST_ATOMIC UFW_ENABLED true" \
     "ufw persist failure: durable write is attempted before apply"
 assert_not_contains "$ufw_persist_fail" "UFW_SETUP" \
     "ufw persist failure: setup is blocked when .env write fails"

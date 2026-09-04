@@ -4,14 +4,13 @@
 
 _feature_state() { [[ "${1:-false}" == "true" ]] && echo "ON" || echo "OFF"; }
 
+# Persist a toggle's KEY VALUE pairs before the action applies them, so a failed
+# write stops the action instead of leaving .env behind the live system. Returns
+# non-zero once the operator has been shown the failure; callers return early.
 _feature_persist_or_report() {
     local label="$1" persist_rc=0
     shift
-    if (($# == 2)); then
-        _set_env_var "$@" || persist_rc=$?
-    else
-        _set_env_vars "$@" || persist_rc=$?
-    fi
+    _set_env_vars "$@" || persist_rc=$?
     if ((persist_rc != 0)); then
         _show_action_result 1 "$label"
         launcher_pause_for_menu

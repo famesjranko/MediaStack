@@ -121,7 +121,7 @@ run_provider_persist_failure() {
     ui_confirm(){ return 0; }
     ui_log(){ echo "LOG $*" >> "$CAPTURE"; }
     launcher_pause_for_menu(){ :; }
-    _set_env_var(){ echo "PERSIST $*" >> "$CAPTURE"; return 1; }
+    _set_env_vars(){ echo "PERSIST $*" >> "$CAPTURE"; return 1; }
     ddns_provider_verify_tier(){ echo token; }
     restarts=0; writes=0
     _ddns_write_live_config(){

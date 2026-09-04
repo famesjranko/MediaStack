@@ -96,6 +96,8 @@ _DDNS_LIVE_MUTATED=0
 _GPU_WARN_DONE=
 source "$SCRIPT_DIR/scripts/launcher/access-info.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/action-result.sh" || exit 1
+# env-state.sh first: the action modules below call its .env writer/reloader.
+source "$SCRIPT_DIR/scripts/launcher/env-state.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/bandwidth.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/ddns.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/features.sh" || exit 1
