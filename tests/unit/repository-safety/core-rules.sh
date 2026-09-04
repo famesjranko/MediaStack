@@ -25,6 +25,23 @@ else
     fail "clean fixture passes every rule" "rc=$clean_rc :: $clean_out"
 fi
 
+# A valid .yaml workflow counts as a workflow even when no .yml workflow is
+# present. This protects the no-workflow check from recognizing only one
+# supported suffix.
+yaml_only_dir="$FIXTURE_ROOT/yaml-only-workflow"
+make_clean_fixture "$yaml_only_dir"
+rm "$yaml_only_dir/.github/workflows/ci.yml"
+printf 'name: yaml-only\non: [push]\n' >"$yaml_only_dir/.github/workflows/dispatch.yaml"
+git -C "$yaml_only_dir" add -u .github/workflows/ci.yml >/dev/null 2>&1
+git -C "$yaml_only_dir" add .github/workflows/dispatch.yaml >/dev/null 2>&1
+yaml_only_out=$(run_guard "$yaml_only_dir")
+yaml_only_rc=$?
+if ((yaml_only_rc == 0)) && [[ -z "$yaml_only_out" ]]; then
+    pass "valid .yaml workflow satisfies workflow population"
+else
+    fail "valid .yaml workflow satisfies workflow population" "rc=$yaml_only_rc :: $yaml_only_out"
+fi
+
 # --- one targeted bad fixture per rule --------------------------------------
 
 check_rule() {

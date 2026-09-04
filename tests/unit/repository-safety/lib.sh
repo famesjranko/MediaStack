@@ -122,6 +122,8 @@ apply_defect() {
             ;;
         YAML-WORKFLOW)
             printf 'name: [unclosed\n' >"$dir/.github/workflows/ci.yml"
+            printf 'name: [unclosed\n' >"$dir/.github/workflows/dispatch.yaml"
+            git -C "$dir" add .github/workflows/dispatch.yaml >/dev/null 2>&1
             ;;
         *) return 1 ;;
     esac

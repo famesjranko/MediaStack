@@ -344,7 +344,9 @@ def rule_yaml_config(ctx: ScanContext) -> list[RuleFinding]:
 
 def rule_yaml_workflow(ctx: ScanContext) -> list[RuleFinding]:
     paths = sorted(
-        p for p in ctx["tracked"] if p.startswith(WORKFLOW_DIR + "/") and p.endswith(".yml")
+        p
+        for p in ctx["tracked"]
+        if p.startswith(WORKFLOW_DIR + "/") and p.endswith((".yml", ".yaml"))
     )
     if not paths:
         return [(WORKFLOW_DIR, "yaml=no-workflow-files")]
