@@ -82,23 +82,6 @@ _restore_service_policy_row() {
     fi
 }
 
-_set_env_var() {
-    local key="$1" val="$2" file="$SCRIPT_DIR/.env" status
-    [[ -f "$file" ]] || return 1
-    if ! status=$(_env_write_kv "$file" "$key" "$val"); then
-        _env_write_kv_warn "$key" "$status"
-        return 1
-    fi
-}
-
-_reload_env() {
-    [[ -f "$SCRIPT_DIR/.env" ]] || return 0
-    set -a
-    # shellcheck disable=SC1091
-    source "$SCRIPT_DIR/.env"
-    set +a
-}
-
 _wait_service_running() {
     local svc="$1" i=0 max=60 state health
     echo -ne "  Waiting for ${svc}..."

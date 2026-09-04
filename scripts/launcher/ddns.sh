@@ -234,7 +234,20 @@ action_change_ddns() {
     ui_log info "Switching DDNS provider to '${new_provider}'..."
     if _ddns_write_live_config "$payload" && _ddns_restart_and_check; then
         # Persist the non-secret provider key only after the live service comes up.
-        _set_env_var DDNS_PROVIDER "$new_provider"
+        if ! _set_env_vars DDNS_PROVIDER "$new_provider"; then
+            ui_log warn "Couldn't save the new DDNS provider - restoring your previous DDNS config."
+            local rollback_rc=0
+            _ddns_write_live_config "$old_payload" || rollback_rc=1
+            if ((rollback_rc == 0)); then
+                _ddns_restart_and_check || rollback_rc=1
+            fi
+            if ((rollback_rc != 0)); then
+                ui_log error "Couldn't fully restore the previous DDNS setup - manual repair is required before retrying."
+            fi
+            _show_action_result 1 "Update DDNS provider / credentials"
+            launcher_pause_for_menu
+            return 0
+        fi
         _reload_env
         # No cache to invalidate: the banner re-resolves the DDNS record every render,
         # so it will honestly read "propagating" until the new record propagates.
