@@ -157,7 +157,21 @@ main() {
                 source "$SCRIPT_DIR/.env"
                 set +a
             fi
-            stage3_finalize_nvidia
+            local _finalize_rc=0
+            stage3_finalize_nvidia || _finalize_rc=$?
+            if ((_finalize_rc != 0)); then
+                # The marker is deliberately still there: the GPU state could not
+                # be persisted, so the next run must retry finalization rather
+                # than treat this boot as finished. Report it as a failed run —
+                # aborting here under errexit would leave no result and no
+                # recorded outcome at all.
+                log_error "NVIDIA finalization could not save its result to .env. Fix the .env write problem (disk space or permissions), then run MediaStack again to finish hardware transcoding."
+                if $_is_post_reboot; then
+                    write_setup_result "failed"
+                fi
+                record_launcher_outcome failed
+                return "$_finalize_rc"
+            fi
             if $_is_post_reboot; then
                 write_setup_result "ok"
             fi

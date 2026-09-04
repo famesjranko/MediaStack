@@ -12,19 +12,29 @@ _stage3_configure_and_verify() {
     local proof_since attempt=1 max_attempts=3
 
     while ((attempt <= max_attempts)); do
-        stage3_set_gpu_env "$vendor" "pending" "$vendor" "$encoder"
+        if ! stage3_set_gpu_env "$vendor" "pending" "$vendor" "$encoder"; then
+            ui_log warn "Could not persist ${vendor} transcoding state; verification was not attempted."
+            return 3
+        fi
         proof_since=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         if _stage3_apply_runtime_override "$vendor" \
-            && stage3_probe_capabilities "$vendor" "$encoder" \
-            && stage3_set_gpu_env "$vendor" "pending" "$vendor" "$encoder" \
-            && _stage3_configure_jellyfin \
-            && _stage3_wait_for_jellyfin_encoding "$encoder" \
-            && STAGE3_TRANSCODE_SINCE="$proof_since" stage3_verify_transcode_evidence "$vendor" "$encoder"; then
-            stage3_set_gpu_env "$vendor" "complete" "$vendor" "$encoder" "$driver_mode"
-            type clear_setup_result_banner >/dev/null 2>&1 && clear_setup_result_banner
-            ui_log ok "$success_copy"
-            _stage3_print_final_summary
-            return 0
+            && stage3_probe_capabilities "$vendor" "$encoder"; then
+            if ! stage3_set_gpu_env "$vendor" "pending" "$vendor" "$encoder"; then
+                ui_log warn "Could not persist ${vendor} transcoding state; verification was not attempted."
+                return 3
+            fi
+            if _stage3_configure_jellyfin \
+                && _stage3_wait_for_jellyfin_encoding "$encoder" \
+                && STAGE3_TRANSCODE_SINCE="$proof_since" stage3_verify_transcode_evidence "$vendor" "$encoder"; then
+                if ! stage3_set_gpu_env "$vendor" "complete" "$vendor" "$encoder" "$driver_mode"; then
+                    ui_log warn "Could not persist ${vendor} transcoding completion; recovery is still required."
+                    return 3
+                fi
+                type clear_setup_result_banner >/dev/null 2>&1 && clear_setup_result_banner
+                ui_log ok "$success_copy"
+                _stage3_print_final_summary
+                return 0
+            fi
         fi
 
         if ((attempt >= max_attempts)) || [[ "${UI_DEMO:-0}" == "1" || "${DEMO:-0}" == "1" ]]; then
@@ -33,7 +43,7 @@ _stage3_configure_and_verify() {
                 # 2 means the caller may try another hardware encoder; 1 means a terminal fallback/skip already ran.
                 return 2
             fi
-            _stage3_fallback "$vendor" "$encoder"
+            _stage3_fallback "$vendor" "$encoder" || return $?
             return 1
         fi
 
@@ -49,9 +59,12 @@ _stage3_configure_and_verify() {
                 continue
                 ;;
             "Skip"*)
+                if ! stage3_set_gpu_env "none" "skipped" "" ""; then
+                    ui_log warn "Could not persist skipped hardware-transcoding state; recovery marker retained."
+                    return 3
+                fi
                 GPU_TYPE="none"
                 stage3_remove_nvidia_marker
-                stage3_set_gpu_env "none" "skipped" "" "" || true
                 if ! _stage3_disable_jellyfin_hardware; then
                     ui_log warn "Could not disable Jellyfin hardware transcoding through the API. Check Jellyfin settings before relying on software fallback."
                 elif ! _stage3_encoder_disabled "$encoder"; then
@@ -63,13 +76,13 @@ _stage3_configure_and_verify() {
                 return 1
                 ;;
             *)
-                _stage3_fallback "$vendor" "$encoder"
+                _stage3_fallback "$vendor" "$encoder" || return $?
                 return 1
                 ;;
         esac
     done
 
-    _stage3_fallback "$vendor" "$encoder"
+    _stage3_fallback "$vendor" "$encoder" || return $?
     return 1
 }
 
@@ -82,9 +95,15 @@ _stage3_configure_intel() {
         qsv_rc=$?
     fi
 
+    # rc 3 is reserved for a durable-state failure. Ordinary verification
+    # failure remains handled by fallback/skip and is not fatal to setup.
+    ((qsv_rc == 3)) && return 3
+
     if [[ "$qsv_rc" == "2" ]]; then
         ui_log info "Trying Intel VAAPI fallback for older Intel graphics hardware..."
-        _stage3_configure_and_verify "intel" "vaapi" "Intel VAAPI transcoding configured and verified." || true
+        local vaapi_rc=0
+        _stage3_configure_and_verify "intel" "vaapi" "Intel VAAPI transcoding configured and verified." || vaapi_rc=$?
+        ((vaapi_rc == 3)) && return 3
     fi
 
     return 0
@@ -154,6 +173,16 @@ _stage3_wait_for_nvidia_smi() {
 
 stage3_finalize_nvidia() {
     local proof_since
+    # Everything below records its outcome in .env, and setup.sh routes here
+    # before anything else while the marker is ripe. With no .env there is no
+    # install to finalize into, so keeping the marker would re-enter this branch
+    # on every later run and lock the user out of setup entirely. Drop the marker
+    # and let setup continue — this is "nothing to finish", not a completed GPU.
+    if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
+        ui_log warn "No .env found, so NVIDIA finalization has nothing to complete. Clearing the pending-reboot marker; configure hardware transcoding from the menu once the install exists."
+        stage3_remove_nvidia_marker
+        return 0
+    fi
     ui_log info "Resuming hardware transcoding: NVIDIA finalization"
 
     # Let the driver settle before any nvidia-smi-based decision below. Skip when
@@ -186,7 +215,7 @@ stage3_finalize_nvidia() {
         if [[ -f "$SCRIPT_DIR/.nvidia-tmp/pending" ]] || ! { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; }; then
             GPU_TYPE="nvidia"
             if ! install_nvidia_drivers; then
-                _stage3_nvidia_finalize_failure
+                _stage3_nvidia_finalize_failure || return $?
                 return 0
             fi
         fi
@@ -197,7 +226,7 @@ stage3_finalize_nvidia() {
 
     ui_log info "Verifying NVIDIA driver..."
     if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi -L >/dev/null 2>&1; then
-        _stage3_nvidia_finalize_failure
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
 
@@ -207,7 +236,7 @@ stage3_finalize_nvidia() {
         _loaded_version=$(nvidia_driver_version 2>/dev/null || true)
         if [[ "$_loaded_version" != "$_expected_version" ]]; then
             ui_log warn "Loaded NVIDIA driver version does not match the prepared update."
-            _stage3_nvidia_finalize_failure
+            _stage3_nvidia_finalize_failure || return $?
             return 0
         fi
     fi
@@ -232,24 +261,30 @@ stage3_finalize_nvidia() {
     fi
     verify_gpu_usable || true
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
-        _stage3_nvidia_finalize_failure
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
 
     ui_log info "Writing Jellyfin encoder: nvenc"
-    stage3_set_gpu_env "nvidia" "pending" "nvidia" "nvenc"
+    if ! stage3_set_gpu_env "nvidia" "pending" "nvidia" "nvenc"; then
+        ui_log warn "Could not persist NVIDIA pending state; recovery marker retained."
+        return 3
+    fi
     proof_since=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     if ! _stage3_apply_runtime_override "nvidia"; then
-        _stage3_nvidia_finalize_failure
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
     if ! stage3_probe_capabilities "nvidia" "nvenc"; then
-        _stage3_nvidia_finalize_failure
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
-    stage3_set_gpu_env "nvidia" "pending" "nvidia" "nvenc"
+    if ! stage3_set_gpu_env "nvidia" "pending" "nvidia" "nvenc"; then
+        ui_log warn "Could not persist NVIDIA pending state; recovery marker retained."
+        return 3
+    fi
     if ! _stage3_configure_jellyfin || ! _stage3_wait_for_jellyfin_encoding "nvenc"; then
-        _stage3_nvidia_finalize_failure
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
 
@@ -271,7 +306,10 @@ stage3_finalize_nvidia() {
         ui_log warn "NVIDIA NVENC is configured and enabled, but the automatic test transcode was inconclusive (this can happen when the smoke test races the Jellyfin restart). Play a video that needs transcoding to confirm, or re-check via Manage hardware transcoding (GPU)."
     fi
 
-    stage3_set_gpu_env "nvidia" "complete" "nvidia" "nvenc" "$_mode"
+    if ! stage3_set_gpu_env "nvidia" "complete" "nvidia" "nvenc" "$_mode"; then
+        ui_log warn "Could not persist NVIDIA completion; recovery marker retained."
+        return 3
+    fi
     stage3_remove_nvidia_marker
     ui_log ok "Post-reboot GPU finalization complete."
     _stage3_print_final_summary

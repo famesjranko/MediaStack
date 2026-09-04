@@ -107,7 +107,11 @@ _stage2_set_remote_state() {
     [[ -f "$env_path" ]] || return 1
 
     # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
-    _env_write_kv "$env_path" REMOTE_WEB_STATE "$state" >/dev/null
+    local writer_status
+    if ! writer_status=$(_env_write_kv "$env_path" REMOTE_WEB_STATE "$state"); then
+        _env_write_kv_warn REMOTE_WEB_STATE "$writer_status"
+        return 1
+    fi
     export REMOTE_WEB_STATE="$state"
 }
 

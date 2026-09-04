@@ -81,5 +81,53 @@ else
     fail "wizard sequence is Stage 1 -> hardware transcoding -> Stage 2 -> final reboot gate"
 fi
 
+# --- Behaviour: a finalize that cannot persist must be reported, not fatal ----
+# setup.sh runs under errexit, so a bare finalize call would abort main() mid
+# branch: no result file, no recorded outcome, and — because the marker is kept
+# for the retry — the identical abort on every later run. Drive the real main()
+# with a ripe marker and a finalize that fails to persist.
+run_marker_route() {
+    local finalize_rc="$1"
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" FINALIZE_RC="$finalize_rc" bash -c '
+    cd "$REPO_ROOT" || exit 1
+    # Sourcing defines main() without running it (the BASH_SOURCE guard) but
+    # also turns on errexit — exactly the condition under test.
+    source ./setup.sh
+    set +e
+    set +u
+    tmp=$(mktemp -d); SCRIPT_DIR="$tmp"
+    # A marker created under a different boot id is "ripe": setup routes to
+    # finalization ahead of every other branch.
+    printf "{\"schema\": 3, \"created_boot_id\": \"other-boot\"}\n" >"$tmp/.nvidia-finalize-pending"
+    ui_banner(){ :; }
+    check_not_root(){ :; }
+    check_debian(){ :; }
+    cleanup_post_reboot(){ :; }
+    log_error(){ echo "ERROR $*"; }
+    log_info(){ :; }
+    log_warn(){ :; }
+    log_ok(){ :; }
+    write_setup_result(){ echo "RESULT $1"; }
+    record_launcher_outcome(){ echo "OUTCOME $1"; }
+    stage3_finalize_nvidia(){ echo "FINALIZE"; return "$FINALIZE_RC"; }
+    main
+    echo "MAIN_RC=$?"
+    [[ -f "$tmp/.nvidia-finalize-pending" ]] && echo "MARKER_KEPT"
+    rm -rf "$tmp"
+  ' 2>&1
+}
+
+marker_fail_out="$(run_marker_route 3)"
+assert_contains "$marker_fail_out" "FINALIZE" "failed finalize: marker route still reaches finalization"
+assert_contains "$marker_fail_out" "MAIN_RC=3" "failed finalize: setup returns the durable-state status"
+assert_contains "$marker_fail_out" "OUTCOME failed" "failed finalize: run is recorded as failed, not completed"
+assert_not_contains "$marker_fail_out" "OUTCOME completed" "failed finalize: run is not recorded as completed"
+assert_contains "$marker_fail_out" "ERROR" "failed finalize: the operator is told what to fix"
+assert_contains "$marker_fail_out" "MARKER_KEPT" "failed finalize: marker is kept so the next run retries"
+
+marker_ok_out="$(run_marker_route 0)"
+assert_contains "$marker_ok_out" "MAIN_RC=0" "successful finalize: marker route still succeeds"
+assert_contains "$marker_ok_out" "OUTCOME completed" "successful finalize: run is recorded as completed"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

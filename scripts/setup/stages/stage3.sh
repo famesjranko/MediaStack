@@ -43,7 +43,10 @@ run_stage3() {
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
         local prior_gpu="${JELLYFIN_GPU:-none}"
         ui_log skip "Hardware transcoding skipped (no supported GPU detected)."
-        stage3_set_gpu_env "none" "skipped" "" "" || true
+        if ! stage3_set_gpu_env "none" "skipped" "" ""; then
+            ui_log warn "Could not persist skipped hardware-transcoding state; software fallback was not applied."
+            return 3
+        fi
         _stage3_skip_to_software_mode "$prior_gpu"
         _stage3_print_final_summary
         return 0
@@ -68,8 +71,11 @@ run_stage3() {
                 ;;
             *"Skip for now")
                 local prior_gpu="${JELLYFIN_GPU:-none}"
+                if ! stage3_set_gpu_env "none" "skipped" "" ""; then
+                    ui_log warn "Could not persist skipped hardware-transcoding state; software fallback was not applied."
+                    return 3
+                fi
                 GPU_TYPE="none"
-                stage3_set_gpu_env "none" "skipped" "" "" || true
                 ui_log skip "$(stage3_skip_summary_copy)"
                 _stage3_skip_to_software_mode "$prior_gpu"
                 _stage3_print_final_summary
@@ -87,33 +93,36 @@ run_stage3() {
         intel)
             if ! install_intel_drivers; then
                 GPU_TYPE="none"
-                _stage3_fallback "intel" "qsv"
+                _stage3_fallback "intel" "qsv" || return $?
                 return 0
             fi
             verify_gpu_usable || true
             if [[ "${GPU_TYPE:-none}" == "intel" ]]; then
-                _stage3_configure_intel
+                _stage3_configure_intel || return $?
             else
-                _stage3_fallback "intel" "qsv"
+                _stage3_fallback "intel" "qsv" || return $?
             fi
             ;;
         amd)
             if ! install_amd_drivers; then
                 GPU_TYPE="none"
-                _stage3_fallback "amd" "vaapi"
+                _stage3_fallback "amd" "vaapi" || return $?
                 return 0
             fi
             verify_gpu_usable || true
             if [[ "${GPU_TYPE:-none}" == "amd" ]]; then
-                _stage3_configure_and_verify "amd" "vaapi" "AMD VAAPI transcoding configured and verified." || true
+                local amd_rc=0
+                _stage3_configure_and_verify "amd" "vaapi" "AMD VAAPI transcoding configured and verified." || amd_rc=$?
+                ((amd_rc == 3)) && return 3
             else
-                _stage3_fallback "amd" "vaapi"
+                _stage3_fallback "amd" "vaapi" || return $?
             fi
             ;;
         nvidia)
-            _stage3_run_nvidia
+            _stage3_run_nvidia || return $?
             ;;
     esac
+    return 0
 }
 
 run_hardware_transcoding_addon() {

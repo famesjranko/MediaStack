@@ -57,6 +57,9 @@ prev_script_dir="${SCRIPT_DIR:-}"
 SCRIPT_DIR="$TMP_ROOT/nvidia-finalize-install-fail"
 mkdir -p "$SCRIPT_DIR/.nvidia-tmp"
 touch "$SCRIPT_DIR/.nvidia-tmp/pending"
+# A post-reboot finalize always resumes into an existing install; finalize
+# refuses to run without one, since it would have nowhere to record the result.
+printf 'JELLYFIN_GPU=none\n' >"$SCRIPT_DIR/.env"
 finalize_failure_calls=0
 ui_log() { :; }
 install_nvidia_drivers() { return 1; }
@@ -79,6 +82,7 @@ source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 prev_script_dir="${SCRIPT_DIR:-}"
 SCRIPT_DIR="$TMP_ROOT/nvidia-finalize-proof-inconclusive"
 mkdir -p "$SCRIPT_DIR"
+printf 'JELLYFIN_GPU=none\n' >"$SCRIPT_DIR/.env"
 finalize_failure_calls=0
 gpu_env_calls=()
 # shellcheck disable=SC2034 # read by _stage3_run_nvidia in scripts/setup/stage3/nvidia-flow.sh

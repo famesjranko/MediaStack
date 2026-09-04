@@ -62,7 +62,11 @@ stage3_set_gpu_env() {
         _kv+=(NVIDIA_DRIVER_MODE "$driver_mode")
     fi
     # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
-    _env_write_kv "$env_path" "${_kv[@]}" >/dev/null
+    local writer_status
+    if ! writer_status=$(_env_write_kv "$env_path" "${_kv[@]}"); then
+        _env_write_kv_warn JELLYFIN_GPU "$writer_status"
+        return 1
+    fi
 
     export JELLYFIN_GPU="$gpu"
     export STAGE_3_GPU_STATE="$state"

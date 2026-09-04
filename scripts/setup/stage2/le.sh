@@ -138,14 +138,19 @@ stage2_le_gate() {
     stage2_le_classify "$domain" >/dev/null || true
     classification="$STAGE2_LE_CLASSIFICATION"
     if [[ "$classification" == "ready" ]]; then
-        _stage2_set_remote_state ready
+        _stage2_set_remote_state ready || return 1
         _stage2_source_env
         (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage)
         log_ok "Remote access is ready: https://jellyfin.${domain} and https://seerr.${domain}."
         return 0
     fi
 
-    _stage2_set_remote_state failed
+    # Unlike the ready/skipped writes below, this one records a state the user
+    # is about to be told about anyway. Warn (the writer already did) and carry
+    # on: the classification copy, the status snapshot and the recovery menu are
+    # what the operator actually needs here, and returning now would replace a
+    # certificate diagnosis with an .env error.
+    _stage2_set_remote_state failed || log_warn "Continuing without a saved remote-access state."
     _stage2_source_env
     (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage)
 
@@ -164,7 +169,7 @@ stage2_le_gate() {
         "Abort setup")
     case "$action" in
         "Skip HTTPS for now")
-            _stage2_set_remote_state skipped
+            _stage2_set_remote_state skipped || return 1
             _stage2_source_env
             (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage)
             log_skip "$(stage2_skip_summary_copy)"

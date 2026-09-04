@@ -238,7 +238,7 @@ run_transcoding_recovery() {
         case "$_pending_action" in
             "Change driver"*)
                 _stage3_discard_pending_setup
-                STAGE3_SKIP_OFFER=true run_stage3
+                STAGE3_SKIP_OFFER=true run_stage3 || return $?
                 return 0
                 ;;
             *)
