@@ -59,7 +59,7 @@ start_stack() {
     log_info "Starting MediaStack..."
     cd "$SCRIPT_DIR" || return 1
     if declare -F storage_guard_before_start >/dev/null; then
-        storage_guard_before_start
+        storage_guard_before_start || return 1
     fi
     if [[ "${STORAGE_APP_WIRING:-managed}" == "manual" ]]; then
         export UNPACKERR_TORRENT_PATHS="${UNPACKERR_TORRENT_PATHS-}"
