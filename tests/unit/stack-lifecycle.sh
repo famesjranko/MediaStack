@@ -43,9 +43,9 @@ storage_guard_before_start() {
     return 1
 }
 
-rc=0
-stage2_like || rc=$?
-assert_eq "1" "$rc" "start_stack: guard failure propagates through conditional caller"
+RC=0
+stage2_like || RC=$?
+assert_eq "1" "$RC" "start_stack: guard failure propagates through conditional caller"
 assert_eq "info:Starting MediaStack... guard" "${EVENTS[*]}" \
     "start_stack: guard failure stops all later lifecycle side effects"
 assert_not_contains "${EVENTS[*]}" network "start_stack: guard failure skips network preparation"
@@ -58,9 +58,9 @@ storage_guard_before_start() {
     return 0
 }
 
-rc=0
-stage2_like || rc=$?
-assert_eq "0" "$rc" "start_stack: successful guard permits startup"
+RC=0
+stage2_like || RC=$?
+assert_eq "0" "$RC" "start_stack: successful guard permits startup"
 assert_contains "${EVENTS[*]}" "guard profiles network docker:compose up -d success:Containers started" \
     "start_stack: successful guard preserves startup order and completion"
 
