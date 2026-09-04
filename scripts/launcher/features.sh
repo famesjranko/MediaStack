@@ -4,6 +4,22 @@
 
 _feature_state() { [[ "${1:-false}" == "true" ]] && echo "ON" || echo "OFF"; }
 
+_feature_persist_or_report() {
+    local label="$1" persist_rc=0
+    shift
+    if (($# == 2)); then
+        _set_env_var "$@" || persist_rc=$?
+    else
+        _set_env_vars "$@" || persist_rc=$?
+    fi
+    if ((persist_rc != 0)); then
+        _show_action_result 1 "$label"
+        launcher_pause_for_menu
+        return 1
+    fi
+    _reload_env
+}
+
 submenu_features() {
     while true; do
         clear
@@ -79,8 +95,7 @@ action_toggle_bazarr() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var BAZARR_ENABLED false
-        _reload_env
+        _feature_persist_or_report "Disable subtitles (Bazarr)" BAZARR_ENABLED false || return 0
         ui_log info "Stopping Bazarr (its ./config/bazarr settings are preserved)..."
         # Literal --profile subtitles: the flag is required for compose to see
         # the service, and profiles_build_args no longer yields it post-flip.
@@ -93,8 +108,7 @@ action_toggle_bazarr() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var BAZARR_ENABLED true
-        _reload_env
+        _feature_persist_or_report "Enable subtitles (Bazarr)" BAZARR_ENABLED true || return 0
         ui_log info "Enabling Bazarr..."
         _regenerate_override
         local profiles=()
@@ -117,8 +131,7 @@ action_toggle_smb() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var SMB_ENABLED false
-        _reload_env
+        _feature_persist_or_report "Disable file sharing (SMB)" SMB_ENABLED false || return 0
         ui_log info "Removing the MediaStack SMB share (uses sudo; your files are untouched)..."
         # shellcheck disable=SC1091
         source "$SCRIPT_DIR/scripts/setup/hardening.sh"
@@ -141,9 +154,8 @@ action_toggle_smb() {
                 return 0
                 ;;
         esac
-        _set_env_var SMB_ENABLED true
-        _set_env_var SMB_SHARE_SCOPE "$scope"
-        _reload_env
+        _feature_persist_or_report "Enable file sharing (SMB)" \
+            SMB_ENABLED true SMB_SHARE_SCOPE "$scope" || return 0
         ui_log info "Configuring the SMB share (uses sudo)..."
         # shellcheck disable=SC1091
         source "$SCRIPT_DIR/scripts/setup/hardening.sh"
@@ -162,8 +174,7 @@ action_toggle_watchdog() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var STORAGE_WATCHDOG false
-        _reload_env
+        _feature_persist_or_report "Disable NAS storage watchdog" STORAGE_WATCHDOG false || return 0
         ui_log info "Stopping the NAS storage watchdog (uses sudo)..."
         storage_pause_watchdog_for_install || rc=$?
         _show_action_result "$rc" "Disable NAS storage watchdog"
@@ -173,8 +184,7 @@ action_toggle_watchdog() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var STORAGE_WATCHDOG true
-        _reload_env
+        _feature_persist_or_report "Enable NAS storage watchdog" STORAGE_WATCHDOG true || return 0
         ui_log info "Installing the NAS storage watchdog (uses sudo)..."
         storage_install_watchdog || rc=$?
         _show_action_result "$rc" "Enable NAS storage watchdog"
@@ -193,8 +203,7 @@ action_toggle_ufw() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var UFW_ENABLED false
-        _reload_env
+        _feature_persist_or_report "Disable UFW firewall" UFW_ENABLED false || return 0
         ui_log info "Removing MediaStack firewall rules (uses sudo)..."
         if _uninstall_ufw; then
             # Reset the ownership latches so a later re-enable reconfigures
@@ -229,8 +238,7 @@ action_toggle_ufw() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var UFW_ENABLED true
-        _reload_env
+        _feature_persist_or_report "Enable UFW firewall" UFW_ENABLED true || return 0
         ui_log info "Configuring the UFW firewall (uses sudo)..."
         setup_ufw || rc=$?
         # Reopen the configurable service ports only when remote access is set up
@@ -254,8 +262,7 @@ action_toggle_hardening() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var HARDENING_ENABLED false
-        _reload_env
+        _feature_persist_or_report "Disable system hardening" HARDENING_ENABLED false || return 0
         ui_log info "Reverting kernel hardening and the auto-update policy (uses sudo)..."
         _uninstall_sysctl || rc=$?
         _uninstall_apt || rc=$?
@@ -271,8 +278,7 @@ action_toggle_hardening() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var HARDENING_ENABLED true
-        _reload_env
+        _feature_persist_or_report "Enable system hardening" HARDENING_ENABLED true || return 0
         ui_log info "Applying system hardening (uses sudo)..."
         setup_unattended_upgrades || rc=$?
         setup_sysctl_hardening || rc=$?
@@ -296,8 +302,7 @@ action_toggle_indexers() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var PUBLIC_INDEXERS_ENABLED false
-        _reload_env
+        _feature_persist_or_report "Disable public indexers" PUBLIC_INDEXERS_ENABLED false || return 0
         python3 "$wiz" --indexers-only false --config "$SCRIPT_DIR/config.yml" || rc=$?
         ui_log info "Indexers already added stay configured in Jackett / Sonarr / Radarr -"
         ui_log info "remove them from the Jackett web UI if you no longer want them."
@@ -310,8 +315,7 @@ action_toggle_indexers() {
             launcher_pause_for_menu
             return 0
         }
-        _set_env_var PUBLIC_INDEXERS_ENABLED true
-        _reload_env
+        _feature_persist_or_report "Enable public indexers" PUBLIC_INDEXERS_ENABLED true || return 0
         ui_log info "Adding public indexers to your settings..."
         python3 "$wiz" --indexers-only true --config "$SCRIPT_DIR/config.yml" || rc=$?
         if ((rc == 0)); then

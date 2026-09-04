@@ -105,6 +105,49 @@ else
 fi
 assert_contains "$fail" "QBT_DL_LIMIT=0" "fail: .env keeps the old value"
 
+# 3b. Live apply succeeds but the atomic durable write fails: keep the live
+# change, report failure, and do not reload stale in-process state. The writer
+# receives both limits in one call and leaves the file byte-for-byte unchanged.
+persist_fail=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
+  printf "QBT_DL_LIMIT=0\nQBT_UL_LIMIT=0\n" > "$tmp/.env"
+  _docker_reachable(){ return 0; }
+  _service_is_running(){ return 0; }
+  ui_input_validated(){ case "$1" in *Download*) echo 5;; *Upload*) echo 2;; esac; }
+  ui_confirm(){ return 0; }
+  qbt_set_speed_limits(){ echo "QBT_SET $*" >> "$CAPTURE"; return 0; }
+  _env_write_kv(){ echo "ENV_WRITE $*" >> "$CAPTURE"; return 1; }
+  ui_log(){ :; }; launcher_pause_for_menu(){ :; }
+  _show_action_result(){ echo "RESULT rc=$1 label=$2" >> "$CAPTURE"; }
+  reloads=0
+  _reload_env(){ reloads=$((reloads + 1)); }
+  action_adjust_bandwidth
+  echo "=== ENV ==="; cat "$tmp/.env"
+  echo "=== CAP ==="; cat "$CAPTURE"
+  echo "RELOADS=$reloads"
+  rm -rf "$tmp"
+' 2>&1)
+assert_contains "$persist_fail" "QBT_SET 5 2" \
+    "persist failure: live bandwidth apply succeeds first"
+assert_contains "$persist_fail" "QBT_DL_LIMIT 5" \
+    "persist failure: download limit reaches the atomic writer"
+assert_contains "$persist_fail" "QBT_UL_LIMIT 2" \
+    "persist failure: upload limit reaches the atomic writer"
+if [[ "$(grep -c '^ENV_WRITE ' <<<"$persist_fail")" == 1 ]]; then
+    pass "persist failure: both limits use one atomic writer call"
+else
+    fail "persist failure: both limits use one atomic writer call"
+fi
+assert_contains "$persist_fail" "RESULT rc=1" \
+    "persist failure: bandwidth action reports durable-write failure"
+assert_contains "$persist_fail" "QBT_DL_LIMIT=0" \
+    "persist failure: .env keeps old download limit"
+assert_contains "$persist_fail" "QBT_UL_LIMIT=0" \
+    "persist failure: .env keeps old upload limit"
+assert_contains "$persist_fail" "RELOADS=0" \
+    "persist failure: stale .env is not reloaded after write failure"
+
 # 4. No change: new == current for both -> short-circuit, no apply, no persist.
 nochg=$(run_band "0" "0" "0" $'QBT_DL_LIMIT=0\nQBT_UL_LIMIT=0')
 if grep -q "QBT_SET" <<<"$nochg"; then

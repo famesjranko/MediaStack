@@ -82,13 +82,21 @@ _restore_service_policy_row() {
     fi
 }
 
-_set_env_var() {
-    local key="$1" val="$2" file="$SCRIPT_DIR/.env" status
-    [[ -f "$file" ]] || return 1
-    if ! status=$(_env_write_kv "$file" "$key" "$val"); then
-        _env_write_kv_warn "$key" "$status"
+_set_env_vars() {
+    local file="$SCRIPT_DIR/.env" status
+    local -a pairs=("$@")
+    [[ -f "$file" && ${#pairs[@]} -ge 2 && $((${#pairs[@]} % 2)) -eq 0 ]] || return 1
+    if ! status=$(_env_write_kv "$file" "${pairs[@]}"); then
+        local i
+        for ((i = 0; i < ${#pairs[@]}; i += 2)); do
+            _env_write_kv_warn "${pairs[i]}" "$status"
+        done
         return 1
     fi
+}
+
+_set_env_var() {
+    _set_env_vars "$@"
 }
 
 _reload_env() {

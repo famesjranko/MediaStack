@@ -7,8 +7,10 @@
 # (ui_input_validated + validate_mb_per_sec, "MB/s" copy) and applies live through
 # the product's own qBittorrent API helper (qbt_set_speed_limits) — the limits are
 # NOT container env, so a recreate would not change them. Apply-first / persist-on-
-# success: .env is only rewritten once the live apply succeeds, so .env never drifts
-# ahead of the daemon. Non-TTY safe: the current value is sanitized to a valid number
+# success: .env is only rewritten once the live apply succeeds. If the durable write
+# fails after the live apply, the daemon keeps its new limits (no unsafe rollback),
+# and the action reports failure so the operator can retry persistence. Non-TTY safe:
+# the current value is sanitized to a valid number
 # before use, so an EOF returns a validator-passing default (no re-prompt loop) and
 # "no change" exits before any API call.
 action_adjust_bandwidth() {
@@ -65,9 +67,11 @@ action_adjust_bandwidth() {
     if ((rc == 0)); then
         # Persist only after the live apply succeeds, so .env stays in lock-step
         # with the running daemon (a future configure run trusts these values).
-        _set_env_var QBT_DL_LIMIT "$new_dl"
-        _set_env_var QBT_UL_LIMIT "$new_ul"
-        _reload_env
+        if ! _set_env_vars QBT_DL_LIMIT "$new_dl" QBT_UL_LIMIT "$new_ul"; then
+            rc=1
+        else
+            _reload_env
+        fi
     fi
     _show_action_result "$rc" "Adjust bandwidth limits"
     launcher_pause_for_menu

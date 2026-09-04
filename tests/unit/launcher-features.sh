@@ -172,7 +172,7 @@ assert_contains "$watchdog_dispatch" "DISPATCH_WATCHDOG" "dispatch: NAS watchdog
 # run_toggle <handler> <init-env-lines>  -> prints "=== ENV ===" .env then
 # "=== CAP ===" the captured external commands.
 run_toggle() {
-    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" bash -c '
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" FAIL_PERSIST="${3:-0}" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     mkdir -p "$tmp/scripts/setup"
@@ -202,11 +202,15 @@ EOF
     # Capture wizard_apply.py calls, but let the real python3 run the .env writer
     # (_env_write_kv invokes `python3 - <file> <key> <value>...` reading its script on stdin).
     python3(){ if [[ "$1" == "-" ]]; then command python3 "$@"; else echo "WIZARD $*" >> "$CAPTURE"; fi; }
-    ui_log(){ :; }; launcher_pause_for_menu(){ :; }; _show_action_result(){ :; }
+    ui_log(){ :; }; launcher_pause_for_menu(){ :; }; _show_action_result(){ echo "RESULT rc=$1 label=$2" >> "$CAPTURE"; }
     ui_confirm(){ return 0; }
     ui_choose(){ echo "Media only (recommended)"; }
     storage_install_watchdog(){ echo "WATCHDOG_INSTALL" >> "$CAPTURE"; }
     storage_pause_watchdog_for_install(){ echo "WATCHDOG_PAUSE" >> "$CAPTURE"; }
+    if [[ "${FAIL_PERSIST:-0}" == 1 ]]; then
+        _set_env_var(){ echo "PERSIST_SINGLE $*" >> "$CAPTURE"; return 7; }
+        _set_env_vars(){ echo "PERSIST_ATOMIC $*" >> "$CAPTURE"; return 7; }
+    fi
     _reload_env                       # load INIT into shell vars
     "$HANDLER"
     echo "=== ENV ==="; cat "$tmp/.env"
@@ -294,6 +298,31 @@ if grep -Eq "down|[[:space:]]-v([[:space:]]|$)" <<<"$w_off"; then
 else
     pass "watchdog OFF: host unit only — never touches docker compose volumes"
 fi
+
+# --- Persistence failure is a hard precondition: no host/container apply ----
+# A failed durable write must stop before reload or live mutation. SMB's flag and
+# scope are one atomic pair, so neither value may be written or applied alone.
+ufw_persist_fail=$(run_toggle action_toggle_ufw "UFW_ENABLED=false" 1)
+assert_contains "$ufw_persist_fail" "PERSIST_SINGLE UFW_ENABLED true" \
+    "ufw persist failure: durable write is attempted before apply"
+assert_not_contains "$ufw_persist_fail" "UFW_SETUP" \
+    "ufw persist failure: setup is blocked when .env write fails"
+assert_contains "$ufw_persist_fail" "UFW_ENABLED=false" \
+    "ufw persist failure: .env retains old state"
+assert_contains "$ufw_persist_fail" "RESULT rc=1" \
+    "ufw persist failure: action reports failure"
+
+smb_persist_fail=$(run_toggle action_toggle_smb "SMB_ENABLED=false" 1)
+assert_contains "$smb_persist_fail" "PERSIST_ATOMIC SMB_ENABLED true SMB_SHARE_SCOPE data" \
+    "smb persist failure: flag and scope use one atomic durable write"
+assert_not_contains "$smb_persist_fail" "SAMBA enabled" \
+    "smb persist failure: setup is blocked when atomic .env write fails"
+assert_not_contains "$smb_persist_fail" "SMB_ENABLED='true'" \
+    "smb persist failure: .env does not contain a partial flag"
+assert_not_contains "$smb_persist_fail" "SMB_SHARE_SCOPE='data'" \
+    "smb persist failure: .env does not contain a partial scope"
+assert_contains "$smb_persist_fail" "RESULT rc=1" \
+    "smb persist failure: action reports failure"
 
 # ---------------------------------------------------------------------------
 # 5. Non-TTY safety + indexer-clobber warning (direct regression guards).

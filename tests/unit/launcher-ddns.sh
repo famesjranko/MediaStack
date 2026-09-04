@@ -96,6 +96,79 @@ assert_contains "$(run_restart_check 0 'running exited restarting')" "RC=1" "_dd
 assert_contains "$(run_restart_check 0 'exited exited exited')" "RC=1" "_ddns_restart_and_check: never comes up -> 1"
 
 # ---------------------------------------------------------------------------
+# 4. Provider persistence is a second transaction phase. If the verified live
+# config is up but DDNS_PROVIDER cannot be persisted, restore the old payload
+# and restart onto it. A failed restoration must name manual repair explicitly.
+# ---------------------------------------------------------------------------
+run_provider_persist_failure() {
+    # $1 = rollback mode: ok or write-fails
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" ROLLBACK="$1" bash -c '
+    source "$REPO_ROOT/mediastack" </dev/null
+    tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
+    mkdir -p "$tmp/config/ddns-updater"
+    printf "%s\n" old-provider > "$tmp/config/ddns-updater/config.json"
+    printf "DDNS_PROVIDER=old\nDOMAIN=box.example.com\n" > "$tmp/.env"
+    DDNS_PROVIDER=old; DOMAIN=box.example.com
+    _docker_reachable(){ return 0; }
+    _service_is_running(){ return 0; }
+    recovery_menu_remote_available(){ return 1; }
+    ddns_provider_pick(){ echo new; }
+    ddns_provider_category(){ echo byod; }
+    ddns_provider_fields(){ echo; }
+    ddns_render_config_json(){ printf "%s\n" new-provider; }
+    ddns_verify_via_container(){ return 0; }
+    ui_spin(){ shift; "$@"; }
+    ui_confirm(){ return 0; }
+    ui_log(){ echo "LOG $*" >> "$CAPTURE"; }
+    launcher_pause_for_menu(){ :; }
+    _set_env_var(){ echo "PERSIST $*" >> "$CAPTURE"; return 1; }
+    ddns_provider_verify_tier(){ echo token; }
+    restarts=0; writes=0
+    _ddns_write_live_config(){
+        writes=$((writes + 1))
+        if ((writes == 2)) && [[ "$ROLLBACK" == write-fails ]]; then
+            echo "ROLLBACK_WRITE_FAIL" >> "$CAPTURE"
+            return 1
+        fi
+        if ((writes == 1)); then
+            printf "%s\n" new-provider > "$SCRIPT_DIR/config/ddns-updater/config.json"
+        else
+            printf "%s\n" old-provider > "$SCRIPT_DIR/config/ddns-updater/config.json"
+        fi
+        _DDNS_LIVE_MUTATED=1
+        echo "WRITE $writes" >> "$CAPTURE"
+        return 0
+    }
+    _ddns_restart_and_check(){ restarts=$((restarts + 1)); echo "RESTART $restarts" >> "$CAPTURE"; return 0; }
+    _show_action_result(){ echo "RESULT rc=$1 label=$2" >> "$CAPTURE"; }
+    _reload_env(){ :; }
+    action_change_ddns
+    echo "=== CONFIG ==="; cat "$tmp/config/ddns-updater/config.json"
+    echo "=== CAP ==="; cat "$CAPTURE"
+    echo "RESTARTS=$restarts WRITES=$writes"
+    rm -rf "$tmp"
+  ' 2>&1
+}
+
+ddns_restore=$(run_provider_persist_failure ok)
+assert_contains "$ddns_restore" "old-provider" \
+    "ddns persist failure: old live payload is restored"
+assert_contains "$ddns_restore" "WRITE 2" \
+    "ddns persist failure: rollback writes the old payload"
+assert_contains "$ddns_restore" "RESTART 2" \
+    "ddns persist failure: rollback restarts the updater"
+assert_contains "$ddns_restore" "RESULT rc=1" \
+    "ddns persist failure: action reports failure"
+assert_not_contains "$ddns_restore" "RESULT rc=0" \
+    "ddns persist failure: no success is reported"
+
+ddns_manual=$(run_provider_persist_failure write-fails)
+assert_contains "$ddns_manual" "manual" \
+    "ddns rollback failure: explicit manual-repair error is shown"
+assert_contains "$ddns_manual" "RESULT rc=1" \
+    "ddns rollback failure: action reports failure"
+
+# ---------------------------------------------------------------------------
 # 4. submenu_features gating — the DDNS row appears only when remote is ready
 #    (recovery_menu_remote_available FALSE) AND ddns is configured.
 # ---------------------------------------------------------------------------
