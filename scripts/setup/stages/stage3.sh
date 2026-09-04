@@ -93,33 +93,36 @@ run_stage3() {
         intel)
             if ! install_intel_drivers; then
                 GPU_TYPE="none"
-                _stage3_fallback "intel" "qsv"
+                _stage3_fallback "intel" "qsv" || return $?
                 return 0
             fi
             verify_gpu_usable || true
             if [[ "${GPU_TYPE:-none}" == "intel" ]]; then
-                _stage3_configure_intel
+                _stage3_configure_intel || return $?
             else
-                _stage3_fallback "intel" "qsv"
+                _stage3_fallback "intel" "qsv" || return $?
             fi
             ;;
         amd)
             if ! install_amd_drivers; then
                 GPU_TYPE="none"
-                _stage3_fallback "amd" "vaapi"
+                _stage3_fallback "amd" "vaapi" || return $?
                 return 0
             fi
             verify_gpu_usable || true
             if [[ "${GPU_TYPE:-none}" == "amd" ]]; then
-                _stage3_configure_and_verify "amd" "vaapi" "AMD VAAPI transcoding configured and verified." || true
+                local amd_rc=0
+                _stage3_configure_and_verify "amd" "vaapi" "AMD VAAPI transcoding configured and verified." || amd_rc=$?
+                ((amd_rc == 3)) && return 3
             else
-                _stage3_fallback "amd" "vaapi"
+                _stage3_fallback "amd" "vaapi" || return $?
             fi
             ;;
         nvidia)
-            _stage3_run_nvidia
+            _stage3_run_nvidia || return $?
             ;;
     esac
+    return 0
 }
 
 run_hardware_transcoding_addon() {

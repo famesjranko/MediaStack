@@ -179,16 +179,19 @@ _stage3_choose_nvidia_action() {
 _stage3_nvidia_use_driver() {
     local mode="$1" message="$2"
     if ! _install_nvidia_container_toolkit; then
-        _stage3_fallback "nvidia" "nvenc"
+        _stage3_fallback "nvidia" "nvenc" || return $?
         return 0
     fi
     GPU_TYPE=nvidia
     verify_gpu_usable || true
     if [[ "$GPU_TYPE" == nvidia ]]; then
-        _stage3_configure_and_verify "nvidia" "nvenc" "$message" "" "$mode" || true
+        local configure_rc=0
+        _stage3_configure_and_verify "nvidia" "nvenc" "$message" "" "$mode" || configure_rc=$?
+        ((configure_rc == 3)) && return 3
     else
-        _stage3_fallback "nvidia" "nvenc"
+        _stage3_fallback "nvidia" "nvenc" || return $?
     fi
+    return 0
 }
 
 # Queue a reboot to finish NVIDIA setup, recording mode + install source in the
@@ -221,20 +224,20 @@ _stage3_run_nvidia() {
 
     case "$action" in
         software)
-            _stage3_fallback "nvidia" "nvenc"
+            _stage3_fallback "nvidia" "nvenc" || return $?
             return 0
             ;;
         reinstall)
             if ! command -v nvidia-uninstall &>/dev/null; then
                 log_error "nvidia-uninstall not found — cannot remove the existing driver"
                 log_info "Remove it manually (sudo nvidia-uninstall), then open Manage hardware transcoding (GPU) from the menu"
-                _stage3_fallback "nvidia" "nvenc"
+                _stage3_fallback "nvidia" "nvenc" || return $?
                 return 0
             fi
             if ! ui_spin "Removing existing NVIDIA driver..." sudo nvidia-uninstall -s; then
                 log_error "Failed to remove existing NVIDIA driver"
                 log_info "Try manually: sudo nvidia-uninstall"
-                _stage3_fallback "nvidia" "nvenc"
+                _stage3_fallback "nvidia" "nvenc" || return $?
                 return 0
             fi
             # nvidia-uninstall removes /usr/bin/nvidia-smi, but bash caches the
@@ -247,20 +250,20 @@ _stage3_run_nvidia() {
             ;;
         use)
             _stage3_nvidia_use_driver standard "NVIDIA NVENC configured and verified."
-            return 0
+            return $?
             ;;
         use-existing)
             _stage3_nvidia_use_driver existing "NVIDIA NVENC configured and verified (you manage driver updates)."
-            return 0
+            return $?
             ;;
         repair)
             if ! install_nvidia_drivers_apt repair; then
-                _stage3_fallback "nvidia" "nvenc"
+                _stage3_fallback "nvidia" "nvenc" || return $?
                 return 0
             fi
             GPU_TYPE=nvidia
             if nvidia_driver_healthy; then
-                _stage3_nvidia_use_driver standard "NVIDIA NVENC configured and verified after driver repair."
+                _stage3_nvidia_use_driver standard "NVIDIA NVENC configured and verified after driver repair." || return $?
             else
                 NEEDS_REBOOT=true
                 _stage3_nvidia_queue_reboot standard apt || return $?
@@ -273,7 +276,7 @@ _stage3_run_nvidia() {
         local rc=0
         install_nvidia_drivers_apt || rc=$?
         if [[ "$rc" -ne 0 || "${GPU_TYPE:-none}" == "none" ]]; then
-            _stage3_fallback "nvidia" "nvenc"
+            _stage3_fallback "nvidia" "nvenc" || return $?
             return 0
         fi
         if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
@@ -282,9 +285,11 @@ _stage3_run_nvidia() {
         fi
         verify_gpu_usable || true
         if [[ "${GPU_TYPE:-none}" == "nvidia" ]]; then
-            _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified." "" "standard" || true
+            local configure_rc=0
+            _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified." "" "standard" || configure_rc=$?
+            ((configure_rc == 3)) && return 3
         else
-            _stage3_fallback "nvidia" "nvenc"
+            _stage3_fallback "nvidia" "nvenc" || return $?
         fi
         return 0
     fi
@@ -294,7 +299,7 @@ _stage3_run_nvidia() {
     # packages while preserving/repairing the NVIDIA container toolkit.
     if [[ "$source" == "debian" ]]; then
         if ! prepare_nvidia_debian_to_unlock; then
-            _stage3_fallback "nvidia" "nvenc"
+            _stage3_fallback "nvidia" "nvenc" || return $?
             return 0
         fi
         if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
@@ -303,11 +308,11 @@ _stage3_run_nvidia() {
         fi
     fi
     if ! install_nvidia_drivers; then
-        _stage3_fallback "nvidia" "nvenc"
+        _stage3_fallback "nvidia" "nvenc" || return $?
         return 0
     fi
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
-        _stage3_fallback "nvidia" "nvenc"
+        _stage3_fallback "nvidia" "nvenc" || return $?
         return 0
     fi
     if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
@@ -322,9 +327,11 @@ _stage3_run_nvidia() {
     fi
     verify_gpu_usable || true
     if [[ "${GPU_TYPE:-none}" == "nvidia" ]]; then
-        _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified." "" "unlock" || true
+        local configure_rc=0
+        _stage3_configure_and_verify "nvidia" "nvenc" "NVIDIA NVENC configured and verified." "" "unlock" || configure_rc=$?
+        ((configure_rc == 3)) && return 3
     else
-        _stage3_fallback "nvidia" "nvenc"
+        _stage3_fallback "nvidia" "nvenc" || return $?
     fi
     return 0
 }

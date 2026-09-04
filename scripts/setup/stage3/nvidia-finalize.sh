@@ -14,21 +14,21 @@ _stage3_configure_and_verify() {
     while ((attempt <= max_attempts)); do
         if ! stage3_set_gpu_env "$vendor" "pending" "$vendor" "$encoder"; then
             ui_log warn "Could not persist ${vendor} transcoding state; verification was not attempted."
-            return 1
+            return 3
         fi
         proof_since=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         if _stage3_apply_runtime_override "$vendor" \
             && stage3_probe_capabilities "$vendor" "$encoder"; then
             if ! stage3_set_gpu_env "$vendor" "pending" "$vendor" "$encoder"; then
                 ui_log warn "Could not persist ${vendor} transcoding state; verification was not attempted."
-                return 1
+                return 3
             fi
             if _stage3_configure_jellyfin \
                 && _stage3_wait_for_jellyfin_encoding "$encoder" \
                 && STAGE3_TRANSCODE_SINCE="$proof_since" stage3_verify_transcode_evidence "$vendor" "$encoder"; then
                 if ! stage3_set_gpu_env "$vendor" "complete" "$vendor" "$encoder" "$driver_mode"; then
                     ui_log warn "Could not persist ${vendor} transcoding completion; recovery is still required."
-                    return 1
+                    return 3
                 fi
                 type clear_setup_result_banner >/dev/null 2>&1 && clear_setup_result_banner
                 ui_log ok "$success_copy"
@@ -43,7 +43,7 @@ _stage3_configure_and_verify() {
                 # 2 means the caller may try another hardware encoder; 1 means a terminal fallback/skip already ran.
                 return 2
             fi
-            _stage3_fallback "$vendor" "$encoder"
+            _stage3_fallback "$vendor" "$encoder" || return 3
             return 1
         fi
 
@@ -61,7 +61,7 @@ _stage3_configure_and_verify() {
             "Skip"*)
                 if ! stage3_set_gpu_env "none" "skipped" "" ""; then
                     ui_log warn "Could not persist skipped hardware-transcoding state; recovery marker retained."
-                    return 1
+                    return 3
                 fi
                 GPU_TYPE="none"
                 stage3_remove_nvidia_marker
@@ -76,13 +76,13 @@ _stage3_configure_and_verify() {
                 return 1
                 ;;
             *)
-                _stage3_fallback "$vendor" "$encoder"
+                _stage3_fallback "$vendor" "$encoder" || return 3
                 return 1
                 ;;
         esac
     done
 
-    _stage3_fallback "$vendor" "$encoder"
+    _stage3_fallback "$vendor" "$encoder" || return 3
     return 1
 }
 
@@ -95,9 +95,15 @@ _stage3_configure_intel() {
         qsv_rc=$?
     fi
 
+    # rc 3 is reserved for a durable-state failure. Ordinary verification
+    # failure remains handled by fallback/skip and is not fatal to setup.
+    ((qsv_rc == 3)) && return 3
+
     if [[ "$qsv_rc" == "2" ]]; then
         ui_log info "Trying Intel VAAPI fallback for older Intel graphics hardware..."
-        _stage3_configure_and_verify "intel" "vaapi" "Intel VAAPI transcoding configured and verified." || true
+        local vaapi_rc=0
+        _stage3_configure_and_verify "intel" "vaapi" "Intel VAAPI transcoding configured and verified." || vaapi_rc=$?
+        ((vaapi_rc == 3)) && return 3
     fi
 
     return 0

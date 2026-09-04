@@ -200,7 +200,7 @@ exit(0 if c.get('wizard_completed') else 1)
         echo ""
     fi
 
-    run_hardware_transcoding_addon
+    run_hardware_transcoding_addon || return $?
 
     local stage2_rc=0
     run_stage2 || stage2_rc=$?
