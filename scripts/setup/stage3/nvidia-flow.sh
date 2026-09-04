@@ -201,7 +201,7 @@ _stage3_nvidia_queue_reboot() {
     stage3_write_nvidia_marker "$mode" "$source" "$expected_version"
     if ! stage3_set_gpu_env "none" "pending" "nvidia" "nvenc" "$mode"; then
         ui_log warn "Could not persist NVIDIA pending state; recovery marker retained."
-        return 1
+        return 3
     fi
     ui_log warn "NVIDIA driver setup is ready for reboot. MediaStack will finish NVENC configuration after the reboot."
     ui_log info "Post-reboot GPU finalization queued: encoder=nvenc, test transcode, final summary."

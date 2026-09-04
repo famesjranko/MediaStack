@@ -244,7 +244,7 @@ _stage3_fallback() {
     local encoder="${2:-}"
     if ! stage3_set_gpu_env "none" "fallback" "$vendor" "$encoder"; then
         ui_log warn "Could not persist software fallback state; hardware fallback was not applied."
-        return 1
+        return 3
     fi
     stage3_remove_nvidia_marker
     GPU_TYPE="none"
@@ -257,6 +257,10 @@ _stage3_fallback() {
     _stage3_apply_runtime_override "none"
     ui_log warn "Hardware transcoding could not be verified. Jellyfin will use software transcoding. Fix the driver/runtime issue, then choose Manage hardware transcoding (GPU) from the menu."
     _stage3_print_final_summary
+    # Only the durable write above is a meaningful status here: callers treat a
+    # non-zero return as "state could not be persisted", so the summary's own
+    # exit status must never reach them.
+    return 0
 }
 
 _stage3_skip_to_software_mode() {
@@ -283,7 +287,7 @@ _stage3_skip_to_software_mode() {
 _stage3_nvidia_finalize_failure() {
     if ! stage3_set_gpu_env "none" "fallback" "nvidia" "nvenc"; then
         ui_log warn "Could not persist NVIDIA software fallback state; recovery marker retained."
-        return 1
+        return 3
     fi
     _stage3_configure_jellyfin >/dev/null 2>&1 || true
     if ! _stage3_disable_jellyfin_hardware; then
@@ -295,4 +299,5 @@ _stage3_nvidia_finalize_failure() {
     stage3_remove_nvidia_marker
     ui_log warn "NVIDIA finalization did not complete. MediaStack is falling back to software transcoding; check journalctl -u mediastack-setup --no-pager, fix the driver/runtime issue, then choose Manage hardware transcoding (GPU) from the menu."
     _stage3_print_final_summary
+    return 0
 }

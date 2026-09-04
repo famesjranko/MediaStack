@@ -170,11 +170,9 @@ _env_write_kv() {
 }
 _env_write_kv_warn() { :; }
 ui_log() { :; }
-if run_stage3; then
-    fail "Stage 3 no-GPU path rejects skipped-state persistence failure"
-else
-    pass "Stage 3 no-GPU path rejects skipped-state persistence failure"
-fi
+NO_GPU_RC=0
+run_stage3 || NO_GPU_RC=$?
+assert_eq "3" "$NO_GPU_RC" "Stage 3 no-GPU path rejects skipped-state persistence failure"
 assert_eq "0" "$STAGE3_SKIP_CALLS" "Stage 3 no-GPU path does not enter software mode after failed write"
 assert_eq "0" "$STAGE3_SUMMARY_CALLS" "Stage 3 no-GPU path does not print summary after failed write"
 if stage3_marker_exists; then
@@ -197,11 +195,9 @@ _stage3_encoder_disabled() { return 0; }
 _stage3_apply_runtime_override() {
     STAGE3_RUNTIME_CALLS=$((STAGE3_RUNTIME_CALLS + 1))
 }
-if _stage3_fallback intel qsv; then
-    fail "Stage 3 fallback rejects fallback-state persistence failure"
-else
-    pass "Stage 3 fallback rejects fallback-state persistence failure"
-fi
+FALLBACK_RC=0
+_stage3_fallback intel qsv || FALLBACK_RC=$?
+assert_eq "3" "$FALLBACK_RC" "Stage 3 fallback rejects fallback-state persistence failure"
 assert_eq "intel" "$GPU_TYPE" "Stage 3 failed fallback write preserves detected GPU type"
 assert_eq "0" "$STAGE3_RUNTIME_CALLS" "Stage 3 failed fallback write does not mutate runtime"
 if stage3_marker_exists; then
@@ -219,12 +215,9 @@ touch "$SCRIPT_DIR/.nvidia-finalize-pending"
 GPU_TYPE=nvidia
 STAGE3_RUNTIME_CALLS=0
 _stage3_apply_runtime_override() { STAGE3_RUNTIME_CALLS=$((STAGE3_RUNTIME_CALLS + 1)); }
-if _stage3_nvidia_finalize_failure; then
-    fail "NVIDIA finalization fallback rejects fallback-state persistence failure"
-else
-    pass "NVIDIA finalization fallback rejects fallback-state persistence failure"
-fi
-assert_eq "nvidia" "$GPU_TYPE" "NVIDIA failed fallback write preserves GPU type"
+NVIDIA_FALLBACK_RC=0
+_stage3_nvidia_finalize_failure || NVIDIA_FALLBACK_RC=$?
+assert_eq "3" "$NVIDIA_FALLBACK_RC" "NVIDIA finalization fallback rejects fallback-state persistence failure"
 assert_eq "0" "$STAGE3_RUNTIME_CALLS" "NVIDIA failed fallback write does not mutate runtime"
 if stage3_marker_exists; then
     pass "NVIDIA failed fallback write retains marker"
@@ -263,11 +256,9 @@ _stage3_configure_jellyfin() { return 0; }
 _stage3_disable_jellyfin_hardware() { return 0; }
 _stage3_encoder_disabled() { return 0; }
 stage3_verify_transcode_evidence() { return 1; }
-if _stage3_configure_and_verify nvidia nvenc "NVIDIA NVENC configured and verified."; then
-    fail "Stage 3 interactive skip rejects skipped-state persistence failure"
-else
-    pass "Stage 3 interactive skip rejects skipped-state persistence failure"
-fi
+INTERACTIVE_SKIP_RC=0
+_stage3_configure_and_verify nvidia nvenc "NVIDIA NVENC configured and verified." || INTERACTIVE_SKIP_RC=$?
+assert_eq "3" "$INTERACTIVE_SKIP_RC" "Stage 3 interactive skip rejects skipped-state persistence failure"
 assert_eq "0" "$STAGE3_RUNTIME_CALLS" "Stage 3 interactive skip does not mutate runtime after failed write"
 if stage3_marker_exists; then
     pass "Stage 3 interactive skip retains marker after skipped-state persistence failure"
@@ -328,6 +319,76 @@ run_wizard || WIZARD_RC=$?
 assert_eq "3" "$WIZARD_RC" "Wizard propagates Stage 3 durable-state failure"
 assert_eq "0" "$WIZARD_STAGE2_CALLS" "Wizard skips Stage 2 after Stage 3 durable-state failure"
 assert_eq "0" "$WIZARD_SUMMARY_CALLS" "Wizard suppresses final summary after Stage 3 durable-state failure"
+
+# A ripe marker with no .env is not a durable-state failure: there is no install
+# to finalize into. setup.sh routes here before every other branch while the
+# marker is ripe, so keeping it would re-enter this path on every later run and
+# lock the user out of setup entirely. The marker must be cleared and the run
+# allowed to continue.
+SCRIPT_DIR="$TMP_ROOT/nvidia-finalize-no-env"
+mkdir -p "$SCRIPT_DIR"
+touch "$SCRIPT_DIR/.nvidia-finalize-pending"
+NO_ENV_WARNS=0
+ui_log() {
+    [[ "${1:-}" == "warn" ]] && NO_ENV_WARNS=$((NO_ENV_WARNS + 1))
+    return 0
+}
+_stage3_wait_for_nvidia_smi() { return 0; }
+NO_ENV_RC=0
+stage3_finalize_nvidia || NO_ENV_RC=$?
+assert_eq "0" "$NO_ENV_RC" "NVIDIA finalize without .env is not treated as a failure"
+if stage3_marker_exists; then
+    fail "NVIDIA finalize without .env clears the pending-reboot marker"
+else
+    pass "NVIDIA finalize without .env clears the pending-reboot marker"
+fi
+assert_eq "1" "$NO_ENV_WARNS" "NVIDIA finalize without .env explains why it stopped"
+ui_log() { :; }
+
+# Stage 2: a failed "failed" write must not replace the certificate diagnosis.
+# The classification copy, the status snapshot and the recovery menu are what
+# the operator needs — the write failure has already warned on its own.
+SCRIPT_DIR="$TMP_ROOT/stage2-failed-state"
+mkdir -p "$SCRIPT_DIR/scripts"
+printf 'REMOTE_WEB_STATE=ready\n' >"$SCRIPT_DIR/.env"
+printf '#!/usr/bin/env bash\nprintf configured >>"%s"\n' "$TMP_ROOT/stage2-failed-state/configured" >"$SCRIPT_DIR/scripts/configure.sh"
+chmod +x "$SCRIPT_DIR/scripts/configure.sh"
+stage2_le_classify() {
+    # shellcheck disable=SC2034 # consumed by stage2_le_gate as the classifier result
+    STAGE2_LE_CLASSIFICATION=dns-not-propagated
+    return 0
+}
+stage2_le_failure_copy() { printf 'certificate diagnosis\n'; }
+stage2_le_status_path() { printf '%s/status.json\n' "$SCRIPT_DIR"; }
+stage2_skip_summary_copy() { printf 'skipped\n'; }
+_stage2_source_env() { :; }
+_stage2_is_interactive() { return 0; }
+_env_write_kv() {
+    printf 'write-error:simulated\n'
+    return 6
+}
+_env_write_kv_warn() { :; }
+# ui_choose is read through a command substitution, so the menu is recorded in a
+# file rather than a variable that the subshell would discard.
+STAGE2_MENU_FILE="$TMP_ROOT/stage2-failed-state/menu"
+STAGE2_DIAGNOSIS=""
+ui_choose() {
+    printf 'shown\n' >>"$STAGE2_MENU_FILE"
+    printf '%s\n' "Abort setup"
+}
+log_warn() { STAGE2_DIAGNOSIS="$*"; }
+LE_GATE_RC=0
+stage2_le_gate example.test || LE_GATE_RC=$?
+assert_eq "1" "$LE_GATE_RC" "Stage 2 gate still fails when HTTPS is not ready"
+assert_eq "1" "$(wc -l <"$STAGE2_MENU_FILE" 2>/dev/null || echo 0)" \
+    "Stage 2 failed-state write still reaches the recovery menu"
+assert_contains "$STAGE2_DIAGNOSIS" "certificate diagnosis" \
+    "Stage 2 failed-state write still shows the certificate diagnosis"
+if [[ -f "$TMP_ROOT/stage2-failed-state/configured" ]]; then
+    pass "Stage 2 failed-state write still re-renders the proxy config"
+else
+    fail "Stage 2 failed-state write still re-renders the proxy config"
+fi
 
 scenario_end "$CURRENT_SCENARIO"
 summary

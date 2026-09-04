@@ -145,7 +145,12 @@ stage2_le_gate() {
         return 0
     fi
 
-    _stage2_set_remote_state failed || return 1
+    # Unlike the ready/skipped writes below, this one records a state the user
+    # is about to be told about anyway. Warn (the writer already did) and carry
+    # on: the classification copy, the status snapshot and the recovery menu are
+    # what the operator actually needs here, and returning now would replace a
+    # certificate diagnosis with an .env error.
+    _stage2_set_remote_state failed || log_warn "Continuing without a saved remote-access state."
     _stage2_source_env
     (cd "$SCRIPT_DIR" && ./scripts/configure.sh --only npm,jellyfin,homepage)
 

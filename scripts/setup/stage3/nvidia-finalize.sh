@@ -43,7 +43,7 @@ _stage3_configure_and_verify() {
                 # 2 means the caller may try another hardware encoder; 1 means a terminal fallback/skip already ran.
                 return 2
             fi
-            _stage3_fallback "$vendor" "$encoder" || return 3
+            _stage3_fallback "$vendor" "$encoder" || return $?
             return 1
         fi
 
@@ -76,13 +76,13 @@ _stage3_configure_and_verify() {
                 return 1
                 ;;
             *)
-                _stage3_fallback "$vendor" "$encoder" || return 3
+                _stage3_fallback "$vendor" "$encoder" || return $?
                 return 1
                 ;;
         esac
     done
 
-    _stage3_fallback "$vendor" "$encoder" || return 3
+    _stage3_fallback "$vendor" "$encoder" || return $?
     return 1
 }
 
@@ -173,6 +173,16 @@ _stage3_wait_for_nvidia_smi() {
 
 stage3_finalize_nvidia() {
     local proof_since
+    # Everything below records its outcome in .env, and setup.sh routes here
+    # before anything else while the marker is ripe. With no .env there is no
+    # install to finalize into, so keeping the marker would re-enter this branch
+    # on every later run and lock the user out of setup entirely. Drop the marker
+    # and let setup continue — this is "nothing to finish", not a completed GPU.
+    if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
+        ui_log warn "No .env found, so NVIDIA finalization has nothing to complete. Clearing the pending-reboot marker; configure hardware transcoding from the menu once the install exists."
+        stage3_remove_nvidia_marker
+        return 0
+    fi
     ui_log info "Resuming hardware transcoding: NVIDIA finalization"
 
     # Let the driver settle before any nvidia-smi-based decision below. Skip when
@@ -205,7 +215,7 @@ stage3_finalize_nvidia() {
         if [[ -f "$SCRIPT_DIR/.nvidia-tmp/pending" ]] || ! { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; }; then
             GPU_TYPE="nvidia"
             if ! install_nvidia_drivers; then
-                _stage3_nvidia_finalize_failure || return 1
+                _stage3_nvidia_finalize_failure || return $?
                 return 0
             fi
         fi
@@ -216,7 +226,7 @@ stage3_finalize_nvidia() {
 
     ui_log info "Verifying NVIDIA driver..."
     if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi -L >/dev/null 2>&1; then
-        _stage3_nvidia_finalize_failure || return 1
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
 
@@ -226,7 +236,7 @@ stage3_finalize_nvidia() {
         _loaded_version=$(nvidia_driver_version 2>/dev/null || true)
         if [[ "$_loaded_version" != "$_expected_version" ]]; then
             ui_log warn "Loaded NVIDIA driver version does not match the prepared update."
-            _stage3_nvidia_finalize_failure || return 1
+            _stage3_nvidia_finalize_failure || return $?
             return 0
         fi
     fi
@@ -251,30 +261,30 @@ stage3_finalize_nvidia() {
     fi
     verify_gpu_usable || true
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
-        _stage3_nvidia_finalize_failure || return 1
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
 
     ui_log info "Writing Jellyfin encoder: nvenc"
     if ! stage3_set_gpu_env "nvidia" "pending" "nvidia" "nvenc"; then
         ui_log warn "Could not persist NVIDIA pending state; recovery marker retained."
-        return 1
+        return 3
     fi
     proof_since=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     if ! _stage3_apply_runtime_override "nvidia"; then
-        _stage3_nvidia_finalize_failure || return 1
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
     if ! stage3_probe_capabilities "nvidia" "nvenc"; then
-        _stage3_nvidia_finalize_failure || return 1
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
     if ! stage3_set_gpu_env "nvidia" "pending" "nvidia" "nvenc"; then
         ui_log warn "Could not persist NVIDIA pending state; recovery marker retained."
-        return 1
+        return 3
     fi
     if ! _stage3_configure_jellyfin || ! _stage3_wait_for_jellyfin_encoding "nvenc"; then
-        _stage3_nvidia_finalize_failure || return 1
+        _stage3_nvidia_finalize_failure || return $?
         return 0
     fi
 
@@ -298,7 +308,7 @@ stage3_finalize_nvidia() {
 
     if ! stage3_set_gpu_env "nvidia" "complete" "nvidia" "nvenc" "$_mode"; then
         ui_log warn "Could not persist NVIDIA completion; recovery marker retained."
-        return 1
+        return 3
     fi
     stage3_remove_nvidia_marker
     ui_log ok "Post-reboot GPU finalization complete."
