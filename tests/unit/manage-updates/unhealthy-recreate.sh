@@ -1,9 +1,9 @@
 # An explicitly unhealthy running container makes the readiness probe fail. The
 # recreate seam must propagate that failure: an unhealthy service is not a
 # successful update and must not be flipped green in the cached table.
-unhealthy_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+UNHEALTHY_OUT=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
-  tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; mkdir -p "$tmp/config/state"
+  TMP_DIR=$(mktemp -d); SCRIPT_DIR="$TMP_DIR"; mkdir -p "$TMP_DIR/config/state"
   source "$REPO_ROOT/scripts/setup/override.sh"
   _service_profile_flag(){ echo ""; }
   _regenerate_override(){ return 0; }
@@ -27,13 +27,15 @@ unhealthy_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   _apply_service_update sonarr
   echo "RC=$?"
   echo "APPLIED=[${_MU_APPLIED[*]}]"
-  rm -rf "$tmp"
+  rm -rf "$TMP_DIR"
 ' 2>&1)
-assert_contains "$unhealthy_out" "RC=1" \
+assert_contains "$UNHEALTHY_OUT" "RC=1" \
     "unhealthy: running unhealthy container fails the update"
-assert_contains "$unhealthy_out" "APPLIED=[]" \
+assert_contains "$UNHEALTHY_OUT" "APPLIED=[]" \
     "unhealthy: running unhealthy container is not flipped green"
-if grep -q "UI_ok:sonarr updated\." <<<"$unhealthy_out"; then
+assert_contains "$UNHEALTHY_OUT" "UI_error:sonarr is unhealthy after recreation." \
+    "unhealthy: failure explains the unhealthy recreate"
+if grep -q "UI_ok:sonarr updated\." <<<"$UNHEALTHY_OUT"; then
     fail "unhealthy: running unhealthy container does not log update success"
 else
     pass "unhealthy: running unhealthy container does not log update success"
