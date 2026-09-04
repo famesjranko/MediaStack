@@ -41,31 +41,38 @@ ddns_verify_via_container() {
             -v "$scratch":/updater/data \
             "$_DDNS_VERIFY_IMAGE" 2>/dev/null) || exit 2
 
-        # Wait for the HTTP server to publish its port. If the container EXITS
-        # before it appears, it fail-fasted on the config. An invalid config — a
-        # malformed token shape, a domain that fails the provider's eTLD check —
-        # is a REJECT (re-prompt), NOT a degrade: otherwise a fat-fingered
-        # credential would persist and the real ddns-updater would die at install.
-        # A container that is up but simply slow keeps the loop going.
+        # An invalid config — a malformed token shape, a domain that fails the
+        # provider's eTLD check — makes the container fail-fast during startup
+        # validation. That is a REJECT (re-prompt), NOT a degrade: otherwise a
+        # fat-fingered credential would persist and the real ddns-updater would
+        # die at install. Anchor on ddns-updater's config-validation phase
+        # wording only ("validating provider specific settings: <field> is not
+        # valid: …"), so an unrelated non-cred startup exit that merely happens
+        # to log "invalid" degrades instead of clearing good creds.
+        _ddns_verify_rejected() {
+            local ferr
+            [[ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" == "true" ]] && return 1
+            ferr=$(docker logs "$cid" 2>&1 \
+                | grep -iE 'validating .* settings|is not valid' \
+                | tail -1)
+            [[ -n "$ferr" ]] || return 1
+            [[ -n "$body_file" ]] && printf '%s\n' "$ferr" >"$body_file"
+            return 0
+        }
+
+        # Wait for the HTTP server to publish its port. Docker keeps the port
+        # mapping it assigned at creation, so `docker port` can answer for a
+        # container that has ALREADY exited — a published port is not proof the
+        # server is up. Check the validation exit first on every pass, or a
+        # fail-fast that raced the mapping falls through to the poll below and
+        # degrades on no answer. A container that is up but simply slow keeps
+        # the loop going.
         local port=""
         for _ in $(seq 1 "$DDNS_VERIFY_PORT_PUBLISH_ATTEMPTS"); do
             port=$(docker port "$cid" 8000 2>/dev/null | head -1 | sed 's/.*://')
+            _ddns_verify_rejected && exit 1
             [[ -n "$port" ]] && break
             if [[ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" != "true" ]]; then
-                local ferr
-                # Anchor on ddns-updater's config-validation phase wording only
-                # ("validating provider specific settings: <field> is not valid: …"),
-                # so an unrelated non-cred startup exit that merely happens to log
-                # "invalid" degrades (exit 2) instead of being misread as a
-                # bad-cred reject (exit 1) that clears good creds. A real cred/shape
-                # error always carries this phrasing.
-                ferr=$(docker logs "$cid" 2>&1 \
-                    | grep -iE 'validating .* settings|is not valid' \
-                    | tail -1)
-                if [[ -n "$ferr" ]]; then
-                    [[ -n "$body_file" ]] && printf '%s\n' "$ferr" >"$body_file"
-                    exit 1
-                fi
                 exit 2
             fi
             sleep "$DDNS_VERIFY_PORT_PUBLISH_SLEEP_SECONDS"
@@ -120,7 +127,14 @@ ddns_verify_via_container() {
                 fi
                 exit 1
                 ;;
-            *) exit 2 ;;
+            # No answer at all. A container that fail-fasted after publishing its
+            # port lands here, so re-check the validation exit before degrading:
+            # keeping a credential the updater already refused is the outcome
+            # this whole function exists to prevent.
+            *)
+                _ddns_verify_rejected && exit 1
+                exit 2
+                ;;
         esac
     )
 }
