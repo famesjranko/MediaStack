@@ -12,12 +12,23 @@
 # to existing scripts (setup.sh, configure.sh, port-check.sh, update.sh,
 # nvidia-repatch.sh) — no business logic here.
 #
-# Usage: ./mediastack
+# Usage: ./mediastack [--version]
 # =============================================================================
 set -uo pipefail # NOT -e: a failed diagnostic must not kill the loop.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
+
+# --- Version report (see docs/project/release.md) ---
+# VERSION carries the last released version; 0.0.0-dev means "never released".
+# Checked before the root/TTY guards: a script or bug reporter must be able to
+# read the version non-interactively and as any user.
+if [[ "${1:-}" == "--version" ]]; then
+    version="$(head -n1 "$SCRIPT_DIR/VERSION" 2>/dev/null)" || version=""
+    commit="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null)" || commit=""
+    printf 'MediaStack %s%s\n' "${version:-unknown}" "${commit:+ (${commit})}"
+    exit 0
+fi
 
 # --- Dry-run UI explorer (containerised; see scripts/lib/dry-run.sh) ---
 # Checked before the root/TTY guards below (which apply to the real launcher).
