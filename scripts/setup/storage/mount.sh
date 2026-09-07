@@ -14,11 +14,18 @@ storage_repair_mismatched_mount() {
     expected_source="$(storage_expected_source)"
 
     storage_log_warn "A different filesystem is mounted at ${mountpoint}: ${live_source:-unknown} (${live_fstype:-unknown}); expected ${expected_source:-unknown}."
-    if declare -F ui_confirm >/dev/null; then
-        if ! ui_confirm "Detach the existing mount and mount the selected NAS here?" "yes"; then
-            storage_log_warn "Keeping existing mount at ${mountpoint}; NAS mount was not changed."
-            return 1
-        fi
+    # Detaching a live mount is destructive to whatever is using it, so it is
+    # never done on the user's behalf. A sourcer without ui.sh refuses outright
+    # rather than falling through to the umount, and the default is "no" so
+    # every path where ui_confirm answers for the user — demo mode, piped or
+    # unrecognised input, EOF — refuses too.
+    if ! declare -F ui_confirm >/dev/null; then
+        storage_log_warn "Keeping existing mount at ${mountpoint}; detaching it needs an interactive confirmation."
+        return 1
+    fi
+    if ! ui_confirm "Detach the existing mount and mount the selected NAS here?" "no"; then
+        storage_log_warn "Keeping existing mount at ${mountpoint}; NAS mount was not changed."
+        return 1
     fi
 
     storage_log_info "Detaching existing mount at ${mountpoint} before mounting selected NAS..."
