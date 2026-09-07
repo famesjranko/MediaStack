@@ -53,7 +53,10 @@ printf 'findmnt %s\n' "\$*" >>"$HELPER_CALLS"
 source "$HELPER_STATE"
 case "\$*" in
     *--fstab*)
-        [[ -n "\$FSTAB_SOURCE" ]] && echo "\$FSTAB_SOURCE"
+        # 2 is findmnt's error exit; 1 is the ordinary "no such entry".
+        [[ "\$FSTAB_SOURCE" == lookup-error ]] && exit 2
+        [[ -n "\$FSTAB_SOURCE" ]] || exit 1
+        echo "\$FSTAB_SOURCE"
         exit 0
         ;;
 esac
@@ -68,8 +71,26 @@ cat >"$HELPER_DIR/bin/umount" <<EOF
 #!/usr/bin/env bash
 printf 'umount %s\n' "\$*" >>"$HELPER_CALLS"
 source "$HELPER_STATE"
-[[ "\$UMOUNT_FAILS" == true ]] && exit 32
+if [[ "\$*" != *-l* ]]; then
+    # A plain umount of a dead mount blocks in D-state on a real host; only a
+    # lazy detach clears it. Busy likewise bites the plain form only.
+    [[ "\$RESPONSIVE" == true ]] || sleep 20
+    [[ "\$UMOUNT_FAILS" == true ]] && exit 32
+fi
 sed -i 's|^LIVE_SOURCE=.*|LIVE_SOURCE=none|' "$HELPER_STATE"
+exit 0
+EOF
+cat >"$HELPER_DIR/bin/stat" <<EOF
+#!/usr/bin/env bash
+printf 'stat %s\n' "\$*" >>"$HELPER_CALLS"
+source "$HELPER_STATE"
+[[ "\$RESPONSIVE" == true ]] || exit 1
+echo nfs
+exit 0
+EOF
+cat >"$HELPER_DIR/bin/logger" <<EOF
+#!/usr/bin/env bash
+printf 'logger %s\n' "\$*" >>"$HELPER_CALLS"
 exit 0
 EOF
 cat >"$HELPER_DIR/bin/mount" <<EOF
@@ -80,15 +101,26 @@ sed -i 's|^LIVE_FSTYPE=.*|LIVE_FSTYPE=nfs4|' "$HELPER_STATE"
 touch "$HELPER_DIR/mnt/.mediastack-storage-ready"
 exit 0
 EOF
-chmod +x "$HELPER_DIR/bin/findmnt" "$HELPER_DIR/bin/umount" "$HELPER_DIR/bin/mount"
+chmod +x "$HELPER_DIR"/bin/{findmnt,umount,mount,stat,logger}
+
+# A PATH holding only what the helper legitimately needs, minus timeout(1):
+# proof that a host without it is refused rather than lazily detached.
+mkdir -p "$HELPER_DIR/bin-no-timeout"
+cp "$HELPER_DIR"/bin/{findmnt,umount,mount,stat,logger} "$HELPER_DIR/bin-no-timeout/"
+for helper_tool in bash env python3 mkdir touch sed test; do
+    helper_tool_path="$(command -v "$helper_tool")" \
+        && ln -sf "$helper_tool_path" "$HELPER_DIR/bin-no-timeout/$helper_tool"
+done
+unset helper_tool helper_tool_path
 
 helper_run() {
-    # $1 live source, $2 live fstype, $3 fstab source, $4 umount fails
-    printf 'LIVE_SOURCE=%s\nLIVE_FSTYPE=%s\nFSTAB_SOURCE=%s\nUMOUNT_FAILS=%s\n' \
-        "$1" "$2" "${3:-}" "${4:-false}" >"$HELPER_STATE"
+    # $1 live source, $2 live fstype, $3 fstab source, $4 plain umount fails,
+    # $5 mount answers, $6 PATH override
+    printf 'LIVE_SOURCE=%s\nLIVE_FSTYPE=%s\nFSTAB_SOURCE=%s\nUMOUNT_FAILS=%s\nRESPONSIVE=%s\n' \
+        "$1" "$2" "${3:-}" "${4:-false}" "${5:-true}" >"$HELPER_STATE"
     : >"$HELPER_CALLS"
     rm -f "$HELPER_DIR/mnt/.mediastack-storage-ready"
-    HELPER_OUTPUT="$(PATH="$HELPER_DIR/bin:$PATH" "$HELPER_DIR/helper" repair 2>&1)"
+    HELPER_OUTPUT="$(PATH="${6:-$HELPER_DIR/bin:$PATH}" "$HELPER_DIR/helper" repair 2>&1)"
     HELPER_RC=$?
 }
 
@@ -115,7 +147,7 @@ case "$HELPER_RC:$(cat "$HELPER_CALLS")" in
     *) pass "mount helper: never detaches an fstab-owned mount" ;;
 esac
 
-helper_run 198.51.100.9:/exports/old-nas nfs4 "" true
+helper_run 198.51.100.9:/exports/old-nas nfs4 "" true true
 case "$(cat "$HELPER_CALLS")" in
     *"umount -l"*) fail "mount helper: never lazy-unmounts a live busy NFS mount" ;;
     *) pass "mount helper: never lazy-unmounts a live busy NFS mount" ;;
@@ -125,6 +157,38 @@ if ((HELPER_RC != 0)); then
 else
     fail "mount helper: a busy mount is refused, leaving NAS services stopped"
 fi
+
+# An unresponsive mount is the one case lazy detach exists for: it must be
+# reached before any plain umount can block the helper past its 30s cap.
+helper_run 198.51.100.9:/exports/old-nas nfs4 "" true false
+assert_contains "$(cat "$HELPER_CALLS")" "umount -l $HELPER_DIR/mnt" "mount helper: lazy-detaches a mount that no longer answers"
+assert_contains "$(cat "$HELPER_CALLS")" "mount -t nfs4" "mount helper: remounts after a lazy detach"
+if grep -qx "umount $HELPER_DIR/mnt" "$HELPER_CALLS"; then
+    fail "mount helper: never issues a blocking plain umount on a dead mount"
+else
+    pass "mount helper: never issues a blocking plain umount on a dead mount"
+fi
+if ((HELPER_RC == 0)); then
+    pass "mount helper: unresponsive mount is repaired without a blocking umount"
+else
+    fail "mount helper: unresponsive mount is repaired without a blocking umount" "exit ${HELPER_RC}: ${HELPER_OUTPUT}"
+fi
+
+helper_run 198.51.100.9:/exports/old-nas nfs4 "" false false "$HELPER_DIR/bin-no-timeout"
+case "$HELPER_RC:$(cat "$HELPER_CALLS")" in
+    0:* | *umount*) fail "mount helper: refuses to detach anything without timeout(1)" ;;
+    *) pass "mount helper: refuses to detach anything without timeout(1)" ;;
+esac
+assert_contains "$HELPER_OUTPUT" "timeout(1) unavailable" "mount helper: names the missing timeout(1) in the refusal"
+
+# A findmnt --fstab lookup that fails outright is not "no entry": it fails
+# closed like every other guard in the helper.
+helper_run 198.51.100.9:/exports/old-nas nfs4 lookup-error
+case "$HELPER_RC:$(cat "$HELPER_CALLS")" in
+    0:* | *umount*) fail "mount helper: an unreadable fstab blocks the detach" ;;
+    *) pass "mount helper: an unreadable fstab blocks the detach" ;;
+esac
+assert_contains "$HELPER_OUTPUT" "/etc/fstab lookup failed" "mount helper: reports the failed fstab lookup"
 unset -f helper_run
 unset HELPER_DIR HELPER_STATE HELPER_CALLS HELPER_OUTPUT HELPER_RC
 
