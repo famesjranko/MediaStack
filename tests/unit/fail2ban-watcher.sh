@@ -37,6 +37,53 @@ timer=$(f2b_fallback_timer_content)
 assert_contains "$timer" "OnUnitActiveSec=6h" "fallback timer: fires every 6h"
 assert_contains "$timer" "WantedBy=timers.target" "fallback timer: installs as a timer"
 
+# --- a failed fallback-unit write must not be reported as an enabled timer -----
+# The fallback is best-effort, but swallowing the write rc left setup enabling
+# and restarting units that were never written, and logging success for them.
+_f2b_tmp=$(mktemp -d)
+mkdir -p "$_f2b_tmp/scripts"
+printf '#!/usr/bin/env bash\n' >"$_f2b_tmp/scripts/fail2ban-reload-watcher.sh"
+chmod +x "$_f2b_tmp/scripts/fail2ban-reload-watcher.sh"
+SCRIPT_DIR="$_f2b_tmp"
+F2B_SYSTEMCTL_LOG="$_f2b_tmp/systemctl.log"
+: >"$F2B_SYSTEMCTL_LOG"
+F2B_WARNINGS=""
+inotifywait() { :; }
+log_info() { :; }
+log_ok() { :; }
+log_warn() { F2B_WARNINGS+="$*"$'\n'; }
+sudo() {
+    case "${1:-}" in
+        tee)
+            cat >/dev/null
+            # Only the fallback service unit fails to write.
+            [[ "${2:-}" == "$MEDIASTACK_F2B_FALLBACK_SERVICE" ]] && return 1
+            return 0
+            ;;
+        systemctl)
+            shift
+            printf '%s\n' "$*" >>"$F2B_SYSTEMCTL_LOG"
+            return 0
+            ;;
+    esac
+    return 0
+}
+f2b_install_reload_watcher
+_f2b_systemctl=$(cat "$F2B_SYSTEMCTL_LOG")
+assert_contains "$F2B_WARNINGS" "Could not write fail2ban fallback reload service unit" \
+    "fallback write failure: warns instead of being swallowed"
+assert_contains "$_f2b_systemctl" "restart mediastack-fail2ban-reload.service" \
+    "fallback write failure: the primary watcher is still started"
+if [[ "$_f2b_systemctl" == *"fail2ban-reload-fallback.timer"* ]]; then
+    fail "fallback write failure: does not enable/restart a unit it never wrote"
+else
+    pass "fallback write failure: does not enable/restart a unit it never wrote"
+fi
+unset -f sudo inotifywait log_info log_ok log_warn
+unset F2B_WARNINGS F2B_SYSTEMCTL_LOG
+rm -rf "$_f2b_tmp"
+SCRIPT_DIR="$REPO_ROOT"
+
 # --- uninstall is a clean no-op (rc 0) when nothing was installed --------------
 if command -v systemctl >/dev/null 2>&1; then
     sudo() { case "${1:-}" in test) return 1 ;; *) return 0 ;; esac } # every unit file "absent"
