@@ -54,9 +54,19 @@ reset_fixture() {
 }
 
 curl() {
-    local arg all_args is_check=false is_auth=false is_token=false is_endpoints=false is_endpoint_create=false is_user_update=false
-    all_args="$*"
-    printf '%s\n' "$*" >>"$CURL_LOG"
+    local arg all_args stdin_body="" is_check=false is_auth=false is_token=false is_endpoints=false is_endpoint_create=false is_user_update=false
+    # Secret-bearing bodies arrive on stdin (see curl_data_stdin), so fold them
+    # into the recorded arguments the assertions below read.
+    for arg in "$@"; do
+        case "$arg" in
+            -K | @- | *@/dev/stdin)
+                stdin_body="$(cat)"
+                break
+                ;;
+        esac
+    done
+    all_args="$* $stdin_body"
+    printf '%s\n' "$all_args" >>"$CURL_LOG"
     for arg in "$@"; do
         [[ "$arg" == *"/api/users/admin/check"* ]] && is_check=true
         [[ "$arg" == *"/api/auth"* ]] && is_auth=true

@@ -40,8 +40,8 @@ configure_jackett() {
     probe_code=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" \
         "${jackett_url}?configured=true&apikey=${jackett_key}" 2>/dev/null || echo "000")
     if [[ "$probe_code" != "200" && -n "$jf_pw" ]]; then
-        curl -sf -c "$jar" -X POST "${jackett_base}/UI/Dashboard" \
-            --data-urlencode "password=$jf_pw" >/dev/null 2>&1 || true
+        curl_data_urlencode_stdin password "$jf_pw" \
+            -sf -c "$jar" -X POST "${jackett_base}/UI/Dashboard" >/dev/null 2>&1 || true
     fi
 
     # Jackett's first-start rewrites ServerConfig.json and drops the pre-seeded

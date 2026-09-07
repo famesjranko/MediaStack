@@ -14,6 +14,10 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 CURL_LOG="$TMP_DIR/curl.log"
 
+# common.sh provides the secret-safe curl wrappers the configurator calls; the
+# dummy CONFIG_FILE is only for its cfg_* helpers, which the stubs below replace.
+CONFIG_FILE=/dev/null
+source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/services/qbittorrent/main.sh"
 
 BOLD=""
@@ -88,7 +92,26 @@ docker() {
 
 curl() {
     local arg prev="" endpoint="" is_login=false password="" category=""
+    local stdin_field="" stdin_value=""
+    # Secret-bearing form fields arrive urlencoded from stdin (see
+    # curl_data_urlencode_stdin). Log them in the "field=value" shape the
+    # assertions below expect, so the payload stays visible to the test.
     for arg in "$@"; do
+        case "$arg" in
+            *@/dev/stdin)
+                stdin_field="${arg%@/dev/stdin}"
+                stdin_value="$(cat)"
+                break
+                ;;
+        esac
+    done
+    [[ "$stdin_field" == "password" ]] && password="$stdin_value"
+    for arg in "$@"; do
+        if [[ -n "$stdin_field" && "$arg" == "$stdin_field@/dev/stdin" ]]; then
+            printf '%s\t%s\t' "--data-urlencode" "$stdin_field=$stdin_value" >>"$CURL_LOG"
+            prev="--data-urlencode"
+            continue
+        fi
         printf '%s\t' "$arg" >>"$CURL_LOG"
         if [[ "$arg" == *"/api/v2/auth/login" ]]; then
             is_login=true
@@ -316,6 +339,16 @@ LIVE_CONFIG="$TMP_DIR/live-config.yml"
 mkdir -p "$LIVE_BIN"
 cat >"$LIVE_BIN/curl" <<'SH'
 #!/usr/bin/env bash
+# Drain any stdin payload first: the real curl always reads it, and leaving it
+# unread would break the writing end of the pipe.
+for arg in "$@"; do
+    case "$arg" in
+        -K | @- | *@/dev/stdin)
+            cat >/dev/null
+            break
+            ;;
+    esac
+done
 for arg in "$@"; do
     case "$arg" in
         */api/v2/auth/login)
@@ -374,8 +407,21 @@ assert_contains "$live_out" $'PASS\tstep 1 qBittorrent: category radarr save pat
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 curl() {
-    local arg is_login=false
+    local arg is_login=false stdin_field="" stdin_value=""
     for arg in "$@"; do
+        case "$arg" in
+            *@/dev/stdin)
+                stdin_field="${arg%@/dev/stdin}"
+                stdin_value="$(cat)"
+                break
+                ;;
+        esac
+    done
+    for arg in "$@"; do
+        if [[ -n "$stdin_field" && "$arg" == "$stdin_field@/dev/stdin" ]]; then
+            printf '%s\t%s\t' "--data-urlencode" "$stdin_field=$stdin_value" >>"$CURL_LOG"
+            continue
+        fi
         printf '%s\t' "$arg" >>"$CURL_LOG"
         [[ "$arg" == *"/api/v2/auth/login" ]] && is_login=true
     done

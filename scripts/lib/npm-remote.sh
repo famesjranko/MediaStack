@@ -135,9 +135,8 @@ npm_remote_token() {
 import os, json
 print(json.dumps({"identity": os.environ["NPM_EMAIL"], "secret": os.environ["NPM_PASSWORD"]}))
 ')
-    curl -sf --max-time 10 -X POST "$api/tokens" \
-        -H "Content-Type: application/json" \
-        -d "$body" 2>/dev/null | npm_remote_json_field token
+    curl_data_stdin "$body" -sf --max-time 10 -X POST "$api/tokens" \
+        -H "Content-Type: application/json" 2>/dev/null | npm_remote_json_field token
 }
 
 npm_remote_hosts_ready() {

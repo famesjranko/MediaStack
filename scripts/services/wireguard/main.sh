@@ -48,8 +48,8 @@ configure_wireguard() {
     # was changed (do not auto-reconcile). Anything else = not ready yet.
     local probe_code attempts=0 max_attempts=30
     while ((attempts < max_attempts)); do
-        probe_code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -u "$wg_user:$wg_pw" "$wg_url/api/client" 2>/dev/null || echo "000")
+        probe_code=$(curl_basic_auth "$wg_user" "$wg_pw" \
+            -s -o /dev/null -w "%{http_code}" "$wg_url/api/client" 2>/dev/null || echo "000")
         case "$probe_code" in
             200) break ;;
             401)
@@ -72,7 +72,7 @@ configure_wireguard() {
     fi
 
     local clients_json peer_id
-    clients_json=$(curl -sf -u "$wg_user:$wg_pw" "$wg_url/api/client" 2>/dev/null || echo "[]")
+    clients_json=$(curl_basic_auth "$wg_user" "$wg_pw" -sf "$wg_url/api/client" 2>/dev/null || echo "[]")
     peer_id=$(echo "$clients_json" | WG_PEER="$wg_user" python3 -c '
 import os, sys, json
 peer = os.environ["WG_PEER"]
@@ -117,7 +117,7 @@ _wg_ensure_firewall_enabled() {
     local url="$1" user="$2" pw="$3"
     local current already
 
-    current=$(curl -sf -u "$user:$pw" "$url/api/admin/interface" 2>/dev/null || echo "{}")
+    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/admin/interface" 2>/dev/null || echo "{}")
     already=$(echo "$current" | python3 -c '
 import sys, json
 try: print("yes" if json.load(sys.stdin).get("firewallEnabled") else "no")
@@ -137,15 +137,15 @@ except Exception:
     d = {}
 d["firewallEnabled"] = True
 print(json.dumps(d))' <<<"$current")
-    http=$(curl -s -o /dev/null -w "%{http_code}" \
-        -u "$user:$pw" -X POST "$url/api/admin/interface" \
+    http=$(curl_basic_auth "$user" "$pw" \
+        -s -o /dev/null -w "%{http_code}" -X POST "$url/api/admin/interface" \
         -H "Content-Type: application/json" -d "$body" 2>/dev/null || echo "000")
 
     # v15.3.0 can return 500 here while still persisting firewallEnabled=true
     # (ip6tables touched during firewall chain setup even with DISABLE_IPV6).
     # Always re-read state; classify on read-back, not on the POST exit code.
     sleep 1
-    current=$(curl -sf -u "$user:$pw" "$url/api/admin/interface" 2>/dev/null || echo "{}")
+    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/admin/interface" 2>/dev/null || echo "{}")
     already=$(echo "$current" | python3 -c '
 import sys, json
 try: print("yes" if json.load(sys.stdin).get("firewallEnabled") else "no")
@@ -170,8 +170,8 @@ _wg_create_peer() {
 import os, json
 print(json.dumps({"name": os.environ["WG_PEER"], "expiresAt": None}))')
     resp_file=$(mktemp)
-    http=$(curl -s -o "$resp_file" -w "%{http_code}" \
-        -u "$user:$pw" -X POST "$url/api/client" \
+    http=$(curl_basic_auth "$user" "$pw" \
+        -s -o "$resp_file" -w "%{http_code}" -X POST "$url/api/client" \
         -H "Content-Type: application/json" -d "$body" 2>/dev/null || echo "000")
 
     case "$http" in
@@ -207,7 +207,7 @@ if isinstance(d, dict):
     # omit the created id. Read back by name in both cases so committed state is
     # not treated as a hard failure.
     sleep 1
-    curl -sf -u "$user:$pw" "$url/api/client" 2>/dev/null | WG_PEER="$name" python3 -c '
+    curl_basic_auth "$user" "$pw" -sf "$url/api/client" 2>/dev/null | WG_PEER="$name" python3 -c '
 import os, sys, json
 peer = os.environ["WG_PEER"]
 try:
@@ -229,7 +229,7 @@ _wg_set_peer_firewall_ips() {
     local url="$1" user="$2" pw="$3" peer_id="$4" firewall_ips="$5"
     local current body desired_json http persisted
 
-    current=$(curl -sf -u "$user:$pw" "$url/api/client/$peer_id" 2>/dev/null) || {
+    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/client/$peer_id" 2>/dev/null) || {
         log_warn "Could not read peer $peer_id to set firewallIps"
         return 1
     }
@@ -248,12 +248,12 @@ except Exception:
 d["firewallIps"] = json.loads(os.environ["IPS_JSON"])
 print(json.dumps(d))' <<<"$current")
 
-    http=$(curl -s -o /dev/null -w "%{http_code}" \
-        -u "$user:$pw" -X POST "$url/api/client/$peer_id" \
+    http=$(curl_basic_auth "$user" "$pw" \
+        -s -o /dev/null -w "%{http_code}" -X POST "$url/api/client/$peer_id" \
         -H "Content-Type: application/json" -d "$body" 2>/dev/null || echo "000")
 
     sleep 1
-    current=$(curl -sf -u "$user:$pw" "$url/api/client/$peer_id" 2>/dev/null || echo "{}")
+    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/client/$peer_id" 2>/dev/null || echo "{}")
     persisted=$(IPS_JSON="$desired_json" python3 -c '
 import os, sys, json
 try:

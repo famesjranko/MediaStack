@@ -204,6 +204,70 @@ cfg_jf_libraries() { cfg_read jf_libraries ""; }
 # API key helpers
 # =============================================================================
 
+# --- Secret-safe curl invocations --------------------------------------------
+# A process's argv is world-readable through /proc/<pid>/cmdline on stock
+# Debian, so a credential passed as a curl argument (-u, -d, --data-urlencode)
+# is readable by every local account for the life of the request. These
+# wrappers hand the secret to curl on stdin instead; callers pass the remaining
+# curl arguments unchanged. Each wrapper owns curl's stdin, so a call site that
+# needs stdin for something else must not use one.
+
+# Escape a value for curl's --config parser: inside a double-quoted config
+# value, backslash and double quote are the only special characters.
+_curl_config_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    printf '%s' "${value//\"/\\\"}"
+}
+
+# Feed <payload> to curl on stdin and return curl's own exit status. pipefail
+# is suspended for the pipeline: a curl that exits before draining stdin leaves
+# the writer with a broken pipe, and under pipefail that status would mask
+# curl's.
+_curl_stdin_payload() {
+    local payload="$1"
+    shift
+    local restore_pipefail=0 rc
+    if [[ -o pipefail ]]; then
+        restore_pipefail=1
+        set +o pipefail
+    fi
+    printf '%s' "$payload" | curl "$@"
+    rc=$?
+    if [[ "$restore_pipefail" == "1" ]]; then
+        set -o pipefail
+    fi
+    return "$rc"
+}
+
+# curl with HTTP Basic credentials read from a stdin config file.
+# Usage: curl_basic_auth <user> <password> <curl args...>
+curl_basic_auth() {
+    local user="$1" password="$2"
+    shift 2
+    local credential
+    credential=$(printf 'user = "%s:%s"\n' \
+        "$(_curl_config_quote "$user")" "$(_curl_config_quote "$password")")
+    _curl_stdin_payload "$credential" -K - "$@"
+}
+
+# curl with a secret-bearing request body read from stdin.
+# Usage: curl_data_stdin <body> <curl args...>
+curl_data_stdin() {
+    local body="$1"
+    shift
+    _curl_stdin_payload "$body" --data-binary @- "$@"
+}
+
+# curl with one secret-bearing form field, urlencoded from stdin. Other
+# (non-secret) fields stay in the passed-through curl arguments.
+# Usage: curl_data_urlencode_stdin <field> <value> <curl args...>
+curl_data_urlencode_stdin() {
+    local field="$1" value="$2"
+    shift 2
+    _curl_stdin_payload "$value" --data-urlencode "$field@/dev/stdin" "$@"
+}
+
 # API primitives — capture HTTP code + body so failures surface actionable
 # error messages instead of silent empty output.  On 2xx the body goes to
 # stdout and we return 0.  On anything else the code + first 300 chars of
@@ -219,14 +283,20 @@ _api_request() {
     # _add_indexer's 2 attempts) still get a second chance on transient timeout.
     local _args=(-sS --max-time 45 -H "X-Api-Key: $_key" -H "Content-Type: application/json")
     [[ "$_method" != "GET" ]] && _args+=(-X "$_method")
-    [[ -n "$_data" ]] && _args+=(-d "$_data")
     _args+=(-w "\n%{http_code}")
-    local _out _code
-    _out=$(curl "${_args[@]}" "$_url" 2>/dev/null) \
-        || {
-            echo "$_caller $_url: connection failed" >&2
-            return 1
-        }
+    # Bodies go over stdin (see curl_data_stdin): the *arr auth config carries
+    # the shared admin password. A GET has no body, so it keeps the plain form
+    # rather than being turned into a request with one.
+    local _out _code _rc=0
+    if [[ -n "$_data" ]]; then
+        _out=$(curl_data_stdin "$_data" "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
+    else
+        _out=$(curl "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
+    fi
+    if ((_rc != 0)); then
+        echo "$_caller $_url: connection failed" >&2
+        return 1
+    fi
     _code="${_out##*$'\n'}"
     _out="${_out%$'\n'*}"
     if [[ "$_code" =~ ^2 ]]; then

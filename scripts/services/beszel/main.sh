@@ -21,9 +21,25 @@ configure_beszel() {
     fi
 
     # --- 0. Ensure superuser exists (Homepage widget requires superuser auth) ---
-    docker exec beszel /beszel superuser upsert "$admin_email" "$admin_pw" >/dev/null 2>&1 \
-        && log_ok "Beszel superuser ensured" \
-        || log_warn "Could not upsert Beszel superuser"
+    # The hub creates the superuser from USER_EMAIL/USER_PASSWORD on first
+    # start, so probe over the API first and fall back to the CLI only when the
+    # record is missing or its password has drifted. That fallback is the one
+    # place the shared password still reaches a process argv: beszel's
+    # PocketBase CLI accepts it only as a positional argument, and the hub image
+    # is built FROM scratch, so there is no in-container shell to expand it from
+    # the environment instead. Probing keeps that path out of every normal run.
+    local su_body su_code
+    su_body=$(http_json_body identity "$admin_email" password "$admin_pw")
+    su_code=$(curl_data_stdin "$su_body" -s -o /dev/null -w "%{http_code}" \
+        -X POST "$hub_url/api/collections/_superusers/auth-with-password" \
+        -H "Content-Type: application/json" 2>/dev/null || echo "000")
+    if [[ "$su_code" == "200" ]]; then
+        log_skip "Beszel superuser already present"
+    elif docker exec beszel /beszel superuser upsert "$admin_email" "$admin_pw" >/dev/null 2>&1; then
+        log_ok "Beszel superuser ensured"
+    else
+        log_warn "Could not upsert Beszel superuser"
+    fi
 
     # --- 1. Authenticate to hub ---
     local auth_body auth_resp token user_id
@@ -35,9 +51,9 @@ print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_P
         return 0
     }
 
-    auth_resp=$(curl -sS -X POST "$hub_url/api/collections/users/auth-with-password" \
-        -H "Content-Type: application/json" \
-        -d "$auth_body" -w "\n%{http_code}" 2>/dev/null) || {
+    auth_resp=$(curl_data_stdin "$auth_body" \
+        -sS -X POST "$hub_url/api/collections/users/auth-with-password" \
+        -H "Content-Type: application/json" -w "\n%{http_code}" 2>/dev/null) || {
         log_warn "Beszel hub not reachable - skipping"
         return 0
     }

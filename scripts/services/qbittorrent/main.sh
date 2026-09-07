@@ -8,9 +8,9 @@
 # fallback) and the day-2 qbt_set_speed_limits re-auth share one implementation.
 _qbt_login() {
     local jar="$1" url="$2" username="$3" password="$4" resp body http_code
-    resp=$(curl -s -c "$jar" -w "\n%{http_code}" "$url/api/v2/auth/login" \
-        --data-urlencode "username=$username" \
-        --data-urlencode "password=$password" 2>/dev/null) || return 1
+    resp=$(curl_data_urlencode_stdin password "$password" \
+        -s -c "$jar" -w "\n%{http_code}" "$url/api/v2/auth/login" \
+        --data-urlencode "username=$username" 2>/dev/null) || return 1
     http_code=$(echo "$resp" | tail -1)
     body=$(echo "$resp" | sed '$d')
     [[ "$body" == "Ok." || ("$http_code" == "204" && -z "$body") ]]
@@ -189,8 +189,8 @@ print(json.dumps({
     "max_seeding_time_enabled": True,
 }))
 ')
-        if curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
-            --data-urlencode "json=$auth_json" >/dev/null 2>&1; then
+        if curl_data_urlencode_stdin json "$auth_json" \
+            -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" >/dev/null 2>&1; then
             log_ok "WebUI login: $target_user / shared admin password"
         else
             log_warn "Could not set qBittorrent WebUI credentials"
