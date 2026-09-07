@@ -416,5 +416,48 @@ main --uninstall >/dev/null 2>&1
 assert_eq "1" "$?" "routing: invalid-ledger uninstall fails closed"
 assert_eq "0" "$STAGE3_CALLS" "routing: Stage 3 marker cannot intercept uninstall"
 
+# An unusable ledger offers the presence-guarded teardowns instead of dead-ending.
+BEST_EFFORT_CALLS=()
+ui_confirm() { return 0; }
+_uninstall_ufw() {
+    BEST_EFFORT_CALLS+=(ufw)
+    return 0
+}
+_uninstall_apt() {
+    BEST_EFFORT_CALLS+=(apt)
+    return 0
+}
+_uninstall_sysctl() {
+    BEST_EFFORT_CALLS+=(sysctl)
+    return 0
+}
+_uninstall_samba() {
+    BEST_EFFORT_CALLS+=(samba)
+    return 0
+}
+nvidia_driver_gpu_uninstall() {
+    BEST_EFFORT_CALLS+=(gpu)
+    return 0
+}
+storage_uninstall_watchdog() {
+    BEST_EFFORT_CALLS+=(watchdog)
+    return 0
+}
+f2b_uninstall_reload_watcher() {
+    BEST_EFFORT_CALLS+=(fail2ban)
+    return 0
+}
+sudo() {
+    [[ "$1" == test ]] && return 1
+    return 0
+}
+main --uninstall >/dev/null 2>&1
+assert_eq "1" "$?" "best-effort: invalid-ledger uninstall still reports failure"
+assert_contains "${BEST_EFFORT_CALLS[*]}" "ufw apt gpu sysctl samba watchdog fail2ban" "best-effort: accepted offer runs every presence-guarded teardown"
+ui_confirm() { return 1; }
+BEST_EFFORT_CALLS=()
+main --uninstall >/dev/null 2>&1
+assert_eq "" "${BEST_EFFORT_CALLS[*]}" "best-effort: declined offer changes nothing"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

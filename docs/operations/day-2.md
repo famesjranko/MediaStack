@@ -7,7 +7,7 @@ long-term data protection are intentionally out of scope for MediaStack.
 
 Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, unchanged sysctl hardening, Samba ownership, watchdog units, and setup banners. `data/`, `config/`, and the checkout are preserved.
 
-The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts before teardown. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried. User-modified MediaStack-owned files are preserved and reported instead of overwritten or deleted.
+The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts the recorded teardown and instead offers a best-effort cleanup of the host changes MediaStack can still identify on its own. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried. User-modified MediaStack-owned files are preserved and reported instead of overwritten or deleted.
 
 ## `scripts/update.sh`
 
