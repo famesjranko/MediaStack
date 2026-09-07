@@ -137,10 +137,9 @@ with open('$SCRIPT_DIR/config/jackett/Jackett/ServerConfig.json') as f:
         else
             local pw_json
             pw_json=$(JF_PW="$jf_pw" python3 -c "import json,os; print(json.dumps(os.environ['JF_PW']))" 2>/dev/null)
-            if curl -sf -b "$jar" -X POST \
+            if curl_data_stdin "$pw_json" -sf -b "$jar" -X POST \
                 "${jackett_base}/api/v2.0/server/adminpassword?apikey=${jackett_key}" \
-                -H "Content-Type: application/json" \
-                -d "$pw_json" >/dev/null 2>&1; then
+                -H "Content-Type: application/json" >/dev/null 2>&1; then
                 log_ok "Jackett admin password set"
             else
                 log_warn "Failed to set Jackett admin password"

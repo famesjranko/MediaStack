@@ -33,6 +33,8 @@ source "$REPO_ROOT/scripts/lib/npm-remote.sh"
 source "$REPO_ROOT/scripts/services/qbittorrent/main.sh"
 source "$REPO_ROOT/scripts/services/wireguard/main.sh"
 source "$REPO_ROOT/scripts/services/beszel/main.sh"
+source "$REPO_ROOT/scripts/services/npm/main.sh"
+source "$REPO_ROOT/scripts/services/jackett/main.sh"
 
 set +e
 set +u
@@ -50,6 +52,9 @@ COOKIE_JAR="$WORK/jar"
 
 MOCK_BODY=""
 MOCK_CODE=200
+# Body returned only for NPM's stock-credential token request, so the closing
+# token request can still come back empty and end the run there.
+MOCK_DEFAULT_TOKEN_BODY=""
 
 # --- Stubs -------------------------------------------------------------------
 # Record argv, then drain stdin only when an argument actually asks curl to read
@@ -67,19 +72,20 @@ curl() {
         esac
     done
 
-    local outfile="" want_code=0 prev=""
+    local outfile="" want_code=0 prev="" body="$MOCK_BODY"
     for arg in "$@"; do
         [[ "$prev" == "-o" ]] && outfile="$arg"
         [[ "$arg" == "-w" ]] && want_code=1
+        [[ "$arg" == *token-default.json && -n "$MOCK_DEFAULT_TOKEN_BODY" ]] && body="$MOCK_DEFAULT_TOKEN_BODY"
         prev="$arg"
     done
     if [[ -n "$outfile" ]]; then
-        printf '%s' "$MOCK_BODY" >"$outfile"
+        printf '%s' "$body" >"$outfile"
         [[ "$want_code" == "1" ]] && printf '%s' "$MOCK_CODE"
     elif [[ "$want_code" == "1" ]]; then
-        printf '%s\n%s' "$MOCK_BODY" "$MOCK_CODE"
+        printf '%s\n%s' "$body" "$MOCK_CODE"
     else
-        printf '%s' "$MOCK_BODY"
+        printf '%s' "$body"
     fi
     return 0
 }
@@ -102,6 +108,7 @@ reset_logs() {
     : >"$STDIN_LOG"
     MOCK_BODY=""
     MOCK_CODE=200
+    MOCK_DEFAULT_TOKEN_BODY=""
 }
 
 # Drive one call site and assert the sentinel travelled on stdin, not on argv.
@@ -151,6 +158,59 @@ assert_secret_off_argv "_wg_set_peer_firewall_ips" \
 
 NPM_ADMIN_EMAIL="admin@example.com" JELLYFIN_ADMIN_PASSWORD="$SENTINEL" \
     assert_secret_off_argv "npm_remote_token" npm_remote_token http://npm/api
+
+# --- NPM admin setup ---------------------------------------------------------
+# Both halves of configure_npm's credential handling: seeding the admin on a
+# fresh install, and rotating away from the stock credentials when the seed
+# reports the user already exists. Each run stops at the closing token request,
+# which the stub answers empty.
+_npm_ensure_healthy() { :; }
+export NPM_ADMIN_EMAIL="admin@example.com"
+export JELLYFIN_ADMIN_PASSWORD="$SENTINEL"
+
+reset_logs
+MOCK_CODE=201
+configure_npm >/dev/null 2>&1
+assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "configure_npm (create): password absent from argv"
+assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_npm (create): password delivered on stdin"
+
+reset_logs
+MOCK_CODE=409
+MOCK_DEFAULT_TOKEN_BODY='{"token":"stock-token"}'
+configure_npm >/dev/null 2>&1
+assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "configure_npm (rotate): password absent from argv"
+assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_npm (rotate): password delivered on stdin"
+# The stock-credential marker is unique to the rotation body, so this pins the
+# rotate path rather than letting the creation body satisfy the case above.
+assert_file_contains "$STDIN_LOG" '"current": "changeme"' \
+    "configure_npm (rotate): rotation body reached curl on stdin"
+
+# --- Jackett admin password --------------------------------------------------
+# Reached only when Jackett has no stored hash yet, so seed an unset one.
+mkdir -p "$WORK/config/jackett/Jackett"
+printf '%s' '{"APIKey":"jackett-key","AdminPassword":""}' \
+    >"$WORK/config/jackett/Jackett/ServerConfig.json"
+api_get_jackett_key() { printf 'jackett-key'; }
+service_internal_url() { echo "http://127.0.0.1:1"; }
+cfg_indexers() { :; }
+
+reset_logs
+SCRIPT_DIR="$WORK" configure_jackett >/dev/null 2>&1
+assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "configure_jackett: password absent from argv"
+assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_jackett: password delivered on stdin"
+# The set-password body is a bare JSON string, which the urlencoded login body
+# is not: quoting pins the case to the path this fix converted.
+assert_file_contains "$STDIN_LOG" "\"$SENTINEL\"" \
+    "configure_jackett: set-password body reached curl on stdin"
+
+# --- A credential curl's config format cannot carry --------------------------
+# Line-oriented parsing would truncate at the newline rather than fail.
+reset_logs
+curl_basic_auth admin "line1
+line2" -s http://svc/api >/dev/null 2>&1
+assert_eq "2" "$?" "curl_basic_auth: refuses a credential containing a newline"
+assert_file_not_contains "$ARGV_LOG" "line1" \
+    "curl_basic_auth: a refused credential never reaches curl"
 
 # --- Beszel: the one path that also reaches docker ---------------------------
 # The hub creates the superuser from its own env on first start, so a healthy

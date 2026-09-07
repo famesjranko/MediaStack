@@ -245,6 +245,12 @@ _curl_stdin_payload() {
 curl_basic_auth() {
     local user="$1" password="$2"
     shift 2
+    # curl's config format is line-oriented: an embedded newline would silently
+    # truncate the credential rather than fail. Validators reject such a
+    # password today; refuse rather than depend on that staying true.
+    if [[ "$user$password" == *$'\n'* || "$user$password" == *$'\r'* ]]; then
+        return 2
+    fi
     local credential
     credential=$(printf 'user = "%s:%s"\n' \
         "$(_curl_config_quote "$user")" "$(_curl_config_quote "$password")")
