@@ -20,7 +20,10 @@ of weeks. If you only want to report it, someone else may pick it up.
 
 Create a short-lived feature branch and open a pull request into `main` for
 every change. `main` is the protected integration and release branch as well as
-the repository's only long-lived branch.
+the repository's only long-lived branch. Branch naming and merge mechanics are
+in [docs/project/workflow.md](docs/project/workflow.md); PRs are
+**squash-merged**, so the PR title and body become the permanent commit and
+your branch's individual commits are working state.
 
 ## Running the checks
 
