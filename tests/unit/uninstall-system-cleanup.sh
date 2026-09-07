@@ -24,6 +24,10 @@ MEDIASTACK_APT_AUTO_CONF="$TMP_DIR/21mediastack-auto-upgrades"
 MEDIASTACK_APT_POLICY_CONF="$TMP_DIR/51mediastack-unattended-upgrades"
 MEDIASTACK_SYSCTL_CONF="$TMP_DIR/90-mediastack-hardening.conf"
 MEDIASTACK_UFW_AFTER_RULES="$TMP_DIR/after.rules"
+# gpu.sh-owned apt sources, redirected into the sandbox: the teardown that
+# removes them must never reach the real /etc/apt from a unit run.
+MEDIASTACK_GPU_NONFREE_LIST="$TMP_DIR/mediastack-nonfree.list"
+MEDIASTACK_GPU_BACKPORTS_LIST="$TMP_DIR/mediastack-backports.list"
 SAMBA_INCLUDE_FILE="$TMP_DIR/samba-include.conf"
 SAMBA_MAIN_CONF="$TMP_DIR/smb.conf"
 
@@ -210,9 +214,16 @@ policy_hash=$(sha256sum "$MEDIASTACK_APT_POLICY_CONF" | awk '{print $1}')
 _ms_state_get() { [[ "$1" == APT_AUTO_SHA256 ]] && echo "$auto_hash" || echo "$policy_hash"; }
 sudo() { command "$@"; }
 printf 'user edit\n' >>"$MEDIASTACK_APT_POLICY_CONF"
+printf 'nonfree\n' >"$MEDIASTACK_GPU_NONFREE_LIST"
+printf 'backports\n' >"$MEDIASTACK_GPU_BACKPORTS_LIST"
 _uninstall_apt
 assert_eq "1" "$?" "APT: edited owned drop-in makes cleanup incomplete"
 [[ -f "$MEDIASTACK_APT_POLICY_CONF" ]] && pass "APT: edited drop-in preserved" || fail "APT: edited drop-in preserved"
+# The hardening toggle reaches _uninstall_apt too; GPU-owned sources are not its
+# state to remove, so they must survive it.
+[[ -f "$MEDIASTACK_GPU_NONFREE_LIST" && -f "$MEDIASTACK_GPU_BACKPORTS_LIST" ]] \
+    && pass "APT: GPU-owned apt sources untouched by hardening teardown" \
+    || fail "APT: GPU-owned apt sources untouched by hardening teardown"
 unset -f sudo
 
 # Live sysctl values are restored only while still at MediaStack's value.
@@ -356,6 +367,38 @@ assert_eq "42" "$?" "transaction: Docker teardown failure is returned"
 assert_contains "${WATCHDOG_CALLS[*]}" "enable mediastack-storage-watchdog.service" "transaction: watchdog enable state restored"
 assert_contains "${WATCHDOG_CALLS[*]}" "start mediastack-storage-watchdog.service" "transaction: watchdog active state restored"
 SCRIPT_DIR="$ORIGINAL_SCRIPT_DIR"
+
+# A real uninstall — and only a real uninstall — removes the GPU apt sources.
+printf 'nonfree\n' >"$MEDIASTACK_GPU_NONFREE_LIST"
+printf 'backports\n' >"$MEDIASTACK_GPU_BACKPORTS_LIST"
+_uninstall_ufw() { return 0; }
+_uninstall_apt() { return 0; }
+_uninstall_sysctl() { return 0; }
+_uninstall_samba() { return 0; }
+storage_uninstall_watchdog() { return 0; }
+f2b_uninstall_reload_watcher() { return 0; }
+validate_install_state() { return 0; }
+# Sandbox sudo: absent host artefacts, and removals confined to TMP_DIR.
+sudo() {
+    local arg
+    case "$1" in
+        test) return 1 ;;
+        rm)
+            for arg in "$@"; do
+                [[ "$arg" == "$TMP_DIR"/* ]] && command rm -f "$arg"
+            done
+            return 0
+            ;;
+    esac
+    return 0
+}
+uninstall_system_cleanup
+assert_eq "0" "$?" "uninstall: system cleanup completes with owning-module teardowns"
+[[ -f "$MEDIASTACK_GPU_NONFREE_LIST" || -f "$MEDIASTACK_GPU_BACKPORTS_LIST" ]] \
+    && fail "uninstall: GPU-owned apt sources removed by uninstall_system_cleanup" \
+    || pass "uninstall: GPU-owned apt sources removed by uninstall_system_cleanup"
+unset -f sudo _uninstall_ufw _uninstall_apt _uninstall_sysctl _uninstall_samba
+unset -f storage_uninstall_watchdog f2b_uninstall_reload_watcher validate_install_state
 
 # --uninstall dispatch precedes a ready Stage 3 marker.
 STAGE3_CALLS=0

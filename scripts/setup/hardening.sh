@@ -265,6 +265,12 @@ uninstall_system_cleanup() {
         log_error "APT cleanup failed"
         failed=1
     }
+    # gpu.sh's apt sources: removed here, on a real uninstall only — never from
+    # _uninstall_apt, which the day-2 hardening toggle also reaches.
+    nvidia_driver_gpu_uninstall || {
+        log_error "GPU apt source cleanup failed"
+        failed=1
+    }
     _uninstall_sysctl || {
         log_error "sysctl cleanup failed"
         failed=1

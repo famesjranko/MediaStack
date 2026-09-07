@@ -72,6 +72,10 @@ _uninstall_apt() {
         fi
         sudo rm -f "$path" || return 1
     done
-    nvidia_driver_gpu_uninstall # apt sources owned by gpu.sh; removed by their owner
-    log_ok "MediaStack apt sources and unattended-upgrades policy removed"
+    # The GPU apt sources are gpu.sh's host state, not this concern's: this
+    # function also runs from the day-2 "Disable system hardening" toggle, and
+    # tearing them down there left transcoding sources removed with no path
+    # back short of `./setup.sh --transcoding`. uninstall_system_cleanup calls
+    # nvidia_driver_gpu_uninstall instead, so only a real uninstall removes them.
+    log_ok "MediaStack unattended-upgrades policy removed"
 }
