@@ -50,6 +50,7 @@ fi
 forbidden_alts=(
     ".env" ".envrc" "tests/.env.gcp" "private/notes.md" "docs/plans/p.md"
     ".planning/p.md" ".tmp/scratch" "CONTEXT.md" "tests/feature-plan.md"
+    "env.local" ".env-backup" "dot-env"
 )
 for rel in "${forbidden_alts[@]}"; do
     dir="$FIXTURE_ROOT/alt-$(tr '/.' '__' <<<"$rel")"
