@@ -257,6 +257,33 @@ assert_eq "10" "${#SYSCTL_WRITES[@]}" "sysctl: every unchanged live key is resto
 [[ ! -e "$MEDIASTACK_SYSCTL_CONF" ]] && pass "sysctl: owned file removed" || fail "sysctl: owned file removed"
 unset -f sudo sysctl
 
+# Ledger-less teardown: content identity is the only ownership claim left, so an
+# unmodified file goes and anything else stays. Runs the real _uninstall_sysctl.
+_ms_state_get() { :; }
+sudo() { command "$@"; }
+_setup_sysctl_conf_content >"$MEDIASTACK_SYSCTL_CONF"
+_uninstall_sysctl
+assert_eq "0" "$?" "sysctl: ledger-less run skips a file it cannot claim"
+[[ -e "$MEDIASTACK_SYSCTL_CONF" ]] \
+    && pass "sysctl: recorded teardown without a ledger touches nothing" \
+    || fail "sysctl: recorded teardown without a ledger touches nothing"
+_uninstall_sysctl true
+assert_eq "0" "$?" "sysctl: best-effort run removes an unmodified MediaStack file"
+[[ -e "$MEDIASTACK_SYSCTL_CONF" ]] \
+    && fail "sysctl: best-effort run removes an unmodified MediaStack file by content" \
+    || pass "sysctl: best-effort run removes an unmodified MediaStack file by content"
+{
+    _setup_sysctl_conf_content
+    printf 'net.ipv4.ip_forward = 0\n'
+} >"$MEDIASTACK_SYSCTL_CONF"
+_uninstall_sysctl true
+assert_eq "1" "$?" "sysctl: best-effort run reports an unrecognised file instead of removing it"
+[[ -e "$MEDIASTACK_SYSCTL_CONF" ]] \
+    && pass "sysctl: best-effort run preserves an edited file" \
+    || fail "sysctl: best-effort run preserves an edited file"
+command rm -f "$MEDIASTACK_SYSCTL_CONF"
+unset -f sudo
+
 # Ownership is recorded before the sysctl file/apply mutations, so a failed
 # first install cannot leave an untracked file that uninstall later skips.
 SYSCTL_TRACE="$TMP_DIR/sysctl-order"
@@ -428,7 +455,7 @@ _uninstall_apt() {
     return 0
 }
 _uninstall_sysctl() {
-    BEST_EFFORT_CALLS+=(sysctl)
+    BEST_EFFORT_CALLS+=("sysctl:$1")
     return 0
 }
 _uninstall_samba() {
@@ -453,7 +480,7 @@ sudo() {
 }
 main --uninstall >/dev/null 2>&1
 assert_eq "1" "$?" "best-effort: invalid-ledger uninstall still reports failure"
-assert_contains "${BEST_EFFORT_CALLS[*]}" "ufw apt gpu sysctl samba watchdog fail2ban" "best-effort: accepted offer runs every presence-guarded teardown"
+assert_contains "${BEST_EFFORT_CALLS[*]}" "ufw apt gpu sysctl:true samba watchdog fail2ban" "best-effort: accepted offer runs every teardown, flagged as ledger-less"
 ui_confirm() { return 1; }
 BEST_EFFORT_CALLS=()
 main --uninstall >/dev/null 2>&1

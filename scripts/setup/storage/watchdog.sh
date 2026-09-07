@@ -190,7 +190,7 @@ storage_install_watchdog() {
     # sudo never honours, leaving auto-repair silently dead; so would an
     # unvalidated file on a host with no visudo. Skip the watchdog in both
     # cases - setup carries on, the user is told.
-    if [[ ! "$install_user" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]; then
+    if [[ ! "$install_user" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]]; then
         storage_log_warn "User name '${install_user}' cannot be expressed as a sudoers rule; NAS storage watchdog not installed."
         return 0
     fi
@@ -198,11 +198,16 @@ storage_install_watchdog() {
         storage_log_warn "visudo is unavailable, so the watchdog sudoers rule cannot be validated; NAS storage watchdog not installed."
         return 0
     fi
+    # Staged inside the root-owned config dir, not $TMPDIR: what visudo accepts
+    # must be the same bytes `install` copies, with no window where an unrelated
+    # user could swap the file in between.
+    sudo install -d -o root -g root -m 0755 "$config_dir"
     local sudoers_tmp
-    sudoers_tmp="$(mktemp)" || return 1
-    storage_watchdog_sudoers_content "$install_user" "$helper" >"$sudoers_tmp"
+    sudoers_tmp="$(sudo mktemp -p "$config_dir" .storage-watchdog-sudoers.XXXXXX)" || return 1
+    # shellcheck disable=SC2064 # expand sudoers_tmp now: the trap must not depend on the local surviving
+    trap "sudo rm -f '$sudoers_tmp'" RETURN
+    storage_watchdog_sudoers_content "$install_user" "$helper" | sudo tee "$sudoers_tmp" >/dev/null
     if ! sudo visudo -cf "$sudoers_tmp" >/dev/null 2>&1; then
-        rm -f "$sudoers_tmp"
         storage_log_warn "Generated watchdog sudoers rule failed validation; NAS storage watchdog not installed."
         return 0
     fi
@@ -216,7 +221,6 @@ storage_install_watchdog() {
     sudo chown root:root "$config_file"
     sudo chmod 0600 "$config_file"
     sudo install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_file"
-    rm -f "$sudoers_tmp"
     storage_watchdog_unit_content "$install_user" "$install_group" "$script" | sudo tee "$unit" >/dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable mediastack-storage-watchdog.service >/dev/null

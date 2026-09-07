@@ -67,7 +67,7 @@ _uninstall_apt() {
         sudo test -e "$path" || continue
         expected=$(_ms_state_get "$key") || return 1
         if [[ "$(_ms_root_sha256 "$path")" != "$expected" ]]; then
-            log_error "Edited MediaStack APT file preserved: $path"
+            log_error "MediaStack APT file preserved: $path (edited since install, or the ownership ledger is missing)"
             return 1
         fi
         sudo rm -f "$path" || return 1

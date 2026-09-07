@@ -64,6 +64,17 @@ storage_install_watchdog >/dev/null 2>&1
 assert_eq "0" "$?" "storage_install_watchdog: unusable sudoers user name does not fail setup"
 assert_contains "$(cat "$WATCHDOG_WARNINGS")" 'EXAMPLE\op' "storage_install_watchdog: unusable sudoers user name is reported"
 assert_eq "" "$(cat "$WATCHDOG_SUDO_LOG")" "storage_install_watchdog: unusable sudoers user name installs nothing"
+# A dotted login name is a valid useradd and sudoers token, so it must not be
+# swept up by the guard above: this run gets as far as needing visudo.
+: >"$WATCHDOG_WARNINGS"
+id() { printf '%s\n' 'first.last'; }
+command() {
+    [[ "$1" == -v && "$2" == visudo ]] && return 1
+    builtin command "$@"
+}
+storage_install_watchdog >/dev/null 2>&1
+assert_contains "$(cat "$WATCHDOG_WARNINGS")" "visudo is unavailable" "storage_install_watchdog: a dotted login name passes the sudoers-token guard"
+unset -f command
 SCRIPT_DIR="$WATCHDOG_ORIGINAL_SCRIPT_DIR"
 unset -f id sudo storage_log_warn storage_log_info storage_log_ok
 unset STORAGE_MODE STORAGE_WATCHDOG WATCHDOG_SUDO_LOG WATCHDOG_WARNINGS WATCHDOG_ORIGINAL_SCRIPT_DIR

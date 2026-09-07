@@ -272,8 +272,8 @@ uninstall_system_cleanup() {
 uninstall_best_effort_cleanup() {
     log_warn "No valid ownership ledger: running a best-effort cleanup of the host changes MediaStack can still identify."
     log_info "Anything it cannot verify as its own is left in place and reported below."
-    _uninstall_host_artefacts || {
-        log_warn "Some host changes could not be verified or removed; review the errors above and remove them by hand."
+    _uninstall_host_artefacts true || {
+        log_warn "Some host changes could not be verified as MediaStack's and were left in place — see the errors above and remove them by hand."
         return 1
     }
     log_ok "Identifiable MediaStack host artefacts removed"
@@ -281,7 +281,10 @@ uninstall_best_effort_cleanup() {
 
 # Shared teardown body for both cleanup entry points. Returns non-zero when any
 # owning module reported a failure; each module logs its own detail.
+# $1 — "true" from the best-effort path, where the ledger is unusable and a
+# module may have a content-identity fallback in place of its recorded state.
 _uninstall_host_artefacts() {
+    local unledgered="${1:-false}"
     local failed=0
     _uninstall_ufw || {
         log_error "UFW cleanup failed"
@@ -297,7 +300,7 @@ _uninstall_host_artefacts() {
         log_error "GPU apt source cleanup failed"
         failed=1
     }
-    _uninstall_sysctl || {
+    _uninstall_sysctl "$unledgered" || {
         log_error "sysctl cleanup failed"
         failed=1
     }

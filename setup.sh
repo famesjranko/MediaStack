@@ -122,9 +122,9 @@ main() {
             # than sending the user to a path that leaves the firewall chain,
             # sysctl file, systemd units and sudoers rule behind.
             log_error "Missing or invalid MediaStack ownership ledger; the recorded uninstall cannot run."
-            log_info "A best-effort cleanup can still remove the host changes MediaStack recognises on its own: UFW rules and Docker chain, the sysctl file, its systemd units, and the watchdog sudoers rule."
+            log_info "A best-effort cleanup can still remove the host changes MediaStack recognises on its own: UFW rules and Docker chain, its systemd units, the watchdog sudoers rule, and the sysctl file when its contents are untouched — anything it cannot verify is preserved and reported."
             log_info "Containers, config and media are left alone; use 'Full reset — wipe everything and reinstall' from the menu for those."
-            if ui_confirm "Attempt a best-effort cleanup of MediaStack host changes?" no; then
+            if ui_confirm "Attempt a best-effort cleanup of MediaStack host changes?" "no"; then
                 uninstall_best_effort_cleanup || true
             else
                 log_info "No changes made."
