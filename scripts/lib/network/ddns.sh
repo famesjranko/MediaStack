@@ -18,21 +18,28 @@ ddns_verify_via_container() {
     # inside ui_spin's background subshell. --rm does NOT reap a detached daemon on
     # SIGTERM, so the trap removes the container explicitly.
     (
-        local scratch cid=""
+        local scratch cid="" container_uid
         scratch=$(mktemp -d) || exit 2
         local rc
         trap 'rc=$?; [[ -n "$cid" ]] && docker rm -f "$cid" >/dev/null 2>&1; rm -rf "$scratch"; exit $rc' EXIT
         trap 'exit 130' INT
         trap 'exit 143' TERM
 
-        # The container runs as uid 1000. On the common single-user box the invoking
-        # uid is 1000, so a 600 copy is readable; widen to 644 so a non-1000
-        # installer box can still verify. The file is a throwaway that lives for
-        # seconds and holds the user's own creds on their own host.
-        # ponytail: if that brief world-read matters on a shared box, chown 1000
-        # under `sudo -n` instead; on failure the container just degrades to exit 2.
+        # The container runs as uid 1000 (DDNS_UPDATER_UID, matching dirs.sh's
+        # bind-mount ownership — the image has no PUID/PGID support). On the
+        # common single-user box the invoking uid is already 1000, so the 0600
+        # copy is readable as-is. On any other box, chown the copy to the
+        # container uid under `sudo -n` rather than widening its mode — the file
+        # holds the raw provider secret for the whole verify window. If sudo -n
+        # isn't available (no passwordless sudo configured), degrade to exit 2
+        # (verify-unavailable, handled by both callers) instead of ever leaving
+        # the secret world-readable.
         cp "$config_json" "$scratch/config.json" 2>/dev/null || exit 2
-        chmod 755 "$scratch" && chmod 644 "$scratch/config.json" || exit 2
+        chmod 700 "$scratch" && chmod 600 "$scratch/config.json" || exit 2
+        container_uid="${DDNS_UPDATER_UID:-1000}"
+        if [[ "$container_uid" != "$(id -u)" ]]; then
+            sudo -n chown "$container_uid" "$scratch" "$scratch/config.json" >/dev/null 2>&1 || exit 2
+        fi
 
         # -p 127.0.0.1:0:8000 = ephemeral host port; the real ddns-updater service
         # holds 8000:8000, so a fixed publish would collide during a day-2 verify.

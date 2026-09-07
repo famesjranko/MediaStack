@@ -175,5 +175,97 @@ STUB_PORT=32768
 STUB_HTTP_CODE=000
 assert_eq "2" "$(verify_rc)" "a live container that never answers degrades"
 
+# --- SEC-2: the scratch copy holding the raw provider secret must never
+# widen to world-readable. It stays 700/600 for the whole verify window and,
+# on a box where the invoking uid isn't the container's, gets chowned to the
+# container uid under `sudo -n` instead — with a failed chown degrading
+# (exit 2) rather than falling back to a mode widen.
+SCRATCH_SEEN="$TMP_ROOT/scratch-path"
+UNBLOCK="$TMP_ROOT/unblock"
+SUDO_CALLS="$TMP_ROOT/sudo-calls"
+
+# A blocking docker(): records the scratch dir docker(1) was handed and stalls
+# `run -d` until the test unblocks it, so the assertions below run while the
+# scratch dir is genuinely still on disk and in use, not merely before cleanup.
+docker() {
+    case "$1 ${2:-}" in
+        "image inspect") return 0 ;;
+        "run -d")
+            local prev=""
+            for a in "$@"; do
+                [[ "$prev" == "-v" ]] && printf '%s\n' "${a%%:*}" >"$SCRATCH_SEEN"
+                prev="$a"
+            done
+            while [[ ! -f "$UNBLOCK" ]]; do sleep 0.02; done
+            printf 'stub-cid\n'
+            return 0
+            ;;
+        "inspect -f")
+            printf 'false\n'
+            return 0
+            ;;
+        "logs stub-cid")
+            printf '%s\n' "$VALIDATION_LOG"
+            return 0
+            ;;
+        "rm -f") return 0 ;;
+    esac
+    return 0
+}
+
+# Same uid: no chown needed, the plain 700/600 copy is already readable.
+reset_stubs
+rm -f "$SCRATCH_SEEN" "$UNBLOCK" "$SUDO_CALLS"
+DDNS_UPDATER_UID="$(id -u)"
+sudo() {
+    printf 'sudo %s\n' "$*" >>"$SUDO_CALLS"
+    return 0
+}
+(ddns_verify_via_container "$CONFIG" "$BODY" >/dev/null 2>&1) &
+FLIGHT_PID=$!
+for _ in $(seq 1 200); do
+    [[ -s "$SCRATCH_SEEN" ]] && break
+    sleep 0.02
+done
+SCRATCH_DIR="$(cat "$SCRATCH_SEEN")"
+assert_eq "700" "$(stat -c %a "$SCRATCH_DIR")" "scratch dir stays 700 while verify is in flight"
+assert_eq "600" "$(stat -c %a "$SCRATCH_DIR/config.json")" "scratch config stays 600 while verify is in flight"
+: >"$UNBLOCK"
+wait "$FLIGHT_PID"
+assert_eq "" "$(cat "$SUDO_CALLS" 2>/dev/null)" "matching uid never shells out to sudo"
+
+# Different uid, sudo -n available: chown targets the container uid, never a
+# mode widen.
+reset_stubs
+rm -f "$SCRATCH_SEEN" "$UNBLOCK" "$SUDO_CALLS"
+DDNS_UPDATER_UID=$(($(id -u) + 1))
+sudo() {
+    printf 'sudo %s\n' "$*" >>"$SUDO_CALLS"
+    return 0
+}
+(ddns_verify_via_container "$CONFIG" "$BODY" >/dev/null 2>&1) &
+FLIGHT_PID=$!
+for _ in $(seq 1 200); do
+    [[ -s "$SCRATCH_SEEN" ]] && break
+    sleep 0.02
+done
+SCRATCH_DIR="$(cat "$SCRATCH_SEEN")"
+assert_eq "700" "$(stat -c %a "$SCRATCH_DIR")" "scratch dir stays 700 for a non-matching uid too"
+assert_eq "600" "$(stat -c %a "$SCRATCH_DIR/config.json")" "scratch config stays 600 for a non-matching uid too"
+: >"$UNBLOCK"
+wait "$FLIGHT_PID"
+assert_contains "$(cat "$SUDO_CALLS")" "chown $DDNS_UPDATER_UID $SCRATCH_DIR $SCRATCH_DIR/config.json" "chown targets the configured container uid on both the dir and the file"
+
+# Different uid, no sudo -n (e.g. no passwordless sudo configured): degrade,
+# never widen the mode as a fallback.
+reset_stubs
+rm -f "$SCRATCH_SEEN" "$UNBLOCK" "$SUDO_CALLS"
+DDNS_UPDATER_UID=$(($(id -u) + 1))
+sudo() { return 1; }
+assert_eq "2" "$(verify_rc)" "a failed chown degrades instead of widening the mode"
+
+unset -f docker sudo
+unset DDNS_UPDATER_UID
+
 scenario_end "$CURRENT_SCENARIO"
 summary
