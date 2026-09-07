@@ -33,6 +33,54 @@ _MS_PROFILES_SH_LOADED=1
 #   autoheal   autoheal sidecar  unless AUTOHEAL_ENABLED=false (on by default)
 #   proxy      NPM/DDNS/fail2ban  when a real DOMAIN is set (not the LAN sentinel)
 #   remote     WireGuard          when an init password is set
+# The optional-profile membership table: which compose services belong to which
+# optional profile. This is THE mapping. profiles_service_flag (one service ->
+# its flag) and profiles_member_pattern (one profile -> a `docker compose ps`
+# match) both read it, and profiles_build_args below names the same profiles, so
+# adding an optional profile is one edit in this file rather than four across
+# the tree.
+_profiles_membership() {
+    printf '%s\n' \
+        "subtitles bazarr" \
+        "autoheal autoheal" \
+        "proxy npm fail2ban ddns-updater" \
+        "remote wireguard"
+}
+
+# Echo "--profile <name>" for the optional profile SERVICE belongs to, or an
+# empty line when the service is in the default profile.
+#
+#   Usage: profiles_service_flag SERVICE
+profiles_service_flag() {
+    local _psf_svc="$1" _psf_row _psf_member
+    while read -r _psf_row; do
+        for _psf_member in ${_psf_row#* }; do
+            if [[ "$_psf_member" == "$_psf_svc" ]]; then
+                printf '%s\n' "--profile ${_psf_row%% *}"
+                return 0
+            fi
+        done
+    done < <(_profiles_membership)
+    printf '\n'
+}
+
+# Echo an extended-regex alternation matching PROFILE's services in a
+# `docker compose ps` listing. Word boundaries keep `npm` from matching `pnpm`
+# in another service's COMMAND column. Returns non-zero for an unknown profile.
+#
+#   Usage: profiles_member_pattern PROFILE
+profiles_member_pattern() {
+    local _pmp_profile="$1" _pmp_row _pmp_members
+    while read -r _pmp_row; do
+        if [[ "${_pmp_row%% *}" == "$_pmp_profile" ]]; then
+            _pmp_members=${_pmp_row#* }
+            printf '%s\n' "\\b(${_pmp_members// /|})\\b"
+            return 0
+        fi
+    done < <(_profiles_membership)
+    return 1
+}
+
 profiles_build_args() {
     local -n _bpa_out=$1
     local _bpa_env="${2:-${SCRIPT_DIR:-$PWD}/.env}"

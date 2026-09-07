@@ -23,6 +23,7 @@ setup_update_sandbox() {
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/common.sh"
     cp "$REPO_ROOT/scripts/lib/term-caps.sh" "$TMP_DIR/sandbox/scripts/lib/term-caps.sh"   # common.sh sources it
     cp "$REPO_ROOT/scripts/lib/env-update.sh" "$TMP_DIR/sandbox/scripts/lib/env-update.sh" # common.sh sources it
+    cp "$REPO_ROOT/scripts/lib/profiles.sh" "$TMP_DIR/sandbox/scripts/lib/profiles.sh"     # canonical profile mapping
     cp "$REPO_ROOT/scripts/setup/override.sh" "$TMP_DIR/sandbox/scripts/setup/override.sh"
     cp "$REPO_ROOT/scripts/setup/gpu/compose.sh" "$TMP_DIR/sandbox/scripts/setup/gpu/compose.sh"
     cp "$REPO_ROOT/docs/operations/image-digests.lock" "$TMP_DIR/sandbox/docs/operations/image-digests.lock"
@@ -96,6 +97,39 @@ log=$(cat "$TMP_DIR/docker.log")
 assert_eq "2" "$rc" "update.sh rejects unknown options"
 assert_contains "$output" "Unknown option: --bogus" "update.sh reports unknown option"
 assert_not_contains_local "$log" "compose" "update.sh unknown option exits before Docker calls"
+
+# --- running-profile detection uses the canonical profile mapping -------------
+# update.sh must ask compose for exactly the profiles scripts/lib/profiles.sh
+# says the running services belong to, and pass them as separate, quoted
+# arguments (the old unquoted string would split a spaced profile name in two).
+# shellcheck source=../../scripts/lib/profiles.sh
+source "$REPO_ROOT/scripts/lib/profiles.sh"
+
+setup_update_sandbox
+cat >"$TMP_DIR/sandbox/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$UPDATE_DOCKER_LOG"
+if [[ "${1:-}" == "compose" && "$*" == *" ps --status running"* ]]; then
+    # Only the proxy and subtitles profiles have anything running here.
+    case "$*" in
+        *"--profile proxy"*) printf 'npm   Up 2 hours\n' ;;
+        *"--profile subtitles"*) printf 'bazarr   Up 2 hours\n' ;;
+    esac
+fi
+exit 0
+STUB
+chmod +x "$TMP_DIR/sandbox/bin/docker"
+output=$(run_update)
+log=$(cat "$TMP_DIR/docker.log")
+
+assert_contains "$output" "Proxy profile detected" "update.sh announces the running proxy profile"
+assert_contains "$output" "Subtitles profile detected" "update.sh announces the running subtitles profile"
+assert_contains "$log" "compose $(profiles_service_flag npm) $(profiles_service_flag bazarr) pull" \
+    "update.sh pulls with exactly the canonical flags for the running services"
+assert_contains "$log" "compose $(profiles_service_flag npm) $(profiles_service_flag bazarr) up -d --remove-orphans" \
+    "update.sh recreates with exactly the canonical flags for the running services"
+assert_not_contains_local "$log" "$(profiles_service_flag wireguard) pull" \
+    "update.sh does not pull a profile with nothing running"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

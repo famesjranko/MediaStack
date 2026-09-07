@@ -52,6 +52,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
 fi
 CONFIG_FILE="$SCRIPT_DIR/config.yml"
 source "$SCRIPT_DIR/scripts/lib/common.sh"
+source "$SCRIPT_DIR/scripts/lib/profiles.sh"
 source "$SCRIPT_DIR/scripts/setup/override.sh"
 source "$SCRIPT_DIR/scripts/setup/storage.sh"
 
@@ -69,31 +70,30 @@ esac
 detect_host_memory
 generate_override "${JELLYFIN_GPU:-none}"
 
-# Capture-then-grep avoids SIGPIPE+pipefail race: `compose ps | grep -q` reads
+# Which optional profiles this host is actually running. The service list per
+# profile comes from profiles_member_pattern (scripts/lib/profiles.sh) — the one
+# profile-membership table — so adding a profile is an edit there, not here.
+#
+# Capture-then-grep avoids a SIGPIPE+pipefail race: `compose ps | grep -q` reads
 # false because grep's early exit SIGPIPE-signals docker compose under
-# `set -euo pipefail`. Word boundaries (\b) keep `npm` from matching `pnpm` in
-# seerr's COMMAND column.
-PROFILE_ARGS=""
-PROXY_PS=$(docker compose --profile proxy ps --status running 2>/dev/null || true)
-if grep -qE '\b(npm|fail2ban|ddns-updater)\b' <<<"$PROXY_PS"; then
-    PROFILE_ARGS="$PROFILE_ARGS --profile proxy"
-    echo "Proxy profile detected (NPM + fail2ban + DDNS) - updating those too"
-fi
-REMOTE_PS=$(docker compose --profile remote ps --status running 2>/dev/null || true)
-if grep -qE '\bwireguard\b' <<<"$REMOTE_PS"; then
-    PROFILE_ARGS="$PROFILE_ARGS --profile remote"
-    echo "Remote access profile detected - updating those too"
-fi
-SUBTITLES_PS=$(docker compose --profile subtitles ps --status running 2>/dev/null || true)
-if grep -qE '\bbazarr\b' <<<"$SUBTITLES_PS"; then
-    PROFILE_ARGS="$PROFILE_ARGS --profile subtitles"
-    echo "Subtitles profile detected (Bazarr) - updating that too"
-fi
-AUTOHEAL_PS=$(docker compose --profile autoheal ps --status running 2>/dev/null || true)
-if grep -qE '\bautoheal\b' <<<"$AUTOHEAL_PS"; then
-    PROFILE_ARGS="$PROFILE_ARGS --profile autoheal"
-    echo "Autoheal profile detected - updating that too"
-fi
+# `set -euo pipefail`.
+#
+# An ARRAY, expanded quoted: an unquoted string splits on whitespace, so a
+# profile name containing a space would silently become two compose arguments.
+PROFILE_ARGS=()
+_add_running_profile() {
+    local profile="$1" note="$2" pattern ps_out
+    pattern=$(profiles_member_pattern "$profile") || return 0
+    ps_out=$(docker compose --profile "$profile" ps --status running 2>/dev/null || true)
+    if grep -qE "$pattern" <<<"$ps_out"; then
+        PROFILE_ARGS+=(--profile "$profile")
+        echo "$note"
+    fi
+}
+_add_running_profile proxy "Proxy profile detected (NPM + fail2ban + DDNS) - updating those too"
+_add_running_profile remote "Remote access profile detected - updating those too"
+_add_running_profile subtitles "Subtitles profile detected (Bazarr) - updating that too"
+_add_running_profile autoheal "Autoheal profile detected - updating that too"
 
 if [[ "$IMAGE_CHANNEL" == "latest" ]]; then
     echo "Pulling latest upstream image tags..."
@@ -103,7 +103,7 @@ fi
 PULL_OK=false
 BACKOFF=10
 for attempt in 1 2 3; do
-    if docker compose $PROFILE_ARGS pull 2>&1; then
+    if docker compose "${PROFILE_ARGS[@]}" pull 2>&1; then
         PULL_OK=true
         break
     fi
@@ -121,7 +121,7 @@ fi
 echo ""
 echo "Recreating containers with new images..."
 storage_guard_before_start
-docker compose $PROFILE_ARGS up -d --remove-orphans
+docker compose "${PROFILE_ARGS[@]}" up -d --remove-orphans
 
 # After the image bumps, verify each log-parsed service's fail2ban filter still
 # matches its (possibly changed) log format — the silent break the day-2 health
@@ -161,4 +161,4 @@ fi
 
 echo ""
 echo "Update complete. Current status:"
-docker compose $PROFILE_ARGS ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+docker compose "${PROFILE_ARGS[@]}" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
