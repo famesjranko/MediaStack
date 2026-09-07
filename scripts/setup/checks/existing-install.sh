@@ -26,7 +26,9 @@ detect_existing_install() {
     [[ -s "$env_file" ]] || return 0
 
     local stage1_complete
-    stage1_complete=$(awk -F= '$1 == "STAGE_1_COMPLETE" {print $2; exit}' "$env_file" 2>/dev/null || true)
+    # The blessed .env writer single-quotes every value, while env-write.sh's
+    # template emits the marker bare — strip either quote style before comparing.
+    stage1_complete=$(awk -F= '$1 == "STAGE_1_COMPLETE" { v = $2; gsub(/^["'\'']|["'\'']$/, "", v); print v; exit }' "$env_file" 2>/dev/null || true)
     if [[ "$stage1_complete" != "1" ]]; then
         log_warn "Incomplete Stage 1 state detected; resuming setup instead of existing-install menu."
         return 0

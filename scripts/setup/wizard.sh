@@ -170,7 +170,9 @@ with open('$SCRIPT_DIR/config.yml') as f:
     c = yaml.safe_load(f)
 exit(0 if c.get('wizard_completed') else 1)
 " 2>/dev/null; then
-        if grep -Eq '^STAGE_1_COMPLETE=1[[:space:]]*$' "$SCRIPT_DIR/.env"; then
+        # The blessed .env writer single-quotes every value, while env-write.sh's
+        # template emits the marker bare — accept either shape.
+        if grep -Eq "^STAGE_1_COMPLETE=(1|'1'|\"1\")[[:space:]]*\$" "$SCRIPT_DIR/.env"; then
             log_skip "Setup wizard already completed (re-run setup to reconfigure)"
             return 0
         fi

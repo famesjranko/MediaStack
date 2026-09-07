@@ -390,5 +390,33 @@ else
     fail "Stage 2 failed-state write still re-renders the proxy config"
 fi
 
+# Stage 1 marker preservation goes through the blessed writer too. A failed
+# write must warn rather than abort: Stage 2 still has to finish, and the next
+# run resumes Stage 1 from the un-flipped marker.
+SCRIPT_DIR="$TMP_ROOT/stage1-marker-preserve"
+mkdir -p "$SCRIPT_DIR"
+printf 'STAGE_1_COMPLETE=\n' >"$SCRIPT_DIR/.env"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
+STAGE_1_COMPLETE=1
+PRESERVE_WARN_CALLS=0
+# The writer is called in a command substitution, so record its arguments in a
+# file rather than a variable the subshell would discard.
+PRESERVE_WRITE_ARGS_FILE="$SCRIPT_DIR/write-args"
+_env_write_kv() {
+    printf '%s' "$*" >"$PRESERVE_WRITE_ARGS_FILE"
+    printf 'write-error:simulated\n'
+    return 6
+}
+_env_write_kv_warn() {
+    PRESERVE_WARN_CALLS=$((PRESERVE_WARN_CALLS + 1))
+}
+stage2_preserve_stage1_marker
+PRESERVE_RC=$?
+assert_eq "0" "$PRESERVE_RC" "Stage 1 marker preservation stays non-fatal after a failed write"
+assert_eq "1" "$PRESERVE_WARN_CALLS" "Stage 1 marker preservation warns on a failed write"
+assert_eq "$SCRIPT_DIR/.env STAGE_1_COMPLETE 1" "$(cat "$PRESERVE_WRITE_ARGS_FILE" 2>/dev/null)" \
+    "Stage 1 marker preservation routes through the blessed .env writer"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

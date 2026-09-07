@@ -97,7 +97,13 @@ _stage2_seed_wizard_defaults() {
 
 stage2_preserve_stage1_marker() {
     if [[ -f "$SCRIPT_DIR/.env" && "${STAGE_1_COMPLETE:-}" == "1" ]]; then
-        sed -i 's/^STAGE_1_COMPLETE=$/STAGE_1_COMPLETE=1/' "$SCRIPT_DIR/.env"
+        # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
+        local writer_status
+        # Non-fatal: warn rather than abort, so a Stage 2 skip/install still
+        # finishes and the next run resumes Stage 1 rather than dying here.
+        if ! writer_status=$(_env_write_kv "$SCRIPT_DIR/.env" STAGE_1_COMPLETE 1); then
+            _env_write_kv_warn STAGE_1_COMPLETE "$writer_status"
+        fi
     fi
 }
 

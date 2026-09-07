@@ -110,8 +110,17 @@ _stage1_install() {
     fi
 
     if $probe_ok; then
-        sed -i 's/^STAGE_1_COMPLETE=$/STAGE_1_COMPLETE=1/' "$SCRIPT_DIR/.env"
-        log_ok "Core media server ready (STAGE_1_COMPLETE=1)"
+        # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
+        # A hand-rolled `sed -i` truncates in place, so an interrupt mid-write
+        # can leave .env corrupt with the marker half-flipped.
+        local writer_status
+        if writer_status=$(_env_write_kv "$SCRIPT_DIR/.env" STAGE_1_COMPLETE 1); then
+            export STAGE_1_COMPLETE=1
+            log_ok "Core media server ready (STAGE_1_COMPLETE=1)"
+        else
+            _env_write_kv_warn STAGE_1_COMPLETE "$writer_status"
+            log_warn "Stage 1 marker NOT set - choose Install MediaStack from the menu after fixing"
+        fi
     else
         log_warn "Stage 1 marker NOT set - choose Install MediaStack from the menu after fixing"
     fi
