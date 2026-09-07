@@ -1,5 +1,5 @@
 # Owns: the destroy-preview text and the typed-DESTROY teardown sequence
-# (wipe/full-wipe/uninstall) for an existing MediaStack install.
+# (wipe/uninstall) for an existing MediaStack install.
 # Sources: $SCRIPT_DIR and scripts/lib/common.sh, loaded by the caller
 # (scripts/setup/checks.sh, sourced from setup.sh). Calls
 # storage_pause_watchdog_for_install (scripts/setup/storage.sh) and
@@ -10,7 +10,7 @@ _print_destroy_preview() {
     # (down -v + rm .env + rm .nvidia-finalize-pending, no git clean):
     # compose declares NO named volumes and config/ is a host bind mount, so
     # BOTH data/ and config/ survive 'down -v' and are listed under PRESERVE.
-    # Optional _mode param: "wipe" (default), "full-wipe", or "uninstall".
+    # Optional _mode param: "wipe" (default) or "uninstall".
     local _mode="${1:-wipe}"
     cat <<'PREVIEW'
 
@@ -30,7 +30,7 @@ PREVIEW
         fi
         printf '  * MediaStack systemd units and watchdog helper files\n'
     fi
-    if [[ "$_mode" == "full-wipe" || "$_mode" == "uninstall" ]]; then
+    if [[ "$_mode" == "uninstall" ]]; then
         cat <<'PREVIEW'
   * config/ - all service settings & databases (Jellyfin watch history,
     Sonarr/Radarr/Bazarr DBs, qBittorrent, Jackett, NPM certs, WireGuard
@@ -57,15 +57,14 @@ PREVIEW
     echo ""
     case "$_mode" in
         wipe) printf 'Reinstalling keeps your old settings. To start truly clean, clear ./config\nyourself first - this wipe deliberately does not.\n\n' ;;
-        full-wipe) printf 'This is a complete reset. All service databases, settings, and credentials\nwill be lost. Use this to recover from a broken install.\n\n' ;;
         uninstall) printf 'data/ (your media) is preserved. config/ settings, databases, and credentials\nare removed so a later reinstall starts clean. The MediaStack directory remains.\n\n' ;;
     esac
 }
 
 # Remove all Docker-runtime state in config/ but skip config/examples/ (static
 # reference YAML read by wizard_apply.py before create_config_dirs runs — Docker
-# never writes there, so there is nothing to wipe). Shared by full-wipe and the
-# --uninstall path so a later reinstall starts from a clean slate instead of
+# never writes there, so there is nothing to wipe). Used by the --uninstall path
+# so a later reinstall starts from a clean slate instead of
 # inheriting stale service credentials (Jellyfin/Seerr/Uptime-Kuma embed their
 # admin password in config/, which would then reject a freshly generated .env).
 wipe_config_runtime() {
@@ -79,10 +78,7 @@ nuke_existing_install() {
     # Typed-DESTROY confirmation + destroy command sequence.
     # Satisfies the documented rebuild path: down -v + rm .env.
     # data/ bind mount is NEVER touched.
-    # Optional _mode: "wipe" (default, continues to fresh setup), "full-wipe"
-    # (also wipes config/ via sudo, preserving config/examples/ — the live
-    # pre-seeds are re-seeded from those templates on the next install), or
-    # "uninstall".
+    # Optional _mode: "wipe" (default, continues to fresh setup) or "uninstall".
     local _mode="${1:-wipe}"
 
     _print_destroy_preview "$_mode"
@@ -160,12 +156,9 @@ nuke_existing_install() {
         # ledger (legitimate protection on real hosts); clear it here so the
         # fresh-install path that follows treats this as a new host.
         unset STAGE_1_COMPLETE STAGE_3_GPU_STATE
-        if [[ "$_mode" == "full-wipe" ]]; then
-            wipe_config_runtime
-        fi
     fi
 
-    if [[ "$_mode" == "wipe" || "$_mode" == "full-wipe" ]]; then
+    if [[ "$_mode" == "wipe" ]]; then
         log_ok "Existing install removed. Continuing with fresh setup."
     else
         log_ok "Existing install removed."

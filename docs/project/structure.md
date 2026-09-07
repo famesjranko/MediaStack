@@ -108,7 +108,7 @@ config/                             Live service configs (all gitignored — run
                                     qbittorrent/qBittorrent/{qBittorrent.conf,categories.json}.
                                     create_config_dirs (seed_config_from_templates in
                                     scripts/setup/stack.sh) copies each to config/<svc>/ on
-                                    install if absent; templates survive uninstall/full-wipe.
+                                    install if absent; templates survive wipe and uninstall.
   fail2ban/, homepage/, jackett/, qbittorrent/   Live copies seeded from examples/defaults/ (gitignored)
   state/                            Runtime state snapshots (gitignored)
     image-policy.tsv                Per-service update overrides + digest pins — Manage updates menu
