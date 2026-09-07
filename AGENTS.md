@@ -36,6 +36,8 @@ and low maintenance.
 | `config.yml` / `.env` keys | [docs/setup/configuration-schema.md](docs/setup/configuration-schema.md) | Full key reference; adding a key touches both |
 | Storage paths | [docs/setup/storage.md](docs/setup/storage.md) | Local/NAS/manual modes constrain path handling |
 | Image tags | [docs/operations/upgrades.md](docs/operations/upgrades.md) | Pin policy and the bump preflight |
+| Branches / PRs | [docs/project/workflow.md](docs/project/workflow.md) | Branch topology, naming, squash-merge rules |
+| Releases / versioning | [docs/project/release.md](docs/project/release.md) | Release gates and the 0.x policy; CHANGELOG entry rules are in [CHANGELOG.md](CHANGELOG.md) |
 | Tests themselves | [tests/README.md](tests/README.md) | Scenario layout, DinD battery, what runs where |
 | A pull request | [CONTRIBUTING.md](CONTRIBUTING.md) | Process expectations |
 | Anything else | [docs/README.md](docs/README.md) | Full doc index |
