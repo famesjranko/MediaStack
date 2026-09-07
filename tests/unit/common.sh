@@ -21,6 +21,21 @@ touch "$CONFIG_FILE"
 
 source "$REPO_ROOT/scripts/lib/common.sh"
 
+# --- log_* return contract ----------------------------------------------------
+# Eight call sites are written `cmd && log_ok "..." || log_warn "..."`, so a
+# log helper that returned non-zero would fall through to the `||` branch and
+# double-log. The exposure is real: the counter bump `((_LOG_COUNTS_OK++))`
+# returns 1 on the FIRST call (post-increment yields 0), which is exactly the
+# case a fresh capture puts these helpers in.
+log_capture_start
+for _log_fn in log_info log_ok log_warn log_error log_skip log_drift; do
+    "$_log_fn" "return-contract probe"
+    _log_rc=$?
+    assert_eq "0" "$_log_rc" "$_log_fn returns 0 on its first (counter-zero) call"
+done
+log_capture_stop
+unset _log_fn _log_rc
+
 LAST_WARN=""
 log_ok() { :; }
 log_info() { :; }
