@@ -409,11 +409,19 @@ health_docker_user_restrict() {
     local rules ndrop
     rules=$(sudo -n iptables -S MEDIASTACK-DOCKER-RESTRICT 2>/dev/null) || true
     ndrop=$(grep -c 'multiport.*DROP' <<<"$rules") || true
-    if [[ "${ndrop:-0}" -ge 1 ]]; then
-        echo "ok|LAN-only port protection active (${ndrop} DROP rules in DOCKER-USER)"
-    else
+    if [[ "${ndrop:-0}" -lt 1 ]]; then
         echo "fail|Port-restriction chain is EMPTY (Docker flushed it) — LAN-only ports exposed"
+        return 0
     fi
+    # IPv6 only matters once Docker actually filters there — it creates a v6
+    # DOCKER-USER chain when it gains an IPv6 bridge. Until then our after6.rules
+    # mirror sits inert and there is nothing to report.
+    if sudo -n ip6tables -S DOCKER-USER >/dev/null 2>&1 \
+        && ! sudo -n ip6tables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT 2>/dev/null; then
+        echo "fail|LAN-only port protection MISSING from IPv6 DOCKER-USER — admin ports exposed over IPv6"
+        return 0
+    fi
+    echo "ok|LAN-only port protection active (${ndrop} DROP rules in DOCKER-USER)"
     return 0
 }
 

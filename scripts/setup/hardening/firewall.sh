@@ -1,6 +1,7 @@
 # Owns: UFW firewall policy, Docker restriction rules, and their teardown.
 # Sources: hardening.sh globals and common.sh logging helpers.
-# Globals: MEDIASTACK_STATE_FILE, MEDIASTACK_UFW_AFTER_RULES, MEDIASTACK_UFW_AFTER_INIT, and LAN_CIDRS.
+# Globals: MEDIASTACK_STATE_FILE, MEDIASTACK_UFW_AFTER_RULES, MEDIASTACK_UFW_AFTER6_RULES,
+#          MEDIASTACK_UFW_AFTER_INIT, and LAN_CIDRS.
 
 _ms_ufw_allow() {
     # ufw prints "Rule added"/"Skipping adding existing rule" to stdout on each
@@ -73,7 +74,14 @@ setup_ufw() {
 # the DOCKER-USER chain via /etc/ufw/after.rules to restrict management
 # ports to LAN-only access.
 ufw_docker_rules_persisted() {
-    sudo grep -q '# MEDIASTACK-DOCKER-RULES' /etc/ufw/after.rules 2>/dev/null
+    sudo grep -q '# MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER_RULES" 2>/dev/null
+}
+
+# after6.rules is a separate file loaded by ip6tables-restore: the v4 block is
+# invisible to it, so an unmirrored chain means every admin port is wide open
+# the moment Docker gains an IPv6 bridge.
+ufw_docker6_rules_persisted() {
+    sudo grep -q '# MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER6_RULES" 2>/dev/null
 }
 
 ufw_docker_jump_live() {
@@ -81,27 +89,12 @@ ufw_docker_jump_live() {
 }
 
 ufw_docker_rules_installed() {
-    ufw_docker_rules_persisted && ufw_docker_jump_live
+    ufw_docker_rules_persisted && ufw_docker6_rules_persisted && ufw_docker_jump_live
 }
 
-setup_ufw_docker_rules() {
-    local after_rules="/etc/ufw/after.rules"
-    local rules_persisted=false
-
-    if ufw_docker_rules_persisted; then
-        rules_persisted=true
-    fi
-
-    if [[ "$rules_persisted" == "true" ]] && ufw_docker_jump_live; then
-        return
-    fi
-
-    if [[ "$rules_persisted" == "true" ]]; then
-        log_info "Reloading Docker/UFW restriction rules..."
-    else
-        log_info "Adding Docker/UFW restriction rules..."
-
-        sudo tee -a "$after_rules" >/dev/null <<'RULES'
+# Emitted as literal text for /etc/ufw/after.rules.
+_ufw_docker_rules_block() {
+    cat <<'RULES'
 
 # MEDIASTACK-DOCKER-RULES — restrict Docker management ports to LAN
 *filter
@@ -124,6 +117,10 @@ setup_ufw_docker_rules() {
 # cascades through Docker bridge networking on the next boot.
 -A MEDIASTACK-DOCKER-RESTRICT -p tcp -m multiport --dports 8989,7878,9117,8080,5055,9000,81,51821 -j DROP
 -A MEDIASTACK-DOCKER-RESTRICT -p tcp -m multiport --dports 8000,8090,3001,45876,8191,6767,8096,3000 -j DROP
+# Published UDP admin ports. 7359 is Jellyfin's LAN auto-discovery responder,
+# which answers unauthenticated and leaks the server URL. The other published
+# UDP ports (the torrent port, the WireGuard port) are deliberately public.
+-A MEDIASTACK-DOCKER-RESTRICT -p udp -m multiport --dports 7359 -j DROP
 
 # Allow everything else (public ports like 80 and 443 pass through)
 -A MEDIASTACK-DOCKER-RESTRICT -j RETURN
@@ -131,6 +128,74 @@ setup_ufw_docker_rules() {
 COMMIT
 # END MEDIASTACK-DOCKER-RULES
 RULES
+}
+
+# The IPv6 mirror, emitted as literal text for /etc/ufw/after6.rules. Same chain
+# name, same DROP list; the RETURN sources are the v6 equivalents of the private
+# ranges (loopback, unique-local, link-local). DOCKER-USER is declared here
+# because Docker only creates it in ip6tables once it has an IPv6 bridge, and
+# ip6tables-restore --noflush (what ufw runs) aborts the whole batch on an
+# append to a missing chain — which would break every ufw reload. A chain
+# declaration under --noflush creates the chain when absent and leaves an
+# existing one untouched.
+_ufw_docker6_rules_block() {
+    cat <<'RULES'
+
+# MEDIASTACK-DOCKER-RULES — restrict Docker management ports to LAN (IPv6)
+*filter
+:DOCKER-USER - [0:0]
+:MEDIASTACK-DOCKER-RESTRICT - [0:0]
+
+# Jump from DOCKER-USER into our chain
+-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT
+
+# Allow private/local scopes to all Docker ports
+-A MEDIASTACK-DOCKER-RESTRICT -s ::1/128 -j RETURN
+-A MEDIASTACK-DOCKER-RESTRICT -s fc00::/7 -j RETURN
+-A MEDIASTACK-DOCKER-RESTRICT -s fe80::/10 -j RETURN
+
+# DROP non-local traffic to LAN-only Docker ports. Same 15-ports-per-match
+# kernel limit as the IPv4 block, so the same split.
+-A MEDIASTACK-DOCKER-RESTRICT -p tcp -m multiport --dports 8989,7878,9117,8080,5055,9000,81,51821 -j DROP
+-A MEDIASTACK-DOCKER-RESTRICT -p tcp -m multiport --dports 8000,8090,3001,45876,8191,6767,8096,3000 -j DROP
+-A MEDIASTACK-DOCKER-RESTRICT -p udp -m multiport --dports 7359 -j DROP
+
+# Allow everything else (public ports like 80 and 443 pass through)
+-A MEDIASTACK-DOCKER-RESTRICT -j RETURN
+
+COMMIT
+# END MEDIASTACK-DOCKER-RULES
+RULES
+}
+
+setup_ufw_docker_rules() {
+    local rules_persisted=false rules6_persisted=false
+
+    if ufw_docker_rules_persisted; then
+        rules_persisted=true
+    fi
+    if ufw_docker6_rules_persisted; then
+        rules6_persisted=true
+    fi
+
+    if [[ "$rules_persisted" == "true" && "$rules6_persisted" == "true" ]] \
+        && ufw_docker_jump_live; then
+        return
+    fi
+
+    if [[ "$rules_persisted" == "true" && "$rules6_persisted" == "true" ]]; then
+        log_info "Reloading Docker/UFW restriction rules..."
+    else
+        log_info "Adding Docker/UFW restriction rules..."
+        # Process substitution, not a pipeline: `cmd | sudo tee` would put the
+        # privileged write in a subshell, and the append must be observable in
+        # this shell's exit status.
+        if [[ "$rules_persisted" == "false" ]]; then
+            sudo tee -a "$MEDIASTACK_UFW_AFTER_RULES" >/dev/null < <(_ufw_docker_rules_block)
+        fi
+        if [[ "$rules6_persisted" == "false" ]]; then
+            sudo tee -a "$MEDIASTACK_UFW_AFTER6_RULES" >/dev/null < <(_ufw_docker6_rules_block)
+        fi
     fi
 
     # Surface ufw-init failures instead of silently swallowing them.
@@ -151,7 +216,8 @@ RULES
     fi
 }
 
-# The after.rules block appends `-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT`
+# The after.rules block (and its after6.rules twin) appends
+# `-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT`
 # on every full UFW load (iptables-restore --noflush never flushes DOCKER-USER),
 # so the jump accumulates one copy per `ufw reload`. We cannot flush DOCKER-USER
 # (fail2ban parks its own f2b-* jumps there) and cannot delete-before-add inside
@@ -164,6 +230,9 @@ _ufw_docker_dedup_block() {
 # >>> MEDIASTACK-DOCKER-DEDUP — keep exactly one DOCKER-USER→RESTRICT jump
     while [ "$(iptables -S DOCKER-USER 2>/dev/null | grep -c -- '-j MEDIASTACK-DOCKER-RESTRICT')" -gt 1 ]; do
         iptables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT || break
+    done
+    while [ "$(ip6tables -S DOCKER-USER 2>/dev/null | grep -c -- '-j MEDIASTACK-DOCKER-RESTRICT')" -gt 1 ]; do
+        ip6tables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT || break
     done
 # <<< MEDIASTACK-DOCKER-DEDUP
 DEDUP
@@ -274,6 +343,9 @@ _uninstall_ufw() {
     if sudo test -f "$MEDIASTACK_UFW_AFTER_RULES"; then
         sudo sed -i '/^# MEDIASTACK-DOCKER-RULES/,/^# END MEDIASTACK-DOCKER-RULES$/d' "$MEDIASTACK_UFW_AFTER_RULES" || return 1
     fi
+    if sudo test -f "$MEDIASTACK_UFW_AFTER6_RULES"; then
+        sudo sed -i '/^# MEDIASTACK-DOCKER-RULES/,/^# END MEDIASTACK-DOCKER-RULES$/d' "$MEDIASTACK_UFW_AFTER6_RULES" || return 1
+    fi
     # Reverse the DOCKER-USER dedup hook — but only while our marker is still
     # present, so we never delete or edit a file an admin has since replaced.
     if sudo test -f "$MEDIASTACK_UFW_AFTER_INIT" \
@@ -297,8 +369,20 @@ _uninstall_ufw() {
         sudo iptables -F MEDIASTACK-DOCKER-RESTRICT \
             && sudo iptables -X MEDIASTACK-DOCKER-RESTRICT || return 1
     fi
+    # Same teardown for the v6 mirror. Every ip6tables call is a no-op on a host
+    # without it (command absent, or the chain never loaded), so this only ever
+    # removes what setup_ufw_docker_rules put there.
+    while sudo ip6tables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1; do
+        sudo ip6tables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT || return 1
+    done
+    if sudo ip6tables -L MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1; then
+        sudo ip6tables -F MEDIASTACK-DOCKER-RESTRICT \
+            && sudo ip6tables -X MEDIASTACK-DOCKER-RESTRICT || return 1
+    fi
     sudo grep -q '^# MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER_RULES" 2>/dev/null && return 1
+    sudo grep -q '^# MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER6_RULES" 2>/dev/null && return 1
     sudo iptables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1 && return 1
+    sudo ip6tables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT >/dev/null 2>&1 && return 1
 
     defaults=$(_ufw_defaults)
     read -r incoming outgoing <<<"$defaults"

@@ -50,6 +50,7 @@ assert_eq "false" "$(ufw_valid_ip_literal 999.1.1.1 && echo true || echo false)"
 # Keep the historical assertion order: the children are sourced, not run as
 # independent suites, so the frozen output and summary remain one suite.
 source "$HARDENING_TEST_DIR/hardening/firewall.sh"
+source "$HARDENING_TEST_DIR/hardening/firewall-dedup.sh"
 source "$HARDENING_TEST_DIR/hardening/ssh.sh"
 source "$HARDENING_TEST_DIR/hardening/updates.sh"
 source "$HARDENING_TEST_DIR/hardening/sysctl.sh"

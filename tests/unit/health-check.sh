@@ -100,6 +100,10 @@ CERT_BOUND="live/npm-1"
 CERT_END="Jan  1 00:00:00 2099 GMT"
 DU_JUMP=1
 DU_RULES="-A X -p tcp -m multiport --dports 80 -j DROP"
+# IPv6 defaults to "Docker has no v6 DOCKER-USER chain", the state of a host
+# whose Docker is v4-only: the v6 arm must stay silent there.
+DU6_PRESENT=0
+DU6_JUMP=1
 sudo() {
     [[ "${1:-}" == "-n" ]] && shift
     case "${1:-}" in
@@ -115,6 +119,12 @@ sudo() {
             case "$*" in
                 *"-C DOCKER-USER"*) return $((1 - DU_JUMP)) ;;
                 *"-S "*) printf '%s\n' "$DU_RULES" ;;
+            esac
+            ;;
+        ip6tables)
+            case "$*" in
+                *"-S DOCKER-USER"*) return $((1 - DU6_PRESENT)) ;;
+                *"-C DOCKER-USER"*) return $((1 - DU6_JUMP)) ;;
             esac
             ;;
         *) return 0 ;;
@@ -230,6 +240,13 @@ DU_JUMP=1
 DU_RULES="-A X -j RETURN"
 _v fail "docker-user: chain empty (Docker flushed) => fail" health_docker_user_restrict
 DU_RULES="-A X -p tcp -m multiport --dports 80 -j DROP"
+_v ok "docker-user: no v6 DOCKER-USER chain => v6 not reported" health_docker_user_restrict
+DU6_PRESENT=1
+_v ok "docker-user: v6 chain jumped => ok" health_docker_user_restrict
+DU6_JUMP=0
+_v fail "docker-user: v6 chain present but jump missing => fail" health_docker_user_restrict
+DU6_JUMP=1
+DU6_PRESENT=0
 SUDO_OK=0
 _v skip "docker-user: no sudo => skip" health_docker_user_restrict
 SUDO_OK=1
