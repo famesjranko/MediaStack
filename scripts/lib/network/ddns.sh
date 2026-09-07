@@ -28,17 +28,27 @@ ddns_verify_via_container() {
         # The container runs as uid 1000 (DDNS_UPDATER_UID, matching dirs.sh's
         # bind-mount ownership — the image has no PUID/PGID support). On the
         # common single-user box the invoking uid is already 1000, so the 0600
-        # copy is readable as-is. On any other box, chown the copy to the
-        # container uid under `sudo -n` rather than widening its mode — the file
-        # holds the raw provider secret for the whole verify window. If sudo -n
-        # isn't available (no passwordless sudo configured), degrade to exit 2
-        # (verify-unavailable, handled by both callers) instead of ever leaving
-        # the secret world-readable.
+        # copy is readable as-is and the scratch dir stays 0700 (host-only).
+        #
+        # On any other box, chown ONLY the config copy to the container uid
+        # under `sudo -n` — never the scratch dir itself: the host process
+        # still needs to write $scratch/resp (the polled HTTP body) into that
+        # same directory after `docker run`, and chowning the dir away from
+        # the host uid would break that write. Instead widen the dir to 0701
+        # (host: rwx; everyone else: traverse-only, no read/listing) so the
+        # container uid can open the exact known filename without being able
+        # to list the directory or read anything else in it. If sudo -n isn't
+        # available (no passwordless sudo configured), degrade to exit 2
+        # (verify-unavailable, handled by both callers) instead of ever
+        # leaving the secret world-readable.
         cp "$config_json" "$scratch/config.json" 2>/dev/null || exit 2
-        chmod 700 "$scratch" && chmod 600 "$scratch/config.json" || exit 2
+        chmod 600 "$scratch/config.json" || exit 2
         container_uid="${DDNS_UPDATER_UID:-1000}"
-        if [[ "$container_uid" != "$(id -u)" ]]; then
-            sudo -n chown "$container_uid" "$scratch" "$scratch/config.json" >/dev/null 2>&1 || exit 2
+        if [[ "$container_uid" == "$(id -u)" ]]; then
+            chmod 700 "$scratch" || exit 2
+        else
+            sudo -n chown "$container_uid" "$scratch/config.json" >/dev/null 2>&1 || exit 2
+            chmod 701 "$scratch" || exit 2
         fi
 
         # -p 127.0.0.1:0:8000 = ephemeral host port; the real ddns-updater service

@@ -175,6 +175,36 @@ STUB_PORT=32768
 STUB_HTTP_CODE=000
 assert_eq "2" "$(verify_rc)" "a live container that never answers degrades"
 
+# Regression: the same 500-infra-vocab degrade, but on a non-matching-uid box
+# (e.g. a CI runner whose invoking uid differs from DDNS_UPDATER_UID) where
+# `sudo -n chown` succeeds. An earlier version of the uid-mismatch branch
+# chowned the scratch DIRECTORY (not just config.json) to the container uid,
+# which silently broke the host's own later write of $scratch/resp (the
+# polled HTTP body) into that now-foreign-owned directory — losing the body
+# turned this degrade into a reject, exactly the CI failure this reproduces.
+# A real `chown` to a different uid can't be exercised without root, so this
+# stub simulates its actual effect instead of just returning success: it
+# strips all access from every path `chown` was handed, the same loss of
+# access the real syscall would cause on whichever paths it is (wrongly)
+# given. DDNS_UPDATER_UID and sudo are restored immediately after so this
+# case cannot leak into the ones below it.
+reset_stubs
+STUB_PORT=32768
+STUB_HTTP_CODE=500
+STUB_HTTP_BODY='{"errors":["obtaining ipv4 address: connection refused"]}'
+DDNS_UPDATER_UID=$(($(id -u) + 1))
+sudo() {
+    if [[ "$1" == "-n" && "$2" == "chown" ]]; then
+        shift 3
+        chmod 000 "$@"
+        return 0
+    fi
+    return 1
+}
+assert_eq "2" "$(verify_rc)" "500 infra-vocab degrade holds on a non-matching-uid box too"
+unset -f sudo
+unset DDNS_UPDATER_UID
+
 # --- SEC-2: the scratch copy holding the raw provider secret must never
 # widen to world-readable. It stays 700/600 for the whole verify window and,
 # on a box where the invoking uid isn't the container's, gets chowned to the
@@ -250,11 +280,41 @@ for _ in $(seq 1 200); do
     sleep 0.02
 done
 SCRATCH_DIR="$(cat "$SCRATCH_SEEN")"
-assert_eq "700" "$(stat -c %a "$SCRATCH_DIR")" "scratch dir stays 700 for a non-matching uid too"
+assert_eq "701" "$(stat -c %a "$SCRATCH_DIR")" "scratch dir widens to traverse-only (never chowned) for a non-matching uid"
 assert_eq "600" "$(stat -c %a "$SCRATCH_DIR/config.json")" "scratch config stays 600 for a non-matching uid too"
 : >"$UNBLOCK"
 wait "$FLIGHT_PID"
-assert_contains "$(cat "$SUDO_CALLS")" "chown $DDNS_UPDATER_UID $SCRATCH_DIR $SCRATCH_DIR/config.json" "chown targets the configured container uid on both the dir and the file"
+assert_contains "$(cat "$SUDO_CALLS")" "chown $DDNS_UPDATER_UID $SCRATCH_DIR/config.json" "chown targets the configured container uid on the file only"
+assert_not_contains "$(cat "$SUDO_CALLS")" "chown $DDNS_UPDATER_UID $SCRATCH_DIR " "chown never targets the scratch dir itself — the host still writes \$scratch/resp into it after docker run"
+
+# Regression: the cleanup trap must still be able to remove the scratch dir
+# after a real chown moved config.json to a foreign uid. A real chown can't be
+# exercised without root, so this sudo stub simulates its effect (chmod 000
+# the target, the same loss of host access a real chown to a different uid
+# would cause) and confirms `rm -rf` still succeeds — because ownership of
+# the DIRECTORY, not the file, governs unlink, and the dir is never chowned.
+reset_stubs
+rm -f "$SCRATCH_SEEN" "$UNBLOCK" "$SUDO_CALLS"
+DDNS_UPDATER_UID=$(($(id -u) + 1))
+sudo() {
+    if [[ "$1" == "-n" && "$2" == "chown" ]]; then
+        shift 3
+        chmod 000 "$@"
+        return 0
+    fi
+    return 1
+}
+(ddns_verify_via_container "$CONFIG" "$BODY" >/dev/null 2>&1) &
+FLIGHT_PID=$!
+for _ in $(seq 1 200); do
+    [[ -s "$SCRATCH_SEEN" ]] && break
+    sleep 0.02
+done
+SCRATCH_DIR="$(cat "$SCRATCH_SEEN")"
+: >"$UNBLOCK"
+wait "$FLIGHT_PID"
+assert_eq "0" "$([[ -e "$SCRATCH_DIR" ]] && echo 1 || echo 0)" \
+    "cleanup removes the scratch dir even after config.json was chowned to a foreign uid"
 
 # Different uid, no sudo -n (e.g. no passwordless sudo configured): degrade,
 # never widen the mode as a fallback.
