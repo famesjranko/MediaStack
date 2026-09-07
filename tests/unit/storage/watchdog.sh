@@ -29,6 +29,105 @@ case "$helper_content" in
         ;;
 esac
 
+# --- Mount helper: only NFS mounts it owns are ever detached ---
+HELPER_DIR="$TMP_DIR/mount-helper"
+mkdir -p "$HELPER_DIR/bin" "$HELPER_DIR/mnt"
+HELPER_STATE="$HELPER_DIR/state"
+HELPER_CALLS="$HELPER_DIR/calls.log"
+cat >"$HELPER_DIR/storage.env" <<EOF
+STORAGE_MODE=nas
+STORAGE_MOUNTPOINT=$HELPER_DIR/mnt
+STORAGE_NFS_HOST=192.0.2.10
+STORAGE_NFS_EXPORT=/exports/mediastack-fixture
+STORAGE_EXPECTED_SOURCE=192.0.2.10:/exports/mediastack-fixture
+STORAGE_EXPECTED_FSTYPE=nfs4
+STORAGE_SENTINEL=$HELPER_DIR/mnt/.mediastack-storage-ready
+EOF
+storage_mount_helper_content \
+    | sed "s#^CONFIG_FILE=.*#CONFIG_FILE=\"$HELPER_DIR/storage.env\"#" >"$HELPER_DIR/helper"
+chmod +x "$HELPER_DIR/helper"
+
+cat >"$HELPER_DIR/bin/findmnt" <<EOF
+#!/usr/bin/env bash
+printf 'findmnt %s\n' "\$*" >>"$HELPER_CALLS"
+source "$HELPER_STATE"
+case "\$*" in
+    *--fstab*)
+        [[ -n "\$FSTAB_SOURCE" ]] && echo "\$FSTAB_SOURCE"
+        exit 0
+        ;;
+esac
+[[ "\$LIVE_SOURCE" == "none" ]] && exit 1
+case "\$*" in
+    *"-o SOURCE"*) echo "\$LIVE_SOURCE" ;;
+    *"-o FSTYPE"*) echo "\$LIVE_FSTYPE" ;;
+esac
+exit 0
+EOF
+cat >"$HELPER_DIR/bin/umount" <<EOF
+#!/usr/bin/env bash
+printf 'umount %s\n' "\$*" >>"$HELPER_CALLS"
+source "$HELPER_STATE"
+[[ "\$UMOUNT_FAILS" == true ]] && exit 32
+sed -i 's|^LIVE_SOURCE=.*|LIVE_SOURCE=none|' "$HELPER_STATE"
+exit 0
+EOF
+cat >"$HELPER_DIR/bin/mount" <<EOF
+#!/usr/bin/env bash
+printf 'mount %s\n' "\$*" >>"$HELPER_CALLS"
+sed -i 's|^LIVE_SOURCE=.*|LIVE_SOURCE=192.0.2.10:/exports/mediastack-fixture|' "$HELPER_STATE"
+sed -i 's|^LIVE_FSTYPE=.*|LIVE_FSTYPE=nfs4|' "$HELPER_STATE"
+touch "$HELPER_DIR/mnt/.mediastack-storage-ready"
+exit 0
+EOF
+chmod +x "$HELPER_DIR/bin/findmnt" "$HELPER_DIR/bin/umount" "$HELPER_DIR/bin/mount"
+
+helper_run() {
+    # $1 live source, $2 live fstype, $3 fstab source, $4 umount fails
+    printf 'LIVE_SOURCE=%s\nLIVE_FSTYPE=%s\nFSTAB_SOURCE=%s\nUMOUNT_FAILS=%s\n' \
+        "$1" "$2" "${3:-}" "${4:-false}" >"$HELPER_STATE"
+    : >"$HELPER_CALLS"
+    rm -f "$HELPER_DIR/mnt/.mediastack-storage-ready"
+    HELPER_OUTPUT="$(PATH="$HELPER_DIR/bin:$PATH" "$HELPER_DIR/helper" repair 2>&1)"
+    HELPER_RC=$?
+}
+
+helper_run /dev/sdb1 ext4
+case "$HELPER_RC:$(cat "$HELPER_CALLS")" in
+    0:* | *umount*) fail "mount helper: never unmounts a non-NFS filesystem at the mountpoint" ;;
+    *) pass "mount helper: never unmounts a non-NFS filesystem at the mountpoint" ;;
+esac
+assert_contains "$HELPER_OUTPUT" "refusing to unmount" "mount helper: logs the refusal with what it found"
+assert_contains "$HELPER_OUTPUT" "ext4" "mount helper: refusal names the unexpected fstype"
+
+helper_run 198.51.100.9:/exports/old-nas nfs4
+assert_contains "$(cat "$HELPER_CALLS")" "umount $HELPER_DIR/mnt" "mount helper: detaches a stale NFS source"
+assert_contains "$(cat "$HELPER_CALLS")" "mount -t nfs4" "mount helper: remounts the expected NAS export"
+if ((HELPER_RC == 0)); then
+    pass "mount helper: stale NFS source is repaired end to end"
+else
+    fail "mount helper: stale NFS source is repaired end to end" "exit ${HELPER_RC}: ${HELPER_OUTPUT}"
+fi
+
+helper_run 198.51.100.9:/exports/old-nas nfs4 198.51.100.9:/exports/old-nas
+case "$HELPER_RC:$(cat "$HELPER_CALLS")" in
+    0:* | *umount*) fail "mount helper: never detaches an fstab-owned mount" ;;
+    *) pass "mount helper: never detaches an fstab-owned mount" ;;
+esac
+
+helper_run 198.51.100.9:/exports/old-nas nfs4 "" true
+case "$(cat "$HELPER_CALLS")" in
+    *"umount -l"*) fail "mount helper: never lazy-unmounts a live busy NFS mount" ;;
+    *) pass "mount helper: never lazy-unmounts a live busy NFS mount" ;;
+esac
+if ((HELPER_RC != 0)); then
+    pass "mount helper: a busy mount is refused, leaving NAS services stopped"
+else
+    fail "mount helper: a busy mount is refused, leaving NAS services stopped"
+fi
+unset -f helper_run
+unset HELPER_DIR HELPER_STATE HELPER_CALLS HELPER_OUTPUT HELPER_RC
+
 # --- Disabled watchdog: install is a no-op that tears down any prior unit ---
 WATCHDOG_INSTALL_PAUSED=false
 storage_pause_watchdog_for_install() {

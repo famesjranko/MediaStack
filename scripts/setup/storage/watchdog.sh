@@ -80,8 +80,75 @@ if ! path_under_mountpoint "$SENTINEL" "$MOUNTPOINT"; then
     exit 1
 fi
 
+refuse() {
+    # The watchdog discards helper output, so the audit trail has to be the
+    # system log; stderr stays for an operator running the helper by hand.
+    echo "$1" >&2
+    if command -v logger >/dev/null 2>&1; then
+        logger -t mediastack-storage-helper -p daemon.warning "$1"
+    fi
+}
+
+is_nfs_fstype() {
+    case "$1" in
+        nfs | nfs4) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+fstab_owned_by_other() {
+    # An fstab entry for this target is an admin-owned mount unless it names
+    # the source setup recorded. Never detach a mount the host owns.
+    local entry seen=false
+    while read -r entry; do
+        [[ -n "$entry" ]] || continue
+        if [[ "$entry" == "$EXPECTED_SOURCE" ]]; then
+            return 1
+        fi
+        seen=true
+    done < <(findmnt --fstab -rn -M "$MOUNTPOINT" -o SOURCE 2>/dev/null || true)
+    $seen
+}
+
+mount_is_responsive() {
+    timeout 5 stat -f -c '%T' "$MOUNTPOINT" >/dev/null 2>&1
+}
+
+detach_unexpected_mount() {
+    local src="$1" fstype="$2"
+
+    # Only NFS is ever detached here: anything else at the mountpoint is an
+    # admin's own filesystem, not a NAS mount this helper is repairing.
+    if ! is_nfs_fstype "$fstype"; then
+        refuse "refusing to unmount ${MOUNTPOINT}: found ${src:-unknown} (${fstype:-unknown}), expected ${EXPECTED_SOURCE} (${EXPECTED_FSTYPE})"
+        return 1
+    fi
+    if fstab_owned_by_other; then
+        refuse "refusing to unmount ${MOUNTPOINT}: /etc/fstab owns this target with a source other than ${EXPECTED_SOURCE}"
+        return 1
+    fi
+
+    # Plain umount is the busy check: fuser/lsof are not guaranteed present on
+    # a minimal host, findmnt and umount are. Lazy detach stays available only
+    # for the case it existed for - a mount that no longer answers, which
+    # plain umount cannot clear.
+    if timeout 20 umount "$MOUNTPOINT" >/dev/null 2>&1; then
+        return 0
+    fi
+    if mount_is_responsive; then
+        refuse "refusing to lazy-unmount ${MOUNTPOINT}: ${src:-unknown} is live and in use"
+        return 1
+    fi
+    if ! umount -l "$MOUNTPOINT" >/dev/null 2>&1; then
+        refuse "could not detach unresponsive mount at ${MOUNTPOINT}: ${src:-unknown}"
+        return 1
+    fi
+}
+
 if ! mount_matches && findmnt -rn -M "$MOUNTPOINT" >/dev/null 2>&1; then
-    umount -l "$MOUNTPOINT" >/dev/null 2>&1 || true
+    detach_unexpected_mount \
+        "$(findmnt -rn -M "$MOUNTPOINT" -o SOURCE 2>/dev/null || true)" \
+        "$(findmnt -rn -M "$MOUNTPOINT" -o FSTYPE 2>/dev/null || true)" || exit 1
 fi
 
 mkdir -p "$MOUNTPOINT"
