@@ -117,7 +117,7 @@ steps: list[dict] = [
 ]
 
 # Subtitles (Bazarr) section: enable toggle, then (only when enabled) the language list,
-# then the section confirm. Languages are gated on _WIZ_BAZARR_ENABLED (#100), so with
+# then the section confirm. Languages are gated on _WIZ_BAZARR_ENABLED, so with
 # Bazarr off (the LANHOST_BAZARR=0 default) the wizard skips straight to the confirm — the
 # step must be conditional or the `expect` blocks and times out.
 steps.append({"expect": P["stage1_bazarr"], "send": yn(BAZARR), "timeout": STEP})

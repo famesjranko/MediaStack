@@ -273,10 +273,10 @@ REMOTE_LOG=/tmp/gcp-fresh-remote.log
 #   2. _stage2_collect_domain has-domain [Yes/No-show-options]    → "" (default 1 = Yes)
 #   3. ui_input_validated  hostname                                → DOMAIN
 #   4. _stage2_offer_ddns  ui_choose "static public IP?" [No-dyn/Yes-static] → "1" (No = dynamic)
-#   4b. _stage2_offer_ddns ui_choose "Choose your DDNS provider:" → "2" (#248: DuckDNS is
-#       index 1/default now; this harness proves the live Dynu path, so send "2" = Dynu)
+#   4b. _stage2_offer_ddns ui_choose "Choose your DDNS provider:" → "2" (DuckDNS is
+#       index 1/default; this harness proves the live Dynu path, so send "2" = Dynu)
 #   5. _stage2_offer_ddns  ui_input  "Dynu password" (visible)     → DDNS_PASSWORD
-#       (#248: Dynu no longer prompts for a username — it is ignored by the API
+#       (Dynu no longer prompts for a username — it is ignored by the API
 #       and auto-filled as a constant placeholder, so no DDNS_USERNAME answer.)
 #   --- DNS check loops with auto-retry; on a fresh push, propagation
 #       converges within 60-120s so the manual menu never fires.
@@ -292,7 +292,7 @@ REMOTE_LOG=/tmp/gcp-fresh-remote.log
 # read returns empty string on EOF, which all our defaults handle correctly,
 # so trailing newlines are safe even if a future wizard tweak adds prompts. The
 # "2" after the static/dynamic "1" selects Dynu in the provider picker — DuckDNS
-# is index 1 (the default) and Dynu is index 2 as of #248.
+# is index 1 (the default) and Dynu is index 2.
 build_wizard_input() {
     printf '\n\n%s\n1\n2\n%s\n\n\n\n100\n\n\n\n\n\n' \
         "$DOMAIN" "$DDNS_PASSWORD"
@@ -340,7 +340,7 @@ else
     if ((REMOTE_RC == 0)); then ok "setup.sh --remote exit 0 (first attempt)"; else bad "setup.sh --remote exit=$REMOTE_RC"; fi
 fi
 grep -q 'Remote access is ready' "$REMOTE_LOG" && ok "Stage 2 ready banner present" || bad "Stage 2 ready banner missing"
-# #237: Dynu now verifies through the ephemeral blackhole container, not the
+# Dynu now verifies through the ephemeral blackhole container, not the
 # deleted curl preflight. The ready banner above already requires that path to
 # have accepted the creds; assert the legacy copy is gone as a cheap regression
 # guard (robust to the new tier wording).

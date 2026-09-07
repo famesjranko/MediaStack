@@ -42,6 +42,8 @@ installation, runtime, test, and maintenance surface.
 | [project/stack.md](project/stack.md) | Runtime, services, commands, and host dependencies. |
 | [project/structure.md](project/structure.md) | Directory tree, placement rules, and service-add workflow. |
 | [conventions.md](conventions.md) | Gate commands, placement, what is enforced, and what is not. |
+| [project/workflow.md](project/workflow.md) | Branch topology, naming, and squash-merge mechanics; `main` is the only permanent branch. |
+| [project/release.md](project/release.md) | The 0.x versioning policy and release gates: preconditions, prepare, merge, tag. |
 
 ## Reading Order
 
