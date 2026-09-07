@@ -23,7 +23,7 @@ tools.toml                          Pinned developer toolchain (version + checks
 pyproject.toml                      Python lint/type configuration (ruff rule selection, mypy settings)
 .gitleaks.toml                      Ruleset for the secret scanner: gitleaks' default set, nothing allowlisted
 .shellcheckrc                       Repository-wide shellcheck configuration
-README.md, LICENSE, CONTRIBUTING.md Front door, licence, and contribution guidance
+README.md, LICENSE, CONTRIBUTING.md Front door, licence, and contribution guidance (branch/PR flow: docs/project/workflow.md)
 AGENTS.md, CLAUDE.md                Shared agent router + Claude Code adapter
 .github/                            Issue templates, security policy, CI and image-drift workflows
 

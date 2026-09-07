@@ -1,8 +1,9 @@
 # Release Workflow — MediaStack
 
 This document is authoritative for versioning policy and for preparing,
-tagging, and verifying a MediaStack release. Release-note writing rules live
-at the top of [CHANGELOG.md](../../CHANGELOG.md).
+tagging, and verifying a MediaStack release. Branch topology and ordinary
+change flow live in [workflow.md](workflow.md); release-note writing rules
+live at the top of [CHANGELOG.md](../../CHANGELOG.md).
 
 A release is a verified point in `main`'s history: there is no build artifact
 and no publish step. The install path stays `git clone` + `./mediastack`; the
