@@ -68,11 +68,18 @@ configure_uptime_kuma() {
     _kuma_envfile=$(mktemp)
     printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
-    result=$(timeout 120 docker run --rm --network mediastack \
-        --env-file "$_kuma_envfile" \
-        -e MONITORS_JSON="$monitors_json" \
-        -e KUMA_INTERNAL_URL="$(service_internal_url uptime-kuma)" \
-        node:22-slim sh -c '
+    # The trap lives inside this command substitution's own subshell (not the
+    # function): a Ctrl-C during the 120s docker run kills that subshell same
+    # as it would kill the run itself, firing this EXIT trap before the shell
+    # tears down, so the shared admin password never survives an interrupted
+    # run. The explicit rm below is belt-and-braces for the normal-exit path.
+    result=$(
+        trap 'rm -f "$_kuma_envfile"' EXIT
+        timeout 120 docker run --rm --network mediastack \
+            --env-file "$_kuma_envfile" \
+            -e MONITORS_JSON="$monitors_json" \
+            -e KUMA_INTERNAL_URL="$(service_internal_url uptime-kuma)" \
+            node:22-slim sh -c '
 cd /tmp && npm install --no-audit --no-fund --loglevel=error socket.io-client >&2 || { echo "{\"error\": \"npm install failed\"}" ; exit 1; }
 node -e "
 const { io } = require(\"socket.io-client\");
@@ -185,7 +192,8 @@ function emit(socket, event, ...args) {
     }
 })();
 "
-' 2>"$kuma_err")
+' 2>"$kuma_err"
+    )
     rm -f "$_kuma_envfile"
 
     if [[ -z "$result" ]]; then
