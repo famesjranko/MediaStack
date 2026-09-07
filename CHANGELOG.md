@@ -6,12 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
-> **Each `## [x.y.z]` section below is the GitHub Release note, used verbatim** — read by
-> someone deciding whether to update their install. The rules for writing one live here:
+> **The body of each `## [x.y.z]` section below is the GitHub Release note, used
+> verbatim** — read by someone deciding whether to update their install. The bracketed
+> headings are the keys the release extractor matches, not links. The rules for
+> writing an entry live here:
 >
-> - One **single-line dot point** per operator-visible change: headline, then the
->   consequence an operator acts on, then its `(#issue)` where one exists. Full
->   reasoning stays in the issue or PR.
+> - One **bullet per operator-visible change** — no sub-bullets, no paragraphs
+>   (wrapping at the file's line width is fine): headline, then the consequence an
+>   operator acts on, then its `(#issue)` where one exists. Full reasoning stays in
+>   the issue or PR.
 > - Operator-visible means it changes the wizard flow, the service set, compose or
 >   image-channel behaviour, day-2 menu actions, host requirements, or the security
 >   posture. Tests, CI, formatting, and repo hygiene are **not** — that record belongs

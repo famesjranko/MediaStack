@@ -16,8 +16,8 @@ request, and is deleted on merge.
 | `<type>/<slug>` | One change: fix, feature, docs, test, or chore | Squash-merge PR into `main` |
 | `release/x.y.z` | Version pin for a release ([release.md](release.md) gate 1) | Squash-merge PR into `main` |
 
-`<type>` is one of `feat`, `fix`, `docs`, `test`, `chore`, `refactor` — the
-same vocabulary as commit subjects. `<slug>` is a short kebab-case description
+`<type>` is one of `feat`, `fix`, `docs`, `test`, `chore`, `refactor`.
+`<slug>` is a short kebab-case description
 (e.g. `fix/ddns-verify-fail-fast-race`).
 
 ## How a change lands

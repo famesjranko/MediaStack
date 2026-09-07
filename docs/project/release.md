@@ -69,21 +69,28 @@ gate 2 and gate 3 — the tag must land on exactly that SHA.
 ## Gate 3 — tag and release
 
 ```bash
+V=X.Y.Z
 git fetch origin && git checkout main && git pull --ff-only
 git rev-parse --short HEAD          # must be the recorded squash SHA
-git tag -a vX.Y.Z -m "MediaStack vX.Y.Z" <squash-sha>
-git push origin vX.Y.Z              # by name — NEVER `git push --tags`
+git tag -a "v$V" -m "MediaStack v$V" <squash-sha>
+git push origin "v$V"               # by name — NEVER `git push --tags`
                                     # (local working tags must not publish)
-gh release create vX.Y.Z --title "MediaStack vX.Y.Z" --notes-file <(
-  awk '/^## \[X.Y.Z\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md
-)
+awk -v v="## [$V]" 'index($0,v)==1{f=1;next} /^## \[/{f=0} f' CHANGELOG.md \
+  > "/tmp/notes-$V.md"
+[[ -s "/tmp/notes-$V.md" ]] || { echo "no changelog section for $V" >&2; exit 1; }
+gh release create "v$V" --title "MediaStack v$V" --notes-file "/tmp/notes-$V.md"
 ```
+
+The empty-file guard matters: a heading that does not match (wrong date
+separator, stray space) would otherwise publish a release with empty notes.
 
 ## Verify
 
-- [ ] `gh release view vX.Y.Z` shows the changelog section verbatim.
+- [ ] `gh release view vX.Y.Z` shows the changelog section's body verbatim
+      (the `## [X.Y.Z]` heading itself is deliberately dropped).
 - [ ] `git clone` at the tag + `./mediastack --version` prints
-      `MediaStack X.Y.Z (<sha>)`.
+      `MediaStack X.Y.Z (<sha>)`. (A tarball install has no `.git`, so the
+      sha is omitted there — that is expected.)
 - [ ] The `[Unreleased]` section on `main` is empty and ready.
 
 ## If a release is wrong

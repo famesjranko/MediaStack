@@ -5,8 +5,9 @@ WireGuard peer files, downloaded QR codes, and service API keys as secrets.
 
 ## Supported Versions
 
-The latest tagged release and the current `main` branch are supported for
-security fixes. Run `./mediastack --version` to identify your install.
+Once releases are tagged, the latest tagged release and the current `main`
+branch are supported for security fixes; until then, `main` alone is. Run
+`./mediastack --version` to identify your install.
 
 ## Reporting
 
