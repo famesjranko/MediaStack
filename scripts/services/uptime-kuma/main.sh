@@ -69,18 +69,34 @@ configure_uptime_kuma() {
     # Belt-and-braces beyond the subshell EXIT trap below: a TERM delivered to
     # THIS process (a `kill`, a `systemctl stop` on the unit driving setup)
     # in the narrow window between creating the env-file and entering the
-    # subshell would otherwise leak it. The RETURN trap clears this again on
-    # every exit path out of the function, so it never lingers to affect
-    # unrelated code running later in the same shell.
-    trap 'rm -f "$_kuma_envfile"' TERM
-    trap 'rm -f "$_kuma_envfile"; trap - TERM' RETURN
+    # subshell would otherwise leak it. The RETURN trap clears BOTH traps, so
+    # neither lingers to affect unrelated code later in the same shell: a
+    # RETURN trap left armed fires again on every subsequent `source`, which
+    # would replay the rm and silently disarm any later TERM handler.
+    #
+    # Both bodies expand the path when the trap is SET, not when it fires. A
+    # RETURN trap runs after the function's locals are gone, so a deferred
+    # "$_kuma_envfile" would read an unset name and abort the caller under
+    # `set -u`. @Q quotes the value safely, so a TMPDIR containing a quote
+    # cannot turn the trap body into a syntax error that silently does nothing.
+    # shellcheck disable=SC2064 # deliberate: expand now, see above
+    trap "rm -f ${_kuma_envfile@Q}" TERM
+    # shellcheck disable=SC2064 # deliberate: expand now, see above
+    trap "rm -f ${_kuma_envfile@Q}; trap - TERM RETURN" RETURN
     printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
-    # The trap lives inside this command substitution's own subshell (not the
-    # function): a Ctrl-C during the 120s docker run kills that subshell same
-    # as it would kill the run itself, firing this EXIT trap before the shell
-    # tears down, so the shared admin password never survives an interrupted
-    # run. The explicit rm below is belt-and-braces for the normal-exit path.
+    # This EXIT trap is the ONLY cleanup on a real Ctrl-C, not a redundant
+    # backstop. SIGINT reaches the whole foreground process group: configure.sh
+    # installs no traps of its own, so it dies from the untrapped signal. The
+    # RETURN trap never runs (it is not an EXIT trap) and the TERM trap never
+    # runs (wrong signal). Only this subshell's EXIT trap fires, which is what
+    # keeps the shared admin password from surviving an interrupted run.
+    # Proven by driving the configurator under a PTY and sending a genuine
+    # ^C: with this line removed the env-file is left behind with KUMA_PW in
+    # it. Deleting it leaves the unit suite green, because a background job
+    # (`setsid bash worker &`) runs with SIGINT ignored and cannot reproduce
+    # a terminal interrupt — do not treat that green as coverage.
+    # The explicit rm below is belt-and-braces for the normal-exit path.
     result=$(
         trap 'rm -f "$_kuma_envfile"' EXIT
         timeout 120 docker run --rm --network mediastack \
