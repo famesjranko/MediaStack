@@ -62,7 +62,7 @@ configure_portainer() {
             -H "Content-Type: application/json")
         [[ -n "$setup_token" ]] && init_curl_args+=(-H "X-Setup-Token: $setup_token")
         local init_resp init_http init_body_resp
-        init_resp=$(curl "${init_curl_args[@]}" -d "$init_body")
+        init_resp=$(curl_data_stdin "$init_body" "${init_curl_args[@]}")
         init_http=$(echo "$init_resp" | tail -1)
         init_body_resp=$(echo "$init_resp" | sed '$d')
 
@@ -83,17 +83,15 @@ configure_portainer() {
     # Create local Docker endpoint so Portainer can see containers without
     # requiring the user to complete the web-UI wizard.
     local jwt endpoints_json endpoint_count
-    jwt=$(curl -s -X POST "$portainer_url/api/auth" \
-        -H "Content-Type: application/json" \
-        -d "$init_body" 2>/dev/null \
+    jwt=$(curl_data_stdin "$init_body" -s -X POST "$portainer_url/api/auth" \
+        -H "Content-Type: application/json" 2>/dev/null \
         | json_get jwt)
 
     if [[ -z "$jwt" && "$admin_user" != "admin" ]]; then
         local legacy_body legacy_jwt
         legacy_body=$(http_json_body Username admin Password "$admin_pw")
-        legacy_jwt=$(curl -s -X POST "$portainer_url/api/auth" \
-            -H "Content-Type: application/json" \
-            -d "$legacy_body" 2>/dev/null \
+        legacy_jwt=$(curl_data_stdin "$legacy_body" -s -X POST "$portainer_url/api/auth" \
+            -H "Content-Type: application/json" 2>/dev/null \
             | json_get jwt)
 
         if [[ -n "$legacy_jwt" ]]; then
@@ -109,9 +107,8 @@ configure_portainer() {
 
             if [[ "$rename_http" == "200" ]]; then
                 log_ok "Portainer admin username updated to $admin_user"
-                jwt=$(curl -s -X POST "$portainer_url/api/auth" \
-                    -H "Content-Type: application/json" \
-                    -d "$init_body" 2>/dev/null \
+                jwt=$(curl_data_stdin "$init_body" -s -X POST "$portainer_url/api/auth" \
+                    -H "Content-Type: application/json" 2>/dev/null \
                     | json_get jwt)
                 jwt="${jwt:-$legacy_jwt}"
             else
@@ -141,10 +138,10 @@ configure_portainer() {
         if [[ -z "$ptkey_valid" ]]; then
             local token_body token_resp token_raw
             token_body=$(http_json_body description Homepage password "$admin_pw")
-            token_resp=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
+            token_resp=$(curl_data_stdin "$token_body" \
+                -s -X POST "$portainer_url/api/users/1/tokens" \
                 -H "Authorization: Bearer $jwt" \
-                -H "Content-Type: application/json" \
-                -d "$token_body" 2>/dev/null)
+                -H "Content-Type: application/json" 2>/dev/null)
             token_raw=$(echo "$token_resp" | json_get rawAPIKey)
             if [[ -n "$token_raw" ]]; then
                 env_save_api_key "PORTAINER_API_KEY" "$token_raw"

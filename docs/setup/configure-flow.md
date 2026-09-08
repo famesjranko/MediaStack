@@ -12,8 +12,8 @@ When `STORAGE_APP_WIRING=manual`, configure.sh still sets credentials, auth, ind
 scripts/
 ├── configure.sh              # thin entrypoint: env load, lib+service sourcing, main() orchestration
 ├── lib/
-│   ├── common.sh             # colours, logging, cfg_* YAML readers, api_get/api_post/api_put, *_api_key helpers
-│   ├── http.sh               # wait_for_service, http_json_body, http_json_post (cookie-session POST with body capture)
+│   ├── common.sh             # colours, logging, cfg_* YAML readers, api_get/api_post/api_put, curl_basic_auth/curl_data_stdin (secrets on stdin, never argv), *_api_key helpers
+│   ├── http.sh               # wait_for_service, http_json_body, http_json_post (cookie-session POST with body capture), http_check_data (secret-bearing body on stdin)
 │   ├── json.sh               # json_get, json_path, json_has_name, json_array_nonempty
 │   └── arr/
 │       ├── main.sh           # configure_quality_profile, configure_quality_definitions, configure_arr_custom_formats, configure_arr_format_scores, configure_arr_indexers, configure_arr_disk_threshold
@@ -77,6 +77,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 - `api_get_key PATH` in `scripts/lib/common.sh` — regex-extract `<ApiKey>` from Sonarr/Radarr `config.xml`.
 - `api_get_jackett_key` in `scripts/lib/common.sh` — JSON parse `config/jackett/Jackett/ServerConfig.json`.
 - `env_save_api_key NAME VALUE` in `scripts/lib/common.sh` — `sed -i` writes into `.env`, logs if changed. Also `export` so later steps in the same invocation see the new value without re-sourcing.
+- `curl_basic_auth USER PASSWORD [curl args…]` / `curl_data_stdin BODY [curl args…]` / `curl_data_urlencode_stdin FIELD VALUE [curl args…]` in `scripts/lib/common.sh` — the only sanctioned way to send a credential to curl. Each hands the secret to curl on **stdin** (a config file, `--data-binary @-`, `--data-urlencode FIELD@/dev/stdin`), because `/proc/<pid>/cmdline` is world-readable, so `-u user:pass` or `-d '{"password":…}'` leaks the shared admin password to every local account. `http_check_data BODY LABEL [curl args…]` is the `http_check` equivalent for a secret-bearing payload; `api_get`/`api_post`/`api_put` already route their body this way. A call site that needs curl's stdin for something else cannot use these.
 - `http_json_post LABEL ENDPOINT PAYLOAD COOKIEJAR` in `scripts/lib/http.sh` — POST JSON within a cookie-authenticated session and surface the rejection body on non-2xx. Hoisted from a nested function inside the old Seerr step during the refactor; explicit `COOKIEJAR` arg (4th) because bash dynamic scoping was its only prior binding.
 
 ## Pre-step wait (top of `main()` in `scripts/configure.sh`)
