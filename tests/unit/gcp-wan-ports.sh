@@ -13,8 +13,11 @@ CURRENT_SCENARIO="gcp-wan-ports"
 scenario_begin "$CURRENT_SCENARIO"
 
 extract_hardening_ports() {
+    # TCP rules only, deduplicated: the GCP list is a TCP probe list, and the
+    # firewall module states the same TCP ports twice — once for after.rules and
+    # once for its IPv6 mirror in after6.rules.
     awk '
-        /--dports/ {
+        /-p tcp/ && /--dports/ {
             for (i = 1; i <= NF; i++) {
                 if ($i == "--dports") {
                     split($(i + 1), ports, ",")
@@ -24,7 +27,7 @@ extract_hardening_ports() {
                 }
             }
         }
-    ' "$REPO_ROOT/scripts/setup/hardening/firewall.sh" | sort -n
+    ' "$REPO_ROOT/scripts/setup/hardening/firewall.sh" | sort -nu
 }
 
 extract_gcp_ports() {

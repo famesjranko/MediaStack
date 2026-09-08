@@ -72,6 +72,7 @@ unset SSH_CONNECTION
 
 UFW_CALLS=()
 DOCKER_RULES=""
+DOCKER6_RULES=""
 sudo() {
     if [[ "${1:-}" == "ufw" ]]; then
         UFW_CALLS+=("$*")
@@ -87,7 +88,11 @@ sudo() {
     fi
     if [[ "${1:-}" == "tee" ]]; then
         UFW_CALLS+=("$*")
-        DOCKER_RULES="$(cat)"
+        if [[ "$*" == *after6.rules* ]]; then
+            DOCKER6_RULES="$(cat)"
+        else
+            DOCKER_RULES="$(cat)"
+        fi
         return 0
     fi
     if [[ "${1:-}" == "iptables" ]]; then
@@ -113,111 +118,38 @@ assert_eq "false" "$found_reset" "setup_ufw: active marker repair — no firewal
 assert_eq "false" "$found_ssh_broad_delete" "setup_ufw: active marker repair — preserves broad SSH allow"
 assert_contains "$DOCKER_RULES" "# MEDIASTACK-DOCKER-RULES" "setup_ufw: active marker repair — writes missing Docker rules block"
 assert_contains "$DOCKER_RULES" "-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT" "setup_ufw: active marker repair — writes DOCKER-USER jump"
+assert_contains "$DOCKER_RULES" "-p udp -m multiport --dports 7359 -j DROP" \
+    "setup_ufw: IPv4 block DROPs the published UDP admin port (Jellyfin discovery)"
+
+# The IPv6 mirror. after6.rules is loaded by ip6tables-restore from its own
+# file, so an absent mirror means every admin port is unfiltered the moment
+# Docker gains an IPv6 bridge.
+assert_contains "$DOCKER6_RULES" "# MEDIASTACK-DOCKER-RULES" \
+    "setup_ufw: writes the Docker rules block to after6.rules"
+assert_contains "$DOCKER6_RULES" ":MEDIASTACK-DOCKER-RESTRICT - [0:0]" \
+    "setup_ufw: IPv6 block declares the same chain name"
+assert_contains "$DOCKER6_RULES" ":DOCKER-USER - [0:0]" \
+    "setup_ufw: IPv6 block declares DOCKER-USER (ip6tables-restore aborts on a missing chain)"
+assert_contains "$DOCKER6_RULES" "-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT" \
+    "setup_ufw: IPv6 block writes the DOCKER-USER jump"
+assert_contains "$DOCKER6_RULES" "-A MEDIASTACK-DOCKER-RESTRICT -s ::1/128 -j RETURN" \
+    "setup_ufw: IPv6 block RETURNs loopback"
+assert_contains "$DOCKER6_RULES" "-A MEDIASTACK-DOCKER-RESTRICT -s fc00::/7 -j RETURN" \
+    "setup_ufw: IPv6 block RETURNs unique-local"
+assert_contains "$DOCKER6_RULES" "-A MEDIASTACK-DOCKER-RESTRICT -s fe80::/10 -j RETURN" \
+    "setup_ufw: IPv6 block RETURNs link-local"
+assert_contains "$DOCKER6_RULES" "-p tcp -m multiport --dports 8989,7878,9117,8080,5055,9000,81,51821 -j DROP" \
+    "setup_ufw: IPv6 block DROPs the first TCP admin-port group"
+assert_contains "$DOCKER6_RULES" "-p tcp -m multiport --dports 8000,8090,3001,45876,8191,6767,8096,3000 -j DROP" \
+    "setup_ufw: IPv6 block DROPs the second TCP admin-port group"
+assert_contains "$DOCKER6_RULES" "-p udp -m multiport --dports 7359 -j DROP" \
+    "setup_ufw: IPv6 block DROPs the published UDP admin port"
+assert_contains "$DOCKER6_RULES" "# END MEDIASTACK-DOCKER-RULES" \
+    "setup_ufw: IPv6 block carries the teardown end marker"
+# The DROP list is the thing that must not drift between families.
+assert_eq "$(grep -c -- '-j DROP' <<<"$DOCKER_RULES")" "$(grep -c -- '-j DROP' <<<"$DOCKER6_RULES")" \
+    "setup_ufw: IPv4 and IPv6 blocks DROP the same number of port groups"
 unset -f sudo ufw
-
-# ===========================================================================
-# setup_ufw_docker_dedup_hook — injects the dedup block into a stock after.init,
-# makes it executable, and is idempotent on re-run. Guards the defect: the jump
-# duplicates on every ufw reload unless after.init trims it back to one.
-# ===========================================================================
-
-DEDUP_TMP=$(mktemp -d)
-MEDIASTACK_UFW_AFTER_INIT="$DEDUP_TMP/after.init"
-
-# Seed the stock Canonical after.init sample (mode 640, not executable).
-cat >"$MEDIASTACK_UFW_AFTER_INIT" <<'STOCK'
-#!/bin/sh
-set -e
-case "$1" in
-start)
-    # typically required
-    ;;
-stop)
-    # typically required
-    ;;
-*)
-    echo "'$1' not supported"
-    ;;
-esac
-STOCK
-chmod 640 "$MEDIASTACK_UFW_AFTER_INIT"
-
-# Passthrough sudo for file ops; no-op the iptables calls and the after.init
-# self-invocation ("sudo $after_init start", whose $1 is a path, not a command).
-sudo() {
-    case "${1:-}" in
-        test | grep | awk | tee | chmod | sed | rm | cat | mktemp) command "$@" ;;
-        iptables) return 0 ;;
-        *) return 0 ;;
-    esac
-}
-
-# Capture state writes: the inject path must record CREATED=false so a later
-# uninstall strips only our block instead of rm-ing the (pre-existing) file.
-DEDUP_STATE=()
-_ms_state_set() { DEDUP_STATE+=("$1=$2"); }
-
-setup_ufw_docker_dedup_hook
-
-# Block injected inside the start) arm (before its ;;), file now executable.
-if grep -q 'MEDIASTACK-DOCKER-DEDUP' "$MEDIASTACK_UFW_AFTER_INIT"; then
-    pass "dedup hook: injects MEDIASTACK-DOCKER-DEDUP block into after.init"
-else
-    fail "dedup hook: injects MEDIASTACK-DOCKER-DEDUP block into after.init" \
-        "$(cat "$MEDIASTACK_UFW_AFTER_INIT")"
-fi
-assert_contains "$(cat "$MEDIASTACK_UFW_AFTER_INIT")" \
-    "iptables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT" \
-    "dedup hook: block carries the trim command"
-[[ -x "$MEDIASTACK_UFW_AFTER_INIT" ]] \
-    && pass "dedup hook: makes after.init executable" \
-    || fail "dedup hook: makes after.init executable" "not executable"
-# Emitted after.init must stay valid POSIX sh.
-sh -n "$MEDIASTACK_UFW_AFTER_INIT" \
-    && pass "dedup hook: emitted after.init is valid POSIX sh" \
-    || fail "dedup hook: emitted after.init is valid POSIX sh" "$(cat "$MEDIASTACK_UFW_AFTER_INIT")"
-# The block sits inside the start) arm, not appended after esac.
-if awk '/^[[:space:]]*start\)/{s=1} /MEDIASTACK-DOCKER-DEDUP/{if(s&&!e)ok=1} /^esac/{e=1} END{exit !ok}' \
-    "$MEDIASTACK_UFW_AFTER_INIT"; then
-    pass "dedup hook: block lives inside the start) arm (before esac)"
-else
-    fail "dedup hook: block lives inside the start) arm (before esac)" \
-        "$(cat "$MEDIASTACK_UFW_AFTER_INIT")"
-fi
-# Inject path recorded CREATED=false — otherwise a stale =true from an earlier
-# created-install would make uninstall rm an admin-owned after.init.
-if printf '%s\n' "${DEDUP_STATE[@]}" | grep -qx 'UFW_AFTER_INIT_CREATED=false'; then
-    pass "dedup hook: inject path records CREATED=false (uninstall strips, never rm's admin file)"
-else
-    fail "dedup hook: inject path records CREATED=false (uninstall strips, never rm's admin file)" \
-        "state writes: ${DEDUP_STATE[*]:-<none>}"
-fi
-
-# Idempotent re-run: marker present -> no second copy.
-setup_ufw_docker_dedup_hook
-occ=$(grep -c '^# >>> MEDIASTACK-DOCKER-DEDUP' "$MEDIASTACK_UFW_AFTER_INIT")
-assert_eq "1" "$occ" "dedup hook: idempotent re-run does not duplicate the block"
-
-# Custom after.init without a stock start) arm -> warn + skip, never edit.
-cat >"$MEDIASTACK_UFW_AFTER_INIT" <<'CUSTOM'
-#!/bin/sh
-# admin's own hook, no start) case
-iptables -N MY-CHAIN 2>/dev/null || true
-CUSTOM
-chmod 640 "$MEDIASTACK_UFW_AFTER_INIT"
-setup_ufw_docker_dedup_hook
-if grep -q 'MEDIASTACK-DOCKER-DEDUP' "$MEDIASTACK_UFW_AFTER_INIT"; then
-    fail "dedup hook: leaves a custom after.init untouched" "$(cat "$MEDIASTACK_UFW_AFTER_INIT")"
-else
-    pass "dedup hook: leaves a custom after.init untouched"
-fi
-
-unset -f sudo
-_ms_state_set() { :; }
-unset DEDUP_STATE
-rm -rf "$DEDUP_TMP"
-unset MEDIASTACK_UFW_AFTER_INIT
-MEDIASTACK_UFW_AFTER_INIT=/etc/ufw/after.init
 
 # ===========================================================================
 # setup_ufw — active service marker reloads persisted rules when live jump is missing
@@ -427,6 +359,7 @@ _ms_state_get() { echo false; }
 
 UFW_CALLS=()
 DOCKER_RULES=""
+DOCKER6_RULES=""
 sudo() {
     if [[ "${1:-}" == "ufw" ]]; then
         UFW_CALLS+=("$*")
@@ -439,7 +372,11 @@ sudo() {
         return 1
     fi
     if [[ "${1:-}" == "tee" ]]; then
-        DOCKER_RULES="$(cat)"
+        if [[ "$*" == *after6.rules* ]]; then
+            DOCKER6_RULES="$(cat)"
+        else
+            DOCKER_RULES="$(cat)"
+        fi
         return 0
     fi
     return 0

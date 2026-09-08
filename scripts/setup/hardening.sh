@@ -37,6 +37,8 @@ MEDIASTACK_SYSCTL_CONF=/etc/sysctl.d/90-mediastack-hardening.conf
 # shellcheck disable=SC2034
 MEDIASTACK_UFW_AFTER_RULES=/etc/ufw/after.rules
 # shellcheck disable=SC2034
+MEDIASTACK_UFW_AFTER6_RULES=/etc/ufw/after6.rules
+# shellcheck disable=SC2034
 MEDIASTACK_UFW_AFTER_INIT=/etc/ufw/after.init
 
 # RFC1918 private ranges — the LAN scope for ufw "allow from <cidr>" rules.

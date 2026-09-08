@@ -28,6 +28,7 @@ MEDIASTACK_UFW_AFTER_RULES="$TMP_DIR/after.rules"
 # removes them must never reach the real /etc/apt from a unit run.
 MEDIASTACK_GPU_NONFREE_LIST="$TMP_DIR/mediastack-nonfree.list"
 MEDIASTACK_GPU_BACKPORTS_LIST="$TMP_DIR/mediastack-backports.list"
+MEDIASTACK_UFW_AFTER6_RULES="$TMP_DIR/after6.rules"
 SAMBA_INCLUDE_FILE="$TMP_DIR/samba-include.conf"
 SAMBA_MAIN_CONF="$TMP_DIR/smb.conf"
 
@@ -62,6 +63,7 @@ unset -f sudo
 UFW_CALLS=()
 NUMBERED_MARKER="$TMP_DIR/numbered-read"
 printf '%s\n' '# MEDIASTACK-DOCKER-RULES' '*filter' 'COMMIT' '# END MEDIASTACK-DOCKER-RULES' '# user tail' >"$MEDIASTACK_UFW_AFTER_RULES"
+printf '%s\n' '# MEDIASTACK-DOCKER-RULES' '*filter' 'COMMIT' '# END MEDIASTACK-DOCKER-RULES' '# user v6 tail' >"$MEDIASTACK_UFW_AFTER6_RULES"
 user_rules='ufw allow 9999/tcp'
 user_hash=$(printf '%s\n' "$user_rules" | sha256sum | awk '{print $1}')
 _ms_state_get() {
@@ -90,7 +92,7 @@ sudo() {
         esac
         return 0
     fi
-    if [[ "$1" == iptables ]]; then return 1; fi
+    if [[ "$1" == iptables || "$1" == ip6tables ]]; then return 1; fi
     command "$@"
 }
 _uninstall_ufw
@@ -101,6 +103,13 @@ case "${UFW_CALLS[*]}" in
     *) fail "UFW: tagged rules deleted in descending order" "${UFW_CALLS[*]}" ;;
 esac
 assert_contains "$(cat "$MEDIASTACK_UFW_AFTER_RULES")" "# user tail" "UFW: content after owned block survives"
+# The IPv6 mirror is torn down the same way, or an uninstalled host keeps a live
+# v6 chain DROPping ports for a stack that is gone.
+assert_eq "0" "$(grep -c 'MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER_RULES")" \
+    "UFW: owned block removed from after.rules"
+assert_eq "0" "$(grep -c 'MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER6_RULES")" \
+    "UFW: owned block removed from after6.rules"
+assert_contains "$(cat "$MEDIASTACK_UFW_AFTER6_RULES")" "# user v6 tail" "UFW: content after owned v6 block survives"
 assert_contains "${UFW_CALLS[*]}" "--force disable" "UFW: firewall enabled by MediaStack is disabled when no drift remains"
 unset -f sudo
 

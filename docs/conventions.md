@@ -280,8 +280,9 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
   freshness gate, so review them when launcher menus change.
 - **The admin-port list in `scripts/setup/hardening/firewall.sh`.** Nothing checks that
   the `MEDIASTACK-DOCKER-RESTRICT` multiport rules still cover every admin port
-  published by `docker-compose.yml`. A new admin service whose port is not added
-  there is exposed on a hardened host and lints clean. See
+  published by `docker-compose.yml`, nor that the IPv4 and IPv6 blocks list the
+  same ports. A new admin service whose port is not added to both is exposed on
+  a hardened host and lints clean. See
   [`decisions/admin-port-exposure.md`](decisions/admin-port-exposure.md).
 - **The uninstall teardown of `MEDIASTACK-DOCKER-RESTRICT`.**
   `tests/unit/uninstall-system-cleanup.sh` drives `_uninstall_ufw`, but its `sudo`

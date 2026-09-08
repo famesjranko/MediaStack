@@ -23,12 +23,25 @@ iptables chain installed by host hardening.
 `MEDIASTACK-DOCKER-RESTRICT` chain into `/etc/ufw/after.rules`, jumped to from
 `DOCKER-USER`. The chain `RETURN`s traffic from `127.0.0.0/8`, `10.0.0.0/8`,
 `172.16.0.0/12` and `192.168.0.0/16`, then `DROP`s the admin-port list —
-including 81 and 51821 — for every other source, and `RETURN`s the rest so 80,
-443 and the torrent port pass through.
+including 81 and 51821 over TCP and Jellyfin's discovery responder on 7359/udp —
+for every other source, and `RETURN`s the rest so 80, 443, the torrent port and
+the WireGuard port pass through.
 
-The chain is installed when `UFW_ENABLED=true`, which is the Stage 1 wizard's
-default and its recommendation. A user who declines the firewall keeps the
-published ports and gets convention only: the router must not forward them.
+The same chain is mirrored into `/etc/ufw/after6.rules`, which `ip6tables` loads
+from its own file: the IPv4 block is invisible to IPv6, so without the mirror
+the chain would cover nothing the day Docker gains an IPv6 bridge. The v6 block
+`RETURN`s `::1/128`, `fc00::/7` and `fe80::/10` in place of the RFC1918 ranges,
+and declares `DOCKER-USER` itself because Docker only creates that chain in
+`ip6tables` once IPv6 is enabled and `ip6tables-restore --noflush` aborts the
+whole batch on an append to a missing chain.
+
+Two conditions bound the guarantee. The chain is installed when
+`UFW_ENABLED=true`, which is the Stage 1 wizard's default and its
+recommendation; a user who declines the firewall keeps the published ports and
+gets convention only, the router must not forward them. And it covers a given
+address family only where that family's file is loaded — a host with
+`IPV6=no` in `/etc/default/ufw` has no v6 chain, and one whose firewall predates
+this decision has no v6 block until setup is re-run.
 `docs/design/architecture.md` states both branches rather than the stronger one.
 
 ## Rejected alternatives
@@ -61,9 +74,10 @@ published ports and gets convention only: the router must not forward them.
   `ufw reset`, by Docker rewriting `DOCKER-USER`, or by another tool flushing the
   chain. The day-2 *Health & security* menu therefore checks that the chain is
   still present and jumped to, and that check exists because losing it is silent.
-- The admin-port list lives in two places that must agree: the multiport rules in
-  `hardening/firewall.sh` and the host-port table in `docs/design/architecture.md`. A new
-  admin service needs an entry in both.
+- The admin-port list lives in three places that must agree: the IPv4 multiport
+  rules in `hardening/firewall.sh`, their IPv6 mirror in the same file, and the
+  host-port table in `docs/design/architecture.md`. A new admin service needs an
+  entry in all three.
 
 ## Reopen condition
 
@@ -74,9 +88,9 @@ Reopen when any is true:
   interface at start). Then bind directly and keep the chain as defence in depth.
 - The published admin-port set grows past what the `-m multiport` rules can
   express (15 ports each, a kernel limit already noted in `hardening/firewall.sh`, which
-  splits the current 16 ports across two rules). Needing a third rule means the
-  admin surface has roughly doubled, which is the moment to re-derive the model
-  rather than append to it.
+  splits the current 16 TCP ports across two rules; the single UDP port has a
+  rule of its own). Needing a third TCP rule means the admin surface has roughly
+  doubled, which is the moment to re-derive the model rather than append to it.
 - Any admin UI gains an authentication story strong enough to stand alone on the
   internet, at which point the question becomes which ports still need the chain.
 
@@ -85,7 +99,9 @@ Reopen when any is true:
 Partial, and deliberately named as such:
 
 - `tests/unit/hardening/firewall.sh` proves `setup_ufw_docker_rules` writes the chain and
-  the `DOCKER-USER` jump into the after.rules text, and that
+  the `DOCKER-USER` jump into the after.rules text, that the after6.rules mirror
+  carries the same chain, the v6 RETURN scopes and an equal number of DROP
+  groups, and that
   `setup_ufw_docker_dedup_hook` injects an after.init block carrying the
   `iptables -D DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT` trim. Both are
   assertions over emitted text: nothing runs the trim against a doubled jump, so
@@ -95,7 +111,10 @@ Partial, and deliberately named as such:
   decision. It is a whole-profile assertion, not a port-81 one: a deliberate
   loopback binding on some other service would fail it too.
 - The day-2 *Health & security* check reports a missing or flushed chain on a
-  live host.
+  live host, and a missing IPv6 jump once Docker has a v6 `DOCKER-USER` chain to
+  jump from. `tests/unit/health-check.sh` drives all four verdicts.
+- `tests/unit/uninstall-system-cleanup.sh` proves the uninstall strips the owned
+  block from both after.rules and after6.rules while leaving surrounding text.
 
 Two gaps, both listed under "Not enforced" in `docs/conventions.md`:
 
