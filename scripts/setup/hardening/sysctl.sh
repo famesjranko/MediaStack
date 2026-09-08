@@ -84,7 +84,7 @@ _uninstall_sysctl_by_content() {
     local conf="$MEDIASTACK_SYSCTL_CONF"
     sudo test -e "$conf" || return 0
     if [[ "$(_ms_root_sha256 "$conf")" != "$(_setup_sysctl_conf_content | _ms_stream_sha256)" ]]; then
-        log_error "Sysctl file preserved: $conf (edited, or not recognisable as MediaStack's without the ownership ledger)"
+        log_error "Sysctl file preserved: $conf (edited, or not recognisable as MediaStack's without the ownership ledger); delete it by hand if you did not edit it."
         return 1
     fi
     sudo rm -f "$conf" || return 1

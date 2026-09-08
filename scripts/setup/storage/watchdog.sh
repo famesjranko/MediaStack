@@ -205,9 +205,14 @@ storage_install_watchdog() {
     local sudoers_tmp
     sudoers_tmp="$(sudo mktemp -p "$config_dir" .storage-watchdog-sudoers.XXXXXX)" || return 1
     # shellcheck disable=SC2064 # expand sudoers_tmp now: the trap must not depend on the local surviving
+    # The trap is cleared again on every exit path below: a bash RETURN trap set
+    # in a function also fires on every later `source` in the same shell, which
+    # would replay this sudo rm (and possibly a sudo prompt) for the rest of setup.
     trap "sudo rm -f '$sudoers_tmp'" RETURN
     storage_watchdog_sudoers_content "$install_user" "$helper" | sudo tee "$sudoers_tmp" >/dev/null
     if ! sudo visudo -cf "$sudoers_tmp" >/dev/null 2>&1; then
+        sudo rm -f "$sudoers_tmp"
+        trap - RETURN
         storage_log_warn "Generated watchdog sudoers rule failed validation; NAS storage watchdog not installed."
         return 0
     fi
@@ -221,6 +226,8 @@ storage_install_watchdog() {
     sudo chown root:root "$config_file"
     sudo chmod 0600 "$config_file"
     sudo install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_file"
+    sudo rm -f "$sudoers_tmp"
+    trap - RETURN
     storage_watchdog_unit_content "$install_user" "$install_group" "$script" | sudo tee "$unit" >/dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable mediastack-storage-watchdog.service >/dev/null
