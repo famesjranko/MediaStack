@@ -317,8 +317,12 @@ curl_header_data_stdin() {
     if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
         return 2
     fi
+    # data-raw, not data: curl's `data` config directive (like -d/--data)
+    # treats a value starting with @ as a local filename to read instead of
+    # literal content - an attacker-influenced body starting with @ would
+    # otherwise exfiltrate a file from this host. data-raw never does that.
     local cfg
-    cfg=$(printf 'header = "%s: %s"\ndata = "%s"\n' \
+    cfg=$(printf 'header = "%s: %s"\ndata-raw = "%s"\n' \
         "$name" "$(_curl_config_quote "$value")" "$(_curl_config_quote_multiline "$data")")
     _curl_stdin_payload "$cfg" -K - "$@"
 }

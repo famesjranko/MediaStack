@@ -80,9 +80,9 @@ _npm_ensure_healthy() {
     local _token
     _token=""
     if [[ "$_npm_running" == "true" ]]; then
-        _token=$(curl -sf --max-time "$NPM_HEALTH_PROBE_TIMEOUT_SECONDS" -X POST "$(service_local_url npm)/api/tokens" \
-            -H "Content-Type: application/json" \
-            -d "$(http_json_body identity "$_email" secret "$_pw")" 2>/dev/null | json_get token)
+        _token=$(curl_data_stdin "$(http_json_body identity "$_email" secret "$_pw")" \
+            -sf --max-time "$NPM_HEALTH_PROBE_TIMEOUT_SECONDS" -X POST "$(service_local_url npm)/api/tokens" \
+            -H "Content-Type: application/json" 2>/dev/null | json_get token)
     fi
 
     if [[ -n "$_token" ]]; then

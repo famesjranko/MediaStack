@@ -75,8 +75,9 @@ curl() {
         [[ "$arg" == *"/api/endpoints"* ]] && is_endpoints=true
     done
     # The endpoint-create body now travels on stdin (see curl_header_data_stdin),
-    # folded into all_args above rather than a bare argv token.
-    [[ "$all_args" == *"Name=local&EndpointCreationType=1"* ]] && is_endpoint_create=true
+    # not as a bare argv token - anchor to stdin_body specifically (not the
+    # combined all_args) to keep this as precise as the old argv-token check.
+    [[ "$stdin_body" == *"Name=local&EndpointCreationType=1"* ]] && is_endpoint_create=true
 
     if $is_check; then
         printf '%s' "$CHECK_HTTP"

@@ -12,6 +12,9 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage3-nvidia-update"
 scenario_begin "$CURRENT_SCENARIO"
 
+# For curl_header_stdin/curl_header_data_stdin (secret headers off argv - see
+# common.sh), used by stage3/jellyfin.sh's encoding read/verify/disable calls.
+source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 
 set +e

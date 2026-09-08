@@ -35,6 +35,7 @@ source "$REPO_ROOT/scripts/services/wireguard/main.sh"
 source "$REPO_ROOT/scripts/services/beszel/main.sh"
 source "$REPO_ROOT/scripts/services/npm/main.sh"
 source "$REPO_ROOT/scripts/services/jackett/main.sh"
+source "$REPO_ROOT/scripts/setup/stage3/jellyfin.sh"
 
 set +e
 set +u
@@ -175,6 +176,13 @@ assert_secret_off_argv "http_check_auth" \
 assert_secret_off_argv "npm_remote_api_cert_ids_by_fqdn" \
     npm_remote_api_cert_ids_by_fqdn "$SENTINEL" "http://npm/api" "example.com"
 
+# _stage3_disable_jellyfin_hardware (scripts/setup/stage3/jellyfin.sh): the
+# API key travels inside the MediaBrowser Authorization header built from
+# JELLYFIN_API_KEY, and the GET+POST pair covers both curl_header_stdin and
+# curl_header_data_stdin at this call site.
+JELLYFIN_API_KEY="$SENTINEL" \
+    assert_secret_off_argv "_stage3_disable_jellyfin_hardware" _stage3_disable_jellyfin_hardware
+
 # --- Per-service call sites --------------------------------------------------
 assert_secret_off_argv "http_check_data (Jellyfin /Startup/User)" \
     http_check_data "$(secret_body)" "startup-user" -X POST http://jf/Startup/User
@@ -195,6 +203,38 @@ assert_secret_off_argv "_wg_set_peer_firewall_ips" \
 
 NPM_ADMIN_EMAIL="admin@example.com" JELLYFIN_ADMIN_PASSWORD="$SENTINEL" \
     assert_secret_off_argv "npm_remote_token" npm_remote_token http://npm/api
+
+# --- NPM health self-heal: admin token request (npm/health.sh) --------------
+# Reached only once nginx -t is failing with a drifted proxy_host referencing
+# a missing certificate file, so this drives the real drift-detection path
+# (container "running" + nginx -t failing + one .conf with a dangling
+# ssl_certificate ref) rather than calling the token-request line in isolation.
+# Must run before the "NPM admin setup" block below stubs _npm_ensure_healthy
+# to a no-op for configure_npm's own tests.
+mkdir -p "$WORK/config/npm/data/nginx/proxy_host"
+printf 'ssl_certificate /etc/letsencrypt/live/npm-1/fullchain.pem;\n' \
+    >"$WORK/config/npm/data/nginx/proxy_host/5.conf"
+# id -u drives _npm_ensure_healthy's sudo gate; stubbed so the file-only scan
+# below never actually escalates in a non-root test run.
+id() { echo 0; }
+docker() {
+    [[ "$*" == *"inspect"* ]] && {
+        printf 'true'
+        return 0
+    }
+    [[ "$*" == *"nginx -t"* ]] && return 1
+    printf 'docker %s\n' "$*" >>"$ARGV_LOG"
+    return 0
+}
+reset_logs
+SCRIPT_DIR="$WORK" _npm_ensure_healthy "admin@example.com" "$SENTINEL" >/dev/null 2>&1
+unset -f id
+docker() {
+    printf 'docker %s\n' "$*" >>"$ARGV_LOG"
+    return 0
+}
+assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "_npm_ensure_healthy: password absent from argv"
+assert_file_contains "$STDIN_LOG" "$SENTINEL" "_npm_ensure_healthy: password delivered on stdin"
 
 # --- NPM admin setup ---------------------------------------------------------
 # Both halves of configure_npm's credential handling: seeding the admin on a
@@ -223,9 +263,10 @@ assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "configure_npm (rotate): passwo
 assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_npm (rotate): password/token delivered on stdin"
 # The stock-credential marker is unique to the rotation body, so this pins the
 # rotate path rather than letting the creation body satisfy the case above.
-# Quoted (\"..\") because the body now travels as a curl config `data =` line
-# alongside the Authorization header (curl_header_data_stdin), which escapes
-# the JSON's own quotes the same way curl_basic_auth escapes a credential's.
+# Quoted (\"..\") because the body now travels as a curl config `data-raw =`
+# line alongside the Authorization header (curl_header_data_stdin), which
+# escapes the JSON's own quotes the same way curl_basic_auth escapes a
+# credential's.
 assert_file_contains "$STDIN_LOG" '\"current\": \"changeme\"' \
     "configure_npm (rotate): rotation body reached curl on stdin"
 

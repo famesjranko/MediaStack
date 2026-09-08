@@ -119,9 +119,8 @@ configure_jellyfin() {
     # a broken startup wizard and manual intervention is required.
     sleep 2
     local auth_result
-    auth_result=$(curl_data_stdin "$auth_body" \
+    auth_result=$(curl_header_data_stdin "Authorization" "$auth_header" "$auth_body" \
         -sf -X POST "$jf_url/Users/AuthenticateByName" \
-        -H "Authorization: $auth_header" \
         -H "Content-Type: application/json" 2>/dev/null || echo "")
     local jf_token
     jf_token=$(echo "$auth_result" | json_get AccessToken)
