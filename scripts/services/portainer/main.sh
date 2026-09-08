@@ -60,9 +60,12 @@ configure_portainer() {
         local -a init_curl_args=(-s -w "\n%{http_code}" -X POST
             "$portainer_url/api/users/admin/init"
             -H "Content-Type: application/json")
-        [[ -n "$setup_token" ]] && init_curl_args+=(-H "X-Setup-Token: $setup_token")
         local init_resp init_http init_body_resp
-        init_resp=$(curl_data_stdin "$init_body" "${init_curl_args[@]}")
+        if [[ -n "$setup_token" ]]; then
+            init_resp=$(curl_header_data_stdin "X-Setup-Token" "$setup_token" "$init_body" "${init_curl_args[@]}")
+        else
+            init_resp=$(curl_data_stdin "$init_body" "${init_curl_args[@]}")
+        fi
         init_http=$(echo "$init_resp" | tail -1)
         init_body_resp=$(echo "$init_resp" | sed '$d')
 
@@ -97,11 +100,10 @@ configure_portainer() {
         if [[ -n "$legacy_jwt" ]]; then
             local rename_body rename_resp rename_http rename_body_resp
             rename_body=$(http_json_obj Username str "$admin_user" Role int 1)
-            rename_resp=$(curl -s -w "\n%{http_code}" -X PUT \
+            rename_resp=$(curl_header_data_stdin "Authorization" "Bearer $legacy_jwt" "$rename_body" \
+                -s -w "\n%{http_code}" -X PUT \
                 "$portainer_url/api/users/1" \
-                -H "Authorization: Bearer $legacy_jwt" \
-                -H "Content-Type: application/json" \
-                -d "$rename_body")
+                -H "Content-Type: application/json")
             rename_http=$(echo "$rename_resp" | tail -1)
             rename_body_resp=$(echo "$rename_resp" | sed '$d')
 
@@ -119,8 +121,8 @@ configure_portainer() {
     fi
 
     if [[ -n "$jwt" ]]; then
-        endpoints_json=$(curl -s "$portainer_url/api/endpoints" \
-            -H "Authorization: Bearer $jwt" 2>/dev/null)
+        endpoints_json=$(curl_header_stdin "Authorization" "Bearer $jwt" -s "$portainer_url/api/endpoints" \
+            2>/dev/null)
         endpoint_count=$(echo "$endpoints_json" \
             | python3 -c 'import sys,json; print(len(json.loads(sys.stdin.read())))' 2>/dev/null)
 
@@ -130,17 +132,16 @@ configure_portainer() {
         local existing_ptkey="${PORTAINER_API_KEY:-}"
         local ptkey_valid=""
         if [[ -n "$existing_ptkey" ]]; then
-            if curl -sf "$portainer_url/api/endpoints" \
-                -H "X-API-Key: $existing_ptkey" >/dev/null 2>&1; then
+            if curl_header_stdin "X-API-Key" "$existing_ptkey" -sf "$portainer_url/api/endpoints" \
+                >/dev/null 2>&1; then
                 ptkey_valid=1
             fi
         fi
         if [[ -z "$ptkey_valid" ]]; then
             local token_body token_resp token_raw
             token_body=$(http_json_body description Homepage password "$admin_pw")
-            token_resp=$(curl_data_stdin "$token_body" \
+            token_resp=$(curl_header_data_stdin "Authorization" "Bearer $jwt" "$token_body" \
                 -s -X POST "$portainer_url/api/users/1/tokens" \
-                -H "Authorization: Bearer $jwt" \
                 -H "Content-Type: application/json" 2>/dev/null)
             token_raw=$(echo "$token_resp" | json_get rawAPIKey)
             if [[ -n "$token_raw" ]]; then
@@ -150,10 +151,9 @@ configure_portainer() {
 
         if [[ "$endpoint_count" == "0" ]]; then
             local ep_http
-            ep_http=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-                "$portainer_url/api/endpoints" \
-                -H "Authorization: Bearer $jwt" \
-                -d "Name=local&EndpointCreationType=1" 2>/dev/null)
+            ep_http=$(curl_header_data_stdin "Authorization" "Bearer $jwt" "Name=local&EndpointCreationType=1" \
+                -s -o /dev/null -w "%{http_code}" -X POST \
+                "$portainer_url/api/endpoints" 2>/dev/null)
             case "$ep_http" in
                 200 | 201) log_ok "Portainer local Docker endpoint created" ;;
                 *) log_warn "Portainer endpoint creation returned HTTP $ep_http" ;;

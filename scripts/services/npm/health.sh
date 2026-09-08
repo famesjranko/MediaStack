@@ -88,8 +88,8 @@ _npm_ensure_healthy() {
     if [[ -n "$_token" ]]; then
         local _host_json _body _hc
         for _host_id in "${_affected[@]}"; do
-            _host_json=$(curl -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" \
-                -H "Authorization: Bearer $_token" \
+            _host_json=$(curl_header_stdin "Authorization" "Bearer $_token" \
+                -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" \
                 "$(service_local_url npm)/api/nginx/proxy-hosts/$_host_id" 2>/dev/null)
             [[ -z "$_host_json" ]] && continue
             _body=$(echo "$_host_json" | python3 -c '
@@ -104,11 +104,10 @@ for k in ("id","created_on","modified_on","owner_user_id","owner",
     h.pop(k, None)
 print(json.dumps(h))
 ' 2>/dev/null)
-            _hc=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
+            _hc=$(curl_header_data_stdin "Authorization" "Bearer $_token" "$_body" \
+                -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
                 "$(service_local_url npm)/api/nginx/proxy-hosts/$_host_id" \
-                -H "Authorization: Bearer $_token" \
-                -H "Content-Type: application/json" \
-                -d "$_body")
+                -H "Content-Type: application/json")
             log_info "  API: host $_host_id PUT enabled=false cert=0 (HTTP $_hc)"
         done
         if docker exec npm nginx -t >/dev/null 2>&1; then

@@ -10,8 +10,8 @@ configure_jellyfin_server_name() {
     want_name="${want_name:-MediaStack}"
 
     local current_config
-    if ! current_config=$(api_fetch "Jellyfin server config" \
-        "$jf_url/System/Configuration" -H "Authorization: $auth"); then
+    if ! current_config=$(api_fetch_auth "Jellyfin server config" "Authorization" "$auth" \
+        "$jf_url/System/Configuration"); then
         log_warn "Could not read Jellyfin server config - skipping server name"
         return 0
     fi
@@ -41,10 +41,9 @@ c = json.load(sys.stdin)
 c['ServerName'] = os.environ['WANT']
 print(json.dumps(c))")
 
-    if api_fetch "Jellyfin server config" \
+    if api_fetch_auth "Jellyfin server config" "Authorization" "$auth" \
         "$jf_url/System/Configuration" \
         -X POST \
-        -H "Authorization: $auth" \
         -H "Content-Type: application/json" \
         -d "$updated_config" >/dev/null; then
         log_ok "Server name: $want_name"
@@ -73,8 +72,8 @@ configure_jellyfin_streaming() {
     bitrate_bps=$(BITRATE_MBPS="$bitrate_mbps" python3 -c 'import os; print(int(float(os.environ["BITRATE_MBPS"]) * 1_000_000))')
 
     local current_config
-    if ! current_config=$(api_fetch "Jellyfin server config" \
-        "$jf_url/System/Configuration" -H "Authorization: $auth"); then
+    if ! current_config=$(api_fetch_auth "Jellyfin server config" "Authorization" "$auth" \
+        "$jf_url/System/Configuration"); then
         log_warn "Could not read Jellyfin server config - skipping streaming limit"
         return 0
     fi
@@ -101,10 +100,9 @@ c = json.load(sys.stdin)
 c['RemoteClientBitrateLimit'] = int(os.environ['BITRATE'])
 print(json.dumps(c))")
 
-    if api_fetch "Jellyfin server config" \
+    if api_fetch_auth "Jellyfin server config" "Authorization" "$auth" \
         "$jf_url/System/Configuration" \
         -X POST \
-        -H "Authorization: $auth" \
         -H "Content-Type: application/json" \
         -d "$updated_config" >/dev/null; then
         if [[ "$bitrate_mbps" == "0" ]]; then

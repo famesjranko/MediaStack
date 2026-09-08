@@ -77,8 +77,8 @@ print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_P
 
     # --- 2. Get SSH key from hub ---
     local key_resp hub_key
-    key_resp=$(curl -sS "$hub_url/api/beszel/getkey" \
-        -H "Authorization: Bearer $token" 2>/dev/null)
+    key_resp=$(curl_header_stdin "Authorization" "Bearer $token" -sS "$hub_url/api/beszel/getkey" \
+        2>/dev/null)
     hub_key=$(echo "$key_resp" | json_get key)
 
     if [[ -z "$hub_key" ]]; then
@@ -101,8 +101,8 @@ print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_P
 
     # --- 5. Register this host as a monitored system ---
     local systems_resp
-    systems_resp=$(curl -sS "$hub_url/api/collections/systems/records" \
-        -H "Authorization: Bearer $token" 2>/dev/null)
+    systems_resp=$(curl_header_stdin "Authorization" "Bearer $token" -sS "$hub_url/api/collections/systems/records" \
+        2>/dev/null)
 
     if echo "$systems_resp" | json_has_name "MediaStack" --key items; then
         log_skip "Beszel system 'MediaStack' already registered"
@@ -117,10 +117,10 @@ print(json.dumps({
     "users": [os.environ["B_USER_ID"]],
 }))' 2>/dev/null)
 
-        sys_out=$(curl -sS -X POST "$hub_url/api/collections/systems/records" \
-            -H "Authorization: Bearer $token" \
+        sys_out=$(curl_header_data_stdin "Authorization" "Bearer $token" "$sys_body" \
+            -sS -X POST "$hub_url/api/collections/systems/records" \
             -H "Content-Type: application/json" \
-            -d "$sys_body" -w "\n%{http_code}" 2>/dev/null)
+            -w "\n%{http_code}" 2>/dev/null)
         sys_code="${sys_out##*$'\n'}"
 
         if [[ "$sys_code" =~ ^2 ]]; then

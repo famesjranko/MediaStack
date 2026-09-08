@@ -13,6 +13,11 @@ scenario_begin "$CURRENT_SCENARIO"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# For curl_header_stdin/curl_header_data_stdin/api_fetch_auth (secret headers
+# off argv - see common.sh/http.sh). All three ultimately call the real
+# `curl`, which the stub below overrides at call time, so this stays a pure
+# stub test; the file's own api_fetch stub (below) still wins over http.sh's.
+source "$REPO_ROOT/scripts/lib/http.sh"
 source "$REPO_ROOT/scripts/services/jellyfin/main.sh"
 
 JELLYFIN_POLICY_RENDER="$REPO_ROOT/scripts/services/jellyfin/render/network_policy.py"
@@ -47,6 +52,15 @@ api_fetch() {
         return 0
     fi
     printf '%s\n' "$MOCK_EXISTING_LIBS"
+}
+
+# network.sh's config read/write now go through api_fetch_auth (secret
+# Authorization header off argv - see http.sh); the header itself is not
+# under test here, so just drop it and reuse the api_fetch stub above.
+api_fetch_auth() {
+    local label="$1"
+    shift 3
+    api_fetch "$label" "$@"
 }
 
 cfg_jf_libraries() {

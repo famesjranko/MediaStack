@@ -34,8 +34,8 @@ configure_jellyfin_encoding() {
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
 
     local current_config
-    if ! current_config=$(api_fetch "Jellyfin encoding config" \
-        "$jf_url/System/Configuration/encoding" -H "Authorization: $auth"); then
+    if ! current_config=$(api_fetch_auth "Jellyfin encoding config" "Authorization" "$auth" \
+        "$jf_url/System/Configuration/encoding"); then
         log_warn "Could not read Jellyfin encoding config - skipping"
         return 0
     fi
@@ -143,10 +143,9 @@ if changed:
     fi
     encoding_body=$(echo "$encoding_result" | tail -n +2)
 
-    if api_fetch "Jellyfin encoding config" \
+    if api_fetch_auth "Jellyfin encoding config" "Authorization" "$auth" \
         "$jf_url/System/Configuration/encoding" \
         -X POST \
-        -H "Authorization: $auth" \
         -H "Content-Type: application/json" \
         -d "$encoding_body" >/dev/null; then
         log_ok "Hardware transcoding: $accel_type (from JELLYFIN_GPU=$gpu)"

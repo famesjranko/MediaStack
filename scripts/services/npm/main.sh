@@ -105,16 +105,14 @@ print(json.dumps({
         else
             local user_update_body rotate_body
             user_update_body=$(http_json_body name Administrator nickname Admin email "$npm_email")
-            curl_data_stdin "$user_update_body" \
+            curl_header_data_stdin "Authorization" "Bearer $default_token" "$user_update_body" \
                 -sf -X PUT "$npm_api/users/me" \
-                -H "Authorization: Bearer $default_token" \
                 -H "Content-Type: application/json" \
                 >/dev/null 2>&1 || true
 
             rotate_body=$(http_json_body type password current changeme secret "$npm_pw")
-            if curl_data_stdin "$rotate_body" \
+            if curl_header_data_stdin "Authorization" "Bearer $default_token" "$rotate_body" \
                 -sf -X PUT "$npm_api/users/me/auth" \
-                -H "Authorization: Bearer $default_token" \
                 -H "Content-Type: application/json" \
                 >/dev/null 2>&1; then
                 log_ok "NPM admin rotated from defaults to credentials in .env"
@@ -144,8 +142,8 @@ print(json.dumps({
     # --- Default landing page hardening ---
     # NPM's default "Congratulations" page leaks that NPM is in use. Switch to 404.
     local default_site_settings default_site_value
-    if default_site_settings=$(api_fetch "NPM settings" \
-        -H "Authorization: Bearer $npm_token" "$npm_api/settings"); then
+    if default_site_settings=$(api_fetch_auth "NPM settings" "Authorization" "Bearer $npm_token" \
+        "$npm_api/settings"); then
         default_site_value=$(echo "$default_site_settings" | python3 -c '
 import sys, json
 for s in json.load(sys.stdin):
@@ -156,11 +154,10 @@ for s in json.load(sys.stdin):
         if [[ "$default_site_value" == "congratulations" ]]; then
             local ds_body ds_http
             ds_body=$(http_json_obj value str 404 meta json '{}')
-            ds_http=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+            ds_http=$(curl_header_data_stdin "Authorization" "Bearer $npm_token" "$ds_body" \
+                -s -o /dev/null -w "%{http_code}" -X PUT \
                 "$npm_api/settings/default-site" \
-                -H "Authorization: Bearer $npm_token" \
-                -H "Content-Type: application/json" \
-                -d "$ds_body")
+                -H "Content-Type: application/json")
             if [[ "$ds_http" =~ ^2 ]]; then
                 log_ok "NPM default site: changed from 'congratulations' to '404'"
             else

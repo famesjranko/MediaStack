@@ -15,9 +15,10 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_DIR = Path(__file__).resolve().parent
 CALL_RE = re.compile(
     r"\b(?P<function>curl|curl_basic_auth|curl_data_stdin|curl_data_urlencode_stdin|"
-    r"api_get|api_fetch|api_post|api_put|api_delete|"
+    r"curl_header_stdin|curl_header_data_stdin|"
+    r"api_get|api_fetch|api_fetch_auth|api_post|api_put|api_delete|"
     r"post_restart_wait|wait_for_jellyfin_auth|http_json_post|http_check|"
-    r"http_check_data)\b(?P<args>[^\n]*)"
+    r"http_check_data|http_check_auth)\b(?P<args>[^\n]*)"
 )
 QUOTED_RE = re.compile(r"(?P<quote>['\"])(?P<value>.*?)(?P=quote)")
 ASSIGN_RE = re.compile(
@@ -131,7 +132,7 @@ def _method(function: str, args: str) -> str:
         return "POST"
     # The stdin wrappers carry the body curl would otherwise be handed with -d,
     # so a request through one of them is a POST unless -X says otherwise.
-    if function in {"curl_data_urlencode_stdin", "http_check_data"}:
+    if function in {"curl_data_urlencode_stdin", "http_check_data", "curl_header_data_stdin"}:
         return "POST"
     if function == "curl" and re.search(r"(?:^|\s)(?:-d|--data|--data-\w+)(?:\s|=)", args):
         return "POST"

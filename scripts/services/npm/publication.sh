@@ -26,7 +26,7 @@ _npm_configure_publication() {
 
     local existing_hosts="[]"
     if [[ -n "$domain" && "$domain" != "example.com" ]]; then
-        if ! existing_hosts=$(api_fetch "NPM proxy hosts" -H "Authorization: Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
+        if ! existing_hosts=$(api_fetch_auth "NPM proxy hosts" "Authorization" "Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
             existing_hosts="[]"
         fi
         _npm_warn_stale_managed_hosts "$npm_token" "$npm_api" "$domain" "$existing_hosts"
@@ -130,7 +130,7 @@ for host in json.load(sys.stdin):
         _npm_cert_status_init "$domain"
 
         # Re-fetch after any disable operations so final writes start from fresh state.
-        if ! existing_hosts=$(api_fetch "NPM proxy hosts (publish)" -H "Authorization: Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
+        if ! existing_hosts=$(api_fetch_auth "NPM proxy hosts (publish)" "Authorization" "Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
             existing_hosts="[]"
         fi
 
@@ -271,10 +271,9 @@ print(json.dumps({
                 if [[ "$should_post" == "true" ]]; then
                     local cert_resp cert_http
                     cert_post_attempted="true"
-                    cert_resp=$(curl -s -w "\n%{http_code}" --max-time "$NPM_CERT_POST_TIMEOUT_SECONDS" -X POST "$npm_api/nginx/certificates" \
-                        -H "Authorization: Bearer $npm_token" \
-                        -H "Content-Type: application/json" \
-                        -d "$cert_body" 2>/dev/null)
+                    cert_resp=$(curl_header_data_stdin "Authorization" "Bearer $npm_token" "$cert_body" \
+                        -s -w "\n%{http_code}" --max-time "$NPM_CERT_POST_TIMEOUT_SECONDS" -X POST "$npm_api/nginx/certificates" \
+                        -H "Content-Type: application/json" 2>/dev/null)
                     cert_http=$(echo "$cert_resp" | tail -1)
                     cert_post_http="$cert_http"
                     log_info "Cert POST for $fqdn -> HTTP ${cert_http:-000} (single POST per heal cycle)"
@@ -367,11 +366,10 @@ for k in ("id", "created_on", "modified_on", "owner_user_id", "owner",
     host.pop(k, None)
 print(json.dumps(host))
 ' 2>/dev/null)
-                update_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
+                update_http=$(curl_header_data_stdin "Authorization" "Bearer $npm_token" "$update_body" \
+                    -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
                     "$npm_api/nginx/proxy-hosts/$host_id" \
-                    -H "Authorization: Bearer $npm_token" \
-                    -H "Content-Type: application/json" \
-                    -d "$update_body")
+                    -H "Content-Type: application/json")
 
                 if [[ "$update_http" =~ ^2 ]]; then
                     if _npm_wait_proxy_conf "$host_id" "$fqdn" "$target_cert_id"; then
@@ -415,11 +413,10 @@ print(json.dumps({
 }))')
                 # Capture the response body so we can read the new host id
                 # for the disk-render postcondition check.
-                proxy_resp=$(curl -s -w "\n%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X POST \
+                proxy_resp=$(curl_header_data_stdin "Authorization" "Bearer $npm_token" "$proxy_body" \
+                    -s -w "\n%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X POST \
                     "$npm_api/nginx/proxy-hosts" \
-                    -H "Authorization: Bearer $npm_token" \
-                    -H "Content-Type: application/json" \
-                    -d "$proxy_body")
+                    -H "Content-Type: application/json")
                 proxy_http=$(echo "$proxy_resp" | tail -1)
                 proxy_resp=$(echo "$proxy_resp" | sed '$d')
                 if [[ "$proxy_http" == "201" ]]; then

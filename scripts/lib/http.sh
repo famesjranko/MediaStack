@@ -59,12 +59,22 @@ print(json.dumps(out))
 # pass any curl args including -X, -H, -d after the body.
 #
 # <body> is the request payload, sent on stdin so a payload holding a secret
-# never reaches argv; pass "" for requests that carry no body.
+# never reaches argv; pass "" for requests that carry no body. <hdr_name>/
+# <hdr_value> is an optional secret-bearing header (Authorization, X-Api-Key,
+# ...), also kept off argv; pass "" for both when the call has no such header.
+# When both a header and a body are secret they go over the SAME stdin config
+# file (curl_header_data_stdin) rather than layering curl_header_stdin's -K -
+# under curl_data_stdin's @- — curl only drains stdin once, so the second of
+# the two would starve.
 _http_request() {
-    local _log_fn="$1" label="$2" _body="$3"
-    shift 3
+    local _log_fn="$1" label="$2" _body="$3" _hdr_name="$4" _hdr_value="$5"
+    shift 5
     local out code rc=0
-    if [[ -n "$_body" ]]; then
+    if [[ -n "$_hdr_name" && -n "$_body" ]]; then
+        out=$(curl_header_data_stdin "$_hdr_name" "$_hdr_value" "$_body" -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
+    elif [[ -n "$_hdr_name" ]]; then
+        out=$(curl_header_stdin "$_hdr_name" "$_hdr_value" -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
+    elif [[ -n "$_body" ]]; then
         out=$(curl_data_stdin "$_body" -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
     else
         out=$(curl -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
@@ -86,9 +96,15 @@ _http_request() {
 # api_fetch:       log_warn on failure (advisory — fetch-and-compare calls).
 # http_check_data: http_check for a secret-bearing payload, which is sent on
 #                  stdin instead of argv. Usage: http_check_data <body> <label> ...
-http_check() { _http_request log_error "$1" "" "${@:2}"; }
-api_fetch() { _http_request log_warn "$1" "" "${@:2}"; }
-http_check_data() { _http_request log_error "$2" "$1" "${@:3}"; }
+# http_check_auth/api_fetch_auth: http_check/api_fetch for a secret-bearing
+#                  header (Authorization, X-Api-Key, ...), sent via curl's
+#                  config file instead of -H. Usage: *_auth <label> <header-name>
+#                  <header-value> ...
+http_check() { _http_request log_error "$1" "" "" "" "${@:2}"; }
+api_fetch() { _http_request log_warn "$1" "" "" "" "${@:2}"; }
+http_check_data() { _http_request log_error "$2" "$1" "" "" "${@:3}"; }
+http_check_auth() { _http_request log_error "$1" "" "$2" "$3" "${@:4}"; }
+api_fetch_auth() { _http_request log_warn "$1" "" "$2" "$3" "${@:4}"; }
 
 # Poll $url until it returns 2xx/3xx or ~90s elapses.
 wait_for_service() {
