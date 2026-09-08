@@ -52,9 +52,10 @@ _profiles_membership() {
 #
 #   Usage: profiles_service_flag SERVICE
 profiles_service_flag() {
-    local _psf_svc="$1" _psf_row _psf_member
+    local _psf_svc="$1" _psf_row _psf_member _psf_members
     while read -r _psf_row; do
-        for _psf_member in ${_psf_row#* }; do
+        read -ra _psf_members <<<"${_psf_row#* }"
+        for _psf_member in "${_psf_members[@]}"; do
             if [[ "$_psf_member" == "$_psf_svc" ]]; then
                 printf '%s\n' "--profile ${_psf_row%% *}"
                 return 0

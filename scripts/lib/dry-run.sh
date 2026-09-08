@@ -169,8 +169,10 @@ _dry_run_overwrite_subprocess_scripts() {
     cat >scripts/configure.sh <<'CONFIGURE'
 #!/usr/bin/env bash
 # DRY-RUN stub of scripts/configure.sh — no API calls; seeds a fake key.
+# Even the sandbox honours the one-.env-writer rule: sed -i truncates in place.
 if [[ -f .env ]] && grep -qE '^JELLYFIN_API_KEY=' .env; then
-    sed -i 's/^JELLYFIN_API_KEY=.*/JELLYFIN_API_KEY=dry-run-key/' .env
+    source scripts/lib/env-update.sh
+    _env_write_kv .env JELLYFIN_API_KEY dry-run-key
 fi
 echo "  DRY-RUN: would auto-configure services (Sonarr/Radarr/qBittorrent/...)" >&2
 exit 0
