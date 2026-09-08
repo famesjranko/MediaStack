@@ -95,6 +95,7 @@ worktree_probes=(
     "AGENT-PRIVATE-DIR|.claude/settings.local.json"
     "AGENT-PRIVATE-DIR|.github/workflows-private/a.yml"
     "REAL-LOG|install.log" "REAL-LOG|install.log.1" "REAL-LOG|logs/a.txt"
+    "ENV-BACKUP|env.local" "ENV-BACKUP|.env-backup" "ENV-BACKUP|dot-env"
 )
 wt_dir="$FIXTURE_ROOT/list-worktree"
 make_clean_fixture "$wt_dir"

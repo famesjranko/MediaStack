@@ -63,6 +63,7 @@ fi
 
 EXPECTED_RULE_IDS="AGENT-PRIVATE-DIR
 ANALYZER-CACHE
+ENV-BACKUP
 FORBIDDEN-TRACKED-PATH
 HOST-ARTIFACT
 KNOWLEDGE-GRAPH
@@ -73,21 +74,26 @@ SECRET-PATTERN
 YAML-CONFIG
 YAML-WORKFLOW"
 
-EXPECTED_PATTERN_NAMES="aws-access-key-id
+EXPECTED_PATTERN_NAMES="api-key-assignment
+aws-access-key-id
 aws-session-key-id
 azure-account-key
 client-secret-assignment
+ddns-token-assignment
 dockerhub-token
 github-token
 gitlab-token
 google-api-key
 google-oauth-token
+jellyfin-admin-password-assignment
 npm-token
 private-key-assignment
 private-key-header
 private-key-header-generic
 sendgrid-key
-slack-token"
+slack-token
+wg-credential-assignment
+wireguard-private-key"
 
 mapfile -t registry < <(run_guard --list-rules)
 registry_sorted=$(printf '%s\n' "${registry[@]}" | sort)
@@ -143,7 +149,10 @@ PRIVATE-DOC-DIR (^|/)\.planning/
 PRIVATE-DOC-DIR (^|/)docs/plans/
 REAL-LOG \.log$
 REAL-LOG \.log\.[0-9]+$
-REAL-LOG (^|/)logs/'
+REAL-LOG (^|/)logs/
+ENV-BACKUP (^|/)env\.local$
+ENV-BACKUP (^|/)\.env-[^/]*$
+ENV-BACKUP (^|/)dot-env(/|$)'
 
 sorted_expect() { printf '%s\n' "$1" | sort; }
 
@@ -161,6 +170,6 @@ assert_eq "$(printf '%s\n' "${secret_file_probes[@]#*|}" | sort -u)" \
 # shellcheck disable=SC2154 # probe/name arrays assigned in list-coverage.sh and pattern-parity.sh, sourced before this file
 expected=$((1 + 1 + ${#registry[@]} + 1 + 1 + 2 + 1 + 1 + 1 + 1 + \
     ${#host_probes[@]} + ${#secret_file_probes[@]} + ${#worktree_probes[@]} + \
-    ${#pattern_names[@]} + 1 + ${#forbidden_alts[@]} + 2 + 5 + 1 + 6))
+    ${#pattern_names[@]} + 1 + ${#forbidden_alts[@]} + 2 + 3 + 5 + 1 + 6))
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"

@@ -50,6 +50,11 @@ secret_line() {
         sendgrid-key) printf 'k=%s%s' "SG." "EXAMPLEEXAMPLEEXAMPLE.EXAMPLEEXAMPLEEXAMPLE" ;;
         dockerhub-token) printf 'tok=%s%s' "dckr_pat_" "EXAMPLEEXAMPLEEXAMPLE" ;;
         npm-token) printf 'tok=%s%s' "npm_" "EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEX" ;;
+        jellyfin-admin-password-assignment) printf '%s=%s' "JELLYFIN_ADMIN_PASSWORD" "Sup3rSecret!!" ;;
+        api-key-assignment) printf '%s=%s' "SONARR_API_KEY" "abcd1234efgh5678EXAMPLE" ;;
+        wg-credential-assignment) printf '%s=%s' "WG_INIT_PASSWORD" "RealLooking123!Example" ;;
+        wireguard-private-key) printf '%s = %s%s' "PrivateKey" "EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEE" "=" ;;
+        ddns-token-assignment) printf '"%s": "%s"' "token" "EXAMPLE-NOT-A-REAL-TOKEN-VALUE" ;;
         *) return 1 ;;
     esac
 }
@@ -116,6 +121,9 @@ apply_defect() {
             ;;
         REAL-LOG)
             printf 'boot\n' >"$dir/install.log"
+            ;;
+        ENV-BACKUP)
+            printf 'PUID=1000\n' >"$dir/env.local"
             ;;
         YAML-CONFIG)
             printf 'general: [unclosed\n' >"$dir/config/examples/config.yml"
