@@ -99,8 +99,8 @@ if [[ "${1:-}" == "install" ]]; then
 fi
 
 # Split args: shellcheck passthrough flags (anything starting with -) vs. files.
-# Default severity matches the CI gate (--severity=warning): a bare ./tests/lint.sh
-# gives the same pass/fail as CI. Pass --severity=error/style/info to override.
+# Default severity matches the CI gate (--severity=info): a bare ./tests/lint.sh
+# gives the same pass/fail as CI. Pass --severity=error/warning/style to override.
 sc_flags=()
 files=()
 has_severity=false
@@ -114,7 +114,7 @@ for arg in "$@"; do
         *) files+=("$arg") ;;
     esac
 done
-[[ "$has_severity" == "false" ]] && sc_flags=("--severity=warning" "${sc_flags[@]}")
+[[ "$has_severity" == "false" ]] && sc_flags=("--severity=info" "${sc_flags[@]}")
 
 # Default file set: every tracked shell file. Same discovery the CI shell-syntax
 # loop uses (git ls-files -z '*.sh' 'mediastack'), so "what is shell here" has

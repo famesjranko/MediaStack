@@ -34,7 +34,10 @@ net_dns_classify() {
 }
 net_check_http_ports() { printf '%s' "${STAGE2_LE_PORTS:-ok}"; }
 _stage2_probe_https_ready() { return 0; }
-_stage2_le_ready_hosts() { printf '%s\n' ${STAGE2_LE_READY_HOSTS_FIXTURE:-}; }
+_stage2_le_ready_hosts() {
+    # shellcheck disable=SC2086  # intentional: split the space-separated fixture into one host per line
+    printf '%s\n' ${STAGE2_LE_READY_HOSTS_FIXTURE:-}
+}
 _stage2_le_log_text() { printf '%s\n' "${STAGE2_LE_LOG_FIXTURE:-}"; }
 _stage2_le_request_log_text() { printf '%s\n' "${STAGE2_LE_REQ_FIXTURE:-}"; }
 

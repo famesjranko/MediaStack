@@ -191,9 +191,11 @@ setup_ufw_docker_rules() {
         # privileged write in a subshell, and the append must be observable in
         # this shell's exit status.
         if [[ "$rules_persisted" == "false" ]]; then
+            # shellcheck disable=SC2024  # tee's target needs sudo, not this unprivileged generator
             sudo tee -a "$MEDIASTACK_UFW_AFTER_RULES" >/dev/null < <(_ufw_docker_rules_block)
         fi
         if [[ "$rules6_persisted" == "false" ]]; then
+            # shellcheck disable=SC2024  # tee's target needs sudo, not this unprivileged generator
             sudo tee -a "$MEDIASTACK_UFW_AFTER6_RULES" >/dev/null < <(_ufw_docker6_rules_block)
         fi
     fi
@@ -298,6 +300,7 @@ setup_ufw_docker_dedup_hook() {
             log_warn "Could not inject the DOCKER-USER dedup block into /etc/ufw/after.init; skipping."
             return
         fi
+        # shellcheck disable=SC2024  # tee's target needs sudo, $tmp is our own unprivileged scratch file
         sudo tee "$after_init" >/dev/null <"$tmp"
         rm -f "$block_file" "$tmp"
         # We injected into a pre-existing file — we did NOT create the whole

@@ -8,7 +8,7 @@
 # Runs the following, aggregating failures (it never aborts on the first one, so
 # one run reports every problem):
 #   1. shell syntax    — bash -n over every tracked *.sh + the mediastack launcher
-#   2. shellcheck      — ./tests/lint.sh --severity=warning (the repo lint gate)
+#   2. shellcheck      — ./tests/lint.sh --severity=info (the repo lint gate)
 #   3. python bytecode — py_compile over every tracked *.py
 #   4. python types    — pinned mypy (recorded in tools.toml) over every tracked *.py
 #   5. compose render  — docker compose config across the profile combinations
@@ -132,8 +132,8 @@ endgroup
 group "shellcheck"
 if [[ "${MS_UNIT_SKIP_SHELLCHECK:-0}" == "1" ]]; then
     echo "SKIP: shellcheck (MS_UNIT_SKIP_SHELLCHECK=1 — run by a separate caller)"
-elif ! ./tests/lint.sh --severity=warning; then
-    err "shellcheck found warnings" "run ./tests/lint.sh --severity=warning"
+elif ! ./tests/lint.sh --severity=info; then
+    err "shellcheck found findings" "run ./tests/lint.sh --severity=info"
     fail=1
 fi
 endgroup

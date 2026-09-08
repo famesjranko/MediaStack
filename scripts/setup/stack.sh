@@ -104,10 +104,10 @@ ensure_mediastack_network_config() {
     : >"$docker_file"
     : >"$mediastack_file"
     if command -v docker >/dev/null 2>&1; then
-        local docker_network_ids
-        docker_network_ids=$(docker network ls -q 2>/dev/null || true)
-        if [[ -n "$docker_network_ids" ]]; then
-            docker network inspect $docker_network_ids >"$docker_file" 2>/dev/null || : >"$docker_file"
+        local -a docker_network_ids=()
+        mapfile -t docker_network_ids < <(docker network ls -q 2>/dev/null || true)
+        if ((${#docker_network_ids[@]} > 0)); then
+            docker network inspect "${docker_network_ids[@]}" >"$docker_file" 2>/dev/null || : >"$docker_file"
         fi
         docker network inspect mediastack >"$mediastack_file" 2>/dev/null || : >"$mediastack_file"
     fi

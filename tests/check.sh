@@ -301,8 +301,8 @@ wizard_scenarios() {
 if [[ -n "$STAGE" ]]; then
     case "$STAGE" in
         lint)
-            stage lint "lint: shellcheck" "./tests/lint.sh --severity=warning" \
-                ./tests/lint.sh --severity=warning
+            stage lint "lint: shellcheck" "./tests/lint.sh --severity=info" \
+                ./tests/lint.sh --severity=info
             ;;
         line-cap)
             stage line-cap "lint: shell file line cap" "./tests/shell-line-cap.sh" \
@@ -368,8 +368,8 @@ if [[ -n "$STAGE" ]]; then
     exit 0
 fi
 
-stage fast "lint: shellcheck" "./tests/lint.sh --severity=warning" \
-    ./tests/lint.sh --severity=warning
+stage fast "lint: shellcheck" "./tests/lint.sh --severity=info" \
+    ./tests/lint.sh --severity=info
 stage fast "lint: shell file line cap" "./tests/shell-line-cap.sh" \
     ./tests/shell-line-cap.sh
 stage fast "lint: file naming" "./tests/naming.sh" ./tests/naming.sh

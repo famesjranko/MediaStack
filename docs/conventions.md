@@ -155,7 +155,7 @@ adding the next gate.
 
 | Rule | Enforced by | CI context |
 |---|---|---|
-| Tracked shell passes shellcheck at `warning` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
+| Tracked shell passes shellcheck at `info` | `./tests/check.sh lint` → `tests/lint.sh` | `lint-shellcheck` |
 | Tracked shell file is at or under 500 lines | `./tests/check.sh line-cap` → `tests/shell-line-cap.sh` (also in `fast`), its ratchet refusals proved against a fabricated allowlist by `tests/unit/line-cap-gate.sh` | `lint-shellcheck` |
 | Tracked shell filename is kebab-case, tracked python filename is snake_case | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`), with no exceptions: the grandfathered offenders have all been renamed and `tests/shell-naming.allowlist` deleted | `lint-shellcheck` |
 | A `scripts/*.sh` module (or the root `mediastack` dispatcher) that declares `<prefix>_*` on its `# Owns:` line has every function definition match a declared prefix | `./tests/check.sh naming` → `tests/naming.sh` (also in `fast`) | `lint-shellcheck` |

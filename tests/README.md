@@ -116,7 +116,7 @@ false-positive suppressions live in `.shellcheckrc` (repo root), so the runner
 needs no special flags — and neither do you.
 
 ```bash
-./tests/lint.sh                          # lint every tracked *.sh + mediastack (--severity=warning, matches CI)
+./tests/lint.sh                          # lint every tracked *.sh + mediastack (--severity=info, matches CI)
 ./tests/lint.sh scripts/lib/validators.sh  # lint only the named file(s)
 ./tests/lint.sh --severity=error         # stricter: only fail on errors
 ```
@@ -125,7 +125,7 @@ It prefers a native `shellcheck` at the pinned version, then the sha256-verified
 cached pin (`./tests/lint.sh install`, fetched per `tools.toml [shellcheck]`), and
 falls back to the pinned `koalaman/shellcheck:v0.11.0` docker image — the analysing
 engine is identical on every rung.
-The default severity is `--severity=warning` — the same gate CI's
+The default severity is `--severity=info` — the same gate CI's
 `lint-shellcheck` job uses via `./tests/check.sh lint`.
 A bare `./tests/lint.sh` therefore gives the same pass/fail result as CI; no flag needed.
 
@@ -801,13 +801,15 @@ Stages run in the documented order and stop at the first failure, naming the tie
 the exact underlying command so it can be re-run in isolation. It wraps the runners
 below; it does not reimplement their file discovery or logic:
 
-- **fast** — `./tests/lint.sh --severity=warning` (shellcheck),
+- **fast** — `./tests/lint.sh --severity=info` (shellcheck),
   `./tests/shell-line-cap.sh` (the 500-line ratchet), `./tests/naming.sh`
   (tracked shell/python filename casing, plus declared `<prefix>_*` function
   conformance for any `scripts/*.sh` module that opts in via its `# Owns:`
   line), `./tests/structure.sh` (every `scripts/services/<svc>/main.sh` defines
   its `configure_<svc>()`, plus the import-direction rules over
-  `scripts/services/` and `scripts/setup/`), `./tests/format.sh check`
+  `scripts/services/` and `scripts/setup/`), `./tests/dead-code.sh` (every
+  function defined under `scripts/` has a reference elsewhere in the tracked
+  tree), `./tests/format.sh check`
   (shfmt), the pinned ruff lint + format check (findings reconciled by
   `./tests/python-complexity.sh` against the C901 shrink-only allowlist), the
   pinned mypy invocation, and the
