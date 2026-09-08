@@ -67,11 +67,15 @@ _uninstall_apt() {
         sudo test -e "$path" || continue
         expected=$(_ms_state_get "$key") || return 1
         if [[ "$(_ms_root_sha256 "$path")" != "$expected" ]]; then
-            log_error "Edited MediaStack APT file preserved: $path"
+            log_error "MediaStack APT file preserved: $path (edited since install, or the ownership ledger is missing)"
             return 1
         fi
         sudo rm -f "$path" || return 1
     done
-    nvidia_driver_gpu_uninstall # apt sources owned by gpu.sh; removed by their owner
-    log_ok "MediaStack apt sources and unattended-upgrades policy removed"
+    # The GPU apt sources are gpu.sh's host state, not this concern's: this
+    # function also runs from the day-2 "Disable system hardening" toggle, and
+    # tearing them down there left transcoding sources removed with no path
+    # back short of `./setup.sh --transcoding`. uninstall_system_cleanup calls
+    # nvidia_driver_gpu_uninstall instead, so only a real uninstall removes them.
+    log_ok "MediaStack unattended-upgrades policy removed"
 }

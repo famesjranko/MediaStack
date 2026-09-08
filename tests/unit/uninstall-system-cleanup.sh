@@ -24,6 +24,10 @@ MEDIASTACK_APT_AUTO_CONF="$TMP_DIR/21mediastack-auto-upgrades"
 MEDIASTACK_APT_POLICY_CONF="$TMP_DIR/51mediastack-unattended-upgrades"
 MEDIASTACK_SYSCTL_CONF="$TMP_DIR/90-mediastack-hardening.conf"
 MEDIASTACK_UFW_AFTER_RULES="$TMP_DIR/after.rules"
+# gpu.sh-owned apt sources, redirected into the sandbox: the teardown that
+# removes them must never reach the real /etc/apt from a unit run.
+MEDIASTACK_GPU_NONFREE_LIST="$TMP_DIR/mediastack-nonfree.list"
+MEDIASTACK_GPU_BACKPORTS_LIST="$TMP_DIR/mediastack-backports.list"
 SAMBA_INCLUDE_FILE="$TMP_DIR/samba-include.conf"
 SAMBA_MAIN_CONF="$TMP_DIR/smb.conf"
 
@@ -210,9 +214,16 @@ policy_hash=$(sha256sum "$MEDIASTACK_APT_POLICY_CONF" | awk '{print $1}')
 _ms_state_get() { [[ "$1" == APT_AUTO_SHA256 ]] && echo "$auto_hash" || echo "$policy_hash"; }
 sudo() { command "$@"; }
 printf 'user edit\n' >>"$MEDIASTACK_APT_POLICY_CONF"
+printf 'nonfree\n' >"$MEDIASTACK_GPU_NONFREE_LIST"
+printf 'backports\n' >"$MEDIASTACK_GPU_BACKPORTS_LIST"
 _uninstall_apt
 assert_eq "1" "$?" "APT: edited owned drop-in makes cleanup incomplete"
 [[ -f "$MEDIASTACK_APT_POLICY_CONF" ]] && pass "APT: edited drop-in preserved" || fail "APT: edited drop-in preserved"
+# The hardening toggle reaches _uninstall_apt too; GPU-owned sources are not its
+# state to remove, so they must survive it.
+[[ -f "$MEDIASTACK_GPU_NONFREE_LIST" && -f "$MEDIASTACK_GPU_BACKPORTS_LIST" ]] \
+    && pass "APT: GPU-owned apt sources untouched by hardening teardown" \
+    || fail "APT: GPU-owned apt sources untouched by hardening teardown"
 unset -f sudo
 
 # Live sysctl values are restored only while still at MediaStack's value.
@@ -245,6 +256,33 @@ assert_eq "0" "$?" "sysctl: unchanged managed file is removed"
 assert_eq "10" "${#SYSCTL_WRITES[@]}" "sysctl: every unchanged live key is restored"
 [[ ! -e "$MEDIASTACK_SYSCTL_CONF" ]] && pass "sysctl: owned file removed" || fail "sysctl: owned file removed"
 unset -f sudo sysctl
+
+# Ledger-less teardown: content identity is the only ownership claim left, so an
+# unmodified file goes and anything else stays. Runs the real _uninstall_sysctl.
+_ms_state_get() { :; }
+sudo() { command "$@"; }
+_setup_sysctl_conf_content >"$MEDIASTACK_SYSCTL_CONF"
+_uninstall_sysctl
+assert_eq "0" "$?" "sysctl: ledger-less run skips a file it cannot claim"
+[[ -e "$MEDIASTACK_SYSCTL_CONF" ]] \
+    && pass "sysctl: recorded teardown without a ledger touches nothing" \
+    || fail "sysctl: recorded teardown without a ledger touches nothing"
+_uninstall_sysctl true
+assert_eq "0" "$?" "sysctl: best-effort run removes an unmodified MediaStack file"
+[[ -e "$MEDIASTACK_SYSCTL_CONF" ]] \
+    && fail "sysctl: best-effort run removes an unmodified MediaStack file by content" \
+    || pass "sysctl: best-effort run removes an unmodified MediaStack file by content"
+{
+    _setup_sysctl_conf_content
+    printf 'net.ipv4.ip_forward = 0\n'
+} >"$MEDIASTACK_SYSCTL_CONF"
+_uninstall_sysctl true
+assert_eq "1" "$?" "sysctl: best-effort run reports an unrecognised file instead of removing it"
+[[ -e "$MEDIASTACK_SYSCTL_CONF" ]] \
+    && pass "sysctl: best-effort run preserves an edited file" \
+    || fail "sysctl: best-effort run preserves an edited file"
+command rm -f "$MEDIASTACK_SYSCTL_CONF"
+unset -f sudo
 
 # Ownership is recorded before the sysctl file/apply mutations, so a failed
 # first install cannot leave an untracked file that uninstall later skips.
@@ -357,6 +395,38 @@ assert_contains "${WATCHDOG_CALLS[*]}" "enable mediastack-storage-watchdog.servi
 assert_contains "${WATCHDOG_CALLS[*]}" "start mediastack-storage-watchdog.service" "transaction: watchdog active state restored"
 SCRIPT_DIR="$ORIGINAL_SCRIPT_DIR"
 
+# A real uninstall — and only a real uninstall — removes the GPU apt sources.
+printf 'nonfree\n' >"$MEDIASTACK_GPU_NONFREE_LIST"
+printf 'backports\n' >"$MEDIASTACK_GPU_BACKPORTS_LIST"
+_uninstall_ufw() { return 0; }
+_uninstall_apt() { return 0; }
+_uninstall_sysctl() { return 0; }
+_uninstall_samba() { return 0; }
+storage_uninstall_watchdog() { return 0; }
+f2b_uninstall_reload_watcher() { return 0; }
+validate_install_state() { return 0; }
+# Sandbox sudo: absent host artefacts, and removals confined to TMP_DIR.
+sudo() {
+    local arg
+    case "$1" in
+        test) return 1 ;;
+        rm)
+            for arg in "$@"; do
+                [[ "$arg" == "$TMP_DIR"/* ]] && command rm -f "$arg"
+            done
+            return 0
+            ;;
+    esac
+    return 0
+}
+uninstall_system_cleanup
+assert_eq "0" "$?" "uninstall: system cleanup completes with owning-module teardowns"
+[[ -f "$MEDIASTACK_GPU_NONFREE_LIST" || -f "$MEDIASTACK_GPU_BACKPORTS_LIST" ]] \
+    && fail "uninstall: GPU-owned apt sources removed by uninstall_system_cleanup" \
+    || pass "uninstall: GPU-owned apt sources removed by uninstall_system_cleanup"
+unset -f sudo _uninstall_ufw _uninstall_apt _uninstall_sysctl _uninstall_samba
+unset -f storage_uninstall_watchdog f2b_uninstall_reload_watcher validate_install_state
+
 # --uninstall dispatch precedes a ready Stage 3 marker.
 STAGE3_CALLS=0
 ui_banner() { :; }
@@ -372,6 +442,49 @@ record_launcher_outcome() { :; }
 main --uninstall >/dev/null 2>&1
 assert_eq "1" "$?" "routing: invalid-ledger uninstall fails closed"
 assert_eq "0" "$STAGE3_CALLS" "routing: Stage 3 marker cannot intercept uninstall"
+
+# An unusable ledger offers the presence-guarded teardowns instead of dead-ending.
+BEST_EFFORT_CALLS=()
+ui_confirm() { return 0; }
+_uninstall_ufw() {
+    BEST_EFFORT_CALLS+=(ufw)
+    return 0
+}
+_uninstall_apt() {
+    BEST_EFFORT_CALLS+=(apt)
+    return 0
+}
+_uninstall_sysctl() {
+    BEST_EFFORT_CALLS+=("sysctl:$1")
+    return 0
+}
+_uninstall_samba() {
+    BEST_EFFORT_CALLS+=(samba)
+    return 0
+}
+nvidia_driver_gpu_uninstall() {
+    BEST_EFFORT_CALLS+=(gpu)
+    return 0
+}
+storage_uninstall_watchdog() {
+    BEST_EFFORT_CALLS+=(watchdog)
+    return 0
+}
+f2b_uninstall_reload_watcher() {
+    BEST_EFFORT_CALLS+=(fail2ban)
+    return 0
+}
+sudo() {
+    [[ "$1" == test ]] && return 1
+    return 0
+}
+main --uninstall >/dev/null 2>&1
+assert_eq "1" "$?" "best-effort: invalid-ledger uninstall still reports failure"
+assert_contains "${BEST_EFFORT_CALLS[*]}" "ufw apt gpu sysctl:true samba watchdog fail2ban" "best-effort: accepted offer runs every teardown, flagged as ledger-less"
+ui_confirm() { return 1; }
+BEST_EFFORT_CALLS=()
+main --uninstall >/dev/null 2>&1
+assert_eq "" "${BEST_EFFORT_CALLS[*]}" "best-effort: declined offer changes nothing"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

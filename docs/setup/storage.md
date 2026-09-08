@@ -163,6 +163,13 @@ mount first, then retry the same command. Do not create `media/` or `torrents/`
 under an unmounted local fallback path; that masks the failure the guard is
 trying to prevent.
 
+The root-owned repair helper only ever detaches an NFS mount it owns. If the
+mountpoint holds a non-NFS filesystem, is listed in `/etc/fstab` for a different
+source, or is a live NFS mount that is still in use, the helper logs the refusal
+(`journalctl -t mediastack-storage-helper`) and exits non-zero; the watchdog
+leaves NAS-dependent services stopped until an operator resolves it by hand.
+Lazy detach is used only for a mount that no longer answers.
+
 Changing from local storage to NAS, changing exports, or moving existing media
 is not an automatic migration path. Stop the stack first and treat the move as a
 manual storage migration; MediaStack will not reconcile app paths or move media

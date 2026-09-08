@@ -256,6 +256,35 @@ uninstall_system_cleanup() {
         log_error "Missing or invalid MediaStack ownership ledger; refusing host cleanup"
         return 1
     }
+    _uninstall_host_artefacts || {
+        log_error "Host cleanup incomplete; ownership ledger retained for retry"
+        return 1
+    }
+    log_ok "MediaStack system artefacts removed"
+}
+
+# Best-effort host cleanup for a host whose ownership ledger is gone or corrupt,
+# so --uninstall no longer dead-ends there. Runs exactly the same teardowns:
+# each one is presence-guarded and sha-guarded, so without the ledger it removes
+# only what it can still positively identify as MediaStack's and preserves the
+# rest. Containers, config and media are untouched — that stays the typed-DESTROY
+# path's job.
+uninstall_best_effort_cleanup() {
+    log_warn "No valid ownership ledger: running a best-effort cleanup of the host changes MediaStack can still identify."
+    log_info "Anything it cannot verify as its own is left in place and reported below."
+    _uninstall_host_artefacts true || {
+        log_warn "Some host changes could not be verified as MediaStack's and were left in place — see the errors above and remove them by hand."
+        return 1
+    }
+    log_ok "Identifiable MediaStack host artefacts removed"
+}
+
+# Shared teardown body for both cleanup entry points. Returns non-zero when any
+# owning module reported a failure; each module logs its own detail.
+# $1 — "true" from the best-effort path, where the ledger is unusable and a
+# module may have a content-identity fallback in place of its recorded state.
+_uninstall_host_artefacts() {
+    local unledgered="${1:-false}"
     local failed=0
     _uninstall_ufw || {
         log_error "UFW cleanup failed"
@@ -265,7 +294,13 @@ uninstall_system_cleanup() {
         log_error "APT cleanup failed"
         failed=1
     }
-    _uninstall_sysctl || {
+    # gpu.sh's apt sources: removed here, on a real uninstall only — never from
+    # _uninstall_apt, which the day-2 hardening toggle also reaches.
+    nvidia_driver_gpu_uninstall || {
+        log_error "GPU apt source cleanup failed"
+        failed=1
+    }
+    _uninstall_sysctl "$unledgered" || {
         log_error "sysctl cleanup failed"
         failed=1
     }
@@ -291,9 +326,5 @@ uninstall_system_cleanup() {
     sudo rm -f /etc/profile.d/mediastack-setup-result.sh || failed=1
     sudo systemctl daemon-reload 2>/dev/null || failed=1
 
-    ((failed == 0)) || {
-        log_error "Host cleanup incomplete; ownership ledger retained for retry"
-        return 1
-    }
-    log_ok "MediaStack system artefacts removed"
+    ((failed == 0))
 }
