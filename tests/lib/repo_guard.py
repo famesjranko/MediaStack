@@ -47,10 +47,24 @@ class GuardError(Exception):
 # ---------------------------------------------------------------------------
 
 # Ported verbatim from the "Secret and private-file guard" step in
-# .github/workflows/ci.yml. Do not narrow either of these.
+# .github/workflows/ci.yml, now superseded by this module (ci.yml calls it
+# directly). Do not narrow the original ported alternatives.
+#
+# ENV_VARIANT_PATTERNS widens the `.env` alternative with the hand-made-backup
+# shapes the anchored `\.env($|\.)` does not name — `env.local` (no leading
+# dot), `.env-backup` (dash instead of dot), `dot-env` (avoids the hidden-file
+# convention entirely) — never the canonical `.env` itself, which a live
+# install legitimately carries untracked. Shared with the ENV-BACKUP worktree
+# rule below so an untracked copy is caught before it can be git-added.
+ENV_VARIANT_PATTERNS = [
+    r"(^|/)env\.local$",
+    r"(^|/)\.env-[^/]*$",
+    r"(^|/)dot-env(/|$)",
+]
 CI_FORBIDDEN_TRACKED = (
     r"(^|/)(\.env($|\.)|\.envrc|tests/\.env\.gcp|private(/|$)|docs/plans(/|$)"
-    r"|\.planning(/|$)|\.tmp(/|$)|CONTEXT\.md$|tests/.*-plan\.md$)"
+    r"|\.planning(/|$)|\.tmp(/|$)|CONTEXT\.md$|tests/.*-plan\.md$"
+    r"|" + "|".join(ENV_VARIANT_PATTERNS) + r")"
 )
 CI_PATH_ALLOWLIST = r"(^|/)(\.env\.example|\.env\.gcp\.example|\.env\.lan-host\.example)$"
 CI_CONTENT_ALLOWLIST = (
@@ -126,7 +140,75 @@ SECRET_PATTERNS = [
     ("sendgrid-key", r"SG\.[0-9A-Za-z_-]{20,}\.[0-9A-Za-z_-]{20,}"),
     ("dockerhub-token", r"dckr_pat_[0-9A-Za-z_-]{20,}"),
     ("npm-token", r"npm_[0-9A-Za-z]{36}"),
+    # MediaStack's own credential shapes. Structural (a key name plus a
+    # non-placeholder value), not a value list, so an unknown real credential
+    # still trips it. `(?<![A-Z0-9_])` anchors the key name so it cannot match
+    # mid-identifier (`_WIZ_WG_INIT_PASSWORD` must never trip the `WG_`
+    # pattern on its own suffix). The value side, in order: an optional quote,
+    # then never shell interpolation (`${VAR:-...}` or a bare `$UPPER_VAR` —
+    # this module's own dominant shape for these keys; a value that merely
+    # STARTS with a literal `$`, e.g. a real password, is not excluded) or `\`
+    # (a regex fragment like `\K`, e.g. from a `grep -oP` extractor, not a
+    # value), then never this tree's two hardcoded non-secret placeholders
+    # (env.example's "changeme" default and dry-run.sh's "dry-run-key"
+    # stand-in), then 4+ non-whitespace, non-quote, non-slash characters
+    # (excluding `/` keeps a `sed 's/KEY=.*/KEY=value/'` line from swallowing
+    # the whole expression as "the value").
+    (
+        "jellyfin-admin-password-assignment",
+        r"(?<![A-Z0-9_])JELLYFIN_ADMIN_PASSWORD\s*=\s*"
+        r"['\"]?(?!\$\{|\$[A-Z_])(?!\\)(?!changeme\b)[^\s'\"/]{4,}",
+    ),
+    (
+        "api-key-assignment",
+        r"(?<![A-Z0-9_])(?:[A-Z][A-Z0-9_]*_)?API_KEY\s*=\s*"
+        r"['\"]?(?!\$\{|\$[A-Z_])(?!\\)(?!dry-run-key\b)[^\s'\"/]{4,}",
+    ),
+    (
+        "wg-credential-assignment",
+        r"(?<![A-Z0-9_])WG_(?:INIT_PASSWORD|[A-Z0-9_]*PASSWORD)\s*=\s*"
+        r"['\"]?(?!\$\{|\$[A-Z_])(?!\\)(?!changeme\b)[^\s'\"/]{4,}",
+    ),
+    ("wireguard-private-key", r"PrivateKey\s*=\s*[A-Za-z0-9+/]{43}="),
+    ("ddns-token-assignment", r"\"token\"\s*:\s*\"[^\"]{4,}\""),
 ]
+
+# The four MediaStack-shaped entries above collide constantly with this
+# repo's own fixtures: the test suite deliberately assigns realistic-looking
+# fake credentials to these exact keys to prove env-write/wizard round-tripping,
+# and docs walk through the same keys in prose. Real product code only ever
+# carries these keys as `${VAR}` interpolation or the two literal placeholders
+# excluded above, never a live value, so this carve-out costs no real
+# coverage there — it only silences deliberately-fake ones. It scopes to these
+# four patterns only: every ported, high-entropy pattern above (AWS keys,
+# GitHub tokens, etc.) still scans docs/ and tests/ in full, since those
+# prefixes do not collide with fixture text the way a bare `KEY=value` does.
+#
+# The carve-out excludes two tests/ subtrees that drive a real, external host:
+# tests/lan-host/ and tests/gcp-vm/ exist to probe a live box over the
+# network, so a credential pasted there (unlike a same-shaped literal in a
+# unit-test fixture) could be a genuine, currently-live secret. Both are
+# `${VAR}`-only today (verified against the real tree), so this costs no
+# existing coverage.
+MEDIASTACK_PATTERN_NAMES = frozenset(
+    {
+        "jellyfin-admin-password-assignment",
+        "api-key-assignment",
+        "wg-credential-assignment",
+        "ddns-token-assignment",
+    }
+)
+MEDIASTACK_EXAMPLE_PATH = r"(^|/)docs/"
+MEDIASTACK_TEST_EXAMPLE_PATH = r"(^|/)tests/"
+MEDIASTACK_TEST_RISK_PATH = r"(^|/)tests/(lan-host|gcp-vm)/"
+
+# Skip a worktree file this large or this binary-shaped rather than reading
+# it whole: SECRET-PATTERN is the only rule here that opens worktree file
+# CONTENT (SECRET-FILE only matches basenames), so it is the only one a
+# stray multi-gigabyte archive or media file could turn into an unbounded
+# read. 1 MiB comfortably covers every tracked/worktree text file in this
+# repo today.
+SECRET_PATTERN_MAX_BYTES = 1024 * 1024
 
 WORKTREE_RULE_PATTERNS = {
     "PRIVATE-DOC-DIR": [
@@ -164,6 +246,12 @@ WORKTREE_RULE_PATTERNS = {
         r"\.log\.[0-9]+$",
         r"(^|/)logs/",
     ],
+    # Same shapes as ENV_VARIANT_PATTERNS, worktree-scanned: a live install
+    # legitimately carries an untracked `.env`, but never a legitimately
+    # untracked `env.local`/`.env-backup`/`dot-env` — those are always either
+    # a hand-made backup copy or a mistake, so unlike `.env` itself this is
+    # safe to reject before it is ever git-added.
+    "ENV-BACKUP": ENV_VARIANT_PATTERNS,
 }
 
 REQUIRED_YAML_CONFIG = "config/examples/config.yml"
@@ -241,6 +329,25 @@ def read_text(root: str, rel: str) -> str:
         raise GuardError(rel, f"unreadable: {exc.strerror}") from exc
 
 
+# SECRET-PATTERN-only guard: a file over SECRET_PATTERN_MAX_BYTES, or one
+# whose first chunk carries a NUL byte (the standard binary tell — text files
+# never legitimately contain one), is skipped rather than read whole. Every
+# other rule here matches on path/basename only, so this is the one place a
+# stray archive or media file could balloon the gate. An unreadable file is
+# NOT skipped this way — that stays a GuardError (same as read_text), so a
+# permission problem still fails closed instead of silently shrinking the
+# scanned population.
+def _skip_for_secret_scan(root: str, rel: str) -> bool:
+    path = os.path.join(root, rel)
+    try:
+        if os.path.getsize(path) > SECRET_PATTERN_MAX_BYTES:
+            return True
+        with open(path, "rb") as handle:
+            return b"\x00" in handle.read(8192)
+    except OSError as exc:
+        raise GuardError(rel, f"unreadable: {exc.strerror}") from exc
+
+
 # ---------------------------------------------------------------------------
 # Rules
 # ---------------------------------------------------------------------------
@@ -296,19 +403,37 @@ def rule_secret_file(ctx: ScanContext) -> list[RuleFinding]:
 # Reports the pattern name and line, never the match — a guard that echoes
 # the secret into CI logs has made things worse. Uses ci.yml's content
 # allowlist, which is anchored differently from its path allowlist.
-# Index-only, unlike SECRET-FILE: reading every untracked byte on a live
-# install is a cost question the file-class rule does not have.
+# Worktree-scanned like SECRET-FILE: an untracked file (an accidental paste
+# into a not-yet-added script, or a secret dropped into a worktree scratch
+# path) is exactly what a tracked-only scan would miss before it gets
+# git-added. Costed the same way SECRET-FILE is: `live_runtime` skips the same
+# generated host-state trees (config/, logs, backups) so a live install still
+# only reads source-shaped files, and directory entries, non-regular files
+# (symlinks, sockets), oversized files and binary-shaped files are skipped
+# rather than opened (see `_skip_for_secret_scan`).
 def rule_secret_pattern(ctx: ScanContext) -> list[RuleFinding]:
     pats = [
         (name, re.compile(rx)) for name, rx in require_nonempty("SECRET_PATTERNS", SECRET_PATTERNS)
     ]
     allowed = re.compile(CI_CONTENT_ALLOWLIST)
+    example_path = re.compile(MEDIASTACK_EXAMPLE_PATH)
+    test_path = re.compile(MEDIASTACK_TEST_EXAMPLE_PATH)
+    risk_path = re.compile(MEDIASTACK_TEST_RISK_PATH)
     out = []
-    for path in ctx["tracked"]:
-        if allowed.search(path):
+    for path in ctx["worktree"]:
+        if path.endswith("/") or allowed.search(path) or live_runtime(path):
             continue
+        if not os.path.isfile(os.path.join(ctx["root"], path)):
+            continue
+        if _skip_for_secret_scan(ctx["root"], path):
+            continue
+        is_example = bool(example_path.search(path)) or (
+            bool(test_path.search(path)) and not risk_path.search(path)
+        )
         for lineno, line in enumerate(read_text(ctx["root"], path).splitlines(), 1):
             for name, pat in pats:
+                if is_example and name in MEDIASTACK_PATTERN_NAMES:
+                    continue
                 if pat.search(line):
                     out.append((path, f"pattern={name} line={lineno}"))
     return out
@@ -363,6 +488,7 @@ RULES: list[tuple[str, RuleCheck]] = [
     ("KNOWLEDGE-GRAPH", _worktree_rule("KNOWLEDGE-GRAPH")),
     ("AGENT-PRIVATE-DIR", _worktree_rule("AGENT-PRIVATE-DIR")),
     ("REAL-LOG", _worktree_rule("REAL-LOG", exempt=live_runtime)),
+    ("ENV-BACKUP", _worktree_rule("ENV-BACKUP")),
     ("YAML-CONFIG", rule_yaml_config),
     ("YAML-WORKFLOW", rule_yaml_workflow),
 ]

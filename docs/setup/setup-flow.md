@@ -184,7 +184,7 @@ On next boot:
 
 ## Uninstall transaction
 
-`setup.sh --uninstall` validates the root-owned ownership ledger before showing the `DESTROY` gate. It pauses the NAS watchdog, tears down and verifies all Compose containers, selectively removes tagged/hashed host changes, and deletes `.env` plus the ledger only after cleanup succeeds. Docker failure restores the previous watchdog state. Partial host cleanup retains `.env` and the ledger for retry and reports a failed outcome; missing or malformed ownership state is a hard refusal.
+`setup.sh --uninstall` validates the root-owned ownership ledger before showing the `DESTROY` gate. It pauses the NAS watchdog, tears down and verifies all Compose containers, selectively removes tagged/hashed host changes, and deletes `.env` plus the ledger only after cleanup succeeds. Docker failure restores the previous watchdog state. Partial host cleanup retains `.env` and the ledger for retry and reports a failed outcome. Missing or malformed ownership state still refuses the recorded uninstall — nothing is deleted and the outcome is failed — but it now offers a best-effort host cleanup first: the same presence- and hash-guarded teardowns, which without the ledger remove only what they can still positively identify as MediaStack's. Containers, config, and media stay with the typed-`DESTROY` path.
 
 ## Storage modes
 

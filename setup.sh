@@ -116,8 +116,19 @@ main() {
     if [[ "${1:-}" == "--uninstall" ]]; then
         prompt_sudo_cache
         if ! validate_install_state; then
-            log_error "Missing or invalid MediaStack ownership ledger; uninstall made no changes."
-            log_info "To reset this install, use 'Full reset — wipe everything and reinstall' from the menu."
+            # No ledger means the recorded, verified uninstall cannot run. Full
+            # reset does not remove host changes either (it never runs the host
+            # teardown), so offer the presence-guarded teardowns directly rather
+            # than sending the user to a path that leaves the firewall chain,
+            # sysctl file, systemd units and sudoers rule behind.
+            log_error "Missing or invalid MediaStack ownership ledger; the recorded uninstall cannot run."
+            log_info "A best-effort cleanup can still remove the host changes MediaStack recognises on its own: UFW rules and Docker chain, its systemd units, the watchdog sudoers rule, and the sysctl file when its contents are untouched — anything it cannot verify is preserved and reported."
+            log_info "Containers, config and media are left alone; use 'Full reset — wipe everything and reinstall' from the menu for those."
+            if ui_confirm "Attempt a best-effort cleanup of MediaStack host changes?" "no"; then
+                uninstall_best_effort_cleanup || true
+            else
+                log_info "No changes made."
+            fi
             record_launcher_outcome failed
             return 1
         fi

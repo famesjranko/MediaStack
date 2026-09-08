@@ -50,6 +50,7 @@ fi
 forbidden_alts=(
     ".env" ".envrc" "tests/.env.gcp" "private/notes.md" "docs/plans/p.md"
     ".planning/p.md" ".tmp/scratch" "CONTEXT.md" "tests/feature-plan.md"
+    "env.local" ".env-backup" "dot-env"
 )
 for rel in "${forbidden_alts[@]}"; do
     dir="$FIXTURE_ROOT/alt-$(tr '/.' '__' <<<"$rel")"
@@ -94,4 +95,51 @@ if ((content_rc == 0)) && [[ -z "$content_out" ]]; then
     pass "ported content allowlist keeps .env.example"
 else
     fail "ported content allowlist keeps .env.example" "rc=$content_rc :: $content_out"
+fi
+
+# --- MediaStack-pattern carve-out: negative and risk-zone fixtures ----------
+
+mediastack_example_dir="$FIXTURE_ROOT/mediastack-example"
+make_clean_fixture "$mediastack_example_dir"
+mkdir -p "$mediastack_example_dir/tests/unit/repository-safety"
+secret_line jellyfin-admin-password-assignment >"$mediastack_example_dir/tests/unit/repository-safety/fixture.sh"
+git -C "$mediastack_example_dir" add tests/unit/repository-safety/fixture.sh >/dev/null 2>&1
+mediastack_example_out=$(run_guard "$mediastack_example_dir")
+mediastack_example_rc=$?
+if ((mediastack_example_rc == 0)) && [[ -z "$mediastack_example_out" ]]; then
+    pass "MediaStack-shaped credential is suppressed under a carved-out test path"
+else
+    fail "MediaStack-shaped credential is suppressed under a carved-out test path" \
+        "rc=$mediastack_example_rc :: $mediastack_example_out"
+fi
+
+# The carve-out excludes tests/lan-host/ and tests/gcp-vm/ specifically —
+# those drive a real external host, so the same line there must still fire.
+mediastack_risk_dir="$FIXTURE_ROOT/mediastack-risk"
+make_clean_fixture "$mediastack_risk_dir"
+mkdir -p "$mediastack_risk_dir/tests/lan-host"
+secret_line jellyfin-admin-password-assignment >"$mediastack_risk_dir/tests/lan-host/probe.sh"
+git -C "$mediastack_risk_dir" add tests/lan-host/probe.sh >/dev/null 2>&1
+mediastack_risk_out=$(run_guard "$mediastack_risk_dir")
+mediastack_risk_rc=$?
+if ((mediastack_risk_rc == 1)) \
+    && grep -qF "SECRET-PATTERN${TAB}tests/lan-host/probe.sh${TAB}pattern=jellyfin-admin-password-assignment" \
+        <<<"$mediastack_risk_out"; then
+    pass "MediaStack-shaped credential still fires under tests/lan-host/ (real-host risk zone)"
+else
+    fail "MediaStack-shaped credential still fires under tests/lan-host/ (real-host risk zone)" \
+        "rc=$mediastack_risk_rc :: $mediastack_risk_out"
+fi
+
+# --- ENV-BACKUP must not fire on the canonical .env itself ------------------
+
+env_negative_dir="$FIXTURE_ROOT/env-backup-negative"
+make_clean_fixture "$env_negative_dir"
+printf 'PUID=1000\n' >"$env_negative_dir/.env"
+env_negative_out=$(run_guard "$env_negative_dir")
+env_negative_rc=$?
+if ((env_negative_rc == 0)) && [[ -z "$env_negative_out" ]]; then
+    pass "a plain untracked .env does not trip ENV-BACKUP"
+else
+    fail "a plain untracked .env does not trip ENV-BACKUP" "rc=$env_negative_rc :: $env_negative_out"
 fi

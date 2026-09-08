@@ -66,8 +66,10 @@ PY
 
 mount_matches() {
     local live_source live_fstype
-    live_source="$(findmnt -rn -M "$MOUNTPOINT" -o SOURCE 2>/dev/null || true)"
-    live_fstype="$(findmnt -rn -M "$MOUNTPOINT" -o FSTYPE 2>/dev/null || true)"
+    # --first-only: a stacked mountpoint prints one line per layer, and only
+    # the topmost one is what anything reading $MOUNTPOINT actually sees.
+    live_source="$(findmnt -rn --first-only -M "$MOUNTPOINT" -o SOURCE 2>/dev/null || true)"
+    live_fstype="$(findmnt -rn --first-only -M "$MOUNTPOINT" -o FSTYPE 2>/dev/null || true)"
     [[ -n "$live_source" && "$live_source" == "$EXPECTED_SOURCE" ]] || return 1
     case "$EXPECTED_FSTYPE:$live_fstype" in
         nfs4:nfs|nfs4:nfs4|nfs:nfs|nfs:nfs4) return 0 ;;
@@ -80,8 +82,94 @@ if ! path_under_mountpoint "$SENTINEL" "$MOUNTPOINT"; then
     exit 1
 fi
 
-if ! mount_matches && findmnt -rn -M "$MOUNTPOINT" >/dev/null 2>&1; then
-    umount -l "$MOUNTPOINT" >/dev/null 2>&1 || true
+refuse() {
+    # The watchdog discards helper output, so the audit trail has to be the
+    # system log; stderr stays for an operator running the helper by hand.
+    echo "$1" >&2
+    if command -v logger >/dev/null 2>&1; then
+        logger -t mediastack-storage-helper -p daemon.warning "$1"
+    fi
+}
+
+is_nfs_fstype() {
+    case "$1" in
+        nfs | nfs4) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+fstab_blocks_detach() {
+    # An fstab entry for this target is an admin-owned mount unless it names
+    # the source setup recorded. A lookup that fails outright is not the same
+    # as "no entry": it fails closed, like every other guard here.
+    local entries rc=0 entry
+    entries="$(findmnt --fstab -rn -M "$MOUNTPOINT" -o SOURCE 2>/dev/null)" || rc=$?
+    if ((rc > 1)); then
+        refuse "refusing to unmount ${MOUNTPOINT}: /etc/fstab lookup failed (findmnt exit ${rc})"
+        return 0
+    fi
+    while read -r entry; do
+        [[ -n "$entry" ]] || continue
+        if [[ "$entry" != "$EXPECTED_SOURCE" ]]; then
+            refuse "refusing to unmount ${MOUNTPOINT}: /etc/fstab owns this target with a source other than ${EXPECTED_SOURCE}"
+            return 0
+        fi
+    done <<<"$entries"
+    return 1
+}
+
+mount_is_responsive() {
+    # -k so a hard-mount stat that ignores SIGTERM still gets reaped; the whole
+    # detach has to finish inside the watchdog's 30s cap on this helper.
+    timeout -k 5 5 stat -f -c '%T' "$MOUNTPOINT" >/dev/null 2>&1
+}
+
+detach_unexpected_mount() {
+    local src="$1" fstype="$2"
+
+    # Without timeout every step below would exit 127 and the helper would
+    # degrade into the unconditional lazy detach this guard replaced.
+    if ! command -v timeout >/dev/null 2>&1; then
+        refuse "timeout(1) unavailable; not detaching ${MOUNTPOINT}"
+        return 1
+    fi
+
+    # Only NFS is ever detached here: anything else at the mountpoint is an
+    # admin's own filesystem, not a NAS mount this helper is repairing.
+    if ! is_nfs_fstype "$fstype"; then
+        refuse "refusing to unmount ${MOUNTPOINT}: found ${src:-unknown} (${fstype:-unknown}), expected ${EXPECTED_SOURCE} (${EXPECTED_FSTYPE})"
+        return 1
+    fi
+    if fstab_blocks_detach; then
+        return 1
+    fi
+
+    # Responsiveness decides which unmount is legitimate, and it has to be
+    # asked first: a plain umount of a dead NFS mount blocks in D-state until
+    # the caller kills the helper, so the lazy path would never be reached.
+    if ! mount_is_responsive; then
+        # Exactly what lazy detach exists for - a mount that no longer answers
+        # and that plain umount cannot clear.
+        if ! umount -l "$MOUNTPOINT" >/dev/null 2>&1; then
+            refuse "could not lazy-detach unresponsive mount at ${MOUNTPOINT}: ${src:-unknown}"
+            return 1
+        fi
+        return 0
+    fi
+
+    # The mount answers, so plain umount is the busy check: fuser/lsof are not
+    # guaranteed present on a minimal host, findmnt and umount are.
+    if timeout -k 5 10 umount "$MOUNTPOINT" >/dev/null 2>&1; then
+        return 0
+    fi
+    refuse "refusing to lazy-unmount ${MOUNTPOINT}: ${src:-unknown} is live and in use"
+    return 1
+}
+
+if ! mount_matches && findmnt -rn --first-only -M "$MOUNTPOINT" >/dev/null 2>&1; then
+    detach_unexpected_mount \
+        "$(findmnt -rn --first-only -M "$MOUNTPOINT" -o SOURCE 2>/dev/null || true)" \
+        "$(findmnt -rn --first-only -M "$MOUNTPOINT" -o FSTYPE 2>/dev/null || true)" || exit 1
 fi
 
 mkdir -p "$MOUNTPOINT"
@@ -184,6 +272,39 @@ storage_install_watchdog() {
     install_user="$(id -un)"
     install_group="$(id -gn)"
 
+    # The watchdog is only useful if its sudoers rule parses, so validate before
+    # anything is written. A directory-service login name (DOMAIN\user,
+    # user@REALM) is not a plain sudoers user token and would install a rule
+    # sudo never honours, leaving auto-repair silently dead; so would an
+    # unvalidated file on a host with no visudo. Skip the watchdog in both
+    # cases - setup carries on, the user is told.
+    if [[ ! "$install_user" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]]; then
+        storage_log_warn "User name '${install_user}' cannot be expressed as a sudoers rule; NAS storage watchdog not installed."
+        return 0
+    fi
+    if ! command -v visudo >/dev/null 2>&1; then
+        storage_log_warn "visudo is unavailable, so the watchdog sudoers rule cannot be validated; NAS storage watchdog not installed."
+        return 0
+    fi
+    # Staged inside the root-owned config dir, not $TMPDIR: what visudo accepts
+    # must be the same bytes `install` copies, with no window where an unrelated
+    # user could swap the file in between.
+    sudo install -d -o root -g root -m 0755 "$config_dir"
+    local sudoers_tmp
+    sudoers_tmp="$(sudo mktemp -p "$config_dir" .storage-watchdog-sudoers.XXXXXX)" || return 1
+    # shellcheck disable=SC2064 # expand sudoers_tmp now: the trap must not depend on the local surviving
+    # The trap is cleared again on every exit path below: a bash RETURN trap set
+    # in a function also fires on every later `source` in the same shell, which
+    # would replay this sudo rm (and possibly a sudo prompt) for the rest of setup.
+    trap "sudo rm -f '$sudoers_tmp'" RETURN
+    storage_watchdog_sudoers_content "$install_user" "$helper" | sudo tee "$sudoers_tmp" >/dev/null
+    if ! sudo visudo -cf "$sudoers_tmp" >/dev/null 2>&1; then
+        sudo rm -f "$sudoers_tmp"
+        trap - RETURN
+        storage_log_warn "Generated watchdog sudoers rule failed validation; NAS storage watchdog not installed."
+        return 0
+    fi
+
     storage_log_info "Installing NAS storage watchdog..."
     sudo install -d -o root -g root -m 0755 "$libexec_dir" "$config_dir"
     storage_mount_helper_content | sudo tee "$helper" >/dev/null
@@ -192,12 +313,9 @@ storage_install_watchdog() {
     storage_root_config_content | sudo tee "$config_file" >/dev/null
     sudo chown root:root "$config_file"
     sudo chmod 0600 "$config_file"
-    storage_watchdog_sudoers_content "$install_user" "$helper" | sudo tee "$sudoers_file" >/dev/null
-    sudo chown root:root "$sudoers_file"
-    sudo chmod 0440 "$sudoers_file"
-    if command -v visudo >/dev/null 2>&1; then
-        sudo visudo -cf "$sudoers_file" >/dev/null
-    fi
+    sudo install -o root -g root -m 0440 "$sudoers_tmp" "$sudoers_file"
+    sudo rm -f "$sudoers_tmp"
+    trap - RETURN
     storage_watchdog_unit_content "$install_user" "$install_group" "$script" | sudo tee "$unit" >/dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable mediastack-storage-watchdog.service >/dev/null
