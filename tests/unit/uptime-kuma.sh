@@ -104,5 +104,54 @@ assert_eq "0" "$([[ -f "$ENVFILE" ]] && echo 1 || echo 0)" "env-file is gone aft
 rm -rf "$KUMA_TMP"
 trap - EXIT
 
+# --- the cleanup traps must survive a NORMAL return, not just an interrupt ---
+# A bash RETURN trap fires after the function's locals have gone out of scope,
+# so a single-quoted trap body that defers "$_kuma_envfile" expands an unset
+# name in the caller's frame. Under `set -u` that aborts the whole configure
+# run at the caller's line — Beszel never gets configured, Stage 1 exits 1, and
+# `setup.sh --remote` then refuses with "Stage 1 is not complete yet". The
+# interrupt test above kills the worker mid-flight and never reaches this path.
+NORMAL_TMP=$(mktemp -d)
+trap 'rm -rf "$NORMAL_TMP"' EXIT
+NORMAL_ENVFILE="$NORMAL_TMP/kuma-envfile"
+NORMAL_WORKER="$NORMAL_TMP/worker.sh"
+cat >"$NORMAL_WORKER" <<NORMAL_EOF
+#!/usr/bin/env bash
+set -uo pipefail
+SCRIPT_DIR="$REPO_ROOT"
+CONFIG_FILE=/dev/null
+source "$REPO_ROOT/scripts/lib/common.sh"
+source "$REPO_ROOT/scripts/services/uptime-kuma/main.sh"
+mktemp() { printf '%s' "$NORMAL_ENVFILE"; }
+docker() {
+    case "\$1" in
+        compose) printf 'jellyfin\n' ;;
+        pull) return 0 ;;
+        run) printf '{"created":0,"skipped":0,"errors":[]}\n' ;;
+    esac
+}
+timeout() {
+    shift
+    "\$@"
+}
+JELLYFIN_ADMIN_USER=testuser
+JELLYFIN_ADMIN_PASSWORD=SEC5_SENTINEL_PW
+# Call through a wrapper so the RETURN trap fires into a caller frame, exactly
+# as _run_configure does in scripts/configure.sh.
+caller_frame() { configure_uptime_kuma >/dev/null; }
+caller_frame
+NORMAL_EOF
+chmod +x "$NORMAL_WORKER"
+NORMAL_ERR="$NORMAL_TMP/stderr.log"
+NORMAL_RC=0
+bash "$NORMAL_WORKER" >/dev/null 2>"$NORMAL_ERR" || NORMAL_RC=$?
+assert_eq "0" "$NORMAL_RC" "configure_uptime_kuma returns 0 on the normal path under set -u"
+assert_eq "0" "$(grep -c 'unbound variable' "$NORMAL_ERR")" \
+    "cleanup traps reference no out-of-scope local on the normal return path"
+assert_eq "0" "$([[ -f "$NORMAL_ENVFILE" ]] && echo 1 || echo 0)" \
+    "env-file is removed after a normal return"
+rm -rf "$NORMAL_TMP"
+trap - EXIT
+
 scenario_end "$CURRENT_SCENARIO"
 summary

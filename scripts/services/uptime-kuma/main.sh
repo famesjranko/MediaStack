@@ -72,8 +72,12 @@ configure_uptime_kuma() {
     # subshell would otherwise leak it. The RETURN trap clears this again on
     # every exit path out of the function, so it never lingers to affect
     # unrelated code running later in the same shell.
-    trap 'rm -f "$_kuma_envfile"' TERM
-    trap 'rm -f "$_kuma_envfile"; trap - TERM' RETURN
+    # shellcheck disable=SC2064 # expand _kuma_envfile now: a RETURN trap fires
+    # after the function's locals are gone, so a deferred expansion would read
+    # an unset name and abort the caller under `set -u`
+    trap "rm -f '$_kuma_envfile'" TERM
+    # shellcheck disable=SC2064 # same: expand now, not at RETURN time
+    trap "rm -f '$_kuma_envfile'; trap - TERM" RETURN
     printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
     # The trap lives inside this command substitution's own subshell (not the
