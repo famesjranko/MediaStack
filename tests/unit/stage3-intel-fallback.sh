@@ -156,6 +156,16 @@ unset -f ui_choose ui_log stage3_set_gpu_env _stage3_apply_runtime_override stag
 unset gpu_env_calls verify_calls runtime_count probe_calls configure_calls summary_calls
 
 source "$REPO_ROOT/scripts/services/jellyfin/main.sh"
+
+# encoding.sh's config read/write now go through api_fetch_auth (secret
+# Authorization header off argv - see http.sh); the header is not under test
+# here, so drop it and forward to whichever api_fetch stub is active below.
+api_fetch_auth() {
+    local label="$1"
+    shift 3
+    api_fetch "$label" "$@"
+}
+
 api_fetch_post_body=""
 api_fetch() {
     local is_post=false next_is_data=false arg

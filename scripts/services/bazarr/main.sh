@@ -39,7 +39,7 @@ print(c.get('auth', {}).get('apikey', ''))
 
     # Check current state via API (read works fine)
     local current_settings
-    if ! current_settings=$(api_fetch "Bazarr settings" -H "X-API-KEY: $bazarr_key" "$bazarr_url/api/system/settings"); then
+    if ! current_settings=$(api_fetch_auth "Bazarr settings" "X-API-KEY" "$bazarr_key" "$bazarr_url/api/system/settings"); then
         current_settings="{}"
     fi
 

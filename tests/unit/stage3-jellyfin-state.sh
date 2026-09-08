@@ -12,6 +12,11 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage3-jellyfin-state"
 scenario_begin "$CURRENT_SCENARIO"
 
+# For curl_header_stdin/curl_header_data_stdin (secret headers off argv - see
+# common.sh), used by stage3/jellyfin.sh's fallback-disable/verify calls. Both
+# ultimately call the real `curl`, which the stubs below override at call
+# time, so this stays a pure stub test.
+source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 
 set +e
@@ -129,31 +134,47 @@ mkdir -p "$SCRIPT_DIR"
 cat >"$SCRIPT_DIR/.env" <<'ENV'
 JELLYFIN_API_KEY='from-env-file'
 ENV
+# curl_header_stdin/curl_header_data_stdin (see common.sh) feed curl's stdin
+# through a pipe (printf ... | curl "$@"), and bash runs a pipe's rightmost
+# command in its own subshell - so a plain variable set inside the stub below
+# would vanish the moment that subshell exits. Files survive the subshell;
+# variables don't. Hence writing the captured header/body to files here and
+# reading them back below, rather than assigning curl_auth_header directly.
 curl_auth_header=""
 curl_posted_body=""
+curl_auth_header_file="$TMP_ROOT/fallback-api-key/auth-header"
+curl_posted_body_file="$TMP_ROOT/fallback-api-key/posted-body"
 curl() {
-    local next_is_header=false
-    local is_post=false
-    local next_is_data=false
+    local is_post=false stdin_body="" arg
     for arg in "$@"; do
-        if [[ "$next_is_header" == "true" ]]; then
-            if [[ "$arg" == Authorization:* ]]; then
-                curl_auth_header="$arg"
-            fi
-            next_is_header=false
-            continue
-        fi
-        if [[ "$next_is_data" == "true" ]]; then
-            curl_posted_body="$arg"
-            next_is_data=false
-            continue
-        fi
+        [[ "$arg" == "-X" ]] && is_post=true
         case "$arg" in
-            -H) next_is_header=true ;;
-            -X) is_post=true ;;
-            -d) next_is_data=true ;;
+            -K | @- | *@/dev/stdin)
+                stdin_body="$(cat)"
+                ;;
         esac
     done
+    # The Authorization header and, for a write, the body arrive on stdin as
+    # `header = "..."` / `data-raw = "..."` config lines instead of -H/-d
+    # argv. Each is one physical line, so isolate it by line rather than by
+    # quote (the value itself may contain config-escaped quotes).
+    local header_line data_line
+    header_line=$(printf '%s\n' "$stdin_body" | grep '^header = "Authorization: ')
+    if [[ -n "$header_line" ]]; then
+        header_line="${header_line#header = \"}"
+        header_line="${header_line%\"}"
+        printf '%s' "$header_line" >"$curl_auth_header_file"
+    fi
+    data_line=$(printf '%s\n' "$stdin_body" | grep '^data-raw = "')
+    if [[ -n "$data_line" ]]; then
+        data_line="${data_line#data-raw = \"}"
+        data_line="${data_line%\"}"
+        # Config-quoted (see _curl_config_quote): undo the \" and \\ escaping
+        # so the assertion below can match the JSON's own quotes literally.
+        data_line="${data_line//\\\"/\"}"
+        data_line="${data_line//\\\\/\\}"
+        printf '%s' "$data_line" >"$curl_posted_body_file"
+    fi
     if [[ "$is_post" == "true" ]]; then
         return 0
     fi
@@ -161,7 +182,11 @@ curl() {
 }
 
 assert_eq "from-env-file" "$(_stage3_jellyfin_api_key)" "fallback API key reader strips .env quotes"
-if _stage3_disable_jellyfin_hardware && [[ "$curl_auth_header" == *"from-env-file"* ]] && [[ "$curl_posted_body" == *'"HardwareAccelerationType": "none"'* ]]; then
+disable_rc=1
+_stage3_disable_jellyfin_hardware && disable_rc=0
+curl_auth_header="$(cat "$curl_auth_header_file" 2>/dev/null)"
+curl_posted_body="$(cat "$curl_posted_body_file" 2>/dev/null)"
+if ((disable_rc == 0)) && [[ "$curl_auth_header" == *"from-env-file"* ]] && [[ "$curl_posted_body" == *'"HardwareAccelerationType": "none"'* ]]; then
     pass "fallback disable reads Jellyfin API key from .env"
 else
     fail "fallback disable reads Jellyfin API key from .env" "auth='$curl_auth_header' body='$curl_posted_body'"

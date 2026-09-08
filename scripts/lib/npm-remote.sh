@@ -70,7 +70,7 @@ npm_remote_proxy_conf_renders() {
 npm_remote_api_cert_ids_by_fqdn() {
     local token="$1" api="$2" fqdn="$3"
     local certs
-    certs=$(curl -sf --max-time 30 -H "Authorization: Bearer $token" \
+    certs=$(curl_header_stdin "Authorization" "Bearer $token" -sf --max-time 30 \
         "$api/nginx/certificates" 2>/dev/null) || return 2
     echo "$certs" | FQDN="$fqdn" python3 -c '
 import sys, json, os
@@ -148,7 +148,7 @@ npm_remote_hosts_ready() {
     token=$(npm_remote_token "$api") || return 1
     [[ -z "$token" ]] && return 1
 
-    hosts=$(curl -sf --max-time 30 -H "Authorization: Bearer $token" \
+    hosts=$(curl_header_stdin "Authorization" "Bearer $token" -sf --max-time 30 \
         "$api/nginx/proxy-hosts" 2>/dev/null) || return 1
 
     for fqdn in "jellyfin.$domain" "seerr.$domain"; do

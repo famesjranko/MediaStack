@@ -174,8 +174,8 @@ PY
         mf_resp=$(mktemp)
         mf_ok=""
         for i in $(seq 1 30); do
-            mf_code=$(curl -sS -o "$mf_resp" -w "%{http_code}" \
-                -H "Authorization: MediaBrowser Token=\"$seerr_jf_key\"" \
+            mf_code=$(curl_header_stdin "Authorization" "MediaBrowser Token=\"$seerr_jf_key\"" \
+                -sS -o "$mf_resp" -w "%{http_code}" \
                 "$jf_url/Library/MediaFolders" 2>/dev/null || echo "000")
             if [[ "$mf_code" == "200" ]]; then
                 mf_ok=$(python3 -c '

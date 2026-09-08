@@ -10,7 +10,7 @@ save_jellyfin_api_key() {
 
     # Check if a MediaStack key already exists
     local existing_key
-    existing_key=$(curl -sf "$jf_url/Auth/Keys" -H "Authorization: $auth" 2>/dev/null \
+    existing_key=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/Auth/Keys" 2>/dev/null \
         | python3 -c "
 import sys,json
 items = json.load(sys.stdin).get('Items',[])
@@ -23,11 +23,11 @@ print(keys[0] if keys else '')" 2>/dev/null || echo "")
     fi
 
     # Create a new permanent key
-    curl -sf -X POST "$jf_url/Auth/Keys?app=MediaStack" \
-        -H "Authorization: $auth" >/dev/null 2>&1
+    curl_header_stdin "Authorization" "$auth" -sf -X POST "$jf_url/Auth/Keys?app=MediaStack" \
+        >/dev/null 2>&1
 
     local new_key
-    new_key=$(curl -sf "$jf_url/Auth/Keys" -H "Authorization: $auth" 2>/dev/null \
+    new_key=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/Auth/Keys" 2>/dev/null \
         | python3 -c "
 import sys,json
 items = json.load(sys.stdin).get('Items',[])
@@ -47,7 +47,7 @@ configure_jellyfin_libraries() {
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
 
     local existing_libs
-    if ! existing_libs=$(api_fetch "Jellyfin libraries" "$jf_url/Library/VirtualFolders" -H "Authorization: $auth"); then
+    if ! existing_libs=$(api_fetch_auth "Jellyfin libraries" "Authorization" "$auth" "$jf_url/Library/VirtualFolders"); then
         existing_libs="[]"
     fi
 
@@ -92,10 +92,9 @@ print(json.dumps({
         "PathInfos": [{"Path": os.environ["LIB_PATH"]}],
     },
 }))')
-        if curl -sf -X POST "$jf_url/Library/VirtualFolders?name=${encoded_name}&collectionType=${lib_type}&refreshLibrary=false" \
-            -H "Authorization: $auth" \
+        if curl_header_data_stdin "Authorization" "$auth" "$library_body" \
+            -sf -X POST "$jf_url/Library/VirtualFolders?name=${encoded_name}&collectionType=${lib_type}&refreshLibrary=false" \
             -H "Content-Type: application/json" \
-            -d "$library_body" \
             >/dev/null 2>&1; then
             log_ok "Library: $lib_name ($lib_path)"
         else

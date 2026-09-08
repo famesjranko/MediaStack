@@ -232,6 +232,20 @@ _curl_config_quote() {
     printf '%s' "${value//\"/\\\"}"
 }
 
+# Same escaping as _curl_config_quote, plus curl's \t/\r/\n config-string
+# escapes for a value (e.g. a JSON body) that may itself contain literal
+# control characters — a config value is one physical line, so those can't
+# pass through raw. Header values never need this: they're rejected outright
+# on LF/CR (see curl_header_stdin) rather than escaped, since a literal
+# newline in a header is header injection, not legitimate content.
+_curl_config_quote_multiline() {
+    local value
+    value="$(_curl_config_quote "$1")"
+    value="${value//$'\t'/\\t}"
+    value="${value//$'\r'/\\r}"
+    printf '%s' "${value//$'\n'/\\n}"
+}
+
 # Feed <payload> to curl on stdin and return curl's own exit status. pipefail
 # is suspended for the pipeline: a curl that exits before draining stdin leaves
 # the writer with a broken pipe, and under pipefail that status would mask
@@ -269,6 +283,50 @@ curl_basic_auth() {
     _curl_stdin_payload "$credential" -K - "$@"
 }
 
+# curl with a secret-bearing request header (e.g. Authorization, X-Api-Key)
+# read from a stdin config file instead of passed as -H, for the same reason
+# curl_basic_auth avoids -u: the header would otherwise sit in argv for the
+# life of the request. Usage: curl_header_stdin <name> <value> <curl args...>
+curl_header_stdin() {
+    local name="$1" value="$2"
+    shift 2
+    # A header value is one config line; an embedded newline/CR would either
+    # truncate it or (worse) smuggle a second header. Refuse rather than try
+    # to escape our way out of header injection.
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+        return 2
+    fi
+    local header
+    header=$(printf 'header = "%s: %s"\n' "$name" "$(_curl_config_quote "$value")")
+    _curl_stdin_payload "$header" -K - "$@"
+}
+
+# curl with BOTH a secret-bearing header and a secret-bearing body in one
+# request. curl only drains stdin once, so `-K -` (config) and `--data-binary
+# @-` (curl_data_stdin's body path) cannot both read from it — one would starve
+# the other. Instead both secrets go into the SAME config file: the header as
+# a `header = "..."` line and the body as a `data = "..."` line (curl's config
+# format accepts any long option, including a literal request body, as a
+# quoted config value — see -K/--config in curl(1)). This is the one stdin
+# payload the call site needs, so it composes where curl_header_stdin and
+# curl_data_stdin individually could not.
+# Usage: curl_header_data_stdin <name> <value> <data> <curl args...>
+curl_header_data_stdin() {
+    local name="$1" value="$2" data="$3"
+    shift 3
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+        return 2
+    fi
+    # data-raw, not data: curl's `data` config directive (like -d/--data)
+    # treats a value starting with @ as a local filename to read instead of
+    # literal content - an attacker-influenced body starting with @ would
+    # otherwise exfiltrate a file from this host. data-raw never does that.
+    local cfg
+    cfg=$(printf 'header = "%s: %s"\ndata-raw = "%s"\n' \
+        "$name" "$(_curl_config_quote "$value")" "$(_curl_config_quote_multiline "$data")")
+    _curl_stdin_payload "$cfg" -K - "$@"
+}
+
 # curl with a secret-bearing request body read from stdin.
 # Usage: curl_data_stdin <body> <curl args...>
 curl_data_stdin() {
@@ -299,17 +357,18 @@ _api_request() {
     # Sonarr's own ~30s internal timeout but lets us recover from a truly hung
     # call instead of waiting curl-default-forever. Retry wrappers (e.g.
     # _add_indexer's 2 attempts) still get a second chance on transient timeout.
-    local _args=(-sS --max-time 45 -H "X-Api-Key: $_key" -H "Content-Type: application/json")
+    local _args=(-sS --max-time 45 -H "Content-Type: application/json")
     [[ "$_method" != "GET" ]] && _args+=(-X "$_method")
     _args+=(-w "\n%{http_code}")
-    # Bodies go over stdin (see curl_data_stdin): the *arr auth config carries
-    # the shared admin password. A GET has no body, so it keeps the plain form
-    # rather than being turned into a request with one.
+    # X-Api-Key and (for a write) the body both carry secrets, so both go via
+    # curl's stdin config file instead of argv/-H: curl_header_data_stdin for a
+    # write (header + body share the one stdin curl actually drains), plain
+    # curl_header_stdin for a GET (no body to combine with).
     local _out _code _rc=0
     if [[ -n "$_data" ]]; then
-        _out=$(curl_data_stdin "$_data" "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
+        _out=$(curl_header_data_stdin "X-Api-Key" "$_key" "$_data" "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
     else
-        _out=$(curl "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
+        _out=$(curl_header_stdin "X-Api-Key" "$_key" "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
     fi
     if ((_rc != 0)); then
         echo "$_caller $_url: connection failed" >&2

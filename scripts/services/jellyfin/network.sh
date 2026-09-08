@@ -6,8 +6,8 @@ configure_jellyfin_networking() {
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
 
     local current_config
-    if ! current_config=$(api_fetch "Jellyfin network config" \
-        "$jf_url/System/Configuration/network" -H "Authorization: $auth"); then
+    if ! current_config=$(api_fetch_auth "Jellyfin network config" "Authorization" "$auth" \
+        "$jf_url/System/Configuration/network"); then
         log_warn "Could not read Jellyfin network config - skipping"
         return 0
     fi
@@ -86,10 +86,9 @@ configure_jellyfin_networking() {
             ;;
     esac
 
-    if api_fetch "Jellyfin network config" \
+    if api_fetch_auth "Jellyfin network config" "Authorization" "$auth" \
         "$jf_url/System/Configuration/network" \
         -X POST \
-        -H "Authorization: $auth" \
         -H "Content-Type: application/json" \
         -d "$body" >/dev/null; then
 

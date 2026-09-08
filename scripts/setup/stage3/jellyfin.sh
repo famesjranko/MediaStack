@@ -96,7 +96,7 @@ _stage3_verify_jellyfin_encoding() {
     local jf_url="http://localhost:8096"
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
     local current
-    current=$(curl -sf "$jf_url/System/Configuration/encoding" -H "Authorization: $auth" 2>/dev/null) || return 1
+    current=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/System/Configuration/encoding" 2>/dev/null) || return 1
 
     STAGE3_EXPECTED_ENCODER="$encoder" \
         STAGE3_HW_DECODING_CODECS="${STAGE_3_GPU_HW_DECODING_CODECS:-h264}" \
@@ -196,7 +196,7 @@ _stage3_disable_jellyfin_hardware() {
     local jf_url="http://localhost:8096"
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
     local current body
-    current=$(curl -sf "$jf_url/System/Configuration/encoding" -H "Authorization: $auth" 2>/dev/null) || return 1
+    current=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/System/Configuration/encoding" 2>/dev/null) || return 1
     body=$(echo "$current" | python3 -c '
 import json
 import sys
@@ -205,10 +205,9 @@ c["HardwareAccelerationType"] = "none"
 c["EnableHardwareEncoding"] = False
 print(json.dumps(c))
 ')
-    curl -sf -X POST "$jf_url/System/Configuration/encoding" \
-        -H "Authorization: $auth" \
-        -H "Content-Type: application/json" \
-        -d "$body" >/dev/null 2>&1
+    curl_header_data_stdin "Authorization" "$auth" "$body" \
+        -sf -X POST "$jf_url/System/Configuration/encoding" \
+        -H "Content-Type: application/json" >/dev/null 2>&1
 }
 
 _stage3_encoder_disabled() {
@@ -219,7 +218,7 @@ _stage3_encoder_disabled() {
     local jf_url="http://localhost:8096"
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
     local current
-    current=$(curl -sf "$jf_url/System/Configuration/encoding" -H "Authorization: $auth" 2>/dev/null) || return 1
+    current=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/System/Configuration/encoding" 2>/dev/null) || return 1
     # Fallback is safe only when Jellyfin reports full software mode.
     STAGE3_CURRENT_CONFIG="$current" \
         python3 - <<'PY'

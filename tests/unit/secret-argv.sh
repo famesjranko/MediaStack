@@ -35,6 +35,7 @@ source "$REPO_ROOT/scripts/services/wireguard/main.sh"
 source "$REPO_ROOT/scripts/services/beszel/main.sh"
 source "$REPO_ROOT/scripts/services/npm/main.sh"
 source "$REPO_ROOT/scripts/services/jackett/main.sh"
+source "$REPO_ROOT/scripts/setup/stage3/jellyfin.sh"
 
 set +e
 set +u
@@ -138,6 +139,50 @@ curl_basic_auth 'ad"min' 'p@ss"w\ord' -s http://svc/api >/dev/null 2>&1
 assert_eq 'user = "ad\"min:p@ss\"w\\ord"' "$(head -1 "$STDIN_LOG")" \
     "curl_basic_auth: escapes quotes and backslashes for curl's config parser"
 
+# --- Secret-bearing headers (SEC-6: X-Api-Key/Authorization as -H argv) -----
+# curl_header_stdin must reproduce a header value byte for byte despite an
+# embedded quote (e.g. Jellyfin's MediaBrowser Token="...") that curl's config
+# parser would otherwise eat.
+reset_logs
+curl_header_stdin "Authorization" 'MediaBrowser Token="tok"' -s http://svc/api >/dev/null 2>&1
+assert_eq 'header = "Authorization: MediaBrowser Token=\"tok\""' "$(head -1 "$STDIN_LOG")" \
+    "curl_header_stdin: escapes quotes for curl's config parser"
+
+# Same LF/CR guard as curl_basic_auth: a header value is one config line, and
+# an embedded newline is header injection, not legitimate content, so it must
+# be refused rather than silently truncated or escaped.
+reset_logs
+curl_header_stdin "Authorization" "line1
+line2" -s http://svc/api >/dev/null 2>&1
+assert_eq "2" "$?" "curl_header_stdin: refuses a header value containing a newline"
+assert_file_not_contains "$ARGV_LOG" "line1" \
+    "curl_header_stdin: a refused header never reaches curl"
+
+# As with the body assertions above, the stdin check is the positive control:
+# a wrapper that silently dropped the header instead of sending it would also
+# read as "absent from argv" without it.
+assert_secret_off_argv "curl_header_stdin (X-Api-Key)" \
+    curl_header_stdin "X-Api-Key" "$SENTINEL" -s http://svc/api
+assert_secret_off_argv "curl_header_data_stdin (header + body, one stdin)" \
+    curl_header_data_stdin "Authorization" "Bearer $SENTINEL" "$(secret_body)" -s -X POST http://svc/api
+assert_secret_off_argv "api_get (_api_request X-Api-Key)" \
+    api_get http://arr/api "$SENTINEL"
+assert_secret_off_argv "api_post (_api_request X-Api-Key + body)" \
+    api_post http://arr/api "$SENTINEL" "$(secret_body)"
+assert_secret_off_argv "api_fetch_auth" \
+    api_fetch_auth "svc" "Authorization" "Bearer $SENTINEL" -s http://svc/api
+assert_secret_off_argv "http_check_auth" \
+    http_check_auth "svc" "Authorization" "Bearer $SENTINEL" -s http://svc/api
+assert_secret_off_argv "npm_remote_api_cert_ids_by_fqdn" \
+    npm_remote_api_cert_ids_by_fqdn "$SENTINEL" "http://npm/api" "example.com"
+
+# _stage3_disable_jellyfin_hardware (scripts/setup/stage3/jellyfin.sh): the
+# API key travels inside the MediaBrowser Authorization header built from
+# JELLYFIN_API_KEY, and the GET+POST pair covers both curl_header_stdin and
+# curl_header_data_stdin at this call site.
+JELLYFIN_API_KEY="$SENTINEL" \
+    assert_secret_off_argv "_stage3_disable_jellyfin_hardware" _stage3_disable_jellyfin_hardware
+
 # --- Per-service call sites --------------------------------------------------
 assert_secret_off_argv "http_check_data (Jellyfin /Startup/User)" \
     http_check_data "$(secret_body)" "startup-user" -X POST http://jf/Startup/User
@@ -159,6 +204,38 @@ assert_secret_off_argv "_wg_set_peer_firewall_ips" \
 NPM_ADMIN_EMAIL="admin@example.com" JELLYFIN_ADMIN_PASSWORD="$SENTINEL" \
     assert_secret_off_argv "npm_remote_token" npm_remote_token http://npm/api
 
+# --- NPM health self-heal: admin token request (npm/health.sh) --------------
+# Reached only once nginx -t is failing with a drifted proxy_host referencing
+# a missing certificate file, so this drives the real drift-detection path
+# (container "running" + nginx -t failing + one .conf with a dangling
+# ssl_certificate ref) rather than calling the token-request line in isolation.
+# Must run before the "NPM admin setup" block below stubs _npm_ensure_healthy
+# to a no-op for configure_npm's own tests.
+mkdir -p "$WORK/config/npm/data/nginx/proxy_host"
+printf 'ssl_certificate /etc/letsencrypt/live/npm-1/fullchain.pem;\n' \
+    >"$WORK/config/npm/data/nginx/proxy_host/5.conf"
+# id -u drives _npm_ensure_healthy's sudo gate; stubbed so the file-only scan
+# below never actually escalates in a non-root test run.
+id() { echo 0; }
+docker() {
+    [[ "$*" == *"inspect"* ]] && {
+        printf 'true'
+        return 0
+    }
+    [[ "$*" == *"nginx -t"* ]] && return 1
+    printf 'docker %s\n' "$*" >>"$ARGV_LOG"
+    return 0
+}
+reset_logs
+SCRIPT_DIR="$WORK" _npm_ensure_healthy "admin@example.com" "$SENTINEL" >/dev/null 2>&1
+unset -f id
+docker() {
+    printf 'docker %s\n' "$*" >>"$ARGV_LOG"
+    return 0
+}
+assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "_npm_ensure_healthy: password absent from argv"
+assert_file_contains "$STDIN_LOG" "$SENTINEL" "_npm_ensure_healthy: password delivered on stdin"
+
 # --- NPM admin setup ---------------------------------------------------------
 # Both halves of configure_npm's credential handling: seeding the admin on a
 # fresh install, and rotating away from the stock credentials when the seed
@@ -176,13 +253,21 @@ assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_npm (create): password 
 
 reset_logs
 MOCK_CODE=409
-MOCK_DEFAULT_TOKEN_BODY='{"token":"stock-token"}'
+# $SENTINEL doubles as the default (stock-credential) token here, so this run
+# also drives the rotate path's two curl_header_data_stdin calls (Authorization:
+# Bearer <default_token> alongside the user-update/password-rotate bodies) -
+# the same argv/stdin assertions below cover the header as well as the body.
+MOCK_DEFAULT_TOKEN_BODY='{"token":"'"$SENTINEL"'"}'
 configure_npm >/dev/null 2>&1
-assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "configure_npm (rotate): password absent from argv"
-assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_npm (rotate): password delivered on stdin"
+assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "configure_npm (rotate): password/token absent from argv"
+assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_npm (rotate): password/token delivered on stdin"
 # The stock-credential marker is unique to the rotation body, so this pins the
 # rotate path rather than letting the creation body satisfy the case above.
-assert_file_contains "$STDIN_LOG" '"current": "changeme"' \
+# Quoted (\"..\") because the body now travels as a curl config `data-raw =`
+# line alongside the Authorization header (curl_header_data_stdin), which
+# escapes the JSON's own quotes the same way curl_basic_auth escapes a
+# credential's.
+assert_file_contains "$STDIN_LOG" '\"current\": \"changeme\"' \
     "configure_npm (rotate): rotation body reached curl on stdin"
 
 # --- Jackett admin password --------------------------------------------------
@@ -217,12 +302,16 @@ assert_file_not_contains "$ARGV_LOG" "line1" \
 # hub answers the API probe and the argv-only PocketBase CLI is never invoked.
 reset_logs
 MOCK_CODE=200
+# $SENTINEL also stands in as the hub auth token here, so this run reaches the
+# getkey call's converted Authorization header (curl_header_stdin) as well as
+# the auth POST body - one pair of assertions below covers both.
+MOCK_BODY='{"token":"'"$SENTINEL"'"}'
 NPM_ADMIN_EMAIL="admin@example.com" JELLYFIN_ADMIN_PASSWORD="$SENTINEL" \
     configure_beszel >/dev/null 2>&1
 assert_file_not_contains "$ARGV_LOG" "$SENTINEL" \
-    "configure_beszel: password absent from curl and docker argv"
+    "configure_beszel: password/token absent from curl and docker argv"
 assert_file_contains "$STDIN_LOG" "$SENTINEL" \
-    "configure_beszel: password delivered on stdin"
+    "configure_beszel: password/token delivered on stdin"
 assert_file_not_contains "$ARGV_LOG" "superuser upsert" \
     "configure_beszel: skips the argv-only CLI when the API probe succeeds"
 
