@@ -47,8 +47,15 @@ for file in "${script_files[@]}"; do
         [[ -z "$name" ]] && continue
         checked=$((checked + 1))
         # Every reference to the bare name, tree-wide, as a whole word — then
-        # discount the definition line itself. Any survivor is a real caller.
-        hits=$(grep -rnw -- "$name" "${all_files[@]}" | grep -vF "$file:$lineno:")
+        # discount the definition line itself and comment lines: a commented-out
+        # call or a prose mention is not a caller. Dynamic dispatch and
+        # declare -F probes live in code, so they still count. Note: functions
+        # defined inside generated-script heredocs (e.g. the storage mount
+        # helper) are scanned as the enclosing file's own; they pass because
+        # the heredoc also calls them.
+        hits=$(grep -rnw -- "$name" "${all_files[@]}" \
+            | grep -vF "$file:$lineno:" \
+            | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')
         if [[ -z "$hits" ]]; then
             printf 'dead-code: %s:%s: %s() has no reference anywhere else in the tree — delete it\n' \
                 "$file" "$lineno" "$name" >&2

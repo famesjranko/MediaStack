@@ -93,8 +93,10 @@ def render_profile(
         stdout=subprocess.PIPE,
         check=True,
     ).stdout
-    result: dict[str, Any] = json.loads(out)
-    return result
+    raw = json.loads(out)
+    if not isinstance(raw, dict):
+        raise ValueError("quality_profile.py: expected a JSON object")
+    return raw
 
 
 def push_definitions(base: str, key: str, desired: dict[str, Any]) -> None:
