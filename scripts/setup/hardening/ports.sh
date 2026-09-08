@@ -8,13 +8,23 @@
 # so an admin's own rule on the same port is never touched. Deleting by rule
 # number renumbers what follows, hence descending order.
 _setup_ufw_revoke_tag() {
-    local tag="$1" keep="$2" numbers=() number count i rule
+    local tag="$1" keep="$2" numbers=() number count i rule failed=false
+    # An inactive ufw lists no rules, so revocation would see nothing while the
+    # old rule still exists in the backend; a ledger rewritten then would name
+    # only the new port when both go live at the next `ufw enable`. Leave both
+    # the rules and the ledger alone until ufw is active.
+    LC_ALL=C sudo ufw status 2>/dev/null | grep -q '^Status: active' || return 0
     mapfile -t numbers < <(LC_ALL=C sudo ufw status numbered 2>/dev/null \
         | sed -n "/# ${tag}[[:space:]]*\$/s/^\[[[:space:]]*\([0-9][0-9]*\)\][[:space:]]*\([^[:space:]][^[:space:]]*\).*/\1 \2/p" \
         | awk -v keep="$keep" '$2 != keep {print $1}' | sort -rn)
     for number in "${numbers[@]}"; do
-        sudo ufw --force delete "$number" >/dev/null 2>&1 || true
+        sudo ufw --force delete "$number" >/dev/null 2>&1 || failed=true
     done
+    # A failed delete leaves the old rule live; keep its ledger entry so
+    # uninstall still knows about it rather than replaying only the new port.
+    if [[ "$failed" == "true" ]]; then
+        return 0
+    fi
 
     # Keep the ledger honest: _uninstall_ufw replays UFW_RULE_* verbatim, so a
     # stale port there would outlive the rule it names. One tag owns one rule,

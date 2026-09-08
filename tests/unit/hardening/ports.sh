@@ -73,7 +73,11 @@ sudo() {
             UFW_TABLE+=("$3|${*:5}")
             ;;
         status)
-            [[ "${3:-}" == "numbered" ]] || return 0
+            # Plain `status` feeds the active gate in _setup_ufw_revoke_tag.
+            if [[ "${3:-}" != "numbered" ]]; then
+                echo "Status: active"
+                return 0
+            fi
             for entry in "${UFW_TABLE[@]}"; do
                 printf '[%2d] %-26s ALLOW IN    Anywhere                   # %s\n' \
                     "$i" "${entry%%|*}" "${entry##*|}"
