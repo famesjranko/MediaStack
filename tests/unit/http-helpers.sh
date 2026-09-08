@@ -156,7 +156,7 @@ fi
 reset_mock
 MOCK_CURL_CODE=200
 MOCK_CURL_BODY='{"ok":true}'
-result=$(_http_request log_error "test-label" http://fake)
+result=$(_http_request log_error "test-label" "" http://fake)
 rc=$?
 assert_eq '{"ok":true}' "$result" "_http_request: 2xx returns body"
 assert_eq "0" "$rc" "_http_request: 2xx rc=0"
@@ -168,7 +168,7 @@ assert_eq "0" "$rc" "_http_request: 2xx rc=0"
 reset_mock
 MOCK_CURL_CODE=404
 MOCK_CURL_BODY='not found'
-_http_request log_error "test-label" http://fake >/dev/null
+_http_request log_error "test-label" "" http://fake >/dev/null
 rc=$?
 assert_eq "1" "$rc" "_http_request: 4xx returns 1"
 assert_contains "$LAST_LOG_MSG" "HTTP 404" "_http_request: 4xx logs HTTP code"
@@ -180,7 +180,7 @@ assert_contains "$LAST_LOG_MSG" "HTTP 404" "_http_request: 4xx logs HTTP code"
 reset_mock
 MOCK_CURL_CODE=500
 MOCK_CURL_BODY='server error'
-_http_request log_error "test-label" http://fake >/dev/null
+_http_request log_error "test-label" "" http://fake >/dev/null
 rc=$?
 assert_eq "1" "$rc" "_http_request: 5xx returns 1"
 
@@ -190,7 +190,7 @@ assert_eq "1" "$rc" "_http_request: 5xx returns 1"
 
 reset_mock
 MOCK_CURL_FAIL=1
-_http_request log_error "test-label" http://fake >/dev/null
+_http_request log_error "test-label" "" http://fake >/dev/null
 rc=$?
 assert_eq "1" "$rc" "_http_request: connection failure returns 1"
 assert_contains "$LAST_LOG_MSG" "connection failed" "_http_request: connection failure logged"
@@ -202,7 +202,7 @@ assert_contains "$LAST_LOG_MSG" "connection failed" "_http_request: connection f
 reset_mock
 MOCK_CURL_CODE=400
 MOCK_CURL_BODY=$(python3 -c "print('x' * 500)")
-_http_request log_error "trunc" http://fake >/dev/null
+_http_request log_error "trunc" "" http://fake >/dev/null
 body_in_msg="${LAST_LOG_MSG#*HTTP 400 }"
 assert_eq "300" "${#body_in_msg}" "_http_request: error body truncated to 300 chars"
 

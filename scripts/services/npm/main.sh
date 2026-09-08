@@ -82,9 +82,9 @@ print(json.dumps({
     "is_disabled": False,
     "auth": {"type": "password", "secret": os.environ["NPM_PW"]},
 }))')
-    create_http=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$npm_api/users" \
-        -H "Content-Type: application/json" \
-        -d "$create_body")
+    create_http=$(curl_data_stdin "$create_body" \
+        -s -o /dev/null -w "%{http_code}" -X POST "$npm_api/users" \
+        -H "Content-Type: application/json")
 
     if [[ "$create_http" == "201" ]]; then
         log_ok "NPM admin created: $npm_email (password from .env)"
@@ -105,17 +105,17 @@ print(json.dumps({
         else
             local user_update_body rotate_body
             user_update_body=$(http_json_body name Administrator nickname Admin email "$npm_email")
-            curl -sf -X PUT "$npm_api/users/me" \
+            curl_data_stdin "$user_update_body" \
+                -sf -X PUT "$npm_api/users/me" \
                 -H "Authorization: Bearer $default_token" \
                 -H "Content-Type: application/json" \
-                -d "$user_update_body" \
                 >/dev/null 2>&1 || true
 
             rotate_body=$(http_json_body type password current changeme secret "$npm_pw")
-            if curl -sf -X PUT "$npm_api/users/me/auth" \
+            if curl_data_stdin "$rotate_body" \
+                -sf -X PUT "$npm_api/users/me/auth" \
                 -H "Authorization: Bearer $default_token" \
                 -H "Content-Type: application/json" \
-                -d "$rotate_body" \
                 >/dev/null 2>&1; then
                 log_ok "NPM admin rotated from defaults to credentials in .env"
             else
@@ -131,9 +131,8 @@ print(json.dumps({
     # Authenticate to get a token for proxy host management.
     local npm_token tokens_body
     tokens_body=$(http_json_body identity "$npm_email" secret "$npm_pw")
-    npm_token=$(curl -sf -X POST "$npm_api/tokens" \
-        -H "Content-Type: application/json" \
-        -d "$tokens_body" 2>/dev/null \
+    npm_token=$(curl_data_stdin "$tokens_body" -sf -X POST "$npm_api/tokens" \
+        -H "Content-Type: application/json" 2>/dev/null \
         | json_get token)
     if [[ -n "$npm_token" ]]; then
         log_ok "Verified: NPM admin credentials accepted"

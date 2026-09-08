@@ -97,25 +97,23 @@ print(json.dumps({
     # full auth sequence on 500 with backoff, up to 60s.
     local _auth_attempt
     for _auth_attempt in $(seq 1 20); do
-        auth_http=$(curl -sS \
+        auth_http=$(curl_data_stdin "$auth_body_bootstrap" -sS \
             -o "$auth_resp" \
             -w "%{http_code}" \
             -c "$cookiejar" -b "$cookiejar" \
             -H "Content-Type: application/json" \
-            -X POST "$seerr_url/api/v1/auth/jellyfin" \
-            -d "$auth_body_bootstrap" 2>/dev/null || echo "000")
+            -X POST "$seerr_url/api/v1/auth/jellyfin" 2>/dev/null || echo "000")
 
         # Fallback for partial / half-configured reruns:
         # if hostname is already stored, /auth/jellyfin rejects it in the body
         # (returns 500 "hostname already configured"), so retry without hostname.
         if [[ "$auth_http" != "200" ]]; then
-            auth_http=$(curl -sS \
+            auth_http=$(curl_data_stdin "$auth_body_rerun" -sS \
                 -o "$auth_resp" \
                 -w "%{http_code}" \
                 -c "$cookiejar" -b "$cookiejar" \
                 -H "Content-Type: application/json" \
-                -X POST "$seerr_url/api/v1/auth/jellyfin" \
-                -d "$auth_body_rerun" 2>/dev/null || echo "000")
+                -X POST "$seerr_url/api/v1/auth/jellyfin" 2>/dev/null || echo "000")
         fi
 
         [[ "$auth_http" != "500" ]] && break

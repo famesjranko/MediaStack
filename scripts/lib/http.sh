@@ -56,16 +56,23 @@ print(json.dumps(out))
 # goes to stdout (return 0). On non-2xx the HTTP code + first 300 chars of
 # body go to stderr via the specified log function and the function returns 1.
 # Unlike _api_request (X-Api-Key-based *arr APIs) this helper is agnostic —
-# pass any curl args including -X, -H, -d after the label.
+# pass any curl args including -X, -H, -d after the body.
+#
+# <body> is the request payload, sent on stdin so a payload holding a secret
+# never reaches argv; pass "" for requests that carry no body.
 _http_request() {
-    local _log_fn="$1" label="$2"
-    shift 2
-    local out code
-    out=$(curl -sS -w "\n%{http_code}" "$@" 2>/dev/null) \
-        || {
-            "$_log_fn" "$label: connection failed"
-            return 1
-        }
+    local _log_fn="$1" label="$2" _body="$3"
+    shift 3
+    local out code rc=0
+    if [[ -n "$_body" ]]; then
+        out=$(curl_data_stdin "$_body" -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
+    else
+        out=$(curl -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
+    fi
+    if ((rc != 0)); then
+        "$_log_fn" "$label: connection failed"
+        return 1
+    fi
     code="${out##*$'\n'}"
     out="${out%$'\n'*}"
     if [[ "$code" =~ ^2 ]]; then
@@ -75,10 +82,13 @@ _http_request() {
     "$_log_fn" "$label: HTTP ${code} ${out:0:300}"
     return 1
 }
-# http_check: log_error on failure (strict — aborts the step).
-# api_fetch:  log_warn on failure (advisory — fetch-and-compare calls).
-http_check() { _http_request log_error "$@"; }
-api_fetch() { _http_request log_warn "$@"; }
+# http_check:      log_error on failure (strict — aborts the step).
+# api_fetch:       log_warn on failure (advisory — fetch-and-compare calls).
+# http_check_data: http_check for a secret-bearing payload, which is sent on
+#                  stdin instead of argv. Usage: http_check_data <body> <label> ...
+http_check() { _http_request log_error "$1" "" "${@:2}"; }
+api_fetch() { _http_request log_warn "$1" "" "${@:2}"; }
+http_check_data() { _http_request log_error "$2" "$1" "${@:3}"; }
 
 # Poll $url until it returns 2xx/3xx or ~90s elapses.
 wait_for_service() {
@@ -155,8 +165,9 @@ wait_for_jellyfin_auth() {
     local code resp_file
     resp_file=$(mktemp)
     while ((i < max)); do
-        code=$(curl -s -o "$resp_file" -w '%{http_code}' -X POST "$url/Users/AuthenticateByName" \
-            -H "Authorization: $hdr" -H "Content-Type: application/json" -d "$body" 2>/dev/null)
+        code=$(curl_data_stdin "$body" \
+            -s -o "$resp_file" -w '%{http_code}' -X POST "$url/Users/AuthenticateByName" \
+            -H "Authorization: $hdr" -H "Content-Type: application/json" 2>/dev/null)
         case "$code" in
             200)
                 cat "$resp_file"
@@ -186,11 +197,11 @@ http_json_post() {
     local label="$1" endpoint="$2" payload="$3" cookiejar="$4"
     local resp_file http_code
     resp_file=$(mktemp)
-    http_code=$(curl -sS -o "$resp_file" -w "%{http_code}" \
+    http_code=$(curl_data_stdin "$payload" \
+        -sS -o "$resp_file" -w "%{http_code}" \
         -X POST "$endpoint" \
         -H "Content-Type: application/json" \
-        -c "$cookiejar" -b "$cookiejar" \
-        -d "$payload" 2>/dev/null || echo "000")
+        -c "$cookiejar" -b "$cookiejar" 2>/dev/null || echo "000")
     case "$http_code" in
         200 | 201)
             log_ok "$label connected"

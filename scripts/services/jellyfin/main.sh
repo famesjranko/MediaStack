@@ -96,10 +96,9 @@ configure_jellyfin() {
     # properly escaped instead of breaking the JSON payload.
     local startup_user_body
     startup_user_body=$(http_json_body Name "$jf_user" Password "$jf_pw")
-    http_check "Jellyfin /Startup/User (create admin)" \
+    http_check_data "$startup_user_body" "Jellyfin /Startup/User (create admin)" \
         -X POST "$jf_url/Startup/User" \
         -H "Content-Type: application/json" \
-        -d "$startup_user_body" \
         >/dev/null || return 1
 
     http_check "Jellyfin /Startup/RemoteAccess" \
@@ -120,10 +119,10 @@ configure_jellyfin() {
     # a broken startup wizard and manual intervention is required.
     sleep 2
     local auth_result
-    auth_result=$(curl -sf -X POST "$jf_url/Users/AuthenticateByName" \
+    auth_result=$(curl_data_stdin "$auth_body" \
+        -sf -X POST "$jf_url/Users/AuthenticateByName" \
         -H "Authorization: $auth_header" \
-        -H "Content-Type: application/json" \
-        -d "$auth_body" 2>/dev/null || echo "")
+        -H "Content-Type: application/json" 2>/dev/null || echo "")
     local jf_token
     jf_token=$(echo "$auth_result" | json_get AccessToken)
 
