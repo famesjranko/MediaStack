@@ -36,7 +36,9 @@ make_fixture() {
                 '[tool.mypy]' \
                 'python_version = "3.9"' \
                 'check_untyped_defs = true' \
-                'disallow_untyped_defs = true' >"$FIXTURE_ROOT/pyproject.toml"
+                'disallow_untyped_defs = true' \
+                'warn_return_any = true' \
+                'disallow_any_generics = true' >"$FIXTURE_ROOT/pyproject.toml"
             ;;
         missing-check-untyped)
             printf '%s\n' \
@@ -55,6 +57,40 @@ make_fixture() {
                 'python_version = "3.9"' \
                 'check_untyped_defs = true' \
                 'disallow_untyped_defs = false' >"$FIXTURE_ROOT/pyproject.toml"
+            ;;
+        missing-warn-return-any)
+            printf '%s\n' \
+                '[tool.mypy]' \
+                'python_version = "3.9"' \
+                'check_untyped_defs = true' \
+                'disallow_untyped_defs = true' \
+                'disallow_any_generics = true' >"$FIXTURE_ROOT/pyproject.toml"
+            ;;
+        weakened-warn-return-any)
+            printf '%s\n' \
+                '[tool.mypy]' \
+                'python_version = "3.9"' \
+                'check_untyped_defs = true' \
+                'disallow_untyped_defs = true' \
+                'warn_return_any = false' \
+                'disallow_any_generics = true' >"$FIXTURE_ROOT/pyproject.toml"
+            ;;
+        missing-disallow-any-generics)
+            printf '%s\n' \
+                '[tool.mypy]' \
+                'python_version = "3.9"' \
+                'check_untyped_defs = true' \
+                'disallow_untyped_defs = true' \
+                'warn_return_any = true' >"$FIXTURE_ROOT/pyproject.toml"
+            ;;
+        weakened-disallow-any-generics)
+            printf '%s\n' \
+                '[tool.mypy]' \
+                'python_version = "3.9"' \
+                'check_untyped_defs = true' \
+                'disallow_untyped_defs = true' \
+                'warn_return_any = true' \
+                'disallow_any_generics = false' >"$FIXTURE_ROOT/pyproject.toml"
             ;;
     esac
 
@@ -176,6 +212,35 @@ for config_mode in missing-disallow-untyped weakened-disallow-untyped; do
         fail "mypy rejects $config_mode" "exit 0: $SELECTOR_OUT"
     fi
     assert_contains "$SELECTOR_OUT" "config missing disallow_untyped_defs" "$config_mode explains the strict config-contract failure"
+    assert_eq "" "$(cat "$UV_LOG")" "$config_mode never reaches uv"
+done
+
+# warn_return_any / disallow_any_generics: same shrink-only guarantee as
+# check_untyped_defs / disallow_untyped_defs above, so a silent config revert
+# on either flag fails the gate before uv ever runs.
+for config_mode in missing-warn-return-any weakened-warn-return-any; do
+    make_fixture "$config_mode" "$config_mode"
+    add_python_file
+    run_selector mypy
+    if ((SELECTOR_RC != 0)); then
+        pass "mypy rejects $config_mode"
+    else
+        fail "mypy rejects $config_mode" "exit 0: $SELECTOR_OUT"
+    fi
+    assert_contains "$SELECTOR_OUT" "config missing warn_return_any" "$config_mode explains the strict config-contract failure"
+    assert_eq "" "$(cat "$UV_LOG")" "$config_mode never reaches uv"
+done
+
+for config_mode in missing-disallow-any-generics weakened-disallow-any-generics; do
+    make_fixture "$config_mode" "$config_mode"
+    add_python_file
+    run_selector mypy
+    if ((SELECTOR_RC != 0)); then
+        pass "mypy rejects $config_mode"
+    else
+        fail "mypy rejects $config_mode" "exit 0: $SELECTOR_OUT"
+    fi
+    assert_contains "$SELECTOR_OUT" "config missing disallow_any_generics" "$config_mode explains the strict config-contract failure"
     assert_eq "" "$(cat "$UV_LOG")" "$config_mode never reaches uv"
 done
 

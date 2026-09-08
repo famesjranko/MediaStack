@@ -179,9 +179,9 @@ write_setup_result() {
         _c='\033[0;32m'
         {
             printf '\n'
-            printf "  ${_c}+====================================================+${_r}\n"
+            printf '  %s+====================================================+%s\n' "$_c" "$_r"
             printf "  ${_c}|${_r}%-52s${_c}|${_r}\n" "  MediaStack setup completed successfully!"
-            printf "  ${_c}+====================================================+${_r}\n"
+            printf '  %s+====================================================+%s\n' "$_c" "$_r"
             printf '\n'
             [[ -n "$tc_line" ]] && printf "  Hardware transcoding: %s\n\n" "$tc_line"
             [[ -n "$tc_warn" ]] && printf "  ${_y}! %s${_r}\n\n" "$tc_warn"
@@ -193,9 +193,9 @@ write_setup_result() {
         _c='\033[0;31m'
         {
             printf '\n'
-            printf "  ${_c}+====================================================+${_r}\n"
+            printf '  %s+====================================================+%s\n' "$_c" "$_r"
             printf "  ${_c}|${_r}%-52s${_c}|${_r}\n" "  MediaStack post-reboot setup encountered errors."
-            printf "  ${_c}+====================================================+${_r}\n"
+            printf '  %s+====================================================+%s\n' "$_c" "$_r"
             printf '\n'
             printf '  Check the log:  journalctl -u mediastack-setup --no-pager\n'
             printf '  Then re-run:    cd %s && ./setup.sh\n' "$script_dir_q"

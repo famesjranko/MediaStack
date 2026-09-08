@@ -163,7 +163,7 @@ while time.time() < deadline:
         # unchanged below.
         return 4
     fi
-    return $rc
+    return "$rc"
 }
 
 # Walk a chain of independent external port-check services. Returns

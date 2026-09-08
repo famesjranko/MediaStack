@@ -264,7 +264,6 @@ launcher_menu_post() {
         "Health & security"*) submenu_health ;;
         "Manage fail2ban"*) submenu_fail2ban ;;
         "Manage hardware transcoding"*) submenu_manage_hardware ;;
-        # "Re-run configuration"*)  action_configure ;;
         "Diagnostics"*) submenu_diagnostics ;;
         # Invalidate the session public-IP cache so the next banner render re-detects it
         # (e.g. after a WAN-IP change). The DDNS record is re-resolved every render anyway,

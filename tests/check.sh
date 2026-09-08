@@ -18,6 +18,9 @@
 #   ./tests/check.sh structure
 #                             # single stage: service-module shape plus
 #                             # import-direction only.
+#   ./tests/check.sh dead-code
+#                             # single stage: every scripts/ function has a
+#                             # reference outside its own definition, only.
 #   ./tests/check.sh shfmt    # single stage: shell formatting only.
 #   ./tests/check.sh ruff     # single stage: python lint (incl. the C901
 #                             # complexity reconcile) + format check only.
@@ -44,6 +47,7 @@
 #   fast    - lint (tests/lint.sh), shell line cap, filename casing plus
 #             declared function-prefix discipline (tests/naming.sh),
 #             service-module shape plus import direction (tests/structure.sh),
+#             every scripts/ function has a live reference (tests/dead-code.sh),
 #             shell formatting (tests/format.sh), python lint + format
 #             (ruff), python types (mypy), API contract coverage, and the
 #             secret scan over the working tree (tests/secret-scan.sh). It
@@ -57,7 +61,7 @@
 #             This is the PR gate's local equivalent.
 #   full    - default + tests/battery.sh (the complete DinD scenario battery).
 #
-# lint/line-cap/naming/structure/shfmt/ruff/mypy/contracts/secrets/secrets-history/unit/wizard/warm-python/install
+# lint/line-cap/naming/structure/dead-code/shfmt/ruff/mypy/contracts/secrets/secrets-history/unit/wizard/warm-python/install
 # are single-stage selectors, not tiers: each
 # runs exactly one stage and nothing else, so a caller (CI) can spread the
 # pipeline across parallel jobs without a stage running twice. tests/unit.sh
@@ -81,7 +85,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.." || exit 2
 
 if (($# > 1)); then
-    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|structure|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+    echo "check: too many arguments — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|structure|dead-code|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
     exit 2
 fi
 
@@ -93,9 +97,9 @@ case "$arg" in
         exit 0
         ;;
     fast | default | full) TIER="$arg" ;;
-    lint | line-cap | naming | structure | shfmt | ruff | mypy | contracts | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
+    lint | line-cap | naming | structure | dead-code | shfmt | ruff | mypy | contracts | secrets | secrets-history | unit | wizard | warm-python | install) STAGE="$arg" ;;
     *)
-        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|structure|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
+        echo "check: unknown tier '$arg' — usage: ./tests/check.sh [fast|default|full|lint|line-cap|naming|structure|dead-code|shfmt|ruff|mypy|contracts|secrets|secrets-history|unit|wizard|warm-python|install]" >&2
         exit 2
         ;;
 esac
@@ -194,6 +198,22 @@ mypy_type_check() {
         END { exit !found }
     ' pyproject.toml; then
         echo "check: python types config missing disallow_untyped_defs — pyproject.toml [tool.mypy] must set disallow_untyped_defs = true" >&2
+        return 1
+    fi
+    if ! awk '
+        /^\[/{ in_section = ($0 == "[tool.mypy]") }
+        in_section && /^warn_return_any[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { found = 1 }
+        END { exit !found }
+    ' pyproject.toml; then
+        echo "check: python types config missing warn_return_any — pyproject.toml [tool.mypy] must set warn_return_any = true" >&2
+        return 1
+    fi
+    if ! awk '
+        /^\[/{ in_section = ($0 == "[tool.mypy]") }
+        in_section && /^disallow_any_generics[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { found = 1 }
+        END { exit !found }
+    ' pyproject.toml; then
+        echo "check: python types config missing disallow_any_generics — pyproject.toml [tool.mypy] must set disallow_any_generics = true" >&2
         return 1
     fi
     cache_dir=$(mktemp -d) || return 1
@@ -301,8 +321,8 @@ wizard_scenarios() {
 if [[ -n "$STAGE" ]]; then
     case "$STAGE" in
         lint)
-            stage lint "lint: shellcheck" "./tests/lint.sh --severity=warning" \
-                ./tests/lint.sh --severity=warning
+            stage lint "lint: shellcheck" "./tests/lint.sh --severity=info" \
+                ./tests/lint.sh --severity=info
             ;;
         line-cap)
             stage line-cap "lint: shell file line cap" "./tests/shell-line-cap.sh" \
@@ -313,6 +333,9 @@ if [[ -n "$STAGE" ]]; then
             ;;
         structure)
             stage structure "lint: structure" "./tests/structure.sh" ./tests/structure.sh
+            ;;
+        dead-code)
+            stage dead-code "lint: dead code" "./tests/dead-code.sh" ./tests/dead-code.sh
             ;;
         shfmt)
             stage shfmt "format: shfmt" "./tests/format.sh check" \
@@ -368,12 +391,13 @@ if [[ -n "$STAGE" ]]; then
     exit 0
 fi
 
-stage fast "lint: shellcheck" "./tests/lint.sh --severity=warning" \
-    ./tests/lint.sh --severity=warning
+stage fast "lint: shellcheck" "./tests/lint.sh --severity=info" \
+    ./tests/lint.sh --severity=info
 stage fast "lint: shell file line cap" "./tests/shell-line-cap.sh" \
     ./tests/shell-line-cap.sh
 stage fast "lint: file naming" "./tests/naming.sh" ./tests/naming.sh
 stage fast "lint: structure" "./tests/structure.sh" ./tests/structure.sh
+stage fast "lint: dead code" "./tests/dead-code.sh" ./tests/dead-code.sh
 stage fast "format: shfmt" "./tests/format.sh check" \
     ./tests/format.sh check
 stage fast "python: ruff" \

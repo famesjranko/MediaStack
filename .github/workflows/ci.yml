@@ -59,6 +59,8 @@ jobs:
         run: ./tests/check.sh naming
       - name: Structure
         run: ./tests/check.sh structure
+      - name: Dead code
+        run: ./tests/check.sh dead-code
 
   # The pinned shfmt (tools.toml [shfmt]) over every tracked shell file.
   # tests/format.sh fetches and sha256-verifies the binary itself on a cold

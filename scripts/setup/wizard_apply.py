@@ -17,7 +17,10 @@ import yaml
 def load_quality_model(presets_path: str) -> dict[str, Any]:
     """Load the resolution x size quality model (quality_ids/resolutions/sizes)."""
     with open(presets_path) as f:
-        return yaml.safe_load(f)
+        raw = yaml.safe_load(f)
+    if not isinstance(raw, dict):
+        raise ValueError(f"{presets_path}: expected a mapping at the top level")
+    return raw
 
 
 def compose_cell(model: dict[str, Any], resolution_key: str, size_key: str) -> dict[str, Any]:

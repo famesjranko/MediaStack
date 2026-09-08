@@ -4,7 +4,7 @@
 # Pre-flight self-heal for proxy_host/N.conf vs cert-disk drift.
 #
 # The corruption signal is `docker exec npm nginx -t` failing — NOT API
-# slowness (that's _npm_wait_idle's domain). Drift sources include: a cert
+# slowness (a transient-readiness concern, not drift). Drift sources include: a cert
 # row deleted while proxy_host still references it, a configure.sh aborted
 # mid-cert-issue, an OOM kill, or a VM reboot during a certbot run.
 #

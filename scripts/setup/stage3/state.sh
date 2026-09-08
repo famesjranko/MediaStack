@@ -1,4 +1,4 @@
-# Owns: stage3_* — GPU .env state writers: stage3_set_gpu_env and stage3_set_state.
+# Owns: stage3_* — GPU .env state writers: stage3_set_gpu_env.
 # Sources: Only bash builtins; writes $SCRIPT_DIR/.env.
 
 stage3_set_gpu_env() {
@@ -87,11 +87,4 @@ stage3_set_gpu_env() {
     if [[ -n "$driver_mode" ]]; then
         export NVIDIA_DRIVER_MODE="$driver_mode"
     fi
-}
-
-stage3_set_state() {
-    local state="$1"
-    local vendor="${2:-}"
-    local encoder="${3:-}"
-    stage3_set_gpu_env "none" "$state" "$vendor" "$encoder"
 }

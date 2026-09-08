@@ -59,7 +59,7 @@ fi
 # Every scenario present in this tree (adapts per branch — e.g. main has no
 # api-matrix). Nothing is hand-listed, so a new scenario is picked up
 # automatically and can never be silently skipped.
-mapfile -t ALL_SCENARIOS < <(cd tests/scenarios && ls -1 ./*.sh 2>/dev/null | sed -e 's#^\./##' -e 's#\.sh$##')
+mapfile -t ALL_SCENARIOS < <(cd tests/scenarios && find . -maxdepth 1 -name '*.sh' 2>/dev/null | sed -e 's#^\./##' -e 's#\.sh$##')
 if ((${#ALL_SCENARIOS[@]} == 0)); then
     echo "battery: no scenarios found under tests/scenarios/" >&2
     exit 2

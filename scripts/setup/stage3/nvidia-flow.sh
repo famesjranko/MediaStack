@@ -57,14 +57,6 @@ _stage3_choose_nvidia_mode() {
     done
 }
 
-_stage3_nvidia_manual_guidance() {
-    ui_box "NVIDIA driver managed outside MediaStack" \
-        "MediaStack will not remove, repair, replace, or patch this driver automatically." \
-        "To switch to Standard, remove the current driver using its original uninstall" \
-        "method, then open Manage hardware transcoding (GPU) and choose Standard." \
-        "To switch to Unlock, remove it first, then choose Unlock NVENC on the same route."
-}
-
 _stage3_choose_nvidia_action() {
     local source="$1" health="$2" choice
     # To stderr: this function's stdout is its return value (captured by the

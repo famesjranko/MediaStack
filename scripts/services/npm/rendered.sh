@@ -124,23 +124,6 @@ print(json.dumps(h))
         -d "$_body"
 }
 
-# Wait until NPM's API responds quickly (i.e. it isn't blocked on a synchronous
-# certbot run). NPM serves API requests from the same Node process that drives
-# certbot, so a previous cert request can leave the API "warm but slow". A
-# cheap GET /api before the next POST keeps cert issuances from overlapping.
-_npm_wait_idle() {
-    local _token="$1" _api="$2" _max="${3:-$NPM_HOST_IDLE_MAX_POLLS}"
-    local _i
-    for _i in $(seq 1 "$_max"); do
-        if curl -sf --max-time "$NPM_HOST_IDLE_REQUEST_TIMEOUT_SECONDS" -H "Authorization: Bearer $_token" \
-            "$_api" >/dev/null 2>&1; then
-            return 0
-        fi
-        sleep "$NPM_HOST_IDLE_SLEEP_SECONDS"
-    done
-    return 1
-}
-
 _npm_host_path_from_container_path() {
     local _container_path="$1"
     case "$_container_path" in

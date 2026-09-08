@@ -93,7 +93,7 @@ if CHANNEL not in CHANNEL_CHOICE:
     die(f"invalid LANHOST_CHANNEL={CHANNEL!r}")
 
 # --- Stage 1 (real prompts; see tests/scenarios/wizard-ui-stage1-local.sh) ----------
-steps: list[dict] = [
+steps: list[dict[str, str | int]] = [
     {"expect": P["stage1_continue_detected"], "send": "1\n", "timeout": DETECT},
     {"expect": P["stage1_admin_username"], "send": "\n", "timeout": STEP},
     {"expect": P["stage1_admin_email"], "send": EMAIL + "\n", "timeout": STEP},

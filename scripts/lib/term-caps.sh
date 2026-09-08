@@ -117,7 +117,7 @@ else
     _G_BAR_EMPTY='.'
     _G_CHECK='+'
     _G_CROSS='x'
-    _G_SPIN=('|' '/' '-' '\')
+    _G_SPIN=('|' '/' '-' "\\")
 fi
 
 # --- ANSI color palette (shared by all rendering backends) ------------------

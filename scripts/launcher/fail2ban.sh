@@ -184,7 +184,9 @@ f2b_stats_menu() {
         ui_log info "For filter/regex health, use Health & security -> fail2ban protection (regex + jails)."
         echo ""
         local choice
-        choice=$(ui_choose "View a jail in detail?" $jails "Recent ban history" "Back")
+        local -a jail_list=()
+        read -ra jail_list <<<"$jails"
+        choice=$(ui_choose "View a jail in detail?" "${jail_list[@]+"${jail_list[@]}"}" "Recent ban history" "Back")
         case "$choice" in
             "Recent ban history"*)
                 f2b_show_recent
