@@ -151,6 +151,18 @@ assert_eq "" "$(cat "$NORMAL_TMP/return-trap" 2>/dev/null)" \
     "the RETURN trap disarms itself, so it cannot re-fire on a later source"
 assert_eq "" "$(cat "$NORMAL_TMP/term-trap" 2>/dev/null)" \
     "the RETURN trap clears the TERM trap it installed"
+# The self-disarm above MASKS the original bug: it stops the RETURN trap
+# re-firing in the caller's frame, which is the only place the deferred
+# expansion read an unset name. Reverting the expansion alone therefore breaks
+# nothing observable at runtime, and every assertion above stays green. The
+# expand-at-set-time property is now defence-in-depth, and the only honest way
+# left to guard it is to read the trap lines themselves.
+_kuma_trap_lines=$(grep -E '^[[:space:]]*trap .*(TERM|RETURN)$' \
+    "$REPO_ROOT/scripts/services/uptime-kuma/main.sh")
+assert_eq "2" "$(grep -c '@Q' <<<"$_kuma_trap_lines")" \
+    "both cleanup traps expand the env-file path when the trap is set"
+assert_eq "0" "$(grep -c '\$_kuma_envfile' <<<"$_kuma_trap_lines")" \
+    "neither cleanup trap defers expansion to a frame where the local is gone"
 rm -rf "$NORMAL_TMP"
 trap - EXIT
 
