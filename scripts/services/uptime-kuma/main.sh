@@ -69,15 +69,20 @@ configure_uptime_kuma() {
     # Belt-and-braces beyond the subshell EXIT trap below: a TERM delivered to
     # THIS process (a `kill`, a `systemctl stop` on the unit driving setup)
     # in the narrow window between creating the env-file and entering the
-    # subshell would otherwise leak it. The RETURN trap clears this again on
-    # every exit path out of the function, so it never lingers to affect
-    # unrelated code running later in the same shell.
-    # shellcheck disable=SC2064 # expand _kuma_envfile now: a RETURN trap fires
-    # after the function's locals are gone, so a deferred expansion would read
-    # an unset name and abort the caller under `set -u`
-    trap "rm -f '$_kuma_envfile'" TERM
-    # shellcheck disable=SC2064 # same: expand now, not at RETURN time
-    trap "rm -f '$_kuma_envfile'; trap - TERM" RETURN
+    # subshell would otherwise leak it. The RETURN trap clears BOTH traps, so
+    # neither lingers to affect unrelated code later in the same shell: a
+    # RETURN trap left armed fires again on every subsequent `source`, which
+    # would replay the rm and silently disarm any later TERM handler.
+    #
+    # Both bodies expand the path when the trap is SET, not when it fires. A
+    # RETURN trap runs after the function's locals are gone, so a deferred
+    # "$_kuma_envfile" would read an unset name and abort the caller under
+    # `set -u`. @Q quotes the value safely, so a TMPDIR containing a quote
+    # cannot turn the trap body into a syntax error that silently does nothing.
+    # shellcheck disable=SC2064 # deliberate: expand now, see above
+    trap "rm -f ${_kuma_envfile@Q}" TERM
+    # shellcheck disable=SC2064 # deliberate: expand now, see above
+    trap "rm -f ${_kuma_envfile@Q}; trap - TERM RETURN" RETURN
     printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
     # The trap lives inside this command substitution's own subshell (not the

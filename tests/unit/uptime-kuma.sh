@@ -127,7 +127,7 @@ docker() {
     case "\$1" in
         compose) printf 'jellyfin\n' ;;
         pull) return 0 ;;
-        run) printf '{"created":0,"skipped":0,"errors":[]}\n' ;;
+        run) : >"$NORMAL_TMP/reached"; printf '{"created":0,"skipped":0,"errors":[]}\n' ;;
     esac
 }
 timeout() {
@@ -140,6 +140,13 @@ JELLYFIN_ADMIN_PASSWORD=SEC5_SENTINEL_PW
 # as _run_configure does in scripts/configure.sh.
 caller_frame() { configure_uptime_kuma >/dev/null; }
 caller_frame
+# Proof the trapped path was reached at all, not skipped by the early return
+# at the top of configure_uptime_kuma: without this the assertions below all
+# pass vacuously if the monitor list ever comes back empty.
+# A RETURN trap left armed re-fires on every later $(source) in the same shell
+# and would disarm any TERM handler installed after it.
+trap -p RETURN >"$NORMAL_TMP/return-trap"
+trap -p TERM >"$NORMAL_TMP/term-trap"
 NORMAL_EOF
 chmod +x "$NORMAL_WORKER"
 NORMAL_ERR="$NORMAL_TMP/stderr.log"
@@ -150,6 +157,12 @@ assert_eq "0" "$(grep -c 'unbound variable' "$NORMAL_ERR")" \
     "cleanup traps reference no out-of-scope local on the normal return path"
 assert_eq "0" "$([[ -f "$NORMAL_ENVFILE" ]] && echo 1 || echo 0)" \
     "env-file is removed after a normal return"
+assert_eq "1" "$([[ -f "$NORMAL_TMP/reached" ]] && echo 1 || echo 0)" \
+    "the configurator reached the trapped path (assertions above are not vacuous)"
+assert_eq "" "$(cat "$NORMAL_TMP/return-trap" 2>/dev/null)" \
+    "the RETURN trap disarms itself, so it cannot re-fire on a later source"
+assert_eq "" "$(cat "$NORMAL_TMP/term-trap" 2>/dev/null)" \
+    "the RETURN trap clears the TERM trap it installed"
 rm -rf "$NORMAL_TMP"
 trap - EXIT
 
