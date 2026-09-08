@@ -54,9 +54,22 @@ write_env
 marker_line=$(grep '^STAGE_1_COMPLETE=' "$TMP_DIR/.env")
 assert_eq "STAGE_1_COMPLETE=" "$marker_line" "stage1-marker: placeholder written empty"
 
-sed -i 's/^STAGE_1_COMPLETE=$/STAGE_1_COMPLETE=1/' "$TMP_DIR/.env"
+# The flip goes through the one blessed .env writer, not a hand-rolled sed:
+# atomic temp+rename so an interrupt mid-write cannot truncate .env. The
+# writer single-quotes every value, so the marker readers must accept that
+# shape as well as the bare shape env-gen.sh's template emits.
+_env_write_kv "$TMP_DIR/.env" STAGE_1_COMPLETE 1 >/dev/null
 flipped_line=$(grep '^STAGE_1_COMPLETE=' "$TMP_DIR/.env")
-assert_eq "STAGE_1_COMPLETE=1" "$flipped_line" "stage1-marker: sed flip matches placeholder"
+assert_eq "STAGE_1_COMPLETE='1'" "$flipped_line" "stage1-marker: blessed writer flips placeholder"
+
+# The wizard's completion probe reads the raw line, so prove it matches what
+# the writer actually produced (a bare-shape-only grep would silently resume
+# Stage 1 on every re-run).
+if grep -Eq "^STAGE_1_COMPLETE=(1|'1'|\"1\")[[:space:]]*\$" "$TMP_DIR/.env"; then
+    pass "stage1-marker: wizard completion probe matches the writer's quoted shape"
+else
+    fail "stage1-marker: wizard completion probe matches the writer's quoted shape"
+fi
 
 SKIP_CAPTURE=""
 log_skip() { SKIP_CAPTURE+="$*"$'\n'; }

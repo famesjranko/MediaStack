@@ -221,11 +221,6 @@ main() {
     if [[ "${1:-}" == "--full" ]]; then
         FULL_MODE=true
     fi
-    FULL_WIPE_MODE=false
-    if [[ "${1:-}" == "--wipe" ]]; then
-        FULL_WIPE_MODE=true
-    fi
-
     # Auto-promote to --full when Docker/Compose is missing AND we're on an
     # interactive TTY, so a non-technical user on a bare Debian host doesn't
     # have to know what `--full` means. CI / piped-stdin keeps the historical
@@ -280,35 +275,31 @@ main() {
         check_docker
         check_compose
     fi
-    if $FULL_WIPE_MODE; then
-        nuke_existing_install "full-wipe" || return $?
-    else
-        local existing_install_rc=0
-        detect_existing_install || existing_install_rc=$?
-        case "${RECOVERY_MENU_ACTION:-}" in
-            continue)
-                return 0
-                ;;
-            completed | abort)
+    local existing_install_rc=0
+    detect_existing_install || existing_install_rc=$?
+    case "${RECOVERY_MENU_ACTION:-}" in
+        continue)
+            return 0
+            ;;
+        completed | abort)
+            return "$existing_install_rc"
+            ;;
+        wipe)
+            if ((existing_install_rc != 0)); then
                 return "$existing_install_rc"
-                ;;
-            wipe)
-                if ((existing_install_rc != 0)); then
-                    return "$existing_install_rc"
-                fi
-                ;;
-            "")
-                if ((existing_install_rc != 0)); then
-                    return "$existing_install_rc"
-                fi
-                ;;
-            *)
-                if ((existing_install_rc != 0)); then
-                    return "$existing_install_rc"
-                fi
-                ;;
-        esac
-    fi
+            fi
+            ;;
+        "")
+            if ((existing_install_rc != 0)); then
+                return "$existing_install_rc"
+            fi
+            ;;
+        *)
+            if ((existing_install_rc != 0)); then
+                return "$existing_install_rc"
+            fi
+            ;;
+    esac
     # --- end pre-flight ---
 
     # Always run base package install — idempotent (apt skips already-installed

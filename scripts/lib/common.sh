@@ -58,28 +58,40 @@ _log_emit() {
 # when glyphs are unavailable (byte-identical to the historical output), or the
 # matching icon (•/✓/!/✗/→) when the terminal can render it — same vocabulary as
 # the wizard's ui_log, so a single run never mixes bracket and glyph "languages".
-log_info() { _log_emit "${BLUE}$(_ui_status_token info)${NC} $1"; }
+# Contract: every log_* helper returns 0. Callers write `cmd && log_ok "..." || log_warn "..."`,
+# so a non-zero return here would fall through to the `||` branch and double-log.
+log_info() {
+    _log_emit "${BLUE}$(_ui_status_token info)${NC} $1"
+    return 0
+}
 log_ok() {
     ((_LOG_COUNTS_OK++)) || true
     _log_emit "${GREEN}$(_ui_status_token ok)${NC} $1"
+    return 0
 }
 log_warn() {
     ((_LOG_COUNTS_WARN++)) || true
     _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"
+    return 0
 }
 log_error() {
     ((_LOG_COUNTS_ERROR++)) || true
     _log_emit "${RED}$(_ui_status_token error)${NC} $1"
+    return 0
 }
 log_skip() {
     ((_LOG_COUNTS_SKIP++)) || true
     _log_emit "${GRAY}$(_ui_status_token skip)${NC} $1"
+    return 0
 }
 # Advisory drift notice (invariant: re-runs warn on drift, never auto-reconcile).
 # Renders identically to log_warn but does not bump _LOG_COUNTS_WARN, so a
 # drift notice on a healthy service never flips its configure-summary badge
 # to WARN (see _record_configure_result in configure.sh).
-log_drift() { _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"; }
+log_drift() {
+    _log_emit "${YELLOW}$(_ui_status_token warn)${NC} $1"
+    return 0
+}
 
 log_capture_start() {
     _LOG_CAPTURE=$(mktemp)

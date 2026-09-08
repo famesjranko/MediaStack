@@ -124,9 +124,21 @@ f2b_install_reload_watcher() {
         log_warn "Could not write fail2ban reload watcher unit; skipping"
         return 0
     fi
-    f2b_fallback_service_content "$install_user" "$install_group" \
-        | sudo tee "$MEDIASTACK_F2B_FALLBACK_SERVICE" >/dev/null || true
-    f2b_fallback_timer_content | sudo tee "$MEDIASTACK_F2B_FALLBACK_TIMER" >/dev/null || true
+    # The 6h fallback is best-effort (the watcher above is the primary reload
+    # path), but "best-effort" must still be honest: swallowing the write rc
+    # here left setup enabling and restarting units that were never written,
+    # and reporting success for them.
+    local fallback_written=true
+    if ! f2b_fallback_service_content "$install_user" "$install_group" \
+        | sudo tee "$MEDIASTACK_F2B_FALLBACK_SERVICE" >/dev/null; then
+        log_warn "Could not write fail2ban fallback reload service unit; skipping the 6h fallback timer"
+        fallback_written=false
+    fi
+    if $fallback_written \
+        && ! f2b_fallback_timer_content | sudo tee "$MEDIASTACK_F2B_FALLBACK_TIMER" >/dev/null; then
+        log_warn "Could not write fail2ban fallback reload timer unit; skipping the 6h fallback timer"
+        fallback_written=false
+    fi
 
     sudo systemctl daemon-reload || {
         log_warn "systemd daemon-reload failed"
@@ -140,11 +152,13 @@ f2b_install_reload_watcher() {
         && log_ok "fail2ban log-rotation reload watcher enabled" \
         || log_warn "Could not start fail2ban reload watcher"
     # The fallback one-shot is fired by its timer, not enabled directly.
-    sudo systemctl enable mediastack-fail2ban-reload-fallback.timer >/dev/null 2>&1 \
-        || log_warn "Could not enable fail2ban fallback reload timer"
-    sudo systemctl restart mediastack-fail2ban-reload-fallback.timer >/dev/null 2>&1 \
-        && log_ok "fail2ban 6h fallback reload timer enabled" \
-        || log_warn "Could not start fail2ban fallback reload timer"
+    if $fallback_written; then
+        sudo systemctl enable mediastack-fail2ban-reload-fallback.timer >/dev/null 2>&1 \
+            || log_warn "Could not enable fail2ban fallback reload timer"
+        sudo systemctl restart mediastack-fail2ban-reload-fallback.timer >/dev/null 2>&1 \
+            && log_ok "fail2ban 6h fallback reload timer enabled" \
+            || log_warn "Could not start fail2ban fallback reload timer"
+    fi
 }
 
 # Tear down the three units. Each block guarded on unit presence (avoids needless

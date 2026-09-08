@@ -92,6 +92,30 @@ unset -f ui_choose docker
 unset EXISTING_INSTALL_DETECTED
 unset _ui_sentinel ui_not_called
 
+# Test 2c: the blessed .env writer single-quotes every value, so a marker
+# written as STAGE_1_COMPLETE='1' must read as complete just like the bare
+# shape env-gen.sh's template emits.
+_tmpdir=$(mktemp -d)
+SCRIPT_DIR="$_tmpdir"
+printf 'DATA_DIR=/data\nSTAGE_1_COMPLETE=\x271\x27\n' >"$_tmpdir/.env"
+mkdir -p "$_tmpdir/config/ddns-updater"
+printf '{}' >"$_tmpdir/config/ddns-updater/config.json"
+ui_choose() { echo "Use existing install"; }
+docker() { :; }
+show_existing_install_menu() {
+    RECOVERY_MENU_ACTION="continue"
+    return 0
+}
+EXISTING_INSTALL_DETECTED=""
+detect_existing_install
+rc=$?
+assert_eq "0" "$rc" "detect_existing_install: quoted STAGE_1_COMPLETE -> return 0"
+assert_eq "true" "$EXISTING_INSTALL_DETECTED" "detect_existing_install: quoted STAGE_1_COMPLETE reads as complete"
+rm -rf "$_tmpdir"
+SCRIPT_DIR="$_orig_script_dir"
+unset -f ui_choose docker show_existing_install_menu
+unset EXISTING_INSTALL_DETECTED RECOVERY_MENU_ACTION
+
 # Test 3: .env non-empty + ddns config exists + ui_choose returns "Use existing install"
 _tmpdir=$(mktemp -d)
 SCRIPT_DIR="$_tmpdir"

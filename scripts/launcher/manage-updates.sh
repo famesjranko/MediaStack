@@ -2,15 +2,10 @@
 # Owns: Per-service image-policy management, update scans, applies, reverts, and menu routing.
 # Sources: launcher globals, .env, override.sh, image_drift.py, compose helpers, and scripts/lib/ui.sh.
 
-_service_profile_flag() {
-    case "$1" in
-        bazarr) echo "--profile subtitles" ;;
-        npm | fail2ban | ddns-updater) echo "--profile proxy" ;;
-        wireguard) echo "--profile remote" ;;
-        autoheal) echo "--profile autoheal" ;;
-        *) echo "" ;;
-    esac
-}
+# Thin alias over the canonical service->profile mapping (scripts/lib/profiles.sh,
+# already sourced by ./mediastack). Kept as a name because the call site and its
+# tests stub it; the table itself lives in exactly one place.
+_service_profile_flag() { profiles_service_flag "$1"; }
 
 _regenerate_override() {
     # shellcheck disable=SC1091

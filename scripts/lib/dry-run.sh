@@ -147,15 +147,19 @@ _dry_run_seed_state() {
     mkdir -p config/ddns-updater 2>/dev/null || true
 }
 
-# Minimal .env key writer (sed in place; append if absent). Container copy only.
+# Container-copy .env key writer. Routes through the one blessed .env writer
+# (atomic temp+rename, mode-preserving, validating) instead of a second
+# hand-rolled `sed -i`, so the sandbox mutates .env exactly the way the real
+# code paths do. Sourced defensively: dry_run_begin runs after common.sh in
+# both entry points, but this file is also sourced before it in ./mediastack.
 _dry_run_set_env() {
     local key="$1" val="$2"
     [[ -f .env ]] || : >.env
-    if grep -qE "^${key}=" .env 2>/dev/null; then
-        sed -i "s#^${key}=.*#${key}=${val}#" .env
-    else
-        printf '%s=%s\n' "$key" "$val" >>.env
+    if ! declare -F _env_write_kv >/dev/null 2>&1; then
+        # shellcheck source=scripts/lib/env-update.sh
+        source "$(_dry_run_repo_root)/scripts/lib/env-update.sh"
     fi
+    _env_write_kv .env "$key" "$val" >/dev/null || true
 }
 
 # scripts/configure.sh runs as a SUBPROCESS, so a shell function can't shadow it.
@@ -165,8 +169,10 @@ _dry_run_overwrite_subprocess_scripts() {
     cat >scripts/configure.sh <<'CONFIGURE'
 #!/usr/bin/env bash
 # DRY-RUN stub of scripts/configure.sh — no API calls; seeds a fake key.
+# Even the sandbox honours the one-.env-writer rule: sed -i truncates in place.
 if [[ -f .env ]] && grep -qE '^JELLYFIN_API_KEY=' .env; then
-    sed -i 's/^JELLYFIN_API_KEY=.*/JELLYFIN_API_KEY=dry-run-key/' .env
+    source scripts/lib/env-update.sh
+    _env_write_kv .env JELLYFIN_API_KEY dry-run-key
 fi
 echo "  DRY-RUN: would auto-configure services (Sonarr/Radarr/qBittorrent/...)" >&2
 exit 0

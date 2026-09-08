@@ -113,5 +113,38 @@ strict_rc=$?
 assert_eq "0" "$strict_rc" "builder runs cleanly under set -euo pipefail (rc 0)"
 assert_eq "--profile subtitles --profile autoheal --profile proxy --profile remote" "$strict_out" "builder output is correct under strict mode"
 
+# --- the one membership table, read from both directions ---------------------
+# profiles_service_flag (service -> flag, used by the launcher's update manager)
+# and profiles_member_pattern (profile -> `docker compose ps` matcher, used by
+# scripts/update.sh) must agree, so adding a profile stays a single edit.
+assert_eq "--profile proxy" "$(profiles_service_flag npm)" "service flag: npm -> proxy"
+assert_eq "--profile proxy" "$(profiles_service_flag ddns-updater)" "service flag: ddns-updater -> proxy"
+assert_eq "--profile subtitles" "$(profiles_service_flag bazarr)" "service flag: bazarr -> subtitles"
+assert_eq "--profile remote" "$(profiles_service_flag wireguard)" "service flag: wireguard -> remote"
+assert_eq "--profile autoheal" "$(profiles_service_flag autoheal)" "service flag: autoheal -> autoheal"
+assert_eq "" "$(profiles_service_flag jellyfin)" "service flag: default-profile service has no flag"
+
+for svc in npm fail2ban ddns-updater bazarr wireguard autoheal; do
+    flag=$(profiles_service_flag "$svc")
+    pattern=$(profiles_member_pattern "${flag#--profile }")
+    if grep -qE "$pattern" <<<"$svc   Up 2 hours"; then
+        pass "membership: $svc matches its own profile's ps pattern"
+    else
+        fail "membership: $svc matches its own profile's ps pattern" "pattern: $pattern"
+    fi
+done
+
+# Word boundaries: `npm` must not match `pnpm` in another service's COMMAND.
+if grep -qE "$(profiles_member_pattern proxy)" <<<"seerr   pnpm start"; then
+    fail "membership: proxy pattern is word-bounded"
+else
+    pass "membership: proxy pattern is word-bounded"
+fi
+if profiles_member_pattern not-a-profile >/dev/null; then
+    fail "membership: unknown profile returns non-zero"
+else
+    pass "membership: unknown profile returns non-zero"
+fi
+
 scenario_end "$CURRENT_SCENARIO"
 summary

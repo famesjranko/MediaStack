@@ -16,6 +16,10 @@ _stage1_confirm() {
     unset DATA_DIR STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_NFS_HOST STORAGE_NFS_EXPORT \
         STORAGE_NFS_OPTS STORAGE_SENTINEL STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE
 
+    # Deliberately NOT profiles_build_args: that reads the on-disk .env, which
+    # does not exist yet at confirm time. This is the Stage 1 plan preview, so
+    # it derives the two Stage 1 profiles from live wizard state instead. The
+    # proxy/remote profiles are Stage 2 and are correctly absent here.
     local -a compose_args=(--env-file "$SCRIPT_DIR/.env.example")
     if [[ "${_WIZ_BAZARR_ENABLED:-false}" == "true" ]]; then
         compose_args+=(--profile subtitles)

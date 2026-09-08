@@ -21,6 +21,21 @@ touch "$CONFIG_FILE"
 
 source "$REPO_ROOT/scripts/lib/common.sh"
 
+# --- log_* return contract ----------------------------------------------------
+# Eight call sites are written `cmd && log_ok "..." || log_warn "..."`, so a
+# log helper that returned non-zero would fall through to the `||` branch and
+# double-log. Today every counter bump is already `|| true`-guarded and the
+# helpers end on _log_emit, so this passes on the old tree too — the test is a
+# regression lock for the now-explicit `return 0` contract, not a bug proof.
+log_capture_start
+for _log_fn in log_info log_ok log_warn log_error log_skip log_drift; do
+    "$_log_fn" "return-contract probe"
+    _log_rc=$?
+    assert_eq "0" "$_log_rc" "$_log_fn returns 0 on its first (counter-zero) call"
+done
+log_capture_stop
+unset _log_fn _log_rc
+
 LAST_WARN=""
 log_ok() { :; }
 log_info() { :; }

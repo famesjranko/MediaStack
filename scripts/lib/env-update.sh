@@ -30,8 +30,12 @@ _MS_ENV_WRITE_SH=1
 #   write-error:<reason>                             -> rc non-zero
 # Side-effect-free beyond the file write: it does NOT log or export — callers
 # decide how to surface the outcome. This is the one .env-mutation writer;
-# env_save_api_key, the launcher's _set_env_vars, storage_env_set, and the stage2/
-# stage3 rewriters all route through it (no second hand-rolled implementation).
+# env_save_api_key, the launcher's _set_env_vars, storage_env_set, the stage1/
+# stage2/stage3 marker and state rewriters, and the dry-run sandbox seeder all
+# route through it (no second hand-rolled implementation).
+# Every value it writes is single-quoted, so any reader that pattern-matches a
+# raw .env line must accept the quoted shape as well as the bare shape
+# env-write.sh's template emits.
 _env_write_kv() {
     local env_file="$1"
     shift
