@@ -222,7 +222,7 @@ _uninstall_samba() {
     if sudo test -e "$SAMBA_INCLUDE_FILE"; then
         if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]] \
             || [[ "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")" != "$expected" ]]; then
-            log_error "Edited or unverifiable MediaStack Samba include preserved: $SAMBA_INCLUDE_FILE"
+            log_error "MediaStack Samba include preserved: $SAMBA_INCLUDE_FILE (edited since install, unverifiable, or the ownership ledger is missing)"
             return 1
         fi
     fi

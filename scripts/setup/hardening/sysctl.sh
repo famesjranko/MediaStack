@@ -2,6 +2,36 @@
 # Sources: hardening.sh ledger paths and common.sh state/hash helpers.
 # Globals: MEDIASTACK_SYSCTL_CONF.
 
+# The exact file setup renders. Kept as a renderer so the teardown can
+# recognise an unmodified MediaStack sysctl file by content when the
+# ownership ledger is gone (see _uninstall_sysctl_by_content).
+_setup_sysctl_conf_content() {
+    cat <<'EOF'
+# MediaStack — kernel hardening
+# Does NOT touch ip_forward (Docker + WireGuard need it enabled)
+
+# SYN flood protection
+net.ipv4.tcp_syncookies = 1
+
+# Disable ICMP redirects (MITM prevention)
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+
+# Reverse path filtering (IP spoofing prevention)
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+
+# Ignore broadcast ICMP (smurf attack prevention)
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+# Log impossible source addresses
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.log_martians = 1
+EOF
+}
+
 setup_sysctl_hardening() {
     local conf="$MEDIASTACK_SYSCTL_CONF"
 
@@ -37,30 +67,7 @@ setup_sysctl_hardening() {
     done
 
     _ms_state_set SYSCTL_FILE_CREATED true
-    sudo tee "$conf" >/dev/null <<'EOF'
-# MediaStack — kernel hardening
-# Does NOT touch ip_forward (Docker + WireGuard need it enabled)
-
-# SYN flood protection
-net.ipv4.tcp_syncookies = 1
-
-# Disable ICMP redirects (MITM prevention)
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-
-# Reverse path filtering (IP spoofing prevention)
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-
-# Ignore broadcast ICMP (smurf attack prevention)
-net.ipv4.icmp_echo_ignore_broadcasts = 1
-
-# Log impossible source addresses
-net.ipv4.conf.all.log_martians = 1
-net.ipv4.conf.default.log_martians = 1
-EOF
+    _setup_sysctl_conf_content | sudo tee "$conf" >/dev/null
 
     _ms_state_set SYSCTL_FILE_SHA256 "$(_ms_root_sha256 "$conf")"
     sudo sysctl --system >/dev/null 2>&1
@@ -68,9 +75,33 @@ EOF
     log_ok "Kernel hardening applied"
 }
 
-_uninstall_sysctl() {
-    [[ "$(_ms_state_get SYSCTL_FILE_CREATED)" == "true" ]] || return 0
+# Ledger-less teardown: the recorded pre-install values are gone, so the only
+# safe claim of ownership left is that the file on disk is byte-for-byte the one
+# setup renders. Removing it is then unambiguous — but it reverts the kernel at
+# the next boot rather than restoring the recorded values now, and the caller is
+# told so. Anything that does not match is preserved and reported.
+_uninstall_sysctl_by_content() {
     local conf="$MEDIASTACK_SYSCTL_CONF"
+    sudo test -e "$conf" || return 0
+    if [[ "$(_ms_root_sha256 "$conf")" != "$(_setup_sysctl_conf_content | _ms_stream_sha256)" ]]; then
+        log_error "Sysctl file preserved: $conf (edited, or not recognisable as MediaStack's without the ownership ledger); delete it by hand if you did not edit it."
+        return 1
+    fi
+    sudo rm -f "$conf" || return 1
+    log_warn "Removed $conf by content match; the pre-install kernel values are not recorded, so the live settings revert at the next boot."
+    return 0
+}
+
+# $1 — "true" when the ownership ledger is unusable and the content fallback
+# above is the only thing left to try. Defaults to the recorded teardown.
+_uninstall_sysctl() {
+    local unledgered="${1:-false}"
+    local conf="$MEDIASTACK_SYSCTL_CONF"
+    if [[ "$(_ms_state_get SYSCTL_FILE_CREATED)" != "true" ]]; then
+        [[ "$unledgered" == "true" ]] || return 0
+        _uninstall_sysctl_by_content
+        return
+    fi
     sudo test -e "$conf" || return 0
     if [[ "$(_ms_root_sha256 "$conf")" != "$(_ms_state_get SYSCTL_FILE_SHA256)" ]]; then
         log_error "Edited MediaStack sysctl file preserved: $conf"

@@ -95,6 +95,34 @@ case "$(cat "$MOUNT_REPAIR_CALLS")" in
         ;;
 esac
 assert_eq "1" "$MOUNT_REPAIR_CONFIRM_PROMPTS" "storage_mount_nfs: declined repair still prompted once"
+
+# Non-interactive runs must not detach a live mount. Both cases run in a
+# subshell so the real ui.sh (and its absence) cannot leak into later blocks.
+: >"$MOUNT_REPAIR_CALLS"
+(
+    unset -f ui_confirm
+    # shellcheck source=../../../scripts/lib/ui.sh
+    source "$REPO_ROOT/scripts/lib/ui.sh"
+    # ui_confirm consults UI_DEMO; exported so shellcheck sees the cross-file use.
+    export UI_DEMO=1
+    storage_repair_mismatched_mount
+) >/dev/null 2>&1
+mount_repair_demo_rc=$?
+assert_eq "1" "$mount_repair_demo_rc" "storage_repair_mismatched_mount: UI_DEMO run refuses to detach"
+(
+    unset -f ui_confirm
+    storage_repair_mismatched_mount
+) >/dev/null 2>&1
+assert_eq "1" "$?" "storage_repair_mismatched_mount: sourcer without ui.sh refuses to detach"
+case "$(cat "$MOUNT_REPAIR_CALLS")" in
+    *"sudo umount"*)
+        fail "storage_repair_mismatched_mount: non-interactive refusal leaves the mount alone" "$(cat "$MOUNT_REPAIR_CALLS")"
+        ;;
+    *)
+        pass "storage_repair_mismatched_mount: non-interactive refusal leaves the mount alone"
+        ;;
+esac
+unset mount_repair_demo_rc
 unset -f findmnt sudo ui_confirm log_warn log_info log_ok log_error
 unset DATA_DIR STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_NFS_HOST STORAGE_NFS_EXPORT STORAGE_NFS_OPTS STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE STORAGE_SENTINEL
 unset MOUNT_REPAIR_CALLS MOUNT_REPAIR_CONFIRM_PROMPTS MOUNT_REPAIR_SOURCE MOUNT_REPAIR_FSTYPE

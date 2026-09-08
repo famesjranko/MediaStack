@@ -209,6 +209,40 @@ unset -f storage_pause_watchdog_for_install
 unset STORAGE_MODE STORAGE_WATCHDOG
 source "$REPO_ROOT/scripts/setup/storage.sh"
 
+# --- A login name that cannot be a sudoers token skips the whole install ---
+WATCHDOG_SUDO_LOG="$TMP_DIR/watchdog-adname-sudo.log"
+WATCHDOG_WARNINGS="$TMP_DIR/watchdog-adname-warnings.log"
+: >"$WATCHDOG_SUDO_LOG"
+: >"$WATCHDOG_WARNINGS"
+id() { printf '%s\n' 'EXAMPLE\op'; }
+sudo() { printf '%s\n' "sudo $*" >>"$WATCHDOG_SUDO_LOG"; }
+storage_log_warn() { printf '%s\n' "$*" >>"$WATCHDOG_WARNINGS"; }
+storage_log_info() { :; }
+storage_log_ok() { :; }
+WATCHDOG_ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+SCRIPT_DIR="$REPO_ROOT"
+# shellcheck disable=SC2034 # consumed by storage_is_nas/storage_watchdog_enabled in storage/core.sh
+STORAGE_MODE=nas STORAGE_WATCHDOG=true
+storage_install_watchdog >/dev/null 2>&1
+assert_eq "0" "$?" "storage_install_watchdog: unusable sudoers user name does not fail setup"
+assert_contains "$(cat "$WATCHDOG_WARNINGS")" 'EXAMPLE\op' "storage_install_watchdog: unusable sudoers user name is reported"
+assert_eq "" "$(cat "$WATCHDOG_SUDO_LOG")" "storage_install_watchdog: unusable sudoers user name installs nothing"
+# A dotted login name is a valid useradd and sudoers token, so it must not be
+# swept up by the guard above: this run gets as far as needing visudo.
+: >"$WATCHDOG_WARNINGS"
+id() { printf '%s\n' 'first.last'; }
+command() {
+    [[ "$1" == -v && "$2" == visudo ]] && return 1
+    builtin command "$@"
+}
+storage_install_watchdog >/dev/null 2>&1
+assert_contains "$(cat "$WATCHDOG_WARNINGS")" "visudo is unavailable" "storage_install_watchdog: a dotted login name passes the sudoers-token guard"
+unset -f command
+SCRIPT_DIR="$WATCHDOG_ORIGINAL_SCRIPT_DIR"
+unset -f id sudo storage_log_warn storage_log_info storage_log_ok
+unset STORAGE_MODE STORAGE_WATCHDOG WATCHDOG_SUDO_LOG WATCHDOG_WARNINGS WATCHDOG_ORIGINAL_SCRIPT_DIR
+source "$REPO_ROOT/scripts/setup/storage.sh"
+
 WATCHDOG_SYSTEMCTL_LOG="$TMP_DIR/watchdog-systemctl.log"
 WATCHDOG_SYSTEMCTL_STATE=inactive
 WATCHDOG_SYSTEMCTL_QUERY_FAIL=false
