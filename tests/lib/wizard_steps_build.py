@@ -25,12 +25,13 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def load_prompts() -> dict:
+def load_prompts() -> dict[str, str]:
     with open(os.path.join(_HERE, "wizard_prompts.json")) as f:
-        return json.load(f)["prompts"]
+        prompts: dict[str, str] = json.load(f)["prompts"]
+        return prompts
 
 
-def regex_for(name: str, prompts: dict) -> str:
+def regex_for(name: str, prompts: dict[str, str]) -> str:
     if name.startswith("literal:"):
         return name[len("literal:") :]
     if name not in prompts:
@@ -43,7 +44,7 @@ def main() -> int:
     if len(args) % 2 != 0:
         sys.exit("wizard_steps_build: expected NAME SEND pairs (got an odd number of args)")
     prompts = load_prompts()
-    steps: list[dict] = []
+    steps: list[dict[str, str | int]] = []
     for i in range(0, len(args), 2):
         name, send = args[i], args[i + 1]
         timeout = None

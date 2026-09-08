@@ -17,7 +17,8 @@ import yaml
 def load_quality_model(presets_path: str) -> dict[str, Any]:
     """Load the resolution x size quality model (quality_ids/resolutions/sizes)."""
     with open(presets_path) as f:
-        return yaml.safe_load(f)
+        model: dict[str, Any] = yaml.safe_load(f)
+    return model
 
 
 def compose_cell(model: dict[str, Any], resolution_key: str, size_key: str) -> dict[str, Any]:

@@ -196,6 +196,22 @@ mypy_type_check() {
         echo "check: python types config missing disallow_untyped_defs — pyproject.toml [tool.mypy] must set disallow_untyped_defs = true" >&2
         return 1
     fi
+    if ! awk '
+        /^\[/{ in_section = ($0 == "[tool.mypy]") }
+        in_section && /^warn_return_any[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { found = 1 }
+        END { exit !found }
+    ' pyproject.toml; then
+        echo "check: python types config missing warn_return_any — pyproject.toml [tool.mypy] must set warn_return_any = true" >&2
+        return 1
+    fi
+    if ! awk '
+        /^\[/{ in_section = ($0 == "[tool.mypy]") }
+        in_section && /^disallow_any_generics[[:space:]]*=[[:space:]]*true[[:space:]]*(#.*)?$/ { found = 1 }
+        END { exit !found }
+    ' pyproject.toml; then
+        echo "check: python types config missing disallow_any_generics — pyproject.toml [tool.mypy] must set disallow_any_generics = true" >&2
+        return 1
+    fi
     cache_dir=$(mktemp -d) || return 1
     MYPY_CACHE_DIR="$cache_dir" uv tool run --from "mypy==$mypy_pin" \
         --with "types-PyYAML==$stubs_pin" mypy --python-version 3.9 \

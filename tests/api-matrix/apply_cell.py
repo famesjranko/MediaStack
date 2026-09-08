@@ -93,7 +93,8 @@ def render_profile(
         stdout=subprocess.PIPE,
         check=True,
     ).stdout
-    return json.loads(out)
+    result: dict[str, Any] = json.loads(out)
+    return result
 
 
 def push_definitions(base: str, key: str, desired: dict[str, Any]) -> None:

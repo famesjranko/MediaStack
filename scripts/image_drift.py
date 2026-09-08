@@ -18,6 +18,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import quote
 
 try:
@@ -777,7 +778,7 @@ def image_repo_digest(image_id: str, image: str) -> str | None:
     if img.returncode != 0:
         return None
     try:
-        repo_digests = json.loads(img.stdout.strip() or "[]")
+        repo_digests: list[str] = json.loads(img.stdout.strip() or "[]")
     except json.JSONDecodeError:
         return None
     want = _norm_repo(repo_of(image))
@@ -878,12 +879,12 @@ def scan_status(
     policy_path: pathlib.Path,
     global_channel: str,
     progress: bool = False,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     lock = {row.service: row.digest for row in read_tsv(lock_path)}
     policy = read_policy(policy_path)
     images = load_compose_images(compose_path)
 
-    def scan_one(item: tuple[str, str]) -> dict:
+    def scan_one(item: tuple[str, str]) -> dict[str, Any]:
         service, image = item
         # "manual" = an explicit per-service row; "default" = inherits the global
         # channel. The launcher uses this to offer reset only for real overrides.
@@ -929,7 +930,7 @@ def _policy_display(value: str) -> str:
     return "pinned" if _is_pin(value) else value
 
 
-def format_status_tsv(rows: list[dict]) -> str:
+def format_status_tsv(rows: list[dict[str, Any]]) -> str:
     # Columns: service, policy, override(manual|default), status, updatable.
     # A digest pin is emitted as the short token `pinned`, never the raw digest.
     return "\n".join(
@@ -939,14 +940,15 @@ def format_status_tsv(rows: list[dict]) -> str:
     )
 
 
-def format_status_table(rows: list[dict]) -> str:
+def format_status_table(rows: list[dict[str, Any]]) -> str:
     head = ("SERVICE", "POLICY", "STATUS")
 
-    def is_pin_row(r: dict) -> bool:
+    def is_pin_row(r: dict[str, Any]) -> bool:
         return _is_pin(r["policy"])
 
-    def label(r: dict) -> str:
-        base = _POLICY_LABEL.get(_policy_display(r["policy"]), r["policy"])
+    def label(r: dict[str, Any]) -> str:
+        policy: str = r["policy"]
+        base = _POLICY_LABEL.get(_policy_display(policy), policy)
         # The `*` footnote means "tracking its upstream tag" — the opposite of a
         # pinned service, so pins get the label without the star.
         return base + " *" if r["override"] == "manual" and not is_pin_row(r) else base

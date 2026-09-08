@@ -20,4 +20,6 @@ indent-style = "space"
 python_version = "3.9"          # Debian 11 floor, docs/project/stack.md
 check_untyped_defs = true       # also type-check unannotated function bodies
 disallow_untyped_defs = true    # every function must declare its full signature
+warn_return_any = true          # no smuggling Any past a function's declared return type
+disallow_any_generics = true    # bare dict/list must spell their element types
 exclude = ["config/examples"]
