@@ -25,7 +25,6 @@ storage_log_info() { if declare -F log_info >/dev/null; then log_info "$*"; else
 storage_log_ok() { if declare -F log_ok >/dev/null; then log_ok "$*"; else echo "OK: $*"; fi; }
 storage_log_warn() { if declare -F log_warn >/dev/null; then log_warn "$*"; else echo "WARN: $*"; fi; }
 storage_log_err() { if declare -F log_error >/dev/null; then log_error "$*"; else echo "ERROR: $*"; fi; }
-storage_log_skip() { if declare -F log_skip >/dev/null; then log_skip "$*"; else echo "SKIP: $*"; fi; }
 
 storage_expected_source() {
     if [[ -n "${STORAGE_EXPECTED_SOURCE:-}" ]]; then

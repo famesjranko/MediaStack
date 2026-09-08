@@ -57,16 +57,6 @@ nvidia_driver_try_unload_nouveau() {
     return 1
 }
 
-# Check if NVIDIA kernel modules were installed (via DKMS or direct) even
-# though the installer reported failure.
-nvidia_driver_modules_installed() {
-    ls /lib/modules/"$(uname -r)"/updates/dkms/nvidia*.ko* &>/dev/null && return 0
-    ls /lib/modules/"$(uname -r)"/updates/nvidia*.ko* &>/dev/null && return 0
-    ls /lib/modules/"$(uname -r)"/extra/nvidia*.ko* &>/dev/null && return 0
-    dkms status 2>/dev/null | grep -qi "nvidia.*installed" && return 0
-    return 1
-}
-
 _nvidia_driver_install_run_file() {
     local run_file="$1" driver_version="$2" temp_dir="$3"
     # ui_spin captures output to a log and surfaces it on failure, so the noisy

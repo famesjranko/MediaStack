@@ -67,19 +67,6 @@ net_classify_port_failure() {
     esac
 }
 
-net_port_gate_classify() {
-    local public_ip="$1"
-    local dns_state="${2:-ok}"
-    local hint="${3:-}"
-    local port_state
-    port_state=$(net_check_http_ports)
-    if [[ "$port_state" == "ok" ]]; then
-        printf 'ok'
-        return 0
-    fi
-    net_classify_port_failure "$public_ip" "$dns_state" "$port_state" "$hint"
-}
-
 # net_detect_lan_cidr — read the host's default-route interface and emit the
 # normalized network CIDR (e.g. host 192.168.1.50/24 → 192.168.1.0/24).
 # Returns empty + non-zero on failure; caller decides the fallback.
