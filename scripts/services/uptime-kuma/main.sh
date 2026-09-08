@@ -66,6 +66,14 @@ configure_uptime_kuma() {
     local kuma_err="/tmp/kuma-configure.err"
     local _kuma_envfile
     _kuma_envfile=$(mktemp)
+    # Belt-and-braces beyond the subshell EXIT trap below: a TERM delivered to
+    # THIS process (a `kill`, a `systemctl stop` on the unit driving setup)
+    # in the narrow window between creating the env-file and entering the
+    # subshell would otherwise leak it. The RETURN trap clears this again on
+    # every exit path out of the function, so it never lingers to affect
+    # unrelated code running later in the same shell.
+    trap 'rm -f "$_kuma_envfile"' TERM
+    trap 'rm -f "$_kuma_envfile"; trap - TERM' RETURN
     printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
     # The trap lives inside this command substitution's own subshell (not the
