@@ -42,6 +42,42 @@ assert_eq "http://beszel:8090/api/health" "$(monitor_url Beszel)" \
 assert_eq "http://wireguard:51821" "$(monitor_url WireGuard)" \
     "Uptime Kuma monitor URL: WireGuard optional service"
 
+# Both tests below drive the REAL configurator in a child shell with docker,
+# mktemp and timeout stubbed. They differ only in what the `docker run` step
+# does and what the worker does after the call returns, so the scaffolding is
+# written once here.
+#   $1 worker path  $2 env-file path  $3 `docker run` stub body  $4 epilogue
+# "timeout 120 docker run ..." would otherwise exec the real docker(1) via
+# PATH — a fork+exec loses this shell's docker() function entirely — so
+# timeout is stubbed too, dropping the duration and calling straight through.
+write_kuma_worker() {
+    local worker="$1" envfile="$2" run_body="$3" epilogue="$4"
+    cat >"$worker" <<WORKER_EOF
+#!/usr/bin/env bash
+set -uo pipefail
+SCRIPT_DIR="$REPO_ROOT"
+CONFIG_FILE=/dev/null
+source "$REPO_ROOT/scripts/lib/common.sh"
+source "$REPO_ROOT/scripts/services/uptime-kuma/main.sh"
+mktemp() { printf '%s' "$envfile"; }
+docker() {
+    case "\$1" in
+        compose) printf 'jellyfin\n' ;;
+        pull) return 0 ;;
+        run) $run_body ;;
+    esac
+}
+timeout() {
+    shift
+    "\$@"
+}
+JELLYFIN_ADMIN_USER=testuser
+JELLYFIN_ADMIN_PASSWORD=SEC5_SENTINEL_PW
+$epilogue
+WORKER_EOF
+    chmod +x "$worker"
+}
+
 # --- SEC-5: the KUMA_PW env-file must not survive an interrupted run --------
 # configure_uptime_kuma writes the shared admin password to a mktemp env-file
 # for the 120s `docker run`. A worker script runs the real configurator with
@@ -53,33 +89,8 @@ KUMA_TMP=$(mktemp -d)
 trap 'rm -rf "$KUMA_TMP"' EXIT
 ENVFILE="$KUMA_TMP/kuma-envfile"
 WORKER="$KUMA_TMP/worker.sh"
-cat >"$WORKER" <<WORKER_EOF
-#!/usr/bin/env bash
-set -uo pipefail
-SCRIPT_DIR="$REPO_ROOT"
-CONFIG_FILE=/dev/null
-source "$REPO_ROOT/scripts/lib/common.sh"
-source "$REPO_ROOT/scripts/services/uptime-kuma/main.sh"
-mktemp() { printf '%s' "$ENVFILE"; }
-docker() {
-    case "\$1" in
-        compose) printf 'jellyfin\n' ;;
-        pull) return 0 ;;
-        run) sleep 30 ;;
-    esac
-}
-# "timeout 120 docker run ..." would otherwise exec the real docker(1) via
-# PATH — a fork+exec loses this shell's docker() function entirely — so
-# timeout is stubbed too, dropping the duration and calling straight through.
-timeout() {
-    shift
-    "\$@"
-}
-JELLYFIN_ADMIN_USER=testuser
-JELLYFIN_ADMIN_PASSWORD=SEC5_SENTINEL_PW
-configure_uptime_kuma >/dev/null 2>&1
-WORKER_EOF
-chmod +x "$WORKER"
+write_kuma_worker "$WORKER" "$ENVFILE" 'sleep 30' \
+    'configure_uptime_kuma >/dev/null 2>&1'
 
 setsid bash "$WORKER" &
 WORKER_PID=$!
@@ -115,40 +126,17 @@ NORMAL_TMP=$(mktemp -d)
 trap 'rm -rf "$NORMAL_TMP"' EXIT
 NORMAL_ENVFILE="$NORMAL_TMP/kuma-envfile"
 NORMAL_WORKER="$NORMAL_TMP/worker.sh"
-cat >"$NORMAL_WORKER" <<NORMAL_EOF
-#!/usr/bin/env bash
-set -uo pipefail
-SCRIPT_DIR="$REPO_ROOT"
-CONFIG_FILE=/dev/null
-source "$REPO_ROOT/scripts/lib/common.sh"
-source "$REPO_ROOT/scripts/services/uptime-kuma/main.sh"
-mktemp() { printf '%s' "$NORMAL_ENVFILE"; }
-docker() {
-    case "\$1" in
-        compose) printf 'jellyfin\n' ;;
-        pull) return 0 ;;
-        run) : >"$NORMAL_TMP/reached"; printf '{"created":0,"skipped":0,"errors":[]}\n' ;;
-    esac
-}
-timeout() {
-    shift
-    "\$@"
-}
-JELLYFIN_ADMIN_USER=testuser
-JELLYFIN_ADMIN_PASSWORD=SEC5_SENTINEL_PW
-# Call through a wrapper so the RETURN trap fires into a caller frame, exactly
-# as _run_configure does in scripts/configure.sh.
-caller_frame() { configure_uptime_kuma >/dev/null; }
+# The epilogue calls through a wrapper so the RETURN trap fires into a caller
+# frame, exactly as _run_configure does in scripts/configure.sh. It then dumps
+# the surviving trap state: a RETURN trap left armed re-fires on every later
+# `source` in the same shell and would disarm any TERM handler installed after
+# it.
+write_kuma_worker "$NORMAL_WORKER" "$NORMAL_ENVFILE" \
+    ": >\"$NORMAL_TMP/reached\"; printf '{\"created\":0,\"skipped\":0,\"errors\":[]}\\n'" \
+    'caller_frame() { configure_uptime_kuma >/dev/null; }
 caller_frame
-# Proof the trapped path was reached at all, not skipped by the early return
-# at the top of configure_uptime_kuma: without this the assertions below all
-# pass vacuously if the monitor list ever comes back empty.
-# A RETURN trap left armed re-fires on every later $(source) in the same shell
-# and would disarm any TERM handler installed after it.
-trap -p RETURN >"$NORMAL_TMP/return-trap"
-trap -p TERM >"$NORMAL_TMP/term-trap"
-NORMAL_EOF
-chmod +x "$NORMAL_WORKER"
+trap -p RETURN >"'"$NORMAL_TMP"'/return-trap"
+trap -p TERM >"'"$NORMAL_TMP"'/term-trap"'
 NORMAL_ERR="$NORMAL_TMP/stderr.log"
 NORMAL_RC=0
 bash "$NORMAL_WORKER" >/dev/null 2>"$NORMAL_ERR" || NORMAL_RC=$?
