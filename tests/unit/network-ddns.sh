@@ -33,6 +33,9 @@ export DDNS_VERIFY_PULL_TIMEOUT_SECONDS=1
 
 source "$REPO_ROOT/scripts/lib/network.sh"
 
+# Host-independent: the default (1000) would force a sudo chown on any other uid.
+DDNS_UPDATER_UID="$(id -u)"
+
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 CONFIG="$TMP_ROOT/config.json"
@@ -203,7 +206,7 @@ sudo() {
 }
 assert_eq "2" "$(verify_rc)" "500 infra-vocab degrade holds on a non-matching-uid box too"
 unset -f sudo
-unset DDNS_UPDATER_UID
+DDNS_UPDATER_UID="$(id -u)"
 
 # --- SEC-2: the scratch copy holding the raw provider secret must never
 # widen to world-readable. It stays 700/600 for the whole verify window and,
@@ -325,7 +328,7 @@ sudo() { return 1; }
 assert_eq "2" "$(verify_rc)" "a failed chown degrades instead of widening the mode"
 
 unset -f docker sudo
-unset DDNS_UPDATER_UID
+DDNS_UPDATER_UID="$(id -u)"
 
 scenario_end "$CURRENT_SCENARIO"
 summary
