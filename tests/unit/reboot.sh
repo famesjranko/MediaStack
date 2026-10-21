@@ -111,7 +111,7 @@ fi
 
 write_setup_result error
 error_result="$(cat "$expected_result")"
-assert_contains "$error_result" "cd '$SCRIPT_DIR' && ./setup.sh" "reboot result error: rerun command uses actual checkout path"
+assert_contains "$error_result" "cd '$SCRIPT_DIR' && ./mediastack" "reboot result error: rerun command uses actual checkout path"
 if [[ "$error_result" == *"cd ~/MediaStack"* ]]; then
     fail "reboot result error: command does not hardcode home checkout"
 else

@@ -64,10 +64,9 @@ install_nvidia_drivers() {
     sb_state=$(nvidia_driver_check_secure_boot)
     case "$sb_state" in
         enabled)
-            log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
-            log_error "Fix one of the following, then re-run setup.sh:"
-            log_error "  (a) disable Secure Boot in UEFI firmware settings, OR"
-            log_error "  (b) enroll a Machine Owner Key to sign the nvidia module (advanced)."
+            STAGE3_FALLBACK_REASON=secure_boot
+            log_error "Secure Boot is enabled - the Unlock (.run) NVIDIA driver will not load."
+            while IFS= read -r _sb_line; do log_error "$_sb_line"; done < <(gpu_fallback_secure_boot_unlock_lines)
             log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
             GPU_TYPE="none"
             return 1

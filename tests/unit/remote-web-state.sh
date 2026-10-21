@@ -108,9 +108,9 @@ write_env >/dev/null
 
 assert_eq "gate.test" "$(env_val_from "$SCRIPT_DIR/.env" DOMAIN)" "remote state: real domain is persisted"
 assert_eq "unchecked" "$(env_val_from "$SCRIPT_DIR/.env" REMOTE_WEB_STATE)" "remote state: real domain starts unchecked"
-assert_contains "$(grep -v '^#' "$SCRIPT_DIR/.env")" "REMOTE_WEB_STATE=unchecked" "remote state: unchecked marker line is written"
+assert_contains "$(grep -v '^#' "$SCRIPT_DIR/.env")" "REMOTE_WEB_STATE='unchecked'" "remote state: unchecked marker line is written"
 
-if grep -v '^#' "$SCRIPT_DIR/.env" | grep -q '^REMOTE_WEB_STATE=ready$'; then
+if grep -v '^#' "$SCRIPT_DIR/.env" | grep -qE "^REMOTE_WEB_STATE='?ready'?\$"; then
     fail "remote state: write_env never auto-promotes to ready"
 else
     pass "remote state: write_env never auto-promotes to ready"

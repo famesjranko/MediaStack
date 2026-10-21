@@ -1,5 +1,7 @@
 # Owns: stage3_* — Stage 3 static wizard copy: offer/tell-me-more/skip-summary/retry choice text and the guarded final-summary call.
-# Sources: print_final_summary (stack.sh, when defined).
+# Sources: print_final_summary (stack.sh, when defined); scripts/lib/gpu-fallback.sh for reason text.
+# shellcheck source=../../lib/gpu-fallback.sh
+declare -F gpu_fallback_reason_text >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/gpu-fallback.sh"
 
 _stage3_print_final_summary() {
     if [[ "${STAGE3_SUPPRESS_FINAL_SUMMARY:-false}" == "true" ]]; then
@@ -18,6 +20,16 @@ stage3_tell_me_more_copy() {
     cat <<'COPY'
 Intel and AMD GPUs can be configured now without reboot. NVIDIA may need one reboot before MediaStack can finish NVENC setup. Hardware transcoding is optional; skipping keeps Jellyfin on software transcoding and your media server stays usable.
 COPY
+}
+
+# The closing line after a software fallback: setup did finish, on software
+# transcoding, and says why. $1 is the fallback reason code.
+stage3_fallback_copy() {
+    local reason="${1:-}" text remedy
+    text=$(gpu_fallback_reason_text "$reason") || text="hardware transcoding could not be verified"
+    remedy=$(gpu_fallback_remedy "$reason")
+    printf 'Hardware transcoding finished with software transcoding (%s). Jellyfin will use software transcoding.%s' \
+        "$text" "${remedy:+ Next: ${remedy}.}"
 }
 
 stage3_skip_summary_copy() {

@@ -3,7 +3,37 @@
 # shellcheck disable=SC2034 # GPU_TYPE is consumed by product code under test.
 # Deterministic Debian release seams for the resolver/non-free assertions.
 nvidia_driver_debian_codename() { printf 'bookworm'; }
-_nvidia_driver_debian_version_id() { printf '12'; }
+
+# Privileged-command recorder. SUDO_RAW keeps the exact argv ("env
+# DEBIAN_FRONTEND=... apt-get install ..."); SUDO_CALLS drops the env prefix so
+# route assertions read as plain commands. `dkms autoinstall -k K` builds the
+# module for K unless K is listed in DKMS_FAIL.
+SUDO_RAW=()
+SUDO_CALLS=()
+DKMS_BUILT=" "
+DKMS_FAIL=" "
+_sudo_stub() {
+    SUDO_RAW+=("$*")
+    [[ "${1:-}" == "env" ]] && shift 2
+    SUDO_CALLS+=("$*")
+    if [[ "${1:-}:${2:-}" == "dkms:autoinstall" ]]; then
+        [[ "$DKMS_FAIL" == *" $4 "* ]] && return 1
+        DKMS_BUILT+="$4 "
+    fi
+    return 0
+}
+dkms() {
+    [[ "${1:-}" == "status" && "${2:-}" == "-k" ]] || return 0
+    [[ "$DKMS_BUILT" == *" $3 "* ]] && printf 'nvidia-current/535.261.03, %s, x86_64: installed\n' "$3"
+    return 0
+}
+_stub_reset() {
+    SUDO_RAW=()
+    SUDO_CALLS=()
+    DKMS_BUILT=" "
+    DKMS_FAIL=" "
+}
+ERRORS=()
 
 # --- _resolve_debian_nvidia_driver: prefer the stable candidate ---
 lspci() { printf '01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GA104 [10de:2484]\n'; }
@@ -22,8 +52,8 @@ apt-cache() {
     printf ' nvidia-driver | 535.100-1 | http://deb.debian.org/debian bookworm/non-free amd64 Packages\n'
     printf ' nvidia-driver | 550.100-1~bpo12+1 | http://deb.debian.org/debian bookworm-backports/non-free amd64 Packages\n'
 }
-# Stable does not list the GPU; backports does.
-_nvidia_driver_check_compat() { case "${1:-}" in 550.100) printf 'current' ;; *) return 1 ;; esac }
+# Stable does not list the GPU (absent); backports does.
+_nvidia_driver_check_compat() { case "${1:-}" in 550.100) printf 'current' ;; *) printf 'absent' ;; esac }
 assert_eq "-t bookworm-backports nvidia-driver firmware-misc-nonfree" "$(_resolve_debian_nvidia_driver)" \
     "_resolve_debian_nvidia_driver: card too new for stable + backports newer & supported → backports"
 unset -f apt-cache _nvidia_driver_check_compat lspci
@@ -69,29 +99,31 @@ apt-cache() {
 nvidia_driver_check_secure_boot() { printf 'disabled'; }
 nvidia_driver_ensure_debian_nonfree() { return 0; }
 _resolve_debian_nvidia_driver() { printf 'nvidia-driver firmware-misc-nonfree'; }
+_nvidia_apt_consider_backports() { :; }
 _install_nvidia_container_toolkit() { return 0; }
 nvidia_driver_nouveau_is_active() { return 0; } # forces a reboot
 PATCH_CALLED=0
 apply_nvidia_patch() { PATCH_CALLED=1; }
-INSTALL_ARGS=""
-sudo() {
-    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
-    case "${1:-}:${2:-}" in
-        apt-get:install) INSTALL_ARGS="$*" ;;
-    esac
-    return 0
-}
+_stub_reset
+sudo() { _sudo_stub "$@"; }
 GPU_TYPE=nvidia
 NEEDS_REBOOT=false
 NVIDIA_DRIVER_MODE=""
 rc=0
 install_nvidia_drivers_apt || rc=$?
+INSTALL_ARGS="${SUDO_CALLS[*]}"
 assert_eq "0" "$rc" "install_nvidia_drivers_apt: fresh apt install → success"
 assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt: fresh apt install → mode standard"
 assert_eq "true" "$NEEDS_REBOOT" "install_nvidia_drivers_apt: fresh install with nouveau active → reboot required"
 assert_eq "0" "$PATCH_CALLED" "install_nvidia_drivers_apt: fresh Standard install never patches"
 assert_contains "$INSTALL_ARGS" "linux-headers-amd64" "install_nvidia_drivers_apt: fresh install appends resolved headers package"
-unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _resolve_debian_nvidia_driver \
+_install_raw=""
+for _c in "${SUDO_RAW[@]}"; do [[ "$_c" == *"nvidia-driver"* ]] && _install_raw="$_c"; done
+assert_contains "$_install_raw" "env DEBIAN_FRONTEND=noninteractive apt-get install" "install apt transaction: runs under DEBIAN_FRONTEND=noninteractive"
+assert_contains "$_install_raw" "-o Dpkg::Options::=--force-confdef" "install apt transaction: keeps dpkg conffile defaults (confdef)"
+assert_contains "$_install_raw" "-o Dpkg::Options::=--force-confold" "install apt transaction: keeps dpkg conffile defaults (confold)"
+unset _install_raw _c
+unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _resolve_debian_nvidia_driver _nvidia_apt_consider_backports \
     _install_nvidia_container_toolkit nvidia_driver_nouveau_is_active apply_nvidia_patch sudo dpkg-query uname apt-cache
 unset PATCH_CALLED rc NEEDS_REBOOT INSTALL_ARGS
 
@@ -162,9 +194,9 @@ uname() { [[ "${1:-}" == "-r" ]] && printf '6.5.0-custom\n' || builtin uname "$@
 apt-cache() { [[ "${1:-}" == "madison" ]] || return 0; }
 nvidia_driver_check_secure_boot() { printf 'disabled'; }
 nvidia_driver_ensure_debian_nonfree() { return 0; }
+_nvidia_apt_consider_backports() { :; }
 INSTALL_CALLED=0
 sudo() {
-    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
     case "${1:-}:${2:-}" in
         apt-get:install) INSTALL_CALLED=1 ;;
     esac
@@ -177,7 +209,7 @@ install_nvidia_drivers_apt || rc=$?
 assert_eq "1" "$rc" "install_nvidia_drivers_apt: unresolvable headers → falls back"
 assert_eq "none" "$GPU_TYPE" "install_nvidia_drivers_apt: unresolvable headers → GPU_TYPE=none"
 assert_eq "0" "$INSTALL_CALLED" "install_nvidia_drivers_apt: unresolvable headers → no half-install of the driver"
-unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree sudo dpkg-query uname apt-cache
+unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _nvidia_apt_consider_backports sudo dpkg-query uname apt-cache
 unset INSTALL_CALLED rc GPU_TYPE NVIDIA_DRIVER_MODE
 
 # --- install_nvidia_drivers_apt: backports "-t" + flavor meta headers → version-pinned ---
@@ -196,29 +228,27 @@ apt-cache() {
 nvidia_driver_check_secure_boot() { printf 'disabled'; }
 nvidia_driver_ensure_debian_nonfree() { return 0; }
 _resolve_debian_nvidia_driver() { printf -- '-t bookworm-backports nvidia-driver firmware-misc-nonfree'; }
+_nvidia_apt_consider_backports() { :; }
 _install_nvidia_container_toolkit() { return 0; }
 nvidia_driver_nouveau_is_active() { return 0; }
-INSTALL_ARGS=""
-sudo() {
-    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
-    case "${1:-}:${2:-}" in
-        apt-get:install) INSTALL_ARGS="$*" ;;
-    esac
-    return 0
-}
+_stub_reset
+sudo() { _sudo_stub "$@"; }
 GPU_TYPE=nvidia
 NEEDS_REBOOT=false
 NVIDIA_DRIVER_MODE=""
 rc=0
 install_nvidia_drivers_apt || rc=$?
+INSTALL_ARGS="${SUDO_CALLS[*]}"
 assert_eq "0" "$rc" "install_nvidia_drivers_apt: backports install with meta headers → success"
 assert_contains "$INSTALL_ARGS" "linux-headers-cloud-amd64=6.1.85-1" \
     "install_nvidia_drivers_apt: backports \"-t\" pins the headers meta to the preflight-validated version"
-unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _resolve_debian_nvidia_driver \
+unset -f command nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _resolve_debian_nvidia_driver _nvidia_apt_consider_backports \
     _install_nvidia_container_toolkit nvidia_driver_nouveau_is_active sudo dpkg-query uname apt-cache
 unset INSTALL_ARGS rc GPU_TYPE NEEDS_REBOOT NVIDIA_DRIVER_MODE
 
 # --- install_nvidia_drivers_apt repair: one reinstall, no toolkit package transaction ---
+uname() { [[ "${1:-}" == "-r" ]] && printf '6.1.0-53-cloud-amd64\n' || builtin uname "$@"; }
+dpkg-query() { return 1; } # no kernel images listed: only the running kernel matters
 nvidia_driver_source() { printf 'debian'; }
 nvidia_driver_check_secure_boot() { printf 'disabled'; }
 nvidia_driver_ensure_debian_nonfree() { return 0; }
@@ -229,24 +259,39 @@ _configure_nvidia_container_toolkit() {
     TOOLKIT_CONFIGURES=$((TOOLKIT_CONFIGURES + 1))
     return 0
 }
-REPAIR_CALLS=()
-sudo() {
-    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
-    REPAIR_CALLS+=("$*")
-    return 0
-}
+_stub_reset
+DKMS_BUILT=" 6.1.0-53-cloud-amd64 " # the reinstall rebuilt the module for the running kernel
+sudo() { _sudo_stub "$@"; }
 GPU_TYPE=nvidia
 NVIDIA_DRIVER_MODE=""
 rc=0
 install_nvidia_drivers_apt repair || rc=$?
+REPAIR_CALLS=("${SUDO_CALLS[@]}")
 assert_eq "0" "$rc" "install_nvidia_drivers_apt repair: succeeds"
 assert_contains "${REPAIR_CALLS[*]}" "apt-get update -qq" "install_nvidia_drivers_apt repair: refreshes apt metadata"
 assert_contains "${REPAIR_CALLS[*]}" "--reinstall nvidia-driver libnvidia-encode1:amd64" "install_nvidia_drivers_apt repair: reinstalls existing driver/userspace packages once"
 assert_eq "1" "$TOOLKIT_CONFIGURES" "install_nvidia_drivers_apt repair: configures toolkit once"
 assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt repair: persists Standard mode"
+
+# --- apt installs are non-interactive on the install and repair routes ---
+# Given the repair route above just ran, When its raw argv is inspected, Then the
+# reinstall runs under DEBIAN_FRONTEND=noninteractive with conffile defaults.
+_repair_raw=""
+for _c in "${SUDO_RAW[@]}"; do [[ "$_c" == *"--reinstall"* ]] && _repair_raw="$_c"; done
+assert_contains "$_repair_raw" "env DEBIAN_FRONTEND=noninteractive apt-get install" "repair apt reinstall: runs under DEBIAN_FRONTEND=noninteractive"
+assert_contains "$_repair_raw" "-o Dpkg::Options::=--force-confdef" "repair apt reinstall: keeps dpkg conffile defaults (confdef)"
+assert_contains "$_repair_raw" "-o Dpkg::Options::=--force-confold" "repair apt reinstall: keeps dpkg conffile defaults (confold)"
 unset -f nvidia_driver_source nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _nvidia_debian_repair_packages \
-    _nvidia_toolkit_healthy _configure_nvidia_container_toolkit sudo
-unset TOOLKIT_CONFIGURES REPAIR_CALLS GPU_TYPE NVIDIA_DRIVER_MODE rc
+    _nvidia_toolkit_healthy _configure_nvidia_container_toolkit sudo dpkg-query uname
+unset TOOLKIT_CONFIGURES REPAIR_CALLS GPU_TYPE NVIDIA_DRIVER_MODE rc _repair_raw _c
+
+# --- the GPU paths never call a bare `sudo apt-get install` ---
+# Given the GPU concern scripts, When searched for a direct apt install, Then none
+# exist: every install goes through the non-interactive MS_APT_INSTALL prefix.
+_bare=$(grep -n 'sudo apt-get install' "$REPO_ROOT"/scripts/setup/gpu/*.sh | grep -Ev ':[0-9]+:[[:space:]]*#|log_' || true)
+assert_eq "" "$_bare" "GPU scripts: no apt-get install bypasses the non-interactive prefix"
+unset _bare
+
 source "$REPO_ROOT/scripts/setup/gpu.sh"
 set +e
 set +u
@@ -407,7 +452,30 @@ assert_eq "0" "$(
 )" "_nvidia_toolkit_healthy: linked toolkit is healthy"
 unset -f command ldd
 
-# The mocked install tests above unset the real gpu.sh helpers (mock + real share
-# one function slot). Re-source gpu.sh to restore nvidia_driver_ensure_debian_nonfree et al.
-# shellcheck source=../../scripts/setup/gpu.sh
-source "$REPO_ROOT/scripts/setup/gpu.sh"
+# --- _nvidia_apt_consider_backports: an unlisted GPU keeps its working driver ---
+# Given: a datacenter GPU that NVIDIA's support page does not list (absent) and a current candidate driver
+# When: the backports decision is logged
+# Then: it is an info line that says the GPU is not listed and the driver is kept, never "not a fit"
+_BP_OUT=$(
+    _LOG_BP=""
+    log_info() { _LOG_BP+="info: $*"$'\n'; }
+    log_warn() { _LOG_BP+="warn: $*"$'\n'; }
+    nvidia_driver_debian_codename() { printf 'bookworm'; }
+    nvidia_driver_apt_candidate_version() { printf '535.261.03-1~deb12u1'; }
+    _nvidia_gpu_pci_id() { printf '10de:20b0'; }
+    _nvidia_driver_check_compat() { printf 'absent'; }
+    nvidia_driver_ensure_debian_backports() { return 1; }
+    _nvidia_upstream_version() { printf '535.261.03'; }
+    _nvidia_driver_below_nvenc_min() { return 1; }
+    _nvidia_apt_consider_backports
+    printf "%s" "$_LOG_BP"
+)
+_LOG_BP="$_BP_OUT"
+assert_contains "$_LOG_BP" "info: This GPU is not listed on NVIDIA's support page for driver 535.261.03-1~deb12u1; keeping it - checking bookworm-backports" \
+    "_nvidia_apt_consider_backports: absent GPU → info line, driver kept"
+if [[ "$_LOG_BP" == *"not a fit"* || "$_LOG_BP" == *"warn:"* ]]; then
+    fail "_nvidia_apt_consider_backports: absent GPU must not say 'not a fit' or warn" "$_LOG_BP"
+else
+    pass "_nvidia_apt_consider_backports: absent GPU must not say 'not a fit' or warn"
+fi
+unset _LOG_BP _BP_OUT

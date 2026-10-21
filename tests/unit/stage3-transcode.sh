@@ -170,13 +170,19 @@ assert_contains "$(cat "$docker_smoke_args")" "hevc_nvenc" "automatic smoke test
 unset -f docker
 
 nvidia_decode_script="$TMP_ROOT/nvidia-decode-script.txt"
-docker() {
-    if [[ "${1:-}" == "exec" && "${2:-}" == "jellyfin" && "${3:-}" == "sh" && "${4:-}" == "-c" ]]; then
-        printf '%s\n' "$5" >"$nvidia_decode_script"
-        return 0
-    fi
-    return 1
-}
+# An executable, not a function: the probe runs docker under external `timeout`.
+mkdir -p "$TMP_ROOT/bin"
+cat >"$TMP_ROOT/bin/docker" <<STUB
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "exec" && "\${2:-}" == "jellyfin" && "\${3:-}" == "sh" && "\${4:-}" == "-c" ]]; then
+    printf '%s\n' "\$5" >"$nvidia_decode_script"
+    exit 0
+fi
+exit 1
+STUB
+chmod +x "$TMP_ROOT/bin/docker"
+OLD_PATH="$PATH"
+PATH="$TMP_ROOT/bin:$PATH"
 if stage3_run_nvidia_decode_smoke_test hevc10 "$smoke_out"; then
     pass "NVIDIA decode probe exercises HEVC Main 10 sample"
 else
@@ -193,6 +199,25 @@ fi
 assert_contains "$(cat "$nvidia_decode_script")" "-pix_fmt yuv420p10le" "VP9 10-bit probe generates 10-bit source"
 assert_contains "$(cat "$nvidia_decode_script")" "-profile:v 2" "VP9 10-bit probe requests Profile 2"
 assert_contains "$(cat "$nvidia_decode_script")" "vp9_cuvid" "VP9 10-bit probe decodes with NVIDIA CUVID"
+assert_contains "$(cat "$nvidia_decode_script")" "timeout -k" "decode probe bounds ffmpeg inside the container"
+
+# Given a docker whose decode probe hangs forever
+# When the probe runs with a 1s limit and no extra host slack
+# Then it is cut off, fails, and does not stall the installer
+cat >"$TMP_ROOT/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+exec sleep 30
+STUB
+hang_start=$SECONDS
+STAGE3_DECODE_PROBE_TIMEOUT=1 STAGE3_DECODE_PROBE_HOST_SLACK=1 stage3_run_nvidia_decode_smoke_test hevc "$smoke_out" 2>/dev/null
+hang_rc=$?
+hang_elapsed=$((SECONDS - hang_start))
+if ((hang_rc != 0 && hang_elapsed < 15)); then
+    pass "hanging NVIDIA decode probe is cut off and treated as unsupported (rc=$hang_rc, ${hang_elapsed}s)"
+else
+    fail "hanging NVIDIA decode probe is cut off and treated as unsupported (rc=$hang_rc, ${hang_elapsed}s)"
+fi
+PATH="$OLD_PATH"
 unset -f docker
 
 # shellcheck disable=SC2034 # read by stage3_set_gpu_env in scripts/setup/stage3/state.sh
@@ -274,7 +299,7 @@ stage3_run_encoder_smoke_test() {
 stage3_run_nvidia_decode_smoke_test() {
     nvidia_decode_calls+=("$1")
     case "$1" in
-        hevc | hevc10 | vp910) return 0 ;;
+        h264 | hevc | hevc10 | vp910) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -282,7 +307,7 @@ stage3_probe_capabilities nvidia nvenc
 assert_eq "h264,hevc,vp9" "$STAGE_3_GPU_HW_DECODING_CODECS" "NVIDIA capability probe stores 10-bit-capable decode codecs"
 assert_eq "true" "$STAGE_3_GPU_DECODE_HEVC_10BIT" "NVIDIA capability probe stores HEVC 10-bit decode"
 assert_eq "true" "$STAGE_3_GPU_DECODE_VP9_10BIT" "NVIDIA capability probe stores VP9 10-bit decode"
-assert_eq "hevc hevc10 vp9 vp910 av1" "${nvidia_decode_calls[*]}" "NVIDIA capability probe checks 8-bit and 10-bit decode fixtures"
+assert_eq "h264 hevc hevc10 vp9 vp910 av1" "${nvidia_decode_calls[*]}" "NVIDIA capability probe checks 8-bit and 10-bit decode fixtures"
 unset -f stage3_run_encoder_smoke_test stage3_run_nvidia_decode_smoke_test
 unset nvidia_decode_calls
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
@@ -292,7 +317,7 @@ stage3_run_encoder_smoke_test() {
 }
 stage3_run_nvidia_decode_smoke_test() {
     case "$1" in
-        hevc | vp9) return 0 ;;
+        h264 | hevc | vp9) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -300,6 +325,28 @@ stage3_probe_capabilities nvidia nvenc
 assert_eq "h264,hevc,vp9" "$STAGE_3_GPU_HW_DECODING_CODECS" "NVIDIA capability probe keeps 8-bit decode codecs without 10-bit support"
 assert_eq "false" "$STAGE_3_GPU_DECODE_HEVC_10BIT" "NVIDIA capability probe leaves HEVC 10-bit disabled when probe fails"
 assert_eq "false" "$STAGE_3_GPU_DECODE_VP9_10BIT" "NVIDIA capability probe leaves VP9 10-bit disabled when probe fails"
+unset -f stage3_run_encoder_smoke_test stage3_run_nvidia_decode_smoke_test
+source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
+
+# Given an NVIDIA box where the h264 decode probe times out but hevc passes
+# When capabilities are probed
+# Then h264 hardware decode is not enabled and only hevc is
+stage3_run_encoder_smoke_test() { return 0; }
+stage3_run_nvidia_decode_smoke_test() {
+    case "$1" in
+        hevc) return 0 ;;
+        *) return 124 ;;
+    esac
+}
+stage3_probe_capabilities nvidia nvenc
+assert_eq "hevc" "$STAGE_3_GPU_HW_DECODING_CODECS" "NVIDIA capability probe enables only decode codecs whose probe passed"
+
+# Given every NVIDIA decode probe fails
+# When capabilities are probed
+# Then no decode codec is enabled
+stage3_run_nvidia_decode_smoke_test() { return 124; }
+stage3_probe_capabilities nvidia nvenc
+assert_eq "none" "$STAGE_3_GPU_HW_DECODING_CODECS" "NVIDIA capability probe stores explicit none when all probes fail"
 unset -f stage3_run_encoder_smoke_test stage3_run_nvidia_decode_smoke_test
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 

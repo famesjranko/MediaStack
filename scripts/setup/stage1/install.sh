@@ -99,7 +99,7 @@ _stage1_install() {
             probe_ok=true
             log_ok "Jellyfin admin user authenticated at http://${_ENV_HOST_ADDRESS}:8096"
         else
-            log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set - configure.sh may have left services half-configured. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
+            log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set - setup may have left services half-configured. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
         fi
     elif curl --max-time 5 -fsS "http://${_ENV_HOST_ADDRESS}:8096/health" >/dev/null 2>&1; then
         # Fallback only — JELLYFIN_API_KEY missing means configure.sh did

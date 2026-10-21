@@ -46,3 +46,26 @@ esac
 rm -rf "$_nvidia_tmp"
 unset _nvidia_tmp _driver_ver _run_file
 unset -f curl lspci
+
+# --- _nvidia_driver_check_compat: an early-exiting parser leaves no stderr noise ---
+# Given a supportedchips page larger than a pipe buffer that matches on its first
+# line, and a caller that ignores SIGPIPE (systemd resume does),
+# When the compatibility check runs,
+# Then it prints the section and writes nothing to stderr (no "Broken pipe").
+curl() {
+    printf 'Current NVIDIA GPUs devid1BB3\n'
+    head -c 300000 /dev/zero | tr '\0' 'x'
+    printf '\n'
+}
+_compat_err=$(
+    trap '' PIPE
+    _nvidia_driver_check_compat 580.142 1bb3 2>&1 >/dev/null
+)
+_compat_out=$(
+    trap '' PIPE
+    _nvidia_driver_check_compat 580.142 1bb3 2>/dev/null
+)
+assert_eq "current" "$_compat_out" "_nvidia_driver_check_compat: early match still reports the section"
+assert_eq "" "$_compat_err" "_nvidia_driver_check_compat: early match writes no Broken pipe noise"
+unset -f curl
+unset _compat_err _compat_out

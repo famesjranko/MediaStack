@@ -5,7 +5,6 @@
 # operation do NOT reveal (a fail2ban filter that stopped matching after an image
 # bump, a cert quietly past renewal, DDNS drift, a full disk, UFW off, or Docker
 # having flushed the port-restriction chain).
-#
 # Design: one classifier, many presenters (models net_dns_classify). Each
 # health_<name> echoes ONE line "STATUS|message" (STATUS ∈ ok|warn|fail|skip),
 # self-gates to "skip|..." when its profile/tooling/sudo is absent, and does NO
@@ -16,12 +15,10 @@
 # `|| true` / `if ! cmd`, classifiers are captured with `local x=$(...) || true`,
 # and pipefail-prone pipes are capture-then-grep. Sourcing has no side effects.
 
-# Idempotent include guard.
 [[ -n "${_MS_HEALTH_SH:-}" ]] && return 0
 _MS_HEALTH_SH=1
 
 _HEALTH_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# health.sh lives at scripts/lib/ — repo root is two levels up.
 _HEALTH_REPO_ROOT="$(cd "$_HEALTH_LIB_DIR/../.." && pwd)"
 
 # Source our own lib deps: update.sh/tests source only common.sh, so a check
@@ -37,6 +34,8 @@ declare -F host_tool_installed >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/host-
 # shellcheck source=/dev/null
 declare -F admin_filter_opted_out >/dev/null 2>&1 || source "$_HEALTH_REPO_ROOT/scripts/setup/hardening/admin-filter.sh"
 
+# shellcheck source=/dev/null
+declare -F gpu_fallback_health >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/gpu-fallback.sh"
 # =============================================================================
 # internals
 # =============================================================================
@@ -496,5 +495,6 @@ _health_each() {
         "DNS / public IP" health_dns_drift "" \
         "disk space" health_disk_pct "" \
         "UFW firewall" health_ufw_active "" \
-        "Docker port lock" health_docker_user_restrict ""
+        "Docker port lock" health_docker_user_restrict "" \
+        "GPU transcoding" gpu_fallback_health ""
 }

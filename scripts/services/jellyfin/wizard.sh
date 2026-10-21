@@ -75,7 +75,7 @@ else:
                 continue
                 ;;
             drift)
-                log_drift "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). Jellyfin cannot re-root a library without losing watch history. To migrate: Jellyfin UI -> Dashboard -> Libraries -> delete '$lib_name' and re-run configure.sh (accepts history loss), or rebuild (docker compose down -v && ./setup.sh --full)."
+                log_drift "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). Jellyfin cannot re-root a library without losing watch history. To migrate: Jellyfin UI -> Dashboard -> Libraries -> delete '$lib_name' and re-run via ./mediastack -> Install MediaStack (accepts history loss), or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
                 continue
                 ;;
         esac

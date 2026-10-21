@@ -107,8 +107,10 @@ _render_spin() {
         sleep 0.08 2>/dev/null || sleep 1
         ((i++)) || true
     done
-    wait "$pid"
-    local rc=$?
+    # `|| rc=$?`: under errexit a bare `wait` returning non-zero would end the
+    # caller's shell here, before the failure output below could be shown.
+    local rc=0
+    wait "$pid" || rc=$?
     trap - INT TERM
     [[ -n "$_prev_int" ]] && eval "$_prev_int"
     [[ -n "$_prev_term" ]] && eval "$_prev_term"
@@ -118,9 +120,7 @@ _render_spin() {
         kill -INT "$$" 2>/dev/null
         return 130
     fi
-    if ((rc != 0)) && [[ -s "$_log" ]]; then
-        tail -n 20 "$_log" >&2
-    fi
+    ((rc != 0)) && _ui_spin_report_failure "$rc" "$_log" "$@"
     [[ "$_log" != /dev/null ]] && rm -f "$_log"
     return "$rc"
 }

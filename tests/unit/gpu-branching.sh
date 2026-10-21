@@ -59,6 +59,9 @@ source "$GPU_TEST_DIR/nvidia-install.sh"
 source "$GPU_TEST_DIR/nvidia-modes.sh"
 source "$GPU_TEST_DIR/nvidia-patch.sh"
 source "$GPU_TEST_DIR/nvidia-apt.sh"
+source "$GPU_TEST_DIR/nvidia-secure-boot-mok.sh"
+source "$GPU_TEST_DIR/nvidia-kernels.sh"
+source "$GPU_TEST_DIR/nvidia-driver-min.sh"
 
 # --- nvidia_driver_ensure_debian_nonfree: per-release component set + idempotent ---
 # `printf ... | sudo tee` runs sudo in a pipe subshell, so capture the written
@@ -76,25 +79,12 @@ sudo() {
 }
 : >"$_nf_src" # no components visible → managed file is written
 nvidia_driver_debian_codename() { printf 'bookworm'; }
-_nvidia_driver_debian_version_id() { printf '12'; }
 : >"$_nf_cap"
 nvidia_driver_ensure_debian_nonfree
 _nf_line=$(cat "$_nf_cap")
 assert_contains "$_nf_line" "contrib" "nvidia_driver_ensure_debian_nonfree: Debian 12 includes contrib"
 assert_contains "$_nf_line" "non-free-firmware" "nvidia_driver_ensure_debian_nonfree: Debian 12 includes non-free-firmware"
-nvidia_driver_debian_codename() { printf 'bullseye'; }
-_nvidia_driver_debian_version_id() { printf '11'; }
-: >"$_nf_cap"
-nvidia_driver_ensure_debian_nonfree
-_nf_line=$(cat "$_nf_cap")
-assert_contains "$_nf_line" "contrib" "nvidia_driver_ensure_debian_nonfree: Debian 11 includes contrib"
-case "$_nf_line" in
-    *non-free-firmware*) fail "nvidia_driver_ensure_debian_nonfree: Debian 11 must NOT use non-free-firmware" ;;
-    *non-free*) pass "nvidia_driver_ensure_debian_nonfree: Debian 11 uses non-free without non-free-firmware" ;;
-    *) fail "nvidia_driver_ensure_debian_nonfree: Debian 11 missing non-free component" ;;
-esac
 nvidia_driver_debian_codename() { printf 'trixie'; }
-_nvidia_driver_debian_version_id() { printf '13'; }
 : >"$_nf_cap"
 nvidia_driver_ensure_debian_nonfree
 _nf_line=$(cat "$_nf_cap")
@@ -114,7 +104,7 @@ _nf_line=$(cat "$_nf_cap")
 assert_eq "" "$_nf_line" "nvidia_driver_ensure_debian_nonfree: idempotent — skips when all components visible"
 rm -f "$_nf_cap" "$_nf_src"
 unset MEDIASTACK_APT_SOURCES
-unset -f sudo nvidia_driver_debian_codename _nvidia_driver_debian_version_id
+unset -f sudo nvidia_driver_debian_codename
 unset _nf_cap _nf_src _nf_line
 
 # --- nvidia_driver_ensure_debian_backports: managed source, idempotent, codename-aware ---
@@ -124,7 +114,6 @@ sudo() {
     return 0
 }
 nvidia_driver_debian_codename() { printf 'bookworm'; }
-_nvidia_driver_debian_version_id() { printf '12'; }
 apt-cache() { return 0; } # backports not visible → written
 : >"$_bp_cap"
 nvidia_driver_ensure_debian_backports
@@ -138,7 +127,7 @@ nvidia_driver_ensure_debian_backports
 _bp_line=$(cat "$_bp_cap")
 assert_eq "" "$_bp_line" "nvidia_driver_ensure_debian_backports: idempotent — skips when backports already visible"
 rm -f "$_bp_cap"
-unset -f apt-cache sudo nvidia_driver_debian_codename _nvidia_driver_debian_version_id
+unset -f apt-cache sudo nvidia_driver_debian_codename
 unset _bp_cap _bp_line
 
 # --- Mode chooser default is Standard (patch never default) non-interactively ---

@@ -20,10 +20,10 @@ if is_pending_helper run_remote_recovery; then
     out=$(main --remote 2>&1)
     rc=$?
     assert_eq "1" "$rc" "--remote without .env exits non-zero"
-    assert_contains "$out" "Run ./setup.sh first" "--remote without .env tells user to run setup first"
+    assert_contains "$out" "Choose Install MediaStack in ./mediastack first" "--remote without .env tells user to run setup first"
 else
     assert_eq "1" "$rc" "run_remote_recovery without .env exits non-zero"
-    assert_contains "$out" "Run ./setup.sh first" "run_remote_recovery without .env tells user to run setup first"
+    assert_contains "$out" "Choose Install MediaStack in ./mediastack first" "run_remote_recovery without .env tells user to run setup first"
 fi
 
 reset_route_state

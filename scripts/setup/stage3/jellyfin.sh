@@ -95,6 +95,8 @@ _stage3_verify_jellyfin_encoding() {
 
     local jf_url="http://localhost:8096"
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
+    # STAGE_3_GPU_HW_DECODING_CODECS: unset/empty = never probed (default h264);
+    # "none" = probed and nothing passed (no hardware decode).
     local current
     current=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/System/Configuration/encoding" 2>/dev/null) || return 1
 
@@ -122,8 +124,8 @@ expected = {
     "HardwareDecodingCodecs": [
         item.strip()
         for item in os.environ.get("STAGE3_HW_DECODING_CODECS", "h264").split(",")
-        if item.strip()
-    ] or ["h264"],
+        if item.strip() and item.strip() != "none"
+    ],
     "EnableDecodingColorDepth10Hevc": as_bool(os.environ.get("STAGE3_DECODE_HEVC_10BIT", "false")),
     "EnableDecodingColorDepth10Vp9": as_bool(os.environ.get("STAGE3_DECODE_VP9_10BIT", "false")),
     "AllowHevcEncoding": as_bool(os.environ.get("STAGE3_ALLOW_HEVC_ENCODING", "false")),
@@ -241,6 +243,8 @@ PY
 _stage3_fallback() {
     local vendor="${1:-}"
     local encoder="${2:-}"
+    # An installer-set reason (secure_boot) beats the caller's default.
+    STAGE3_FALLBACK_REASON="${STAGE3_FALLBACK_REASON:-${3:-verify_failed}}"
     if ! stage3_set_gpu_env "none" "fallback" "$vendor" "$encoder"; then
         ui_log warn "Could not persist software fallback state; hardware fallback was not applied."
         return 3
@@ -254,7 +258,7 @@ _stage3_fallback() {
         ui_log warn "Jellyfin hardware transcoding disable could not be verified. Check Jellyfin settings before relying on software fallback."
     fi
     _stage3_apply_runtime_override "none"
-    ui_log warn "Hardware transcoding could not be verified. Jellyfin will use software transcoding. Fix the driver/runtime issue, then choose Manage hardware transcoding (GPU) from the menu."
+    ui_log warn "$(stage3_fallback_copy "$STAGE3_FALLBACK_REASON")"
     _stage3_print_final_summary
     # Only the durable write above is a meaningful status here: callers treat a
     # non-zero return as "state could not be persisted", so the summary's own
@@ -284,6 +288,7 @@ _stage3_skip_to_software_mode() {
 }
 
 _stage3_nvidia_finalize_failure() {
+    STAGE3_FALLBACK_REASON="${STAGE3_FALLBACK_REASON:-finalize_failed}"
     if ! stage3_set_gpu_env "none" "fallback" "nvidia" "nvenc"; then
         ui_log warn "Could not persist NVIDIA software fallback state; recovery marker retained."
         return 3

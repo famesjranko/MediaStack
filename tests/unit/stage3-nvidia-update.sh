@@ -59,6 +59,27 @@ if _stage3_verify_jellyfin_encoding qsv 2>/dev/null; then
 else
     pass "Stage 3 rejects unconfigured Jellyfin encoding before completion"
 fi
+# Given decode codecs were probed and none passed (stored as "none")
+# When Stage 3 verifies the Jellyfin encoding state
+# Then an empty Jellyfin codec list verifies, and an h264 list is rejected
+# shellcheck disable=SC2034 # read by _stage3_verify_jellyfin_encoding in scripts/setup/stage3/jellyfin.sh
+STAGE_3_GPU_HW_DECODING_CODECS=none
+curl() {
+    printf '%s\n' '{"HardwareAccelerationType":"qsv","EnableHardwareEncoding":true,"HardwareDecodingCodecs":[],"EnableDecodingColorDepth10Hevc":true,"EnableDecodingColorDepth10Vp9":false,"AllowHevcEncoding":true,"AllowAv1Encoding":false,"QsvDevice":"/dev/dri/renderD129"}'
+}
+if _stage3_verify_jellyfin_encoding qsv 2>/dev/null; then
+    pass "Stage 3 accepts an empty Jellyfin decode list when no codec was proven"
+else
+    fail "Stage 3 accepts an empty Jellyfin decode list when no codec was proven"
+fi
+curl() {
+    printf '%s\n' '{"HardwareAccelerationType":"qsv","EnableHardwareEncoding":true,"HardwareDecodingCodecs":["h264"],"EnableDecodingColorDepth10Hevc":true,"EnableDecodingColorDepth10Vp9":false,"AllowHevcEncoding":true,"AllowAv1Encoding":false,"QsvDevice":"/dev/dri/renderD129"}'
+}
+if _stage3_verify_jellyfin_encoding qsv 2>/dev/null; then
+    fail "Stage 3 rejects h264 decode in Jellyfin when no codec was proven"
+else
+    pass "Stage 3 rejects h264 decode in Jellyfin when no codec was proven"
+fi
 unset -f curl
 unset JELLYFIN_API_KEY STAGE_3_GPU_HW_DECODING_CODECS STAGE_3_GPU_DECODE_HEVC_10BIT STAGE_3_GPU_DECODE_VP9_10BIT
 unset STAGE_3_GPU_ALLOW_HEVC_ENCODING STAGE_3_GPU_ALLOW_AV1_ENCODING STAGE_3_GPU_RENDER_DEVICE
@@ -184,6 +205,61 @@ esac
 unset -f nvidia_driver_version ui_box ui_log ui_choose
 rm -f "$NVIDIA_MENU_FILE"
 unset NVIDIA_MENU_FILE
+
+# Unlock -> Standard switch: the externally managed (.run) driver is removed, then Standard installs.
+# Given a removed Unlock driver whose uninstaller leaves the patched encode/fbc libraries,
+#   their .so.1 links and the /opt/nvidia patch backups behind,
+# When the user picks Reinstall and the flow moves on to the Standard choice,
+# Then none of those leftovers remain and no link points at the old driver version.
+SWITCH_DIR=$(mktemp -d)
+SWITCH_LIB="$SWITCH_DIR/lib"
+SWITCH_OPT="$SWITCH_DIR/opt/nvidia"
+mkdir -p "$SWITCH_LIB" "$SWITCH_OPT/libnvidia-encode-backup" "$SWITCH_OPT/libnvidia-fbc-backup" "$SWITCH_DIR/root"
+printf 'PATCHED' >"$SWITCH_LIB/libnvidia-encode.so.580.142"
+printf 'PATCHED' >"$SWITCH_LIB/libnvidia-fbc.so.580.142"
+ln -s libnvidia-encode.so.580.142 "$SWITCH_LIB/libnvidia-encode.so.1"
+ln -s libnvidia-fbc.so.580.142 "$SWITCH_LIB/libnvidia-fbc.so.1"
+printf 'ORIG' >"$SWITCH_OPT/libnvidia-encode-backup/libnvidia-encode.so.580.142"
+printf 'ORIG' >"$SWITCH_OPT/libnvidia-fbc-backup/libnvidia-fbc.so.580.142"
+# shellcheck source=../../scripts/setup/gpu/nvidia-patch.sh
+source "$REPO_ROOT/scripts/setup/gpu/nvidia-patch.sh"
+prev_script_dir="${SCRIPT_DIR:-}"
+SCRIPT_DIR="$SWITCH_DIR/root"
+export MS_NVIDIA_LIB_DIRS="$SWITCH_LIB" MS_NVIDIA_BACKUP_ROOT="$SWITCH_OPT"
+SWITCH_FALLBACKS=0
+# The menu runs in a command substitution, so the call count lives in a file.
+_stage3_choose_nvidia_action() {
+    if [[ -e "$SWITCH_DIR/asked" ]]; then printf software; else
+        : >"$SWITCH_DIR/asked"
+        printf reinstall
+    fi
+}
+command() { case "${1:-}:${2:-}" in -v:nvidia-uninstall) return 0 ;; *) builtin command "$@" ;; esac }
+ui_spin() {
+    shift
+    "$@"
+}
+sudo() {
+    case "${1:-}" in
+        nvidia-uninstall) return 0 ;; # like the real uninstaller here: leaves the patch files behind
+        ldconfig) return 0 ;;
+        *) "$@" ;;
+    esac
+}
+_stage3_fallback() { SWITCH_FALLBACKS=$((SWITCH_FALLBACKS + 1)); }
+log_ok() { :; }
+log_info() { :; }
+log_error() { :; }
+_stage3_run_nvidia foreign
+leftover="$(cd "$SWITCH_DIR" && find lib opt -mindepth 1 \( -type f -o -type l \) | sort | tr '\n' ' ')"
+assert_eq "" "$leftover" "Unlock to Standard switch: no patched library, link or backup remains"
+assert_eq "0" "$(find "$SWITCH_LIB" -lname "*580.142" | wc -l)" "Unlock to Standard switch: no link points at the old driver version"
+assert_eq "1" "$SWITCH_FALLBACKS" "Unlock to Standard switch: flow reaches the next choice after the cleanup"
+unset -f _stage3_choose_nvidia_action command ui_spin sudo _stage3_fallback log_ok log_info log_error
+unset MS_NVIDIA_LIB_DIRS MS_NVIDIA_BACKUP_ROOT SWITCH_FALLBACKS leftover
+SCRIPT_DIR="$prev_script_dir"
+rm -rf "$SWITCH_DIR"
+unset SWITCH_DIR SWITCH_LIB SWITCH_OPT prev_script_dir
 
 scenario_end "$CURRENT_SCENARIO"
 summary

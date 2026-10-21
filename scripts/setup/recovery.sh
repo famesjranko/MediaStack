@@ -18,7 +18,7 @@ require_stage1_complete() {
     local env_path="$SCRIPT_DIR/.env"
 
     if [[ ! -f "$env_path" ]]; then
-        log_warn "Stage 1 is not complete yet. Run ./setup.sh first, then retry ./setup.sh ${label}."
+        log_warn "Stage 1 is not complete yet. Choose Install MediaStack in ./mediastack first, then retry ${label} from the menu."
         return 1
     fi
 
@@ -27,7 +27,7 @@ require_stage1_complete() {
     set +a
 
     if [[ "${STAGE_1_COMPLETE:-}" != "1" ]]; then
-        log_warn "Stage 1 is not complete yet. Run ./setup.sh first, then retry ./setup.sh ${label}."
+        log_warn "Stage 1 is not complete yet. Choose Install MediaStack in ./mediastack first, then retry ${label} from the menu."
         return 1
     fi
 }

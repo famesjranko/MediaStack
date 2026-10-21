@@ -147,5 +147,22 @@ case "$gpu_noop" in
     *) pass "launcher: _warn_gpu_runtime_fallback no-op when GPU state != complete" ;;
 esac
 
+# Given nvidia-smi fails because the driver is not loaded
+# When the hardware transcoding box renders
+# Then it says "driver not loaded", not the error text, and State says not active
+down_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  nvidia-smi(){ echo "NVIDIA-SMI has failed because it could not communicate with the NVIDIA driver"; return 9; }
+  ui_box(){ shift; printf "%s\n" "$@"; }
+  JELLYFIN_GPU=nvidia NVIDIA_DRIVER_MODE=standard STAGE_3_GPU_STATE=complete
+  _hw_transcoding_info
+' 2>&1)
+assert_contains "$down_out" "driver not loaded" "launcher: failing nvidia-smi shows 'driver not loaded'"
+case "$down_out" in
+    *"NVIDIA-SMI has failed"*) fail "launcher: nvidia-smi error text must not be shown as GPU name or driver" ;;
+    *) pass "launcher: nvidia-smi error text is not shown as GPU name or driver" ;;
+esac
+assert_contains "$down_out" "not active" "launcher: State says not active when the driver is not loaded"
+
 echo -e "${CYAN}◀ launcher-hardware done${NC}"
 summary

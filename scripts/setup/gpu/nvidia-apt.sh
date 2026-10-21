@@ -85,110 +85,104 @@ prepare_nvidia_debian_to_unlock() {
     return 0
 }
 
+# True when the normal apt driver cannot be relied on for this GPU, so a newer
+# driver is worth looking for. $1 compat result for the normal candidate
+# (see _nvidia_driver_check_compat), $2 its apt version.
+#   current       -> no, unless the driver is older than Jellyfin's NVENC minimum
+#   legacy_*/absent -> yes: the page gives no support for this GPU
+#   unknown       -> no: no evidence either way, so do not change the apt sources
+_nvidia_apt_needs_newer() {
+    _nvidia_driver_below_nvenc_min "$2" && return 0
+    case "$1" in
+        legacy_* | absent) return 0 ;;
+    esac
+    return 1
+}
+
+# Decide whether to add ${codename}-backports, and log the decision. Without it
+# the resolver below cannot see a newer candidate on a clean host. Runs in the
+# calling shell: it changes apt sources.
+_nvidia_apt_consider_backports() {
+    local _codename _cand _pci _compat="unknown"
+    _codename=$(nvidia_driver_debian_codename)
+    _cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "")
+    [[ -n "$_cand" && -n "$_codename" ]] || return 0
+    _pci=$(_nvidia_gpu_pci_id)
+    if [[ -n "$_pci" ]]; then
+        _compat=$(_nvidia_driver_check_compat "$(_nvidia_upstream_version "$_cand")" "$_pci" 2>/dev/null) || _compat="unknown"
+    fi
+
+    if _nvidia_apt_needs_newer "$_compat" "$_cand"; then
+        if [[ "$_compat" == absent ]] && ! _nvidia_driver_below_nvenc_min "$_cand"; then
+            # Datacenter GPUs are missing from NVIDIA's consumer list yet run this driver.
+            log_info "This GPU is not listed on NVIDIA's support page for driver ${_cand}; keeping it - checking ${_codename}-backports for a newer driver that lists it"
+        else
+            log_info "NVIDIA driver ${_cand} is not a fit for this GPU (${_compat}, Jellyfin NVENC needs ${NVIDIA_JELLYFIN_MIN_DRIVER}+) - checking ${_codename}-backports for a newer driver"
+        fi
+        if nvidia_driver_ensure_debian_backports; then
+            sudo apt-get update -qq || true
+        fi
+        return 0
+    fi
+    case "$_compat" in
+        current) log_info "NVIDIA lists this GPU as current for driver ${_cand} - backports not needed" ;;
+        *) log_warn "Cannot tell from NVIDIA's supported-chips page whether driver ${_cand} supports this GPU - keeping ${_cand}, backports not enabled" ;;
+    esac
+}
+
 # Decide which Debian nvidia-driver to install. Prefer the normal apt candidate;
-# escalate to ${codename}-backports ONLY when positive supportedchips/PCI evidence
-# shows the normal candidate can't drive this GPU and backports has a newer
-# candidate that can. No hard-coded version numbers. Echoes the apt-get install
-# argument list (may begin with "-t <release>") for install_nvidia_drivers_apt().
+# take ${codename}-backports only when the normal candidate gives no support for
+# this GPU (legacy/absent) or is older than Jellyfin's NVENC minimum, AND a
+# strictly newer backports candidate lists the GPU as current and meets the
+# minimum. An "unknown" answer never triggers a change. No hard-coded versions.
+# Echoes the apt-get install argument list (may begin with "-t <release>").
+# Returns 3 when no installable driver can run Jellyfin's NVENC on this GPU; the
+# explanation is logged, and the caller records the fallback reason (this runs in
+# a command substitution, so it cannot set it).
 _resolve_debian_nvidia_driver() {
     local _pkg_args="nvidia-driver firmware-misc-nonfree"
-    local _codename
+    local _codename _cand
     _codename=$(nvidia_driver_debian_codename)
-
-    local _cand
     _cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "")
     if [[ -z "$_cand" || -z "$_codename" ]]; then
         printf '%s' "$_pkg_args"
         return 0
     fi
 
-    local _pci_id=""
-    _pci_id=$(lspci -nn 2>/dev/null | grep -i 'nvidia' | grep -oP '\[10de:\K\w+' | head -1) || true
-    if [[ -z "$_pci_id" ]]; then
-        printf '%s' "$_pkg_args"
-        return 0
+    local _pci _gpu _compat="unknown"
+    _pci=$(_nvidia_gpu_pci_id)
+    _gpu=$(_nvidia_gpu_label)
+    if [[ -n "$_pci" ]]; then
+        _compat=$(_nvidia_driver_check_compat "$(_nvidia_upstream_version "$_cand")" "$_pci" 2>/dev/null) || _compat="unknown"
     fi
 
-    # The normal candidate already lists this GPU as current — keep it.
-    local _normal_compat
-    _normal_compat=$(_nvidia_driver_check_compat "${_cand%%-*}" "$_pci_id" 2>/dev/null) || _normal_compat=""
-    if [[ "$_normal_compat" == "current" ]]; then
-        printf '%s' "$_pkg_args"
-        return 0
-    fi
-
-    # Escalate only on positive evidence: backports has a strictly-newer candidate
-    # that lists this GPU as current.
-    local _bp_cand
-    _bp_cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "${_codename}-backports")
-    if [[ -n "$_bp_cand" ]] && dpkg --compare-versions "$_bp_cand" gt "$_cand"; then
-        local _bp_compat
-        _bp_compat=$(_nvidia_driver_check_compat "${_bp_cand%%-*}" "$_pci_id" 2>/dev/null) || _bp_compat=""
-        if [[ "$_bp_compat" == "current" ]]; then
-            log_info "GPU needs a newer driver - selecting ${_codename}-backports"
-            printf '%s' "-t ${_codename}-backports $_pkg_args"
-            return 0
+    if _nvidia_apt_needs_newer "$_compat" "$_cand"; then
+        local _bp_cand _bp_compat
+        _bp_cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "${_codename}-backports")
+        if [[ -n "$_bp_cand" ]] && dpkg --compare-versions "$_bp_cand" gt "$_cand"; then
+            _bp_compat=$(_nvidia_driver_check_compat "$(_nvidia_upstream_version "$_bp_cand")" "$_pci" 2>/dev/null) || _bp_compat="unknown"
+            if [[ "$_bp_compat" == "current" ]] && ! _nvidia_driver_below_nvenc_min "$_bp_cand"; then
+                log_info "GPU needs a newer driver - selecting ${_codename}-backports (${_bp_cand})"
+                printf '%s' "-t ${_codename}-backports $_pkg_args"
+                return 0
+            fi
+            log_info "${_codename}-backports driver ${_bp_cand} is not a better fit for this GPU (${_bp_compat}) - not selected"
+        else
+            log_info "No newer driver than ${_cand} in ${_codename}-backports"
         fi
     fi
 
+    # Nothing newer to take. The normal candidate must now be able to run NVENC.
+    local _max_branch=""
+    [[ "$_compat" == legacy_* ]] && _max_branch="${_compat#legacy_}"
+    if _nvidia_driver_below_nvenc_min "$_cand" || { [[ -n "$_max_branch" ]] && _nvidia_driver_below_nvenc_min "$_max_branch"; }; then
+        _nvidia_driver_too_old "$_gpu" "$_max_branch" "$_cand"
+        return 3
+    fi
+    if [[ -n "$_max_branch" ]]; then
+        log_warn "This GPU is on NVIDIA's legacy ${_max_branch}.xx branch; Debian's nvidia-driver ${_cand} may not drive it"
+    fi
     printf '%s' "$_pkg_args"
-}
-
-# Derive the Debian kernel-flavor suffix from `uname -r` (e.g. "6.1.0-51-cloud-amd64"
-# → "cloud-amd64", "6.1.0-18-amd64" → "amd64"). Debian kernel releases are
-# "<upstream-version>-<abi>-<flavor>"; a release with no ABI segment (custom kernel,
-# not a Debian package build) has no derivable flavor and fails.
-_nvidia_headers_flavor() {
-    local _rel="$1"
-    [[ "$_rel" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(.+)$ ]] || return 1
-    printf '%s' "${BASH_REMATCH[1]}"
-}
-
-# Resolve an installable linux-headers package for the given `uname -r` value.
-# Prefers the exact per-build package (matches the running kernel precisely);
-# falls back to the flavor meta-package apt tracks automatically across kernel
-# bumps. Fails (no output) when neither resolves to an apt candidate.
-_nvidia_headers_candidate() {
-    local _running="$1"
-    if [[ -n "$(nvidia_driver_apt_candidate_version "linux-headers-${_running}" "")" ]]; then
-        printf 'linux-headers-%s' "$_running"
-        return 0
-    fi
-    local _flavor
-    _flavor=$(_nvidia_headers_flavor "$_running") || return 1
-    if [[ -n "$(nvidia_driver_apt_candidate_version "linux-headers-${_flavor}" "")" ]]; then
-        printf 'linux-headers-%s' "$_flavor"
-        return 0
-    fi
-    return 1
-}
-
-# Preflight for the silent-DKMS-skip failure mode: nvidia-driver installs fine
-# via apt but DKMS quietly skips the module build when no headers match the
-# running kernel, and the gap only surfaces later at verify time. Echoes a
-# headers package to append to the driver install transaction, or nothing if
-# headers for the running kernel are already installed. Returns 1 (caller
-# falls back to software transcoding) when no headers package is resolvable.
-_nvidia_preflight_kernel_headers() {
-    local _running
-    _running=$(uname -r)
-
-    local _st
-    _st=$(dpkg-query -W -f='${Status}' "linux-headers-${_running}" 2>/dev/null || true)
-    if [[ "$_st" == *"install ok installed"* ]]; then
-        return 0
-    fi
-
-    local _hdr_pkg
-    if _hdr_pkg=$(_nvidia_headers_candidate "$_running"); then
-        printf '%s' "$_hdr_pkg"
-        return 0
-    fi
-
-    local _flavor=""
-    _flavor=$(_nvidia_headers_flavor "$_running") || _flavor=""
-    log_error "No kernel headers package available for running kernel ${_running} (looked for linux-headers-${_running}${_flavor:+, linux-headers-${_flavor}})"
-    return 1
 }
 
 # Standard mode: install the Debian-packaged NVIDIA driver (NO nvidia-patch).
@@ -219,15 +213,23 @@ install_nvidia_drivers_apt() {
             ;;
     esac
 
-    local sb_state
+    local sb_state mok_state sb_mok
     sb_state=$(nvidia_driver_check_secure_boot)
+    sb_mok=false
     case "$sb_state" in
         enabled)
-            log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
-            log_error "Disable Secure Boot in UEFI, or enroll a Machine Owner Key (advanced), then re-run setup.sh."
-            log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
-            GPU_TYPE="none"
-            return 1
+            mok_state=$(nvidia_driver_mok_state)
+            if [[ "$mok_state" == "enrolled" ]]; then
+                sb_mok=true
+                log_ok "Secure Boot is on with an enrolled MOK; DKMS will sign the NVIDIA module with ${NVIDIA_DKMS_MOK_PUB}"
+            else
+                STAGE3_FALLBACK_REASON=secure_boot
+                log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
+                while IFS= read -r _sb_line; do log_error "$_sb_line"; done < <(gpu_fallback_secure_boot_lines "$mok_state")
+                log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
+                GPU_TYPE="none"
+                return 1
+            fi
             ;;
         disabled)
             log_ok "Secure Boot is disabled"
@@ -257,9 +259,19 @@ install_nvidia_drivers_apt() {
             GPU_TYPE="none"
             return 1
         fi
+        # The flavour metapackage keeps headers following the kernel, so the next
+        # kernel upgrade builds its module (the fresh install adds it the same way).
+        local _repair_meta
+        _repair_meta=$(_nvidia_headers_meta_to_add "")
+        [[ -n "$_repair_meta" ]] && _repair_packages+=("$_repair_meta")
         if ! ui_spin "Repairing Debian NVIDIA driver packages..." \
             "${MS_APT_INSTALL[@]}" --reinstall "${_repair_packages[@]}"; then
             log_error "Failed to repair the Debian NVIDIA driver packages"
+            GPU_TYPE="none"
+            return 1
+        fi
+        if ! _nvidia_ensure_dkms_all_kernels; then
+            log_warn "Falling back to software transcoding"
             GPU_TYPE="none"
             return 1
         fi
@@ -272,19 +284,7 @@ install_nvidia_drivers_apt() {
         return 0
     fi
 
-    # If the normal candidate can't drive this (too-new) GPU, enable a managed
-    # backports source and refresh apt so the resolver can see a newer candidate.
-    # Without this, backports escalation is unreachable on a clean host (the
-    # resolver could never find a backports candidate to compare against).
-    local _gate_cand _gate_pci="" _gate_compat=""
-    _gate_cand=$(nvidia_driver_apt_candidate_version "nvidia-driver" "")
-    _gate_pci=$(lspci -nn 2>/dev/null | grep -i 'nvidia' | grep -oP '\[10de:\K\w+' | head -1) || true
-    if [[ -n "$_gate_cand" && -n "$_gate_pci" ]]; then
-        _gate_compat=$(_nvidia_driver_check_compat "${_gate_cand%%-*}" "$_gate_pci" 2>/dev/null) || _gate_compat=""
-        if [[ "$_gate_compat" != "current" ]] && nvidia_driver_ensure_debian_backports; then
-            sudo apt-get update -qq || true
-        fi
-    fi
+    _nvidia_apt_consider_backports
 
     # DKMS silently skips the module build with no matching kernel headers, so
     # the driver install "succeeds" and the failure only surfaces later. Resolve
@@ -296,20 +296,32 @@ install_nvidia_drivers_apt() {
         return 1
     fi
 
-    local _install_args
-    _install_args=$(_resolve_debian_nvidia_driver)
-    if [[ -n "$_headers_pkg" ]]; then
+    local _install_args _resolve_rc=0
+    _install_args=$(_resolve_debian_nvidia_driver) || _resolve_rc=$?
+    if ((_resolve_rc != 0)); then
+        # 3: the resolver logged why this GPU's best driver cannot run Jellyfin's NVENC.
+        ((_resolve_rc == 3)) && STAGE3_FALLBACK_REASON=driver_too_old
+        log_warn "Falling back to software transcoding"
+        GPU_TYPE="none"
+        return 1
+    fi
+
+    local _meta_pkg
+    _meta_pkg=$(_nvidia_headers_meta_to_add "$_headers_pkg")
+    local _hdr_pkgs=() _hdr _hdr_ver
+    [[ -n "$_headers_pkg" ]] && _hdr_pkgs+=("$_headers_pkg")
+    [[ -n "$_meta_pkg" ]] && _hdr_pkgs+=("$_meta_pkg")
+    for _hdr in "${_hdr_pkgs[@]}"; do
         # "-t <release>" scopes every package in the transaction to backports,
         # which could swap the flavor meta-package for headers matching a kernel
         # other than the running one. Pin the preflight-validated candidate so
         # the headers DKMS builds against are exactly the ones verified.
         if [[ "$_install_args" == "-t "* ]]; then
-            local _hdr_ver
-            _hdr_ver=$(nvidia_driver_apt_candidate_version "$_headers_pkg" "")
-            [[ -n "$_hdr_ver" ]] && _headers_pkg="${_headers_pkg}=${_hdr_ver}"
+            _hdr_ver=$(nvidia_driver_apt_candidate_version "$_hdr" "")
+            [[ -n "$_hdr_ver" ]] && _hdr="${_hdr}=${_hdr_ver}"
         fi
-        _install_args="$_install_args $_headers_pkg"
-    fi
+        _install_args="$_install_args $_hdr"
+    done
     # shellcheck disable=SC2086  # _install_args is a controlled arg list (may include "-t <release>")
     if ! ui_spin "Installing Debian NVIDIA driver via apt (${_install_args})..." \
         "${MS_APT_INSTALL[@]}" $_install_args; then
@@ -319,6 +331,12 @@ install_nvidia_drivers_apt() {
         return 1
     fi
     log_ok "Debian NVIDIA driver installed"
+
+    if ! _nvidia_ensure_dkms_all_kernels; then
+        log_warn "Falling back to software transcoding"
+        GPU_TYPE="none"
+        return 1
+    fi
 
     if ! _install_nvidia_container_toolkit; then
         GPU_TYPE="none"
@@ -335,6 +353,9 @@ install_nvidia_drivers_apt() {
         # shellcheck disable=SC2034
         NEEDS_REBOOT=true
         log_ok "Debian NVIDIA driver installed (reboot required to load the kernel module)"
+        if [[ "$sb_mok" == true ]] && ! nvidia_driver_nouveau_is_active; then
+            log_warn "nvidia-smi does not work yet under Secure Boot; if it still fails after the reboot, check that DKMS signed the module (modinfo -F signer nvidia-current)"
+        fi
     fi
     return 0
 }

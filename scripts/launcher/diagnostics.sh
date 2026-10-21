@@ -9,7 +9,9 @@ _compose_running_summary() {
     local profiles=()
     profiles_build_args profiles
     local total running
-    total=$(docker compose "${profiles[@]}" ps --format '{{.Name}}' 2>/dev/null | wc -l)
+    # -a: without it compose lists only running containers, so an exited one
+    # vanishes from the total and "14/14" hides a dead service.
+    total=$(docker compose "${profiles[@]}" ps -a --format '{{.Name}}' 2>/dev/null | wc -l)
     running=$(docker compose "${profiles[@]}" ps --filter 'status=running' --format '{{.Name}}' 2>/dev/null | wc -l)
     if [[ -z "$total" || "$total" == "0" ]]; then
         return 1
@@ -80,7 +82,7 @@ diag_dns_check() {
     if ! command -v dig &>/dev/null; then
         ui_log error "dig is not installed (bind9-dnsutils package)."
         ui_log info "Install it with:  sudo apt-get install -y bind9-dnsutils"
-        ui_log info "Or run option 1 (Install MediaStack) - setup.sh installs it automatically."
+        ui_log info "Or run option 1 (Install MediaStack) - Install MediaStack installs it automatically."
         return 0
     fi
 

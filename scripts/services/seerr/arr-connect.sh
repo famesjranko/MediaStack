@@ -36,7 +36,7 @@ connect_arr_to_seerr() {
         sleep "$attempt"
     done
     if [[ -z "$existing" ]]; then
-        log_warn "Could not read Seerr ${app_label} settings after retries; skipping connect to avoid a duplicate server. Re-run configure.sh or connect ${app_label} in the Seerr UI."
+        log_warn "Could not read Seerr ${app_label} settings after retries; skipping connect to avoid a duplicate server. Re-run via ./mediastack -> Install MediaStack or connect ${app_label} in the Seerr UI."
         return 0
     fi
     if echo "$existing" | json_array_nonempty; then

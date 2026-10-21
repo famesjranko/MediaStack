@@ -156,7 +156,7 @@ if $PRUNE_IMAGES; then
     docker image prune -f
 else
     echo "Skipping image prune. Dangling images from old service versions are left in place."
-    echo "Run ./scripts/update.sh --prune to reclaim that disk space with Docker's host-wide image prune."
+    echo "Run docker image prune to reclaim that disk space (host-wide)."
 fi
 
 echo ""

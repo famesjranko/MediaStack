@@ -32,7 +32,12 @@ stage3_set_gpu_env() {
         STAGE_3_GPU_STATE "$state"
         STAGE_3_GPU_VENDOR "$vendor"
         STAGE_3_GPU_ENCODER "$encoder"
+        # Why the stack is on software: only meaningful for fallback/skipped.
+        STAGE_3_GPU_FALLBACK_REASON ""
     )
+    case "$state" in
+        fallback | skipped) _kv[9]="${STAGE3_FALLBACK_REASON:-}" ;;
+    esac
     if [[ "$gpu" == "none" ]]; then
         _kv+=(
             STAGE_3_GPU_HW_DECODING_CODECS ""
@@ -72,6 +77,8 @@ stage3_set_gpu_env() {
     export STAGE_3_GPU_STATE="$state"
     export STAGE_3_GPU_VENDOR="$vendor"
     export STAGE_3_GPU_ENCODER="$encoder"
+    export STAGE_3_GPU_FALLBACK_REASON="${_kv[9]}"
+    STAGE3_FALLBACK_REASON=""
     if [[ "$gpu" == "none" ]]; then
         export STAGE_3_GPU_HW_DECODING_CODECS=""
         export STAGE_3_GPU_DECODE_HEVC_10BIT=""

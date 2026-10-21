@@ -8,7 +8,11 @@
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/apt.sh"
 
 install_base_packages() {
-    ui_spin "Updating package lists..." sudo apt-get update -qq
+    # ui_spin prints the failing command and apt's last lines; the message says what that means.
+    if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then
+        log_error "Could not update the package lists. Fix the apt error above, then re-run ./mediastack."
+        return 1
+    fi
     # Self-heal an inconsistent dpkg/apt state before installing. An interrupted install or a
     # driver-mode switch (e.g. Standard<->Unlock leaving the old driver stack half-removed) can
     # leave packages half-configured, which makes the install below fail with "Unmet
@@ -25,9 +29,12 @@ install_base_packages() {
     # installing it up-front would let Debian's postinst enable /etc/apt/apt.conf.d/
     # 20auto-upgrades, running generic auto security-updates even when the user
     # declined hardening (an incomplete opt-out).
-    ui_spin "Installing base packages..." "${MS_APT_INSTALL[@]}" \
+    if ! ui_spin "Installing base packages..." "${MS_APT_INSTALL[@]}" \
         curl ca-certificates gnupg lsb-release sudo pciutils python3-yaml python3-bcrypt \
-        gettext-base ufw git htop bind9-dnsutils smartmontools mokutil inotify-tools
+        gettext-base ufw git htop bind9-dnsutils smartmontools mokutil inotify-tools; then
+        log_error "Could not install the base packages. Fix the apt error above, then re-run ./mediastack."
+        return 1
+    fi
     log_ok "Base packages installed"
 
     # Optional fallback speed-test tool. The wizard's primary method is a
@@ -259,7 +266,11 @@ install_docker() {
     # credential cache in the foreground here (see scripts/lib/ui.sh).
     sudo -v 2>/dev/null || true
     ui_spin "Adding Docker apt repository..." configure_docker_apt_repo || return 1
-    ui_spin "Updating package lists..." sudo apt-get update -qq
+    # ui_spin prints the failing command and apt's last lines; the message says what that means.
+    if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then
+        log_error "Could not update the package lists. Fix the apt error above, then re-run ./mediastack."
+        return 1
+    fi
 
     if $docker_present; then
         ui_spin "Installing Docker Compose plugin..." \

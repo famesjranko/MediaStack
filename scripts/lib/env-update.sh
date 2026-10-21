@@ -183,3 +183,34 @@ env_save_api_key() {
     # invocation can then read the value without needing to re-source .env.
     export "${key_name}=${key_value}"
 }
+
+# _env_canonicalize_file <env_file>
+# Rewrite every KEY=value line into the single-quoted form _env_write_kv emits,
+# so the install template and later day-2 updates produce the same bytes and a
+# no-op re-run leaves .env untouched. Lines it cannot represent (a value with a
+# single quote or several words) and comments stay as they are.
+_env_canonicalize_file() {
+    python3 - "$1" <<'PY'
+import re
+import shlex
+import sys
+
+path = sys.argv[1]
+out = []
+with open(path) as fh:
+    for line in fh:
+        m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)=(.*?)(\n?)", line)
+        if m:
+            try:
+                parts = shlex.split(m.group(2), posix=True)
+            except ValueError:
+                parts = None
+            if parts is not None and len(parts) <= 1:
+                value = parts[0] if parts else ""
+                if "'" not in value:
+                    line = f"{m.group(1)}='{value}'" + m.group(3)
+        out.append(line)
+with open(path, "w") as fh:
+    fh.writelines(out)
+PY
+}

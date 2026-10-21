@@ -47,7 +47,7 @@ run_stage1() {
     # ever wrote an explicit "0".
     if [[ "${STAGE_1_COMPLETE:-}" == "1" ]]; then
         log_skip "Stage 1 already complete - rerun setup to add remote access or hardware transcoding when needed"
-        log_skip "To rebuild from scratch: docker compose down -v && ./setup.sh --full"
+        log_skip "To rebuild from scratch: docker compose down -v, then ./mediastack -> Install MediaStack"
         # Mark the install path as complete so setup.sh::main() does not fall
         # through to stop_existing_stack / pull_images / configure.sh on a
         # benign re-run. Honors the graceful re-run invariant —

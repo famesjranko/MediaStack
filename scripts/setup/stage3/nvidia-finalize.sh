@@ -59,6 +59,8 @@ _stage3_configure_and_verify() {
                 continue
                 ;;
             "Skip"*)
+                # shellcheck disable=SC2034 # read by stage3_set_gpu_env
+                STAGE3_FALLBACK_REASON=user_choice
                 if ! stage3_set_gpu_env "none" "skipped" "" ""; then
                     ui_log warn "Could not persist skipped hardware-transcoding state; recovery marker retained."
                     return 3

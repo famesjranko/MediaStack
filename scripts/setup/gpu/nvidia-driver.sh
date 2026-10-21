@@ -6,6 +6,8 @@ declare -F host_tool_path >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOU
 # Every apt install runs through MS_APT_INSTALL (scripts/lib/apt.sh).
 # shellcheck source=../../lib/apt.sh
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
+# shellcheck source=../../lib/gpu-fallback.sh
+declare -F gpu_fallback_secure_boot_lines >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/gpu-fallback.sh"
 
 nvidia_driver_check_secure_boot() {
     if ! command -v mokutil &>/dev/null; then
@@ -20,6 +22,34 @@ nvidia_driver_check_secure_boot() {
     else
         echo "disabled"
     fi
+}
+
+# Where DKMS keeps the key it signs modules with. dkms uses mok.key/mok.pub from
+# this directory when both exist (dkms 3.0.10 /usr/sbin/dkms:965-975, 3.2.2
+# /usr/sbin/dkms:1232-1243) and signs each built module with them. Tests override it.
+NVIDIA_DKMS_MOK_PUB="${NVIDIA_DKMS_MOK_PUB:-/var/lib/dkms/mok.pub}"
+
+# Prints the state of the DKMS signing key: no_key, enrolled, pending (imported,
+# waiting for the MOK screen at the next boot) or not_enrolled. Reading MokNew
+# needs root, hence sudo on --list-new.
+nvidia_driver_mok_state() {
+    [[ -f "$NVIDIA_DKMS_MOK_PUB" ]] || {
+        echo "no_key"
+        return
+    }
+    local out
+    if out=$(mokutil --test-key "$NVIDIA_DKMS_MOK_PUB" 2>&1) && grep -qi 'already enrolled' <<<"$out"; then
+        echo "enrolled"
+        return
+    fi
+    # "MokNew is empty" means nothing waits for the next boot. Any other output
+    # means an import is queued; it may be this key or another, so the user must
+    # still reboot and enrol before a retry can succeed.
+    if out=$(sudo mokutil --list-new 2>/dev/null) && [[ -n "$out" ]] && ! grep -qi 'is empty' <<<"$out"; then
+        echo "pending"
+        return
+    fi
+    echo "not_enrolled"
 }
 
 # Check whether nouveau is bound to any NVIDIA GPU via sysfs PCI driver
@@ -73,31 +103,105 @@ _nvidia_driver_install_run_file() {
         --no-nouveau-check --no-install-compat32-libs --tmpdir "$temp_dir"
 }
 
-# Check NVIDIA's supportedchips.html for a driver version to determine
-# whether a GPU (by PCI ID) is current or needs a legacy branch.
-# Echoes "current" or "legacy_NNN" (e.g. "legacy_580"). Empty on failure.
+# Lowest NVIDIA driver that runs Jellyfin's NVENC. The jellyfin-ffmpeg in the
+# Jellyfin image links NVENC API 12.0 and refuses an older driver at start-up:
+#   "Driver does not support the required nvenc API version. Required: 12.0
+#    Found: 11.1 ... The minimum required Nvidia driver for nvenc is 520.56.06"
+# (observed with jellyfin-ffmpeg 8.1.3 on driver 470).
+# FFmpeg libavcodec/nvenc.c maps NVENC API 12.0 to 520.56.06 on Linux. A
+# jellyfin-ffmpeg that moves to a newer NVENC API raises this: change it here only.
+NVIDIA_JELLYFIN_MIN_DRIVER="520.56.06"
+
+# Upstream NVIDIA version of a Debian package version: "1:535.261.03-1~deb12u1" -> "535.261.03".
+_nvidia_upstream_version() {
+    local _v="${1#*:}"
+    printf '%s' "${_v%%-*}"
+}
+
+# True when driver version $1 (a version or a bare branch such as "470") is older
+# than NVIDIA_JELLYFIN_MIN_DRIVER. An empty or unparseable version is not "too
+# old": the caller has no evidence either way.
+_nvidia_driver_below_nvenc_min() {
+    local _v
+    _v=$(_nvidia_upstream_version "$1")
+    [[ "$_v" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 1
+    dpkg --compare-versions "$_v" lt "$NVIDIA_JELLYFIN_MIN_DRIVER"
+}
+
+# PCI device id (hex, no vendor) of the first NVIDIA device; empty when none.
+_nvidia_gpu_pci_id() {
+    lspci -nn 2>/dev/null | grep -i 'nvidia' | grep -oP '\[10de:\K\w+' | head -1 || true
+}
+
+# Marketing name of the first NVIDIA device, e.g. "Tesla P4" from
+# "NVIDIA Corporation GP104GL [Tesla P4] [10de:1bb3]". Falls back to a generic label.
+_nvidia_gpu_label() {
+    local _line
+    _line=$(lspci -nn 2>/dev/null | grep -i '\[10de:' | head -1) || _line=""
+    if [[ "$_line" =~ \[([^]]+)\]\ \[10de: ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+    else
+        printf 'NVIDIA GPU'
+    fi
+}
+
+# Log why the GPU cannot run Jellyfin's NVENC with the best driver available,
+# and record the fallback reason. $1 GPU label, $2 newest branch the GPU supports
+# ("" when not known), $3 best driver version considered. It sets the reason in
+# the calling shell: call it directly, not inside a command substitution.
+_nvidia_driver_too_old() {
+    local _gpu="$1" _max_branch="$2" _best="$3" _line
+    # shellcheck disable=SC2034 # read by _stage3_fallback / stage3_set_gpu_env
+    STAGE3_FALLBACK_REASON=driver_too_old
+    while IFS= read -r _line; do
+        log_error "$_line"
+    done < <(gpu_fallback_driver_too_old_lines "$_gpu" "$_max_branch" "$_best" "$NVIDIA_JELLYFIN_MIN_DRIVER")
+    log_warn "Falling back to software transcoding"
+}
+
+# Check NVIDIA's supportedchips.html for a driver version to determine whether a
+# GPU (by PCI ID) is current or needs a legacy branch. Always echoes one result:
+#   current       listed under "Current NVIDIA GPUs": this driver drives the GPU
+#   legacy_NNN    listed under a legacy branch: this driver does NOT drive it,
+#                 the NNN.xx branch is the newest that does
+#   absent        the page has a "Current NVIDIA GPUs" section and the GPU is in
+#                 none of it: either too new for this driver, or a datacenter
+#                 part the page omits (Tesla P4 is missing from 535 yet works)
+#   unknown       the page could not be fetched, or has no "Current NVIDIA GPUs"
+#                 section (e.g. 470), so a listing cannot be classified
+# "legacy" and "absent" both mean "no evidence this driver is right"; "unknown"
+# means no evidence at all. Callers must not treat the two the same.
 _nvidia_driver_check_compat() {
     local _ver="$1" _pci_id="$2"
     local _url="https://download.nvidia.com/XFree86/Linux-x86_64/${_ver}/README/supportedchips.html"
-    local _html
-    _html=$(curl -fsSL "$_url" 2>/dev/null) || return 1
-    [[ -z "$_html" ]] && return 1
+    local _html _out=""
+    _html=$(curl -fsSL --connect-timeout 10 --max-time 60 "$_url" 2>/dev/null) || _html=""
+    if [[ -z "$_html" ]]; then
+        echo unknown
+        return 0
+    fi
 
-    echo "$_html" | python3 -c "
+    # Here-string, not `echo | python3`: python exits at the first match, and a
+    # closed pipe makes echo print "write error: Broken pipe" when the caller
+    # (systemd resume) ignores SIGPIPE.
+    _out=$(python3 -c "
 import sys, re
-section = 'unknown'
+section = None
+has_current = False
 target = 'devid${_pci_id}'.lower()
 for line in sys.stdin:
     if 'Current NVIDIA GPUs' in line:
         section = 'current'
+        has_current = True
     m = re.search(r'legacy_(\d+)\.', line)
     if m:
         section = 'legacy_' + m.group(1)
     if target in line.lower():
-        print(section)
+        print(section or 'unknown')
         sys.exit(0)
-sys.exit(1)
-" 2>/dev/null
+print('absent' if has_current else 'unknown')
+" 2>/dev/null <<<"$_html") || _out=""
+    echo "${_out:-unknown}"
 }
 
 # Resolve the correct .run driver: fetch nvidia-patch README, find patchable
@@ -111,7 +215,7 @@ nvidia_driver_resolve_driver() {
     local _readme_url
     _readme_url=$(nvidia_patch_readme_url)
     local _readme
-    if ! _readme=$(curl -fsSL "$_readme_url"); then
+    if ! _readme=$(curl -fsSL --connect-timeout 10 --max-time 60 "$_readme_url"); then
         log_error "Could not fetch nvidia-patch README"
         return 1
     fi
@@ -136,15 +240,18 @@ nvidia_driver_resolve_driver() {
     # Check GPU compatibility via NVIDIA's supportedchips.html before
     # downloading the 400MB+ .run file.
     local _gpu_pci_id _compat_result=""
-    _gpu_pci_id=$(lspci -nn 2>/dev/null | grep -i 'nvidia' | grep -oP '\[10de:\K\w+' | head -1)
+    _gpu_pci_id=$(_nvidia_gpu_pci_id)
 
     if [[ -n "$_gpu_pci_id" ]]; then
         log_info "Checking GPU compatibility (device 0x${_gpu_pci_id})..."
         _compat_result=$(_nvidia_driver_check_compat "$_driver_ver" "$_gpu_pci_id") || true
     fi
 
+    local _gpu_label _max_branch=""
+    _gpu_label=$(_nvidia_gpu_label)
     if [[ "$_compat_result" == legacy_* ]]; then
         local _legacy_branch="${_compat_result#legacy_}"
+        _max_branch="$_legacy_branch"
         log_warn "GPU requires legacy ${_legacy_branch}.xx driver branch"
 
         _table_row=$(echo "$_readme" | grep -E "^\| *${_legacy_branch}\." | grep '| YES |' | grep '\.run)' | tail -1)
@@ -159,8 +266,16 @@ nvidia_driver_resolve_driver() {
         log_ok "Found legacy driver: ${_driver_ver}"
     elif [[ "$_compat_result" == "current" ]]; then
         log_ok "GPU is supported by driver ${_driver_ver}"
+    elif [[ "$_compat_result" == "absent" ]]; then
+        log_warn "GPU is not listed for driver ${_driver_ver} (NVIDIA's page omits some datacenter GPUs) - proceeding with ${_driver_ver}"
     else
         log_warn "Could not verify GPU compatibility - proceeding with ${_driver_ver}"
+    fi
+
+    # Jellyfin's NVENC cannot start on an older driver, so stop before the 400MB download.
+    if _nvidia_driver_below_nvenc_min "$_driver_ver"; then
+        _nvidia_driver_too_old "$_gpu_label" "$_max_branch" "$_driver_ver"
+        return 1
     fi
 
     _run_file="${_nvidia_tmp}/NVIDIA-Linux-x86_64-${_driver_ver}.run"
@@ -177,18 +292,12 @@ nvidia_driver_resolve_driver() {
     return 0
 }
 
-# Debian release identifiers, read in a subshell so /etc/os-release vars don't
-# leak as globals. Small mockable seams keep the apt helpers/tests deterministic.
+# Debian release codename, read in a subshell so /etc/os-release vars don't
+# leak as globals. A small mockable seam keeps the apt helpers/tests deterministic.
 nvidia_driver_debian_codename() {
     (
         . /etc/os-release 2>/dev/null
         printf '%s' "${VERSION_CODENAME:-}"
-    )
-}
-_nvidia_driver_debian_version_id() {
-    (
-        . /etc/os-release 2>/dev/null
-        printf '%s' "${VERSION_ID:-}"
     )
 }
 
@@ -215,22 +324,17 @@ nvidia_driver_apt_candidate_version() {
 # Ensure Debian's contrib/non-free(/non-free-firmware) components are visible to
 # apt so proprietary GPU drivers and firmware can install. Writes a single
 # MediaStack-managed source file ONLY when apt cannot already see non-free, and
-# never edits the user's own apt configuration. Codename/version aware: Debian 11
-# (bullseye) has no separate non-free-firmware component. Idempotent (fixed path,
+# never edits the user's own apt configuration. Idempotent (fixed path,
 # overwritten not appended). Used by the Intel, AMD, and Standard NVIDIA routes.
 nvidia_driver_ensure_debian_nonfree() {
-    local _codename _version_id
+    local _codename
     _codename=$(nvidia_driver_debian_codename)
     if [[ -z "$_codename" ]]; then
         log_error "Failed to detect Debian codename for non-free apt source"
         return 1
     fi
-    _version_id=$(_nvidia_driver_debian_version_id)
 
     local _components="contrib non-free non-free-firmware"
-    if [[ "$_version_id" == "11" || "$_codename" == "bullseye" ]]; then
-        _components="contrib non-free"
-    fi
 
     # Only add components not already in the system's sources. Checking
     # apt-cache policy is circular: our own old file makes a component "visible",
@@ -269,7 +373,7 @@ nvidia_driver_ensure_debian_nonfree() {
 # can consider a newer driver for a too-new GPU. Idempotent (skips if backports is
 # already visible). Backports has low apt pin priority by default, so this never
 # changes the versions of other packages — backports installs require an explicit
-# `-t ${codename}-backports`. Codename/version aware (no non-free-firmware on 11).
+# `-t ${codename}-backports`.
 nvidia_driver_ensure_debian_backports() {
     local _codename
     _codename=$(nvidia_driver_debian_codename)
@@ -281,13 +385,8 @@ nvidia_driver_ensure_debian_backports() {
         *"${_codename}-backports"*) return 0 ;;
     esac
 
-    local _version_id _components="main contrib non-free non-free-firmware"
-    _version_id=$(_nvidia_driver_debian_version_id)
-    if [[ "$_version_id" == "11" || "$_codename" == "bullseye" ]]; then
-        _components="main contrib non-free"
-    fi
     local _source_line
-    printf -v _source_line 'deb http://deb.debian.org/debian %s-backports %s\n' "$_codename" "$_components"
+    printf -v _source_line 'deb http://deb.debian.org/debian %s-backports main contrib non-free non-free-firmware\n' "$_codename"
     if ! sudo tee "$MEDIASTACK_GPU_BACKPORTS_LIST" >/dev/null <<<"$_source_line"; then
         log_error "Failed to add Debian backports apt source"
         return 1

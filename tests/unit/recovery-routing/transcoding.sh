@@ -11,7 +11,7 @@ if is_pending_helper run_transcoding_recovery; then
     skip "run_transcoding_recovery .env precondition pending implementation"
 else
     assert_eq "1" "$rc" "--transcoding without .env exits non-zero"
-    assert_contains "$out" "Run ./setup.sh first" "--transcoding without .env tells user to run setup first"
+    assert_contains "$out" "Choose Install MediaStack in ./mediastack first" "--transcoding without .env tells user to run setup first"
 fi
 
 reset_route_state
