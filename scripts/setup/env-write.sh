@@ -55,7 +55,7 @@ import sys
 wanted = {
     "SONARR_API_KEY", "RADARR_API_KEY", "JELLYFIN_API_KEY", "BAZARR_API_KEY",
     "SEERR_API_KEY", "PORTAINER_API_KEY", "BESZEL_AGENT_KEY",
-    "STAGE_1_COMPLETE", "NPM_LE_SERVER", "JELLYFIN_GPU", "IMAGE_CHANNEL", "DDNS_PROVIDER",
+    "STAGE_1_COMPLETE", "NPM_LE_SERVER", "JELLYFIN_PUBLISHED_URL", "JELLYFIN_GPU", "IMAGE_CHANNEL", "DDNS_PROVIDER",
     "PUBLIC_INDEXERS_ENABLED", "NVIDIA_DRIVER_MODE", "NVIDIA_PATCH_ENABLED",
     "STAGE_3_GPU_STATE", "STAGE_3_GPU_VENDOR", "STAGE_3_GPU_ENCODER",
     "STAGE_3_GPU_HW_DECODING_CODECS", "STAGE_3_GPU_DECODE_HEVC_10BIT",
@@ -245,7 +245,7 @@ PY
     [[ "$public_indexers_enabled" == "true" ]] || public_indexers_enabled="false"
 
     local prev_sonarr_env prev_radarr_env prev_jellyfin_env prev_bazarr_env
-    local prev_seerr_env prev_portainer_env prev_beszel_env
+    local prev_seerr_env prev_portainer_env prev_beszel_env prev_jf_url_env
     _env_quote_preserved_secret prev_sonarr_env "SONARR_API_KEY" "$prev_sonarr"
     _env_quote_preserved_secret prev_radarr_env "RADARR_API_KEY" "$prev_radarr"
     _env_quote_preserved_secret prev_jellyfin_env "JELLYFIN_API_KEY" "$prev_jellyfin"
@@ -253,6 +253,7 @@ PY
     _env_quote_preserved_secret prev_seerr_env "SEERR_API_KEY" "$prev_seerr"
     _env_quote_preserved_secret prev_portainer_env "PORTAINER_API_KEY" "$prev_portainer"
     _env_quote_preserved_secret prev_beszel_env "BESZEL_AGENT_KEY" "$prev_beszel"
+    _env_quote_preserved_secret prev_jf_url_env "JELLYFIN_PUBLISHED_URL" "${JELLYFIN_PUBLISHED_URL:-}" # set by the eval above; only the Jellyfin network step writes it
 
     # DDNS provider key (non-secret) is the only DDNS value written to .env; the
     # credentials live solely in the chmod-600 config.json rendered below and are
@@ -392,6 +393,7 @@ PORTAINER_API_KEY=${prev_portainer_env}
 # Single-quoted: generated API keys may include shell- or Compose-special
 # characters, and beszel-agent keys contain spaces.
 BESZEL_AGENT_KEY=${prev_beszel_env}
+JELLYFIN_PUBLISHED_URL=${prev_jf_url_env}
 
 # --- Stage Markers ---
 # Sentinel convention (do NOT change to '0'):

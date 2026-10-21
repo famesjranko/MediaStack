@@ -249,6 +249,34 @@ assert_eq "$api_special" "$(env_val SONARR_API_KEY)" ".env: preserved API key wi
 assert_eq "SONARR_API_KEY='$api_special'" "$(grep '^SONARR_API_KEY=' "$TMP_DIR/.env")" ".env: preserved API key remains quoted after regeneration"
 
 # =========================================================================
+# Test 4b2: JELLYFIN_PUBLISHED_URL (written only by the Jellyfin network
+# step) survives .env regeneration
+# =========================================================================
+# Given an .env with no JELLYFIN_PUBLISHED_URL
+sed -i '/^JELLYFIN_PUBLISHED_URL=/d' "$TMP_DIR/.env"
+# When write_env regenerates it
+write_env >/dev/null 2>&1
+# Then no value is invented
+assert_eq "" "$(env_val JELLYFIN_PUBLISHED_URL)" ".env: absent JELLYFIN_PUBLISHED_URL stays empty"
+
+# Given an .env holding a published URL
+printf '%s\n' "JELLYFIN_PUBLISHED_URL=https://jellyfin.example.test" >>"$TMP_DIR/.env"
+# When write_env regenerates it
+write_env >/dev/null 2>&1
+# Then the exact URL is kept
+assert_eq "https://jellyfin.example.test" "$(env_val JELLYFIN_PUBLISHED_URL)" ".env: JELLYFIN_PUBLISHED_URL survives regeneration"
+
+# Given a published URL with shell-special characters, single-quoted as env_save_api_key writes it
+jf_special='https://jf.example.test/a?b=c&d=$x#y|z'
+sed -i '/^JELLYFIN_PUBLISHED_URL=/d' "$TMP_DIR/.env"
+printf '%s\n' "JELLYFIN_PUBLISHED_URL='$jf_special'" >>"$TMP_DIR/.env"
+# When write_env regenerates it
+write_env >/dev/null 2>&1
+# Then the value round-trips literally and stays single-quoted
+assert_eq "$jf_special" "$(env_val JELLYFIN_PUBLISHED_URL)" ".env: special-character JELLYFIN_PUBLISHED_URL round-trips"
+assert_eq "JELLYFIN_PUBLISHED_URL='$jf_special'" "$(grep '^JELLYFIN_PUBLISHED_URL=' "$TMP_DIR/.env")" ".env: JELLYFIN_PUBLISHED_URL stays quoted"
+
+# =========================================================================
 # Test 4c: Failed .env generation preserves the previous file
 # =========================================================================
 TMP_DIR_ATOMIC="$TMP_DIR/atomic-failure"
