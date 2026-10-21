@@ -31,6 +31,8 @@ if ! declare -F net_dns_classify >/dev/null 2>&1; then
     # shellcheck source=/dev/null
     source "$_HEALTH_LIB_DIR/network.sh"
 fi
+# shellcheck source=/dev/null
+declare -F host_tool_installed >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/host-tools.sh"
 
 # =============================================================================
 # internals

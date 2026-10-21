@@ -68,7 +68,7 @@ storage_mount_nfs() {
 }
 
 storage_ensure_nfs_common() {
-    if command -v mount.nfs >/dev/null 2>&1 || command -v mount.nfs4 >/dev/null 2>&1; then
+    if host_tool_installed mount.nfs || host_tool_installed mount.nfs4; then
         return 0
     fi
     storage_log_info "Installing nfs-common for NAS storage..."

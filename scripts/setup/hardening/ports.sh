@@ -2,6 +2,10 @@
 # Sources: hardening.sh globals and ledger helpers, and firewall.sh's _ms_ufw_allow.
 # Globals: TORRENT_PORT, DOMAIN, and WG_PORT (optional .env inputs).
 
+# Root-tool lookup (ufw_installed, host_tool_installed); callers source this file directly, not only via common.sh.
+# shellcheck source=../../lib/host-tools.sh
+declare -F host_tool_installed >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
+
 # These ports are user-configurable, so a re-run after a change would otherwise
 # leave the previous port allowed forever. Revoke the rule we own for the old
 # port before allowing the new one: match on the exact MediaStack comment tag,
@@ -40,7 +44,7 @@ _setup_ufw_revoke_tag() {
 }
 
 setup_ufw_service_ports() {
-    command -v ufw &>/dev/null || [[ -x /usr/sbin/ufw ]] || return
+    ufw_installed || return
 
     local torrent_port="${TORRENT_PORT:-6881}"
     _setup_ufw_revoke_tag MediaStack:Torrent-TCP "$torrent_port/tcp"

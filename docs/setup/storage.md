@@ -102,6 +102,12 @@ install, but neither protection layer below runs — `storage_guard_before_start
 returns success and no systemd unit is installed. The marker/sentinel path is
 internal and no longer user-configurable.
 
+Install needs `visudo` to validate the sudoers rule, and the NFS client needs
+`mount.nfs`. Both live in `/usr/sbin`, which a normal user's `PATH` omits on
+Debian, so MediaStack looks there too (`host_tool_path` in `scripts/lib/host-tools.sh`).
+If the watchdog is wanted but its unit is missing (for example an install made
+before that lookup existed), **Apply changes from a MediaStack update** installs it.
+
 When on, NAS mode has two protection layers:
 
 1. `storage_guard_before_start` runs before `start_stack`, the launcher start

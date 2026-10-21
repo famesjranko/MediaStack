@@ -282,7 +282,7 @@ storage_install_watchdog() {
         storage_log_warn "User name '${install_user}' cannot be expressed as a sudoers rule; NAS storage watchdog not installed."
         return 0
     fi
-    if ! command -v visudo >/dev/null 2>&1; then
+    if ! host_tool_installed visudo; then
         storage_log_warn "visudo is unavailable, so the watchdog sudoers rule cannot be validated; NAS storage watchdog not installed."
         return 0
     fi

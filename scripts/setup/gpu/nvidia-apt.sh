@@ -1,6 +1,8 @@
 # Owns: Debian NVIDIA driver ownership, repair, and apt installation routes.
 # Sources: gpu.sh globals, NVIDIA preparation helpers, and common.sh logging.
 # shellcheck disable=SC2034 # GPU_TYPE is a published global consumed by callers.
+# shellcheck source=../../lib/host-tools.sh
+declare -F host_tool_path >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 nvidia_driver_source() {
     local _st
     _st=$(dpkg-query -W -f='${Status}' nvidia-driver 2>/dev/null || true)
@@ -43,7 +45,8 @@ _nvidia_debian_repair_packages() {
 _nvidia_unload_loaded_modules() {
     sudo rmmod nvidia_uvm nvidia_drm nvidia_modeset nvidia_peermem nvidia 2>/dev/null || true
     local _modules
-    _modules=$(lsmod 2>/dev/null || true)
+    # lsmod lives in /usr/sbin, off a normal user's PATH; a bare call reads as "nothing loaded".
+    _modules=$("$(host_tool_path lsmod || echo lsmod)" 2>/dev/null || true)
     [[ "$_modules" != nvidia* && "$_modules" != *$'\n'nvidia* ]]
 }
 
