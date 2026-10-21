@@ -23,6 +23,8 @@ systemctl() {
 }
 
 rm -f "$SAMBA_INCLUDE_FILE"
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 SMB_ENABLED="false"
 SAMBA_CALLS=()
 setup_samba
@@ -69,6 +71,8 @@ sudo() {
     esac
 }
 
+# Fixture consumed by the sourced product code under test.
+# shellcheck disable=SC2034
 SMB_ENABLED="false"
 setup_samba
 
@@ -463,6 +467,7 @@ PGID="1000"
     PATH="/usr/bin:/bin"
     # shellcheck disable=SC2034 # read by host_tool_path
     MS_SBIN_DIRS="$SBIN_TMP"
+    getent() { [[ "$1 $2" == "group sambashare" ]] && echo "sambashare:x:990:"; }
     setup_samba >/dev/null 2>&1
     printf '%s\n' "${SBIN_STATE[@]}" >"$SBIN_TMP/state"
     printf '%s\n' "${SBIN_CALLS[@]}" >"$SBIN_TMP/calls"
@@ -473,6 +478,10 @@ assert_not_contains "$(cat "$SBIN_TMP/state")" "SAMBA_PACKAGE_INSTALLED_BY_MEDIA
     "setup_samba: smbd in sbin is a pre-existing Samba, not recorded as MediaStack's"
 assert_not_contains "$(cat "$SBIN_TMP/calls")" "apt-get install" \
     "setup_samba: smbd in sbin skips the samba install"
+
+# And the ledger records exactly the Samba groups that existed before the install
+assert_contains "$(cat "$SBIN_TMP/state")" "SAMBA_GROUPS_PREEXISTED=sambashare" \
+    "setup_samba: ledger records which Samba groups pre-existed"
 unset -f sudo ui_spin
 rm -rf "$SBIN_TMP"
 rm -rf "$SAMBA_TMP"

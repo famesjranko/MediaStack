@@ -143,7 +143,8 @@ action_toggle_smb() {
             launcher_pause_for_menu
             return 0
         }
-        _feature_persist_or_report "Disable file sharing (SMB)" SMB_ENABLED false || return 0
+        _feature_persist_or_report "Disable file sharing (SMB)" \
+            SMB_ENABLED false SMB_SHARE_SCOPE data || return 0
         ui_log info "Removing the MediaStack SMB share (uses sudo; your files are untouched)..."
         # shellcheck disable=SC1091
         source "$SCRIPT_DIR/scripts/setup/hardening.sh"
