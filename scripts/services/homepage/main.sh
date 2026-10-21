@@ -5,6 +5,57 @@
 # Pre-seeded settings.yaml, docker.yaml, widgets.yaml, bookmarks.yaml are
 # tracked in git. Only services.yaml is generated (contains API keys).
 
+# Replace FILE with CONTENT atomically (temp + mv in the same directory).
+# The homepage container runs as root and rewrites services.yaml in place, so
+# the file is often root-owned and not writable by the setup user. A rename
+# needs only write access to the directory, so it works for a root-owned file;
+# if the directory itself is root-owned, retry once with passwordless sudo (as
+# npm does for its root-owned data tree). Returns non-zero when both fail.
+_homepage_write_file() {
+    local file="$1" content="$2"
+    local tmp="${file}.tmp.$$"
+    if { printf '%s\n' "$content" >"$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$file"; } 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$tmp" 2>/dev/null
+    [[ $(id -u) -eq 0 ]] && return 1
+    if printf '%s\n' "$content" | sudo -n tee "$tmp" >/dev/null 2>&1 \
+        && sudo -n chown "$(id -u):$(id -g)" "$tmp" 2>/dev/null \
+        && sudo -n chmod 644 "$tmp" 2>/dev/null \
+        && sudo -n mv -f "$tmp" "$file" 2>/dev/null; then
+        return 0
+    fi
+    sudo -n rm -f "$tmp" 2>/dev/null
+    return 1
+}
+
+# Apply a python transform result: first line SKIP, or OK followed by the new
+# file content. Returns 0 when written, 2 when already up to date, 1 (after a
+# warning naming the path and fix) when the transform or the write failed.
+_homepage_commit_result() {
+    local file="$1" result="$2"
+    [[ "$result" == "SKIP" ]] && return 2
+    if [[ "${result%%$'\n'*}" == "OK" ]] && _homepage_write_file "$file" "${result#*$'\n'}"; then
+        return 0
+    fi
+    log_warn "Homepage $(basename "$file") not updated: cannot rewrite $file (fix: sudo chown -R $(id -u):$(id -g) $(dirname "$file"))"
+    return 1
+}
+
+# sed-edit FILE through _homepage_write_file so a root-owned widgets.yaml is
+# replaced by rename instead of failing silently under `sed -i`. Warns and
+# returns non-zero on failure; callers log success only on a zero status.
+_homepage_sed_file() {
+    local file="$1" edited
+    shift
+    edited=$(sed "$@" "$file") || return 1
+    if _homepage_write_file "$file" "$edited"; then
+        return 0
+    fi
+    log_warn "Homepage $(basename "$file") not updated: cannot replace $file (fix: sudo chown -R $(id -u):$(id -g) $(dirname "$file"))"
+    return 1
+}
+
 configure_homepage() {
     echo ""
     echo -e "${BOLD}Configuring Homepage dashboard...${NC}"
@@ -231,18 +282,14 @@ print(yaml.safe_dump(services, default_flow_style=False, sort_keys=False))
         return 0
     fi
 
-    if [[ -f "$services_file" ]]; then
-        local existing
-        existing=$(cat "$services_file")
-        if [[ "$existing" == "$new_services" ]]; then
-            log_skip "Homepage services.yaml already up to date"
-        else
-            echo "$new_services" >"$services_file"
-            log_ok "Homepage services.yaml generated"
-        fi
-    else
-        echo "$new_services" >"$services_file"
+    local existing=""
+    [[ -f "$services_file" ]] && existing=$(cat "$services_file" 2>/dev/null)
+    if [[ -f "$services_file" && "$existing" == "$new_services" ]]; then
+        log_skip "Homepage services.yaml already up to date"
+    elif _homepage_write_file "$services_file" "$new_services"; then
         log_ok "Homepage services.yaml generated"
+    else
+        log_warn "Homepage services.yaml not written: cannot replace $services_file (fix: sudo chown -R $(id -u):$(id -g) $(dirname "$services_file"))"
     fi
 
     # Homepage writes default bookmarks (GitHub, Reddit, YouTube) on first
@@ -280,15 +327,14 @@ if settings.get("layout") == layout:
     print("SKIP")
 else:
     settings["layout"] = layout
-    with open(os.environ["SETTINGS_FILE"], "w") as f:
-        yaml.safe_dump(settings, f, default_flow_style=False, sort_keys=False)
     print("OK")
-')
-        if [[ "$layout_result" == "SKIP" ]]; then
-            log_skip "Homepage settings.yaml layout already up to date"
-        else
-            log_ok "Homepage settings.yaml layout updated"
-        fi
+    print(yaml.safe_dump(settings, default_flow_style=False, sort_keys=False), end="")
+') || layout_result="ERROR"
+        _homepage_commit_result "$settings_file" "$layout_result"
+        case $? in
+            0) log_ok "Homepage settings.yaml layout updated" ;;
+            2) log_skip "Homepage settings.yaml layout already up to date" ;;
+        esac
     fi
 
     # Patch widgets.yaml with the host's default network interface.
@@ -302,11 +348,11 @@ else:
         if grep -q "network: $host_iface" "$widgets_file"; then
             log_skip "Homepage network widget already set to $host_iface"
         elif grep -q "network:" "$widgets_file"; then
-            sed -i "s/network: .*/network: $host_iface/" "$widgets_file"
-            log_ok "Homepage network widget: $host_iface"
+            _homepage_sed_file "$widgets_file" "s/network: .*/network: $host_iface/" \
+                && log_ok "Homepage network widget: $host_iface"
         else
-            sed -i '/resources:/a\    network: '"$host_iface" "$widgets_file"
-            log_ok "Homepage network widget: $host_iface"
+            _homepage_sed_file "$widgets_file" '/resources:/a\    network: '"$host_iface" \
+                && log_ok "Homepage network widget: $host_iface"
         fi
     fi
 
@@ -325,8 +371,9 @@ else:
         if grep -q "cputemp: $has_temp" "$widgets_file"; then
             log_skip "Homepage cputemp already $has_temp"
         else
-            sed -i "s/cputemp: .*/cputemp: $has_temp/" "$widgets_file"
-            if $has_temp; then
+            if ! _homepage_sed_file "$widgets_file" "s/cputemp: .*/cputemp: $has_temp/"; then
+                :
+            elif $has_temp; then
                 log_ok "Homepage cputemp enabled"
             else
                 log_ok "Homepage cputemp disabled (no host thermal sensor)"
@@ -387,13 +434,13 @@ else:
 if not changed:
     print("SKIP")
 else:
-    with open(path, "w") as f:
-        yaml.safe_dump(widgets, f, default_flow_style=False, sort_keys=False)
     print("OK")
-') || return 0
-    case "$nas_result" in
-        SKIP) log_skip "Homepage NAS storage label already correct" ;;
-        OK) if [[ "$want" == true ]]; then
+    print(yaml.safe_dump(widgets, default_flow_style=False, sort_keys=False), end="")
+') || nas_result="ERROR"
+    _homepage_commit_result "$widgets_file" "$nas_result"
+    case $? in
+        2) log_skip "Homepage NAS storage label already correct" ;;
+        0) if [[ "$want" == true ]]; then
             log_ok "Homepage NAS storage label enabled"
         else
             log_ok "Homepage NAS storage label reset (not NAS+watchdog)"
