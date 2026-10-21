@@ -109,5 +109,79 @@ assert_contains "$LOGGED" "WARN: Beszel system migration returned HTTP 400" "rej
 assert_eq "1" "$SYNC_RC" "rejected move: the sync fails"
 WRITE_CODE=200
 
+# ---------------------------------------------------------------------------
+# Converge wiring: scripts/launcher/converge.sh runs the Beszel step on update.
+# ---------------------------------------------------------------------------
+# Given an existing install whose hub holds the old entry
+# When the day-2 converge step for Beszel runs
+# Then the old entry is moved
+DOCKER_RESTARTS=""
+DOCKER_RESTART_RC=0
+docker() {
+    case "$*" in
+        "inspect beszel") return 0 ;;
+        "restart beszel")
+            DOCKER_RESTARTS+="${DOCKER_RESTARTS:+;}restart beszel"
+            return "$DOCKER_RESTART_RC"
+            ;;
+        *"State.Health"*) echo healthy ;;
+    esac
+}
+SYSTEMS_JSON='{"items":[{"id":"rec1","name":"MediaStack","host":"host.docker.internal","port":"45876"}]}'
+: >"$WRITES"
+LOGGED=""
+NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw beszel_converge_local_system
+assert_contains "$(cat "$WRITES")" "PATCH" "converge: the old entry is moved"
+assert_eq "restart beszel" "$DOCKER_RESTARTS" "converge: the moved entry restarts the hub exactly once"
+
+# Given the entry already points at the socket
+# When the day-2 converge step runs
+# Then the hub is not restarted
+SYSTEMS_JSON='{"items":[{"id":"rec1","name":"MediaStack","host":"/beszel_data/socket/beszel.sock","port":""}]}'
+DOCKER_RESTARTS=""
+NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw beszel_converge_local_system
+assert_eq "" "$DOCKER_RESTARTS" "converge: an entry already on the socket leaves the hub running"
+
+# Given the entry is moved but the restart fails
+# When the day-2 converge step runs
+# Then it returns non-zero with a message
+SYSTEMS_JSON='{"items":[{"id":"rec1","name":"MediaStack","host":"host.docker.internal","port":"45876"}]}'
+DOCKER_RESTART_RC=1
+LOGGED=""
+NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw beszel_converge_local_system
+assert_eq "1" "$?" "converge: a failed hub restart fails the step"
+assert_contains "$LOGGED" "WARN: Could not restart the Beszel hub" "converge: a failed hub restart is reported"
+DOCKER_RESTART_RC=0
+
+# Given the converge action
+# When the admin-port filter and qBittorrent steps have run
+# Then the Beszel step runs too
+SCRIPT_DIR="$REPO_ROOT"
+# converge_mediastack_state sources hardening.sh unless it is already loaded, and that would
+# replace the stubs below with the real functions, which install files and run sudo. Load it first.
+# shellcheck source=../../scripts/setup/hardening.sh
+source "$REPO_ROOT/scripts/setup/hardening.sh"
+# shellcheck source=../../scripts/launcher/converge.sh
+source "$REPO_ROOT/scripts/launcher/converge.sh"
+setup_admin_filter() { return 0; }
+ufw_remove_legacy_beszel_rule() { return 0; }
+setup_ufw_wireguard_clients() { return 0; }
+converge_storage_watchdog() { return 0; }
+qbt_narrow_legacy_whitelist() { return 0; }
+BESZEL_STEP_CALLS=0
+beszel_converge_local_system() {
+    BESZEL_STEP_CALLS=$((BESZEL_STEP_CALLS + 1))
+    return 0
+}
+converge_mediastack_state
+assert_eq "1" "$BESZEL_STEP_CALLS" "converge_mediastack_state: runs the Beszel step"
+
+# Given the Beszel step fails
+# When the converge action runs
+# Then it returns non-zero
+beszel_converge_local_system() { return 1; }
+converge_mediastack_state
+assert_eq "1" "$?" "converge_mediastack_state: a failed Beszel step fails the action"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

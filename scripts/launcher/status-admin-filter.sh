@@ -14,5 +14,5 @@ launcher_admin_filter_warning() {
     verdict=$(health_docker_user_restrict) || return 0
     [[ "$verdict" == fail\|* ]] || return 0
     ui_log warn "Admin-port filter NOT active: ${verdict#fail|}"
-    ui_log warn "Open Health & security for details."
+    ui_log warn "Fix: Health & security > Apply changes from a MediaStack update."
 }

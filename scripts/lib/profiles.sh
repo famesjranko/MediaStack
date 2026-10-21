@@ -38,7 +38,8 @@ _MS_PROFILES_SH_LOADED=1
 # its flag) and profiles_member_pattern (one profile -> a `docker compose ps`
 # match) both read it, and profiles_build_args below names the same profiles, so
 # adding an optional profile is one edit in this file rather than four across
-# the tree.
+# the tree. profiles_member_pattern has no production caller now (update.sh
+# reads profiles_build_args); the tests keep it checked against the table.
 _profiles_membership() {
     printf '%s\n' \
         "subtitles bazarr" \

@@ -15,6 +15,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="wireguard-ufw"
 scenario_begin "$CURRENT_SCENARIO"
 source "$REPO_ROOT/setup.sh"
+source "$REPO_ROOT/scripts/launcher/converge.sh"
 source "$REPO_ROOT/scripts/setup/stages/stage2.sh"
 set +e +u
 
@@ -202,6 +203,29 @@ unset SSH_CONNECTION
 _uninstall_ufw
 assert_eq "0" "$(wg_rule_lines)" "wg rule: removed by the UFW teardown (UFW off and uninstall)"
 assert_eq "true" "$(grep -qxF '9999/tcp|Anywhere|user rule' "$RULES" && echo true)" "wg rule: the teardown keeps the user's rule"
+
+# Given an existing install that predates the rule
+# When the converge action runs
+# Then the rule is added, and a failure to add it fails the action
+stub_converge_steps() {
+    MEDIASTACK_ADMIN_FILTER_DROPIN=x
+    setup_admin_filter() { return 0; }
+    json_get() { :; }
+    qbt_narrow_legacy_whitelist() { :; }
+    beszel_converge_local_system() { return 0; }
+    ufw_remove_legacy_beszel_rule() { return 0; }
+    docker() { echo false; }
+}
+stub_converge_steps
+reset_host
+converge_mediastack_state
+assert_eq "0" "$?" "converge: succeeds on an existing install"
+assert_eq "Anywhere|172.28.0.11|$TAG" "$(grep "|$TAG\$" "$RULES")" "converge: adds the rule to an existing install"
+setup_ufw_wireguard_clients() { return 1; }
+converge_mediastack_state
+assert_eq "1" "$?" "converge: a rule that cannot be converged fails the action"
+unset -f setup_ufw_wireguard_clients
+source "$REPO_ROOT/scripts/setup/hardening/firewall.sh"
 
 # Given UFW is off and WireGuard is enabled
 # When the user turns the Firewall (UFW) toggle ON

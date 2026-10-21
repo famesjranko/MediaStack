@@ -115,8 +115,8 @@ assert_eq "--profile subtitles --profile autoheal --profile proxy --profile remo
 
 # --- the one membership table, read from both directions ---------------------
 # profiles_service_flag (service -> flag, used by the launcher's update manager)
-# and profiles_member_pattern (profile -> `docker compose ps` matcher, used by
-# scripts/update.sh) must agree, so adding a profile stays a single edit.
+# and profiles_member_pattern (profile -> `docker compose ps` matcher, kept as a
+# lookup over the same table) must agree, so adding a profile stays a single edit.
 assert_eq "--profile proxy" "$(profiles_service_flag npm)" "service flag: npm -> proxy"
 assert_eq "--profile proxy" "$(profiles_service_flag ddns-updater)" "service flag: ddns-updater -> proxy"
 assert_eq "--profile subtitles" "$(profiles_service_flag bazarr)" "service flag: bazarr -> subtitles"

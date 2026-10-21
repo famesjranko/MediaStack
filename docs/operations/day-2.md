@@ -16,11 +16,12 @@ Wrapper around `docker compose pull && up -d` for the configured image channel.
 Flow (`scripts/update.sh`):
 
 1. **Override refresh** — reads `IMAGE_CHANNEL` from `.env`, regenerates `docker-compose.override.yml`, and validates `docs/operations/image-digests.lock` for Stable.
-2. **Profile detection** — checks for running `proxy` profile services (`npm`/`fail2ban`/`ddns-updater`), `remote` profile services (`wireguard`), `subtitles` profile services (`bazarr`), and `autoheal`. If those services are running, appends the corresponding `--profile` flag so subsequent commands include them. Without this, `pull` would skip optional-profile services on boxes using those profiles.
+2. **Profile selection** — `profiles_build_args` reads the enabled optional profiles from `.env` (the same table the installer and launcher use) and passes their `--profile` flags to the later commands. An enabled service that is stopped or crashed is recreated too. Without the flags, `pull` would skip optional-profile services.
 3. **Pull** — `docker compose $PROFILE_ARGS pull`. Stable pulls the tested `tag@sha256:digest` refs from the generated override; Latest pulls the tags in `docker-compose.yml`.
 4. **Recreate** — `docker compose $PROFILE_ARGS up -d --remove-orphans`. `--remove-orphans` cleans up containers from services that have been deleted from the compose file.
 5. **Optional prune** — only when run with `--prune`, calls `docker image prune -f` to reclaim disk from dangling images. This prune is host-wide, so the default update path skips it.
-6. **Status** — `ps` summary.
+6. **Converge** — runs the same steps as **Health & security → Apply changes from a MediaStack update** (admin-port filter, qBittorrent legacy whitelist, Beszel system entry, unused Beszel UFW rule, WireGuard UFW rule, missing NAS watchdog; see that section). A failure is reported after the status table and makes the script exit non-zero.
+7. **Status** — `ps` summary.
 
 **What it does NOT do:**
 
@@ -29,6 +30,21 @@ Flow (`scripts/update.sh`):
 - Stable-channel installs are runtime-pinned to `docs/operations/image-digests.lock`; Latest-channel installs intentionally follow upstream tags.
 - No config migration — it assumes images accept existing `config/<svc>/` state. Major-version bumps may need manual `configure.sh` re-runs.
 - No stop-first ordering — `pull` then `up -d` recreates containers in dependency order, so there is a brief window where a freshly-recreated service talks to a not-yet-recreated one (e.g. a new Sonarr against an old qBittorrent). Fine for minor bumps; worth watching for API-breaking ones.
+
+## `./mediastack` → Health & security → Apply changes from a MediaStack update
+
+After you pull new MediaStack code onto a finished install, run this action once. A finished install never re-runs setup or configure on its own: **Install MediaStack** ends at the existing-install menu with "No changes made", and a re-run with `STAGE_1_COMPLETE=1` skips configure. So a release that changes MediaStack's own host or service state cannot reach the box unless this action applies it. The main-menu "Admin-port filter NOT active" warning and the Health & security firewall check name this action as the fix.
+
+It changes only MediaStack's own artefacts, and each step is idempotent:
+
+1. **Admin-port filter** — runs `setup_admin_filter`. It installs `mediastack-admin-filter.service` and the `docker.service` drop-in, applies and verifies the chain, and only then strips a legacy MediaStack block from `/etc/ufw/after.rules`, `after6.rules` and `after.init`. `ADMIN_PORT_FILTER=false` installs nothing. A failed apply is reported, the legacy block stays in place, and the action returns non-zero.
+2. **qBittorrent auth whitelist** — if the live whitelist is exactly MediaStack's old `172.16.0.0/12` (enabled), it is narrowed to the Sonarr, Radarr and Homepage `/32` addresses. Any other value is yours: it is reported as drift and left alone. If qBittorrent is not running the step is skipped with a hint; start the stack and run the action again. An unreadable or unsaved preference makes the action fail so you can retry.
+3. **Beszel system entry** — if the hub's "MediaStack" system is exactly MediaStack's old `host.docker.internal` port `45876` entry, it is moved to the agent's unix socket. Any other host or port is yours: it is reported as drift and left alone.
+4. **Unused UFW rule** — earlier releases opened port 45876 to the Docker networks with the UFW comment `MediaStack:Beszel-agent`. The agent no longer listens on TCP, so this rule is deleted. Only a rule whose comment is exactly that one is removed; other rules are never touched. The step is silent when UFW is off or the rule is absent.
+5. **WireGuard UFW rule** — runs `setup_ufw_wireguard_clients`. While the `remote` profile is enabled (`WG_INIT_PASSWORD` set) and UFW is active, it ensures one rule, `ufw allow from <wireguard container /32> to any` with the comment `MediaStack:WireGuard-clients`. The address is `${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.11`. In every other state (WireGuard removed, UFW off or inactive, `UFW_ENABLED=false`) it removes the rule. Rules are matched by their exact comment; a changed prefix replaces the old source. This is how an install that predates the rule receives it (see [WireGuard host rule](#wireguard-host-rule)).
+6. **NAS storage watchdog** — on a NAS install with `STORAGE_WATCHDOG` not `false`, a missing `mediastack-storage-watchdog.service` is installed with `storage_install_watchdog`. Releases before the sbin-aware tool lookup skipped the install with only a warning when `visudo` was not on the user's `PATH`, so a rebooted box stayed unmounted with nothing to repair it. The action fails if the unit is still missing afterwards.
+
+All steps always run, so a filter failure never hides a later step. Your own choices (UFW, quality, DDNS, features) are not touched. `scripts/update.sh` runs the same steps after it recreates the containers, so `git pull` followed by an update converges too. If a step fails there, the update still finishes, then exits non-zero and names this action.
 
 ## `./mediastack` → Manage updates (per-service)
 

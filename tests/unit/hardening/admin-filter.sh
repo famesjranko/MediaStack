@@ -295,6 +295,18 @@ for ufw_on in true false; do
     assert_eq "" "$(cat "$MEDIASTACK_UFW_AFTER_RULES" "$MEDIASTACK_UFW_AFTER6_RULES")" "admin filter opt-out UFW=$ufw_on: after files untouched"
 done
 
+# Given ADMIN_PORT_FILTER=false, no filter files left, and a ledger that still owes a systemd reload
+# When setup runs
+# Then the reload is done, the ledger is cleared, and a failing reload makes setup fail
+af_reset
+_ms_state_set ADMIN_FILTER_UNIT_INSTALLED true
+AF_FAIL_RELOAD=1 ADMIN_PORT_FILTER=false setup_admin_filter >/dev/null 2>&1
+assert_eq "1" "$?" "admin filter opt-out (reload owed): a failing reload fails setup"
+assert_eq "true" "$(_ms_state_get ADMIN_FILTER_UNIT_INSTALLED)" "admin filter opt-out (reload owed): the ledger keeps the debt"
+ADMIN_PORT_FILTER=false setup_admin_filter >/dev/null 2>&1
+assert_eq "0" "$?" "admin filter opt-out (reload owed): the retry succeeds"
+assert_eq "false" "$(_ms_state_get ADMIN_FILTER_UNIT_INSTALLED)" "admin filter opt-out (reload owed): the ledger is cleared"
+
 # ===========================================================================
 # Migration: a host that still holds the chain in after.rules and after6.rules
 # ===========================================================================
@@ -394,10 +406,12 @@ assert_eq "" "$(cmp "$MEDIASTACK_UFW_AFTER_RULES" "$AF_TMP/unterminated.rules" 2
 
 # Given legacy blocks and ADMIN_PORT_FILTER=false
 # When hardening runs
-# Then the files are left alone (the opt-out toggle removes them)
+# Then MediaStack's blocks are removed and the user's text stays (the opt-out is honoured, not just warned about)
 af_legacy_hosts
 UFW_ENABLED=true HARDENING_ENABLED=false ADMIN_PORT_FILTER=false setup_hardening >/dev/null 2>&1
-assert_eq "" "$(cmp "$MEDIASTACK_UFW_AFTER_RULES" "$AF_TMP/legacy-v4.rules" 2>&1)" "admin filter opt-out: setup does not edit the after files"
+assert_eq "0" "$?" "admin filter opt-out: setup succeeds while removing the legacy blocks"
+assert_eq "" "$(cmp "$MEDIASTACK_UFW_AFTER_RULES" "$AF_TMP/user.rules" 2>&1)" "admin filter opt-out: after.rules is the user's text again"
+assert_eq "" "$(cmp "$MEDIASTACK_UFW_AFTER6_RULES" "$AF_TMP/user.rules" 2>&1)" "admin filter opt-out: after6.rules is the user's text again"
 
 # Given a user comment that merely starts with the block marker, around a real legacy block
 # When the block is stripped

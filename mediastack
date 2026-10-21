@@ -116,6 +116,7 @@ source "$SCRIPT_DIR/scripts/launcher/action-result.sh" || exit 1
 # env-state.sh first: the action modules below call its .env writer/reloader.
 source "$SCRIPT_DIR/scripts/launcher/env-state.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/bandwidth.sh" || exit 1
+source "$SCRIPT_DIR/scripts/launcher/converge.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/ddns.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/features.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/diagnostics.sh" || exit 1

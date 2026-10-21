@@ -115,6 +115,7 @@ print(json.dumps({"host": os.environ["B_SOCKET"]}))' 2>/dev/null)
             code="${out##*$'\n'}"
             if [[ "$code" =~ ^2 ]]; then
                 log_ok "Beszel system 'MediaStack' moved from host.docker.internal:45876 to the agent's unix socket"
+                BESZEL_SYSTEM_MOVED=true
                 return 0
             fi
             log_warn "Beszel system migration returned HTTP $code: ${out:0:200}"
@@ -169,7 +170,17 @@ beszel_converge_local_system() {
         sleep 2
     done
     _beszel_login "$hub_url" "$NPM_ADMIN_EMAIL" "$JELLYFIN_ADMIN_PASSWORD" || return 1
-    beszel_sync_local_system "$hub_url"
+    BESZEL_SYSTEM_MOVED=false
+    beszel_sync_local_system "$hub_url" || return 1
+    [[ "$BESZEL_SYSTEM_MOVED" == true ]] || return 0
+    # The hub keeps the old record's dead TCP connection and reports the system
+    # down for minutes; a restart makes it dial the socket at once.
+    if docker restart beszel >/dev/null 2>&1; then
+        log_ok "Restarted the Beszel hub so it connects through the socket"
+        return 0
+    fi
+    log_warn "Could not restart the Beszel hub after moving its system entry - run: docker restart beszel"
+    return 1
 }
 
 configure_beszel() {

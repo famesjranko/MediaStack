@@ -55,6 +55,7 @@ source "$SCRIPT_DIR/scripts/lib/common.sh"
 source "$SCRIPT_DIR/scripts/lib/profiles.sh"
 source "$SCRIPT_DIR/scripts/setup/override.sh"
 source "$SCRIPT_DIR/scripts/setup/storage.sh"
+source "$SCRIPT_DIR/scripts/launcher/converge.sh"
 
 IMAGE_CHANNEL="${IMAGE_CHANNEL:-stable}"
 case "${IMAGE_CHANNEL,,}" in
@@ -70,30 +71,31 @@ esac
 detect_host_memory
 generate_override "${JELLYFIN_GPU:-none}"
 
-# Which optional profiles this host is actually running. The service list per
-# profile comes from profiles_member_pattern (scripts/lib/profiles.sh) — the one
-# profile-membership table — so adding a profile is an edit there, not here.
-#
-# Capture-then-grep avoids a SIGPIPE+pipefail race: `compose ps | grep -q` reads
-# false because grep's early exit SIGPIPE-signals docker compose under
-# `set -euo pipefail`.
+# Which optional profiles the user's configuration enables. Derived from .env by
+# profiles_build_args (scripts/lib/profiles.sh), the same table the installer
+# and the launcher use - not from running state. A service that is enabled but
+# exited (a crashed autoheal, say) must still be recreated, or it never receives
+# compose changes such as a new stop_signal. Like the default-profile services,
+# an enabled service the user stopped is started again by `up -d`; the launcher's
+# per-service Update/Revert actions are the path that leaves stopped ones alone.
 #
 # An ARRAY, expanded quoted: an unquoted string splits on whitespace, so a
 # profile name containing a space would silently become two compose arguments.
 PROFILE_ARGS=()
-_add_running_profile() {
-    local profile="$1" note="$2" pattern ps_out
-    pattern=$(profiles_member_pattern "$profile") || return 0
-    ps_out=$(docker compose --profile "$profile" ps --status running 2>/dev/null || true)
-    if grep -qE "$pattern" <<<"$ps_out"; then
-        PROFILE_ARGS+=(--profile "$profile")
-        echo "$note"
-    fi
+profiles_build_args PROFILE_ARGS "$SCRIPT_DIR/.env"
+_note_profile() {
+    local profile="$1" note="$2" i
+    for ((i = 0; i < ${#PROFILE_ARGS[@]}; i++)); do
+        if [[ "${PROFILE_ARGS[i]}" == "--profile" && "${PROFILE_ARGS[i + 1]:-}" == "$profile" ]]; then
+            echo "$note"
+            return 0
+        fi
+    done
 }
-_add_running_profile proxy "Proxy profile detected (NPM + fail2ban + DDNS) - updating those too"
-_add_running_profile remote "Remote access profile detected - updating those too"
-_add_running_profile subtitles "Subtitles profile detected (Bazarr) - updating that too"
-_add_running_profile autoheal "Autoheal profile detected - updating that too"
+_note_profile proxy "Proxy profile detected (NPM + fail2ban + DDNS) - updating those too"
+_note_profile remote "Remote access profile detected - updating those too"
+_note_profile subtitles "Subtitles profile detected (Bazarr) - updating that too"
+_note_profile autoheal "Autoheal profile detected - updating that too"
 
 if [[ "$IMAGE_CHANNEL" == "latest" ]]; then
     echo "Pulling latest upstream image tags..."
@@ -141,6 +143,15 @@ if source "$SCRIPT_DIR/scripts/lib/health.sh" 2>/dev/null && _health_f2b_running
     health_present_fail2ban_updates jellyfin seerr
 fi
 
+# A code update can carry changes to MediaStack's own host and service state that
+# no other path applies to a finished install (scripts/launcher/converge.sh says
+# which). A failure is reported at the end, after the status table, and makes
+# the update exit non-zero.
+echo ""
+echo "Applying MediaStack changes (admin-port filter, qBittorrent auth whitelist, Beszel system entry, unused Beszel UFW rule, WireGuard UFW rule, NAS watchdog)..."
+CONVERGE_FAILED=false
+converge_mediastack_state || CONVERGE_FAILED=true
+
 echo ""
 if $PRUNE_IMAGES; then
     echo "Cleaning up dangling Docker images across this host..."
@@ -162,3 +173,7 @@ fi
 echo ""
 echo "Update complete. Current status:"
 docker compose "${PROFILE_ARGS[@]}" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+if $CONVERGE_FAILED; then
+    echo "ERROR: MediaStack changes were not fully applied (see above). Fix the cause, then run: ./mediastack > Health & security > Apply changes from a MediaStack update" >&2
+    exit 1
+fi

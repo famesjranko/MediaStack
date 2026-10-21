@@ -388,10 +388,13 @@ setup_admin_filter() {
         *) log_warn "ADMIN_PORT_FILTER='${ADMIN_PORT_FILTER}' is not recognised; keeping the admin-port filter ON. Only the exact value false turns it off." ;;
     esac
     if admin_filter_opted_out; then
-        log_skip "Admin-port filter off by user choice (admin ports reachable from any forwarded source)"
-        if [[ -n "$(_admin_filter_owned_files)" || -n "$(_admin_filter_legacy_files)" ]]; then
-            log_warn "A MediaStack admin-port filter is still installed; turn it off in Features & settings to remove it"
+        # The menu shows OFF, so finish any removal that failed before and return its rc.
+        if [[ -n "$(_admin_filter_owned_files)$(_admin_filter_legacy_files)" || "$(_ms_state_get ADMIN_FILTER_UNIT_INSTALLED 2>/dev/null || true)" == "true" ]]; then
+            log_info "Admin-port filter is off by your choice; removing what is still installed..."
+            admin_filter_disable
+            return
         fi
+        log_skip "Admin-port filter off by user choice (admin ports reachable from any forwarded source)"
         return 0
     fi
     setup_admin_filter_unit || return 1
