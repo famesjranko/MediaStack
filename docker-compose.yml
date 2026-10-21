@@ -493,7 +493,16 @@ services:
       - PERIOD=5m
     restart: unless-stopped
     security_opt: *default-security-opt
-    logging: *default-logging
+    # Smaller rotation than the shared default. When a provider call fails at
+    # the network layer, upstream logs the whole request URL, and the Dynu URL
+    # carries the password. Upstream has no redaction setting, so keep that
+    # text in the log for days, not months. See the ddns-updater-credential-logs
+    # decision record.
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
     # Mirrors image-baked healthcheck — defensive override guards against silent upstream drift.
     healthcheck:
       test: ["CMD", "/updater/ddns-updater", "healthcheck"]

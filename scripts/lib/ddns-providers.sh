@@ -238,3 +238,15 @@ d.update(json.loads(os.environ["DDNS_CONST"]))
 print(json.dumps({"settings": [d]}, indent=2))
 '
 }
+
+# One-line hint shown before a credential prompt when the provider sends that
+# secret in the request URL. ddns-updater logs the URL when a call fails at the
+# network layer, so a narrower credential limits what a leaked log line exposes
+# (docs/decisions/ddns-updater-credential-logs.md). Prints nothing otherwise.
+ddns_field_hint() {
+    case "$1:$2" in
+        dynu:password) printf 'Dynu: an IP Update Password (set in your Dynu account) can change your IP and nothing else - safer than your account password.' ;;
+        dynv6:token) printf 'dynv6: use an HTTP token limited to this zone (dynv6.com/keys), not an account-wide one.' ;;
+        duckdns:token) printf 'DuckDNS has no restricted token: this one controls your whole account, so keep it private.' ;;
+    esac
+}

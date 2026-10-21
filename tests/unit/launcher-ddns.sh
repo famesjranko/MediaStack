@@ -96,6 +96,54 @@ assert_contains "$(run_restart_check 0 'running exited restarting')" "RC=1" "_dd
 assert_contains "$(run_restart_check 0 'exited exited exited')" "RC=1" "_ddns_restart_and_check: never comes up -> 1"
 
 # ---------------------------------------------------------------------------
+# 3b. The day-2 credential prompt shows the same provider hint as the wizard.
+# ---------------------------------------------------------------------------
+run_day2_prompt_order() {
+    # $1 = provider picked in the Change DDNS flow
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" PROVIDER="$1" bash -c '
+    source "$REPO_ROOT/mediastack" </dev/null
+    tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
+    mkdir -p "$tmp/config/ddns-updater"
+    printf "%s\n" old-provider > "$tmp/config/ddns-updater/config.json"
+    DDNS_PROVIDER="$PROVIDER"; DOMAIN=box.example.com
+    _docker_reachable(){ return 0; }
+    _service_is_running(){ return 0; }
+    recovery_menu_remote_available(){ return 1; }
+    source "$REPO_ROOT/scripts/setup/env-gen.sh"
+    ddns_provider_pick(){ echo "$PROVIDER"; }
+    ddns_render_config_json(){ return 1; }
+    ui_log(){ echo "LOG $*" >> "$CAPTURE"; }
+    ui_input_validated(){ echo "PROMPT $1" >> "$CAPTURE"; echo secret; }
+    launcher_pause_for_menu(){ :; }
+    action_change_ddns >/dev/null
+    cat "$CAPTURE"
+    rm -rf "$tmp"
+  ' 2>&1
+}
+
+# Given the user changes DDNS to a provider that puts the secret in the URL
+# When the credential prompt is reached
+# Then the provider hint is logged before the prompt
+for p in dynu duckdns dynv6; do
+    out=$(run_day2_prompt_order "$p")
+    hint_line=$(grep -n '^LOG info \(Dynu: \|dynv6: \|DuckDNS has\)' <<<"$out" | head -1 | cut -d: -f1)
+    prompt_line=$(grep -n '^PROMPT' <<<"$out" | head -1 | cut -d: -f1)
+    if [[ -n "$hint_line" && -n "$prompt_line" && "$hint_line" -lt "$prompt_line" ]]; then
+        pass "day-2 DDNS ($p): hint precedes the credential prompt"
+    else
+        fail "day-2 DDNS ($p): hint precedes the credential prompt" "hint at ${hint_line:-none}, prompt at ${prompt_line:-none}: $out"
+    fi
+done
+
+# Given the user changes DDNS to Cloudflare (bearer header, no URL secret)
+# When the credential prompt is reached
+# Then no hint is logged
+out=$(run_day2_prompt_order cloudflare)
+assert_contains "$out" "PROMPT" "day-2 DDNS (cloudflare): still prompts for the credential"
+hint_count=$(grep -c '^LOG info \(Dynu: \|dynv6: \|DuckDNS has\)' <<<"$out" || true)
+assert_eq "0" "$hint_count" "day-2 DDNS (cloudflare): no hint"
+
+# ---------------------------------------------------------------------------
 # 4. Provider persistence is a second transaction phase. If the verified live
 # config is up but DDNS_PROVIDER cannot be persisted, restore the old payload
 # and restart onto it. A failed restoration must name manual repair explicitly.
