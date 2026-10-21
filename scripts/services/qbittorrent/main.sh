@@ -16,6 +16,50 @@ _qbt_login() {
     [[ "$body" == "Ok." || ("$http_code" == "204" && -z "$body") ]]
 }
 
+# Containers that call the qBittorrent WebUI without credentials: sonarr (.22) and
+# radarr (.23) download clients, homepage (.40) widget. Their addresses are the
+# static ipv4_address values in docker-compose.yml. Only these /32s skip login:
+# the bridge gateway (.1) and the whole subnet stay authenticated, because
+# Docker's userland proxy relays host-local and IPv6 clients from the gateway.
+# qBittorrent splits this setting on "," or newline and trims each entry
+# (src/webui/api/appcontroller.cpp, setPreferences).
+# Prints the list; fails closed (prints nothing, returns 1) when the prefix is
+# missing or malformed, so the caller never falls back to a wide range.
+_qbt_caller_whitelist() {
+    PREFIX="${MEDIASTACK_NETWORK_PREFIX:-}" python3 -c '
+import os, re, sys
+p = os.environ["PREFIX"]
+m = re.fullmatch(r"(\d{1,3})\.(\d{1,3})\.(\d{1,3})", p)
+if not m or any(int(g) > 255 for g in m.groups()):
+    sys.exit(1)
+print(", ".join(f"{p}.{n}/32" for n in (22, 23, 40)))'
+}
+
+# Classify the live whitelist from GET /app/preferences (stdin) against the
+# wanted list ($1): legacy (MediaStack's old 172.16.0.0/12, enabled), empty
+# (fresh seed, nothing set), current (already the wanted list, enabled), other
+# (user state), unreadable.
+_qbt_whitelist_state() {
+    WANTED="$1" python3 -c '
+import json, os, re, sys
+try:
+    prefs = json.load(sys.stdin)
+    value = prefs["bypass_auth_subnet_whitelist"]
+    enabled = bool(prefs["bypass_auth_subnet_whitelist_enabled"])
+except Exception:
+    print("unreadable"); sys.exit(0)
+split = lambda v: {x.strip() for x in re.split(r"[\n,]", v) if x.strip()}
+have, want = split(value), split(os.environ["WANTED"])
+if not have:
+    print("empty")
+elif have == {"172.16.0.0/12"} and enabled:
+    print("legacy")
+elif have == want and enabled:
+    print("current")
+else:
+    print("other")'
+}
+
 # MB/s (megabytes) -> bytes/s for the qBittorrent API. Shared so the 1048576
 # conversion lives in exactly one place (configure_qbittorrent + qbt_set_speed_limits).
 _qbt_mb_to_bytes() {
@@ -115,20 +159,39 @@ print(password)
     dl_limit=$(_qbt_mb_to_bytes "$dl_limit_mb")
     ul_limit=$(_qbt_mb_to_bytes "$ul_limit_mb")
 
+    # Auth-bypass whitelist: only the credential-less caller containers. Replace
+    # the live value only when it is empty (fresh seed) or MediaStack's legacy
+    # /12; anything else is user state (drift, untouched). Every doubt leaves
+    # the live value alone rather than widening it.
+    local wl_csv wl_state live_prefs wl_apply=""
+    if ! wl_csv=$(_qbt_caller_whitelist); then
+        log_warn "MEDIASTACK_NETWORK_PREFIX missing or invalid - qBittorrent auth whitelist left unchanged (Sonarr/Radarr may not connect)"
+    elif ! live_prefs=$(curl -sf -b "$jar" "$qbt_url/api/v2/app/preferences" 2>/dev/null); then
+        log_warn "Could not read qBittorrent preferences - auth whitelist left unchanged"
+    else
+        wl_state=$(_qbt_whitelist_state "$wl_csv" <<<"$live_prefs")
+        case "$wl_state" in
+            legacy | empty) wl_apply="$wl_csv" ;;
+            current) log_skip "qBittorrent auth whitelist already limited to $wl_csv" ;;
+            other) log_drift "qBittorrent auth whitelist was changed outside MediaStack - left as is (Sonarr/Radarr need $wl_csv to connect)" ;;
+            *) log_warn "Could not parse qBittorrent auth whitelist - left unchanged" ;;
+        esac
+    fi
+
     local prefs_json
     if $manual_storage; then
-        prefs_json=$(DL_LIMIT="$dl_limit" UP_LIMIT="$ul_limit" TORRENT_PORT="${TORRENT_PORT:-6881}" python3 -c '
+        prefs_json=$(WL_CSV="$wl_apply" DL_LIMIT="$dl_limit" UP_LIMIT="$ul_limit" TORRENT_PORT="${TORRENT_PORT:-6881}" python3 -c '
 import os, json
 print(json.dumps({
     "listen_port": int(os.environ["TORRENT_PORT"]),
     "dl_limit": int(os.environ["DL_LIMIT"]),
     "up_limit": int(os.environ["UP_LIMIT"]),
-    "bypass_auth_subnet_whitelist": "172.16.0.0/12",
-    "bypass_auth_subnet_whitelist_enabled": True,
+    **({"bypass_auth_subnet_whitelist": os.environ["WL_CSV"],
+        "bypass_auth_subnet_whitelist_enabled": True} if os.environ["WL_CSV"] else {}),
 }))')
         log_skip "qBittorrent save/temp paths skipped (manual app wiring)"
     else
-        prefs_json=$(SAVE_PATH="$save_path" TEMP_PATH="$temp_path" \
+        prefs_json=$(WL_CSV="$wl_apply" SAVE_PATH="$save_path" TEMP_PATH="$temp_path" \
             MAX_RATIO="$max_ratio" MAX_SEED_TIME="$max_seed_time" \
             MAX_DL="$max_dl" MAX_UL="$max_ul" MAX_TOTAL="$max_total" \
             DL_LIMIT="$dl_limit" UP_LIMIT="$ul_limit" \
@@ -157,15 +220,23 @@ print(json.dumps({
     "max_active_torrents": int(os.environ["MAX_TOTAL"]),
     "upnp": False,
     "preallocate_all": True,
-    "bypass_auth_subnet_whitelist": "172.16.0.0/12",
-    "bypass_auth_subnet_whitelist_enabled": True,
+    **({"bypass_auth_subnet_whitelist": os.environ["WL_CSV"],
+        "bypass_auth_subnet_whitelist_enabled": True} if os.environ["WL_CSV"] else {}),
 }))')
     fi
     if curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
         --data-urlencode "json=$prefs_json" >/dev/null 2>&1; then
         log_ok "Preferences set"
+        if [[ -n "$wl_apply" ]]; then
+            if [[ "$wl_state" == "legacy" ]]; then
+                log_ok "qBittorrent auth whitelist narrowed from 172.16.0.0/12 to $wl_apply"
+            else
+                log_ok "qBittorrent auth whitelist set to $wl_apply"
+            fi
+        fi
     else
         log_warn "Failed to set qBittorrent preferences"
+        [[ -n "$wl_apply" ]] && log_warn "qBittorrent auth whitelist not narrowed (preferences were not saved)"
     fi
 
     # Keep qBittorrent aligned with the shared setup credentials. qBittorrent

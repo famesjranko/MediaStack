@@ -274,7 +274,8 @@ assert_eq "$(limit_bytes "${ul_limit_mb:-0}")" "$(json_field "$prefs_json" up_li
 
 assert_eq "$(cfg_value qbittorrent.max_seeding_time)" "$(json_field "$prefs_json" max_seeding_time)" "step 1 qBittorrent: max_seeding_time matches config.yml"
 assert_eq "True" "$(json_field "$prefs_json" max_seeding_time_enabled)" "step 1 qBittorrent: max_seeding_time_enabled"
-assert_eq "172.16.0.0/12" "$(json_field "$prefs_json" bypass_auth_subnet_whitelist)" "step 1 qBittorrent: subnet whitelist covers Docker bridge"
+network_prefix="$(env_value MEDIASTACK_NETWORK_PREFIX)"
+assert_eq "${network_prefix}.22/32, ${network_prefix}.23/32, ${network_prefix}.40/32" "$(json_field "$prefs_json" bypass_auth_subnet_whitelist | tr '\n' ',' | sed 's/,$//; s/,/, /g')" "step 1 qBittorrent: auth whitelist is only the sonarr/radarr/homepage /32s (no /12, no gateway)"
 assert_eq "True" "$(json_field "$prefs_json" bypass_auth_subnet_whitelist_enabled)" "step 1 qBittorrent: subnet whitelist enabled"
 
 storage_app_wiring="$(env_value STORAGE_APP_WIRING)"
