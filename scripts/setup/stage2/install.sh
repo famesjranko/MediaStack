@@ -22,6 +22,10 @@ _stage2_install() {
 
     _stage2_source_env
 
+    # Opens (or, when WireGuard was declined, removes) the host-INPUT rule for
+    # the wireguard container; without it UFW drops tier traffic to host ports.
+    setup_ufw_wireguard_clients || log_warn "Could not converge the WireGuard firewall rule; peers may not reach host services. 'Apply changes from a MediaStack update' retries it."
+
     # Apply chosen Jellyfin remote-streaming cap to config.yml so the
     # post-LE-gate `configure.sh --only npm,jellyfin,homepage` run picks
     # it up via configure_jellyfin_streaming. Skip when no value was set

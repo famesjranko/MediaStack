@@ -264,6 +264,8 @@ action_toggle_ufw() {
         if ((rc == 0)) && [[ "${DOMAIN:-example.com}" != "example.com" ]]; then
             setup_ufw_service_ports || rc=$?
         fi
+        # Independent of DOMAIN: WireGuard is gated on WG_INIT_PASSWORD alone.
+        ((rc == 0)) && { setup_ufw_wireguard_clients || rc=$?; }
         _show_action_result "$rc" "Enable UFW firewall"
     fi
     launcher_pause_for_menu

@@ -250,7 +250,7 @@ Create one peer per person with **New Client** in the wg-easy UI. For phones, sc
 >
 > Two lower-trust **Streaming** levels are not installer choices, just manual templates (below) for the extra peers you add yourself: **Streaming** (Jellyfin only, for watch-only peers like kids) and **Streaming + requests** (Jellyfin + Seerr, for peers who also request titles). Neither exposes Homepage.
 >
-> Tiers are enforced on the server, so a peer can't widen its own access by editing its device's config.
+> Tiers are enforced on the server, so a peer can't widen its own access by editing its device's config. With UFW on, MediaStack adds one rule, `MediaStack:WireGuard-clients`, that lets the WireGuard container reach this host. Without it UFW would drop tier traffic to host ports. It widens nothing for peers: wg-easy still decides, per peer, which addresses and ports each tier may reach.
 >
 > If a peer behind strict NAT (cellular, hotel Wi-Fi) keeps dropping, set **Persistent Keepalive** to `25` in wg-easy.
 
