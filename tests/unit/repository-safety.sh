@@ -39,6 +39,8 @@ source "$TOPIC_DIR/core-rules.sh"
 source "$TOPIC_DIR/list-coverage.sh"
 # shellcheck source=tests/unit/repository-safety/pattern-parity.sh
 source "$TOPIC_DIR/pattern-parity.sh"
+# shellcheck source=tests/unit/repository-safety/gitignore-env.sh
+source "$TOPIC_DIR/gitignore-env.sh"
 # shellcheck source=tests/unit/repository-safety/closing.sh
 source "$TOPIC_DIR/closing.sh"
 
