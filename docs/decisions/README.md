@@ -21,7 +21,7 @@ place — or says plainly which part of it nothing enforces.
 
 | Record | Decision |
 |---|---|
-| [admin-port-exposure.md](admin-port-exposure.md) | Admin ports bind on all interfaces and are confined by a MediaStack-owned `DOCKER-USER` chain, installed only when host hardening is accepted. |
+| [admin-port-exposure.md](admin-port-exposure.md) | Admin ports bind on all interfaces and are confined by a MediaStack-owned `DOCKER-USER` chain, installed by default and removable only through the explicit `ADMIN_PORT_FILTER=false` opt-out, whether UFW is on or off. |
 | [ddns-updater-credential-logs.md](ddns-updater-credential-logs.md) | ddns-updater logs the provider request URL on a network failure, so the Dynu, DuckDNS and dynv6 secrets (URL query) can reach the log; upstream has no redaction setting, so MediaStack shortens the retention, hints at scoped credentials and documents the risk per provider. |
 | [wg-easy-capability-set.md](wg-easy-capability-set.md) | The VPN container drops all capabilities and adds exactly four, rather than running privileged. |
 

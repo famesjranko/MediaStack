@@ -5,7 +5,7 @@ long-term data protection are intentionally out of scope for MediaStack.
 
 ## `./mediastack` → Uninstall MediaStack
 
-Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership (MediaStack-installed Samba is purged, not just removed, and the Linux account MediaStack created is deleted when nothing outside MediaStack's paths uses it; no autoremove runs, so Samba's dependency packages stay), watchdog units, and setup banners. `data/`, `config/`, and the checkout are preserved.
+Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership (MediaStack-installed Samba is purged, not just removed, and the Linux account MediaStack created is deleted when nothing outside MediaStack's paths uses it; no autoremove runs, so Samba's dependency packages stay), watchdog units, and setup banners. `data/`, `config/examples/` and the checkout are preserved. `config/` runtime state, `.env`, `config.yml`, the generated compose override, and MediaStack's labelled Docker volumes and networks are removed.
 
 The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts the recorded teardown and instead offers a best-effort cleanup of the host changes MediaStack can still identify on its own. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried. User-modified MediaStack-owned files are preserved and reported instead of overwritten or deleted.
 
@@ -200,17 +200,25 @@ effect after switching providers.
 
 ## `./mediastack` → Features & settings → Firewall (UFW) / System hardening
 
-Two ON/OFF toggles mirror the Stage 1 wizard's Security prompts, backed by `UFW_ENABLED`
-and `HARDENING_ENABLED` in `.env`:
+Three ON/OFF toggles mirror the Stage 1 wizard's Security prompts, backed by `UFW_ENABLED`,
+`ADMIN_PORT_FILTER` and `HARDENING_ENABLED` in `.env`:
 
-- **Firewall (UFW)** — ON runs `setup_ufw` (default-deny inbound, LAN/SSH/web allowed, plus the
-  `DOCKER-USER` restriction chain), reopening remote service ports only on a real-domain install.
-  Requires Docker to be reachable (the chain lives in `DOCKER-USER`). OFF runs `_uninstall_ufw`,
+- **Firewall (UFW)** — ON runs `setup_ufw` (default-deny inbound, LAN/SSH/web allowed),
+  reopening remote service ports only on a real-domain install, then converges the
+  [WireGuard host rule](#wireguard-host-rule). It does not touch the admin-port
+  filter chain (see the next toggle). OFF runs `_uninstall_ufw`,
   then resets the ownership latches so a later ON reconfigures cleanly. If you added your own UFW
   rules or changed the defaults after install, OFF removes only MediaStack's rules and **leaves UFW
   active**, telling you so — and because that removal also drops MediaStack's SSH allows, it
   re-asserts an SSH allow (RFC1918 LAN ranges + your current SSH session) so a remote/headless box
   can never be locked out. Run `sudo ufw disable` yourself if you want the firewall fully off.
+- **Admin-port filter** — ON (the default) runs `setup_admin_filter`, which installs the
+  `MEDIASTACK-DOCKER-RESTRICT` chain (via `mediastack-admin-filter.service` and a `docker.service`
+  drop-in) so the admin UIs answer only to loopback, private and Tailscale sources. It works with UFW
+  on or off. OFF runs `admin_filter_disable` and asks first, because ports 81, 51821, 8000, 3001, 9000,
+  the *arr and download UIs and 7359/udp then answer any source your router forwards. Docker keeps
+  running during both. When the filter is wanted but not active, Health shows it and the main menu
+  prints a warning line.
 - **System hardening** — ON applies unattended security upgrades + kernel sysctl hardening; OFF
   reverts both (`_uninstall_sysctl` + `_uninstall_apt`), restoring pre-install sysctl values it still
   owns and removing the MediaStack drop-ins. ON applies only MediaStack's own sysctl file and fails loudly if a key does not take effect or

@@ -22,8 +22,10 @@ PREVIEW
         # Only list what the user actually opted into — the firewall and
         # hardening are optional toggles, so a disabled feature isn't "deleted".
         if [[ "${UFW_ENABLED:-true}" != "false" ]]; then
-            printf '  * MediaStack-owned UFW rules and Docker firewall chain\n'
+            printf '  * MediaStack-owned UFW rules\n'
         fi
+        # admin_filter_disable runs on every uninstall, whatever the toggles say.
+        printf '  * MediaStack admin-port filter (systemd unit, Docker drop-in, firewall chain)\n'
         if [[ "${HARDENING_ENABLED:-true}" != "false" ]]; then
             printf '  * MediaStack kernel sysctl hardening (unchanged values restored)\n'
             printf '  * MediaStack unattended-upgrades drop-ins\n'
