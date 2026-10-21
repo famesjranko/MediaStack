@@ -3,6 +3,9 @@
 # Globals: MEDIASTACK_STATE_FILE, MEDIASTACK_UFW_AFTER_RULES, MEDIASTACK_UFW_AFTER6_RULES,
 #          MEDIASTACK_UFW_AFTER_INIT, and LAN_CIDRS.
 
+# shellcheck source=../../lib/apt.sh
+declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
+
 _ms_ufw_allow() {
     # ufw prints "Rule added"/"Skipping adding existing rule" to stdout on each
     # call; suppress that per-rule noise (the caller logs a single summary line).
@@ -24,7 +27,7 @@ _ms_ufw_allow() {
 
 setup_ufw() {
     if ! command -v ufw &>/dev/null; then
-        ui_spin "Installing ufw..." sudo apt-get install -y -qq ufw
+        ui_spin "Installing ufw..." "${MS_APT_INSTALL[@]}" ufw
     fi
 
     if [[ "$(_ms_state_get UFW_DEFAULTS_APPLIED 2>/dev/null || true)" == "true" &&

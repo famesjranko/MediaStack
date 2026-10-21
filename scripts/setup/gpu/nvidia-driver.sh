@@ -1,9 +1,13 @@
 # Owns: nvidia_* — NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
 # Sources: gpu.sh globals, common.sh logging, and nvidia-patch.sh helpers.
 # shellcheck disable=SC2154 # _nvidia_tmp is a documented caller-owned workspace.
+# Every apt install runs through MS_APT_INSTALL (scripts/lib/apt.sh).
+# shellcheck source=../../lib/apt.sh
+declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
+
 nvidia_driver_check_secure_boot() {
     if ! command -v mokutil &>/dev/null; then
-        sudo apt-get install -y -qq mokutil >/dev/null 2>&1 || true
+        "${MS_APT_INSTALL[@]}" mokutil >/dev/null 2>&1 || true
     fi
     if ! command -v mokutil &>/dev/null; then
         echo "unavailable"

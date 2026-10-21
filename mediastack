@@ -68,6 +68,8 @@ if [[ ! -t 0 && "${MEDIASTACK_NONINTERACTIVE:-0}" != "1" ]]; then
 fi
 
 source "$SCRIPT_DIR/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/apt.sh
+source "$SCRIPT_DIR/scripts/lib/apt.sh"
 source "$SCRIPT_DIR/scripts/lib/ui.sh"
 source "$SCRIPT_DIR/scripts/lib/network.sh"
 # Input validators (e.g. validate_mb_per_sec for the day-2 bandwidth action);
@@ -146,13 +148,13 @@ launcher_action_install_gum() {
     sudo -v
     local ok=true
     sudo mkdir -p /etc/apt/keyrings || ok=false
-    $ok && sudo apt-get install -y -qq gnupg || ok=false
+    $ok && "${MS_APT_INSTALL[@]}" gnupg || ok=false
     $ok && curl -fsSL https://repo.charm.sh/apt/gpg.key \
         | sudo gpg --yes --dearmor -o /etc/apt/keyrings/charm.gpg || ok=false
     $ok && echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
         | sudo tee /etc/apt/sources.list.d/charm.list >/dev/null || ok=false
     $ok && ui_spin "Updating package lists..." sudo apt-get update -qq || ok=false
-    $ok && ui_spin "Installing GUM..." sudo apt-get install -y -qq gum || ok=false
+    $ok && ui_spin "Installing GUM..." "${MS_APT_INSTALL[@]}" gum || ok=false
     if $ok; then
         ui_log ok "GUM installed — restarting with enhanced menus..."
         sleep 1

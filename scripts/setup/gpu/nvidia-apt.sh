@@ -61,7 +61,7 @@ prepare_nvidia_debian_to_unlock() {
     sudo apt-mark manual nvidia-container-toolkit nvidia-container-toolkit-base \
         libnvidia-container-tools libnvidia-container1 >/dev/null 2>&1 || true
     if ! ui_spin "Removing Debian NVIDIA driver packages..." \
-        sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq "${_pkgs[@]}"; then
+        "${MS_APT_PURGE[@]}" "${_pkgs[@]}"; then
         log_error "Failed to remove Debian NVIDIA driver packages"
         return 1
     fi
@@ -255,7 +255,7 @@ install_nvidia_drivers_apt() {
             return 1
         fi
         if ! ui_spin "Repairing Debian NVIDIA driver packages..." \
-            sudo apt-get install -y -qq --reinstall "${_repair_packages[@]}"; then
+            "${MS_APT_INSTALL[@]}" --reinstall "${_repair_packages[@]}"; then
             log_error "Failed to repair the Debian NVIDIA driver packages"
             GPU_TYPE="none"
             return 1
@@ -309,7 +309,7 @@ install_nvidia_drivers_apt() {
     fi
     # shellcheck disable=SC2086  # _install_args is a controlled arg list (may include "-t <release>")
     if ! ui_spin "Installing Debian NVIDIA driver via apt (${_install_args})..." \
-        sudo apt-get install -y -qq $_install_args; then
+        "${MS_APT_INSTALL[@]}" $_install_args; then
         log_error "Failed to install the Debian nvidia-driver package"
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"

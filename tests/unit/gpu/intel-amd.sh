@@ -38,6 +38,7 @@ unset -f dpkg
 dpkg() { return 1; }
 apt-cache() { printf '%s\n' "non-free"; }
 sudo() {
+    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
     if [[ "${1:-}" == "apt-get" && "${2:-}" == "install" ]]; then
         return 42
     fi

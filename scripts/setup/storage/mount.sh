@@ -2,6 +2,9 @@
 # Sourced by scripts/setup/storage.sh; depends on storage/core.sh helpers
 # (storage_mountpoint, storage_mount_matches, storage_log_*, etc.).
 
+# shellcheck source=../../lib/apt.sh
+declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
+
 storage_repair_mismatched_mount() {
     local mountpoint live_source live_fstype expected_source
 
@@ -70,7 +73,7 @@ storage_ensure_nfs_common() {
     fi
     storage_log_info "Installing nfs-common for NAS storage..."
     sudo apt-get update -qq >/dev/null 2>&1 || true
-    ui_spin "Installing nfs-common..." sudo apt-get install -y -qq nfs-common
+    ui_spin "Installing nfs-common..." "${MS_APT_INSTALL[@]}" nfs-common
 }
 
 # TCP reachability probe. Reuses the codebase nc idiom (network.sh) with a

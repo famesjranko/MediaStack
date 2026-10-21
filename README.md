@@ -4,7 +4,7 @@
 
 Turnkey media server for home networks. Installs and configures the full stack on Debian from a single menu.
 
-[![Debian 11–13](https://img.shields.io/badge/Debian-11%E2%80%9313-A81D33?logo=debian&logoColor=white)](https://www.debian.org)
+[![Debian 12–13](https://img.shields.io/badge/Debian-12%E2%80%9313-A81D33?logo=debian&logoColor=white)](https://www.debian.org)
 [![Docker Engine + Compose](https://img.shields.io/badge/Docker-Engine%20%2B%20Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![Public CI](https://img.shields.io/github/actions/workflow/status/famesjranko/MediaStack/ci.yml?branch=main&label=Public%20CI)](https://github.com/famesjranko/MediaStack/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange)](#license)<br>
@@ -30,7 +30,7 @@ cd MediaStack
 The installer detects the GPU, creates the storage layout (local, NAS/NFS, or manual), hardens the host, starts the containers, and configures every service through its API. Access URLs are printed at the end.
 
 > [!NOTE]
-> **Requirements:** Debian Server (headless), 50 GB+ free disk, internet connection.
+> **Requirements:** Debian 12 or 13 Server (headless), 50 GB+ free disk, internet connection.
 
 > [!TIP]
 > **Enhanced menus (optional):** run `./mediastack` → **Get enhanced menus** to install [gum](https://github.com/charmbracelet/gum) for arrow-key menus instead of numbered lists. The launcher detects it automatically.

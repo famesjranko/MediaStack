@@ -42,6 +42,8 @@ fi
 [[ " $* " == *" --demo "* ]] && export UI_DEMO=1 UI_FORCE_COLOR=1 UI_FORCE_GLYPHS=1
 
 source "$SCRIPT_DIR/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/apt.sh
+source "$SCRIPT_DIR/scripts/lib/apt.sh"
 source "$SCRIPT_DIR/scripts/lib/ui.sh"
 
 # --- Setup modules ---
@@ -111,7 +113,15 @@ main() {
     fi
 
     check_not_root
-    check_debian
+
+    # --uninstall must run on any host so a refused-OS host can still be
+    # cleaned up. Every other path configures the host and needs a supported OS.
+    # On refusal, first repair a Docker apt source that older code wrote for the
+    # wrong distro, so re-running ./mediastack fixes a host it broke.
+    if [[ "${1:-}" != "--uninstall" ]] && ! check_debian; then
+        remove_broken_docker_apt_source || log_warn "Could not remove the broken Docker apt source."
+        exit 1
+    fi
 
     if [[ "${1:-}" == "--uninstall" ]]; then
         prompt_sudo_cache
@@ -326,7 +336,7 @@ main() {
 
     # Ensure python3-yaml is available for configure.sh
     if ! python3 -c "import yaml" 2>/dev/null; then
-        ui_spin "Installing python3-yaml..." sudo apt-get install -y -qq python3-yaml
+        ui_spin "Installing python3-yaml..." "${MS_APT_INSTALL[@]}" python3-yaml
     fi
 
     # check_disk_space replaced by check_disk_floor in pre-flight battery.
