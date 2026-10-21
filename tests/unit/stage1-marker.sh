@@ -119,6 +119,16 @@ assert_eq "0" "$rc" "stage1-marker: existing-install evidence with empty marker 
 assert_eq "true" "$INSTALL_CALLED" "stage1-marker: existing-install flag alone does not skip Stage 1"
 assert_eq "" "$SKIP_CAPTURE" "stage1-marker: existing-install flag alone does not emit skip message"
 
+# Given DEMO mode whose Stage 1 install fails, When run_wizard returns, Then the
+# failure propagates instead of being swallowed by an unconditional return 0.
+seed_root_config() { :; }
+_wizard_load_existing_env() { :; }
+_demo_stage1_noninteractive() { return 1; }
+DEMO=1 run_wizard
+rc=$?
+assert_eq "1" "$rc" "stage1-marker: DEMO run_wizard propagates a failed Stage 1 install"
+unset DEMO
+
 # BESZEL_AGENT_KEY source-safety: configure.sh populates BESZEL_AGENT_KEY
 # with an ssh-ed25519 line of the form 'ssh-ed25519 AAAAC3Nza... comment'
 # (three space-separated tokens). Without single-quoting in env-gen.sh,

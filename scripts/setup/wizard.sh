@@ -182,8 +182,9 @@ exit(0 if c.get('wizard_completed') else 1)
     _wizard_load_existing_env
 
     if [[ "${DEMO:-0}" == "1" ]]; then
+        # Propagate a failed Stage 1 install instead of reporting success.
         _demo_stage1_noninteractive
-        return 0
+        return $?
     fi
 
     run_stage1

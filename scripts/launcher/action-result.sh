@@ -110,15 +110,25 @@ _stack_system_lines() {
     local _tc _gpu="${JELLYFIN_GPU:-none}"
     case "$_gpu" in
         nvidia)
-            _tc="NVIDIA NVENC"
             local _drv
-            _drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
-            [[ -n "$_drv" ]] && _tc+=" — driver ${_drv}"
-            [[ -n "${NVIDIA_DRIVER_MODE:-}" ]] && _tc+=" (${NVIDIA_DRIVER_MODE})"
+            if _drv=$(gpu_fallback_nvidia_driver_version); then
+                _tc="NVIDIA NVENC — driver ${_drv}"
+                [[ -n "${NVIDIA_DRIVER_MODE:-}" ]] && _tc+=" (${NVIDIA_DRIVER_MODE})"
+            else
+                _tc="not active — driver not loaded (repair from Manage hardware transcoding)"
+            fi
             ;;
         intel) _tc="Intel QSV" ;;
         amd) _tc="AMD VAAPI" ;;
-        *) _tc="Software (no GPU acceleration)" ;;
+        *)
+            local _why="${STAGE_3_GPU_FALLBACK_REASON:-}" _wtext
+            if [[ "${STAGE_3_GPU_STATE:-}" =~ ^(fallback|skipped)$ && -n "$_why" ]] \
+                && _wtext=$(gpu_fallback_reason_text "$_why"); then
+                _tc="Software (${_wtext})"
+            else
+                _tc="Software (no GPU acceleration)"
+            fi
+            ;;
     esac
     ui_kv "Transcoding" "$_tc"
     local _remote
@@ -262,6 +272,26 @@ _show_action_result() {
     echo ""
     case "$outcome" in
         completed) ui_log ok "${label} completed successfully." ;;
+        completed-software*)
+            local _cwhy="${outcome#completed-software}" _ctext _cfix
+            _cwhy="${_cwhy#:}"
+            _ctext=$(gpu_fallback_reason_text "$_cwhy") || _ctext="hardware transcoding could not be verified"
+            ui_log warn "${label} completed with software transcoding (${_ctext})."
+            _cfix=$(gpu_fallback_remedy "$_cwhy")
+            [[ -z "$_cfix" ]] || ui_log info "Fix: ${_cfix}"
+            ;;
+        software-fallback*)
+            local _why="${outcome#software-fallback}" _text _fix
+            _why="${_why#:}"
+            ui_log warn "${label} finished with software transcoding - the GPU is not active."
+            if [[ -n "$_why" ]]; then
+                _text=$(gpu_fallback_reason_text "$_why") || _text="$_why"
+                ui_log info "Reason: ${_text}"
+                _fix=$(gpu_fallback_remedy "$_why")
+                [[ -z "$_fix" ]] || ui_log info "Fix: ${_fix}"
+            fi
+            ;;
+        transcoding-reboot-pending) ui_log warn "${label} ready — reboot to finish; MediaStack resumes after the reboot." ;;
         reboot-pending) ui_log warn "Reboot to finish — hardware transcoding activates after you reboot." ;;
         aborted) ui_log info "${label} aborted — no changes were made." ;;
         unchanged) ui_log info "No changes were made." ;;

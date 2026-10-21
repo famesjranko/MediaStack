@@ -115,6 +115,7 @@ systemctl() {
 # whose Docker is v4-only: the v6 arm must stay silent there.
 DU6_PRESENT=0
 DU6_JUMP=1
+DU6_RULES="-A X -p tcp -m multiport --dports 80 -j DROP"
 ufw_installed() { return $((1 - UFW_INSTALLED)); }
 sudo() {
     [[ "${1:-}" == "-n" ]] && shift
@@ -138,6 +139,7 @@ sudo() {
             case "$*" in
                 *"-S DOCKER-USER"*) return $((1 - DU6_PRESENT)) ;;
                 *"-C DOCKER-USER"*) return $((1 - DU6_JUMP)) ;;
+                *"-S "*) printf '%s\n' "$DU6_RULES" ;;
             esac
             ;;
         *) return 0 ;;
@@ -195,6 +197,38 @@ F2B_RUNNING=1
 SVC_HEALTHY=0
 _v skip "watching: service not ready => skip" health_fail2ban_watching jellyfin
 SVC_HEALTHY=1
+
+# --- fail2ban down: not installed vs installed but stopped ------------------
+# Given: fail2ban is not running and the .env names a real domain (proxy profile)
+_f2b_root=$(mktemp -d)
+_saved_root="$_HEALTH_REPO_ROOT"
+_HEALTH_REPO_ROOT="$_f2b_root"
+F2B_RUNNING=0
+printf "DOMAIN='media.example.org'\n" >"$_f2b_root/.env"
+# When: each fail2ban check runs
+installed_out=$(
+    health_fail2ban_jails
+    health_fail2ban_regex jellyfin
+    health_fail2ban_watching jellyfin
+)
+# Then: every verdict says fail2ban is installed but stopped and how to start it, never "LAN-only"
+assert_eq "3" "$(grep -c 'installed but not running - start it from Manage stack > Start a service' <<<"$installed_out")" "f2b down on a remote host: all three checks say installed but not running"
+assert_not_contains "$installed_out" "LAN-only" "f2b down on a remote host: not reported as LAN-only"
+
+# Given: fail2ban is not running and the .env has no real domain (LAN-only)
+printf 'DOMAIN=example.com\n' >"$_f2b_root/.env"
+# When: each fail2ban check runs
+lan_out=$(
+    health_fail2ban_jails
+    health_fail2ban_regex jellyfin
+    health_fail2ban_watching jellyfin
+)
+# Then: every verdict says fail2ban is not installed (LAN-only)
+assert_eq "3" "$(grep -c 'not installed (LAN-only install)' <<<"$lan_out")" "f2b down on a LAN-only host: all three checks say not installed"
+assert_not_contains "$lan_out" "installed but not running" "f2b down on a LAN-only host: not reported as stopped"
+_HEALTH_REPO_ROOT="$_saved_root"
+rm -rf "$_f2b_root"
+F2B_RUNNING=1
 
 # --- dns drift -------------------------------------------------------------
 DOMAIN="example.org"
@@ -264,6 +298,13 @@ _v ok "docker-user: v6 chain jumped => ok" health_docker_user_restrict
 DU6_JUMP=0
 _v fail "docker-user: v6 chain present but jump missing => fail" health_docker_user_restrict
 DU6_JUMP=1
+# Given IPv6 is enabled in Docker and the v6 jump exists but the v6 chain was flushed
+# When the port lock is checked
+# Then the verdict is a failure naming IPv6
+DU6_RULES="-A X -j RETURN"
+_v fail "docker-user: v6 chain jumped but EMPTY => fail" health_docker_user_restrict
+assert_contains "$(health_docker_user_restrict)" "IPv6 port-restriction chain is EMPTY" "docker-user: empty v6 chain is named as IPv6"
+DU6_RULES="-A X -p tcp -m multiport --dports 80 -j DROP"
 DU6_PRESENT=0
 SUDO_OK=0
 _v skip "docker-user: no sudo => skip" health_docker_user_restrict
@@ -396,6 +437,64 @@ health_present "fail|bad"
 assert_eq "err:bad" "$LP" "present: fail => log_error"
 health_present "skip|n/a"
 assert_eq "skip:n/a" "$LP" "present: skip => log_skip"
+
+# --- containers: every service listed, dead ones fail -----------------------
+# Given: three compose services, one exited (128), one unhealthy, one running
+# When: the container check runs
+# Then: each is listed; the exited and unhealthy ones are failures with their state
+profiles_build_args() {
+    local -n _o=$1
+    _o=()
+}
+docker() {
+    case "$*" in
+        *"config --services"*) printf 'jellyfin\nsonarr\nradarr\nbazarr\n' ;;
+        *"ps -a"*) printf 'jellyfin|exited|\|Exited (128) 3 minutes ago\nsonarr|running|unhealthy|Up 2 hours (unhealthy)\nradarr|running|healthy|Up 2 hours (healthy)\n' ;;
+    esac
+}
+cont=$(health_containers)
+assert_contains "$cont" "fail|jellyfin: Exited (128) 3 minutes ago" "containers: exited container is a failure with its state"
+assert_contains "$cont" "fail|sonarr: Up 2 hours (unhealthy) (unhealthy)" "containers: unhealthy container is a failure"
+assert_contains "$cont" "ok|radarr: Up 2 hours (healthy)" "containers: healthy container is ok"
+assert_contains "$cont" "warn|bazarr: no container" "containers: a service with no container is still listed"
+_LOG_COUNTS_ERROR=0
+while IFS= read -r l; do
+    log_error() { _LOG_COUNTS_ERROR=$((_LOG_COUNTS_ERROR + 1)); }
+    health_present "$l"
+done <<<"$cont"
+assert_eq "2" "$_LOG_COUNTS_ERROR" "containers: the summary counts both failures"
+
+# --- containers: a deliberate stop warns, it does not fail -------------------
+# Given: one service stopped cleanly (Exited 0) and one stopped by SIGTERM (Exited 143)
+# When: the container check runs
+# Then: both are warnings that say the service is stopped, not failures
+docker() {
+    case "$*" in
+        *"config --services"*) printf 'lidarr\nprowlarr\n' ;;
+        *"ps -a"*) printf 'lidarr|exited||Exited (0) 5 minutes ago\nprowlarr|exited||Exited (143) 1 minute ago\n' ;;
+    esac
+}
+cont=$(health_containers)
+assert_contains "$cont" "warn|lidarr: stopped (Exited (0) 5 minutes ago)" "containers: a clean stop is a warning"
+assert_contains "$cont" "warn|prowlarr: stopped (Exited (143) 1 minute ago)" "containers: a SIGTERM stop is a warning"
+assert_not_contains "$cont" "fail|" "containers: a deliberate stop is not a failure"
+unset -f docker profiles_build_args
+
+# --- GPU: configured NVIDIA with a dead driver warns ------------------------
+# Given: JELLYFIN_GPU=nvidia and nvidia-smi exits non-zero
+# When: the GPU health line runs
+# Then: it warns that the driver is not loaded, not "no software fallback recorded"
+nvidia-smi() {
+    echo "NVIDIA-SMI has failed"
+    return 9
+}
+gpu_out=$(JELLYFIN_GPU=nvidia STAGE_3_GPU_STATE=complete gpu_fallback_health)
+assert_eq "warn|NVIDIA driver not loaded — repair from Manage hardware transcoding" "$gpu_out" "gpu health: dead NVIDIA driver warns"
+# And: with a working driver the line is not that warning
+nvidia-smi() { echo "550.163.01"; }
+gpu_ok=$(JELLYFIN_GPU=nvidia STAGE_3_GPU_STATE=complete gpu_fallback_health)
+assert_not_contains "$gpu_ok" "driver not loaded" "gpu health: working driver does not warn"
+unset -f nvidia-smi
 
 scenario_end "$CURRENT_SCENARIO"
 summary

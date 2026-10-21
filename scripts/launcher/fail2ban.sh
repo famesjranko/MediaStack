@@ -15,7 +15,11 @@ submenu_fail2ban() {
     fi
     if ! _health_f2b_running; then
         echo ""
-        ui_log info "fail2ban isn't running. It only runs when you have a domain / remote access set up; LAN-only installs don't expose services to the internet, so there's nothing to protect."
+        if _health_f2b_installed; then
+            ui_log warn "fail2ban is installed but not running, so logins are not being watched. Start it: Manage stack > Start a service > fail2ban."
+        else
+            ui_log info "fail2ban isn't installed. It only runs when you have a domain / remote access set up; LAN-only installs don't expose services to the internet, so there's nothing to protect."
+        fi
         launcher_pause_for_menu
         return 0
     fi

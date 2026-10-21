@@ -95,9 +95,31 @@ gpu_fallback_remedy() {
     esac
 }
 
-# Health line: a recorded fallback reason. ok when the GPU is active or none was recorded.
+# True when the NVIDIA driver answers. nvidia-smi prints its failure text on
+# stdout, so only a zero exit with a version means the driver is loaded. The
+# version is printed on stdout.
+gpu_fallback_nvidia_driver_version() {
+    local drv
+    drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null) || return 1
+    drv=$(head -1 <<<"$drv")
+    [[ -n "$drv" ]] || return 1
+    printf '%s' "$drv"
+}
+
+# True when the stack is set up for NVIDIA (configured or recorded complete).
+gpu_fallback_nvidia_configured() {
+    [[ "${JELLYFIN_GPU:-}" == "nvidia" ]] \
+        || [[ "${STAGE_3_GPU_STATE:-}" == "complete" && "${STAGE_3_GPU_VENDOR:-}" == "nvidia" ]]
+}
+
+# Health line: a recorded fallback reason, or a configured NVIDIA driver that is
+# not loaded. ok when the GPU is active or none was recorded.
 gpu_fallback_health() {
     local reason="${STAGE_3_GPU_FALLBACK_REASON:-}" text remedy
+    if gpu_fallback_nvidia_configured && ! gpu_fallback_nvidia_driver_version >/dev/null; then
+        echo "warn|NVIDIA driver not loaded — repair from Manage hardware transcoding"
+        return 0
+    fi
     if [[ "${STAGE_3_GPU_STATE:-}" != "fallback" && "${STAGE_3_GPU_STATE:-}" != "skipped" ]] || [[ -z "$reason" ]]; then
         echo "skip|Hardware transcoding: no software fallback recorded"
         return 0
