@@ -152,7 +152,7 @@ if unshare -rn true 2>/dev/null && command -v /usr/sbin/iptables >/dev/null 2>&1
     assert_contains "$real_out" "rc=000" "real iptables: apply, re-apply and verify all succeed"
     assert_eq "1" "$(grep -c -- '-j MEDIASTACK-DOCKER-RESTRICT$' <<<"$real_out")" "real iptables: one jump after a re-apply"
     assert_contains "$real_out" "-A MEDIASTACK-DOCKER-RESTRICT -s 100.64.0.0/10 -j RETURN" "real iptables: Tailscale range RETURNs"
-    assert_contains "$real_out" "--dports 8000,8090,3001,45876,8191,6767,8096,3000 -j DROP" "real iptables: admin ports DROP"
+    assert_contains "$real_out" "--dports 8000,8090,3001,8191,6767,8096,3000 -j DROP" "real iptables: admin ports DROP"
     assert_contains "$real_out" "-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT
 -A DOCKER-USER -j RETURN" "real iptables: the jump sits ahead of Docker's RETURN"
 else
@@ -188,7 +188,7 @@ if unshare -rn true 2>/dev/null && command -v /usr/sbin/iptables >/dev/null 2>&1
     assert_eq "2" "$(grep -c -- '-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT$' <<<"$real_out")" "real iptables ufw loads: one jump per family after three ufw loads"
     assert_contains "$real_out" "-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT
 -A DOCKER-USER -j RETURN" "real iptables ufw loads: the jump stays ahead of Docker's RETURN"
-    assert_contains "$real_out" "--dports 8000,8090,3001,45876,8191,6767,8096,3000 -j DROP" "real iptables ufw loads: the chain keeps its DROP rules"
+    assert_contains "$real_out" "--dports 8000,8090,3001,8191,6767,8096,3000 -j DROP" "real iptables ufw loads: the chain keeps its DROP rules"
 else
     skip "real iptables ufw loads: user+net namespaces unavailable on this host"
 fi

@@ -364,9 +364,9 @@ Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; i
 
 **Agent recreate:** When the key changes, `docker compose up -d beszel-agent` recreates the agent container with the new `KEY` env var. `docker restart` would NOT pick up the new key (same pattern as the Unpackerr recreate at the end of `main()`).
 
-**System registration:** `POST /api/collections/systems/records` with `{name: "MediaStack", host: "host.docker.internal", port: 45876, users: [user_id]}`. The `users` field is an **array** of user IDs, not a single string — a single string silently fails.
+**System registration:** `POST /api/collections/systems/records` with `{name: "MediaStack", host: "/beszel_data/socket/beszel.sock", users: [user_id]}`. The agent listens on that unix socket (`LISTEN=/beszel_socket/beszel.sock`, the same `./config/beszel/socket` directory), not on a TCP port: with host networking a port would be open on every host interface. The `users` field is an **array** of user IDs, not a single string — a single string silently fails.
 
-**Idempotency:** Skip key save if `.env` already has the correct key. Skip system registration if a system named "MediaStack" already exists (checked via `json_has_name`). Graceful failure on auth (`log_warn` + `return 0`) — hub may still be initializing on first run.
+**Idempotency:** Skip key save if `.env` already has the correct key. Skip system registration if the "MediaStack" system already uses the socket. An existing install's entry that is exactly `host.docker.internal` port `45876` (MediaStack's old entry) is `PATCH`ed to the socket, on configure and on the converge action after an update (`beszel_converge_local_system`); a "MediaStack" entry with any other host or port is user state and is reported with `log_drift`, never rewritten. Graceful failure on auth (`log_warn` + `return 0`) — hub may still be initializing on first run.
 
 ## Unpackerr restart (end of `main()` in `scripts/configure.sh`)
 

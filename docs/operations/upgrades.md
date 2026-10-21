@@ -67,8 +67,8 @@ the PR gate; see `tests/README.md` "Contract mocks and drift replay" for what ea
 does not cover.
 
 **Caveat:** preflight only checks API **shape** via the service's scenario/assertions oracle (most
-use `tests/assertions/<svc>.sh`; wireguard and npm assert inline; ddns-updater and beszel-agent are
-start+healthcheck / running-state only). It does **not** catch config-time / env-contract breaks (e.g. the wg-easy
+use `tests/assertions/<svc>.sh`; wireguard and npm assert inline; ddns-updater is
+start+healthcheck only). It does **not** catch config-time / env-contract breaks (e.g. the wg-easy
 `INIT_PASSWORD`/`wgpw` shift). For a major or API-unstable bump, run the service's **own** battery
 plus `fresh-install` where relevant — note `fresh-install` does **not** start the `remote`
 (wireguard) or `subtitles` (bazarr) profiles, so those use dedicated scenarios. Services marked
@@ -223,10 +223,10 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 
 | Service | Pin policy | API stability | Preflight | Touchpoint |
 |---|---|---|---|---|
-| autoheal | latest | n/a | scenario:autoheal | docker-compose.yml AUTOHEAL_CONTAINER_LABEL=all + tests/scenarios/autoheal.sh — proves Autoheal detects an unhealthy fixture container and restarts it (fresh-install only proves the container starts/runs, not that it acts) |
+| autoheal | latest | n/a | scenario:autoheal | docker-compose.yml AUTOHEAL_CONTAINER_LABEL=all + DOCKER_SOCK (socket-proxy) + tests/scenarios/autoheal.sh — proves Autoheal detects an unhealthy fixture container and restarts it through the socket-proxy (fresh-install only proves the container starts/runs, not that it acts) |
 | bazarr | latest | stable | scenario:bazarr | scripts/services/bazarr/main.sh + tests/assertions/bazarr.sh (subtitles profile) |
 | beszel | latest | stable | scenario:fresh-install | scripts/services/beszel/main.sh + tests/assertions/beszel.sh |
-| beszel-agent | variant:alpine | stable | scenario:fresh-install | configured indirectly via beszel; tests/assertions/beszel.sh checks running-state only (no API assertion) |
+| beszel-agent | variant:alpine | stable | scenario:fresh-install | configured indirectly via beszel; tests/assertions/beszel.sh checks the agent runs and that its container stats reach the hub through the socket-proxy; docker-compose.yml beszel-agent DOCKER_HOST/DOCKER_IMAGE_CHECK — a bump that calls a new Docker endpoint shows up as a 403 in the socket-proxy log |
 | ddns-updater | latest | stable | scenario:ddns-verify | run tests/scenarios/ddns-verify.sh on every bump — it pins the blackhole force-verify contract (RESOLVER_ADDRESS=127.0.0.1:1 -> // update anyway -> real push -> 500 maps to reject) the whole verify rests on; tests/scenarios/ddns-seed.sh still covers seed + startup; qdm12/ddns-updater#780 (?force=true) is the exit ramp if a digest breaks the fall-through; scripts/services/ddns-updater/main.sh |
 | fail2ban | latest | stable | scenario:fail2ban-drift | config/fail2ban/ + tests/assertions/fail2ban.sh |
 | flaresolverr | latest | n/a | scenario:fresh-install | healthcheck only (image pulls, container starts, /health passes); no deterministic Cloudflare-solve oracle, see "FlareSolverr — confidence boundary" above |
@@ -238,6 +238,7 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 | portainer | latest | stable | scenario:fresh-install | scripts/services/portainer/main.sh + tests/assertions/portainer.sh |
 | qbittorrent | latest | stable | scenario:fresh-install | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh |
 | radarr | latest | stable | scenario:fresh-install | scripts/services/radarr/main.sh + tests/assertions/radarr.sh |
+| socket-proxy | major:1 | major-gated | scenario:fresh-install | docker-compose.yml socket-proxy command (per-method -allowGET/-allowPOST regexes, -listenip=127.0.0.1, -allowfrom, host network) + tests/unit/socket-proxy.sh + tests/assertions/socket-proxy.sh (allowed/denied path matrix incl. attach/ws, loopback-only listeners, no route from the mediastack bridge or the host address) + tests/assertions/beszel.sh (stats through the proxy); also run `scenario:autoheal` (restart through the proxy). Upstream's `1` tag holds until a breaking deployment change, but a bump can still change how paths are matched, so re-read the image README |
 | sonarr | latest | stable | scenario:fresh-install | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh |
 | unpackerr | latest | stable | scenario:unpackerr | docker-compose.yml unpackerr environment (UN_SONARR_0_*/UN_RADARR_0_*) + tests/scenarios/unpackerr.sh — proves generated-key/authenticated completed-Radarr-queue → configured torrent-path archive extraction; does not prove a live qBittorrent transfer or Arr import |
 | uptime-kuma | major:2 | major-gated | scenario:fresh-install | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime-kuma.sh |

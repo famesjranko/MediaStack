@@ -199,7 +199,7 @@ for scope in ::1/128 fc00::/7 fe80::/10; do
     assert_contains "$v6_rules" "-A MEDIASTACK-DOCKER-RESTRICT -s $scope -j RETURN" "admin filter rules: v6 RETURNs $scope"
 done
 assert_contains "$v4_rules" "-p tcp -m multiport --dports 8989,7878,9117,8080,5055,9000,81,51821 -j DROP" "admin filter rules: first TCP admin-port group is DROPped"
-assert_contains "$v4_rules" "-p tcp -m multiport --dports 8000,8090,3001,45876,8191,6767,8096,3000 -j DROP" "admin filter rules: second TCP admin-port group is DROPped"
+assert_contains "$v4_rules" "-p tcp -m multiport --dports 8000,8090,3001,8191,6767,8096,3000 -j DROP" "admin filter rules: second TCP admin-port group is DROPped"
 assert_contains "$v4_rules" "-p udp -m multiport --dports 7359 -j DROP" "admin filter rules: Jellyfin discovery (UDP) is DROPped"
 assert_eq "$(grep -- '-j DROP' <<<"$v4_rules")" "$(grep -- '-j DROP' <<<"$v6_rules")" "admin filter rules: v4 and v6 DROP the same ports"
 while IFS= read -r drop; do

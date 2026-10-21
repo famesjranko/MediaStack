@@ -64,7 +64,7 @@ gcloud compute firewall-rules create mediastack-ssh \
 > LAN-only Docker TCP ports (NPM 81, Homepage 3000, Uptime Kuma 3001,
 > Seerr 5055, Bazarr 6767, Radarr 7878, ddns-updater 8000,
 > qBittorrent WebUI 8080, Beszel 8090, Jellyfin 8096, FlareSolverr 8191,
-> Sonarr 8989, Portainer 9000, Jackett 9117, Beszel Agent 45876, and wg-easy
+> Sonarr 8989, Portainer 9000, Jackett 9117, and wg-easy
 > admin 51821) are blocked from non-private sources by the host's
 > `DOCKER-USER` rules. UFW provides the
 > host default-deny baseline, and the GCP firewall is the test rig's router

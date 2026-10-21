@@ -59,12 +59,12 @@ ov_out=$(REPO_ROOT="$REPO_ROOT" bash -c '
   echo "LATEST_PINS=$(grep -c "image: .*@sha256:" "$ov")"
   rm -rf "$tmp"
 ')
-assert_contains "$ov_out" "MIXED_PINS=18" "override: floating jellyfin leaves 18 of 19 pinned"
+assert_contains "$ov_out" "MIXED_PINS=19" "override: floating jellyfin leaves 19 of 20 pinned"
 assert_contains "$ov_out" "JF=floats" "override: floated service drops its digest pin"
 assert_contains "$ov_out" "SONARR=pinned" "override: other services stay pinned to the lock"
-assert_contains "$ov_out" "MEMLINES=19" "override: mem_limit preserved for every service"
+assert_contains "$ov_out" "MEMLINES=20" "override: mem_limit preserved for every service"
 assert_contains "$ov_out" "NOTE=ok" "override: header records the per-service override"
-assert_contains "$ov_out" "STABLE_PINS=19" "override: clearing the override re-pins all services"
+assert_contains "$ov_out" "STABLE_PINS=20" "override: clearing the override re-pins all services"
 assert_contains "$ov_out" "LATEST_PINS=0" "override: global latest pins nothing"
 
 # ---------------------------------------------------------------------------

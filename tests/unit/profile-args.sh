@@ -123,6 +123,9 @@ assert_eq "--profile subtitles" "$(profiles_service_flag bazarr)" "service flag:
 assert_eq "--profile remote" "$(profiles_service_flag wireguard)" "service flag: wireguard -> remote"
 assert_eq "--profile autoheal" "$(profiles_service_flag autoheal)" "service flag: autoheal -> autoheal"
 assert_eq "" "$(profiles_service_flag jellyfin)" "service flag: default-profile service has no flag"
+# The proxy serves beszel-agent, which runs when AUTOHEAL_ENABLED=false, so it must
+# never sit behind an optional profile.
+assert_eq "" "$(profiles_service_flag socket-proxy)" "service flag: socket-proxy is default-profile (no flag)"
 
 for svc in npm fail2ban ddns-updater bazarr wireguard autoheal; do
     flag=$(profiles_service_flag "$svc")

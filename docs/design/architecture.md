@@ -39,8 +39,9 @@ All 19 services declared in `docker-compose.yml`. Healthcheck, depends_on condit
 | 15 | `uptime-kuma` | `louislam/uptime-kuma:2` | 3001 | default | — | `curl /` | 30s |
 | 16 | `bazarr` | `linuxserver/bazarr:latest` | 6767 | **subtitles** | sonarr, radarr | `curl /` | 30s |
 | 17 | `beszel` | `henrygd/beszel:latest` | 8090 | default | — | `/beszel health` | 30s |
-| 18 | `beszel-agent` | `henrygd/beszel-agent:alpine` | 45876 (host net) | default | beszel (healthy) | `/agent health` | 30s |
-| 19 | `autoheal` | `willfarrell/autoheal:latest` | — | **autoheal** | — | — | — |
+| 18 | `beszel-agent` | `henrygd/beszel-agent:alpine` | unix socket (host net) | default | beszel (healthy) | `/agent health` | 30s |
+| 19 | `autoheal` | `willfarrell/autoheal:latest` | — (host net) | **autoheal** | socket-proxy (healthy) | — | — |
+| 20 | `socket-proxy` | `wollomatic/socket-proxy:1` | 127.0.0.1:23750 (host net) | default | — | `/healthcheck` | 10s |
 
 Bridge-network services share the single `mediastack` network (defined in `docker-compose.yml`); host-network services skip it. Log rotation is applied globally via the `x-logging` YAML anchor: `json-file`, 10 MB × 3 files.
 
@@ -67,7 +68,8 @@ uptime-kuma (independent — monitors all other services via HTTP)
 wireguard (remote profile, independent)
 ddns-updater (proxy profile, independent)
 beszel (default) ◄── beszel-agent (depends_on: healthy, host network)
-autoheal (autoheal profile, Docker socket monitor)
+socket-proxy (default, host network, 127.0.0.1:23750) ◄── autoheal (autoheal profile, host network, depends_on: healthy)
+                                                      ◄── beszel-agent (host network, depends_on: healthy)
 ```
 
 Two depends_on styles are in use:
@@ -99,7 +101,7 @@ Two depends_on styles are in use:
   ┌─────────────────────────────────┐  ┌───┘                       │ all services via
   │ fail2ban (host net, NET_ADMIN)  │  │   ┌───────────────────┐   │ host port bindings
   │ reads npm/jellyfin/seerr   │  │   │ beszel-agent      │   │
-  │ logs; writes DOCKER-USER bans   │  │   │ (host net) :45876 │   │
+  │ logs; writes DOCKER-USER bans   │  │   │ (host net) socket │   │
   └───────────────┬─────────────────┘  │   └───────┬───────────┘   │
                   │                    │           │               │
                   ▼                    │           │               │
@@ -178,10 +180,11 @@ Single Docker bridge network `mediastack` with host port bindings. Bridge servic
 | 51820/udp | wireguard | WAN | **Yes** | VPN data plane. |
 | 6767 | bazarr | LAN | No | Subtitle management. subtitles profile. |
 | 8090 | beszel | LAN | No | Resource monitoring hub. default stack. |
-| 45876 | beszel-agent | localhost (host net) | No | Host metrics collector. default stack. |
 | 51821/tcp | wireguard | LAN | **No** | wg-easy admin UI. Never forward. |
+| 23750 | socket-proxy | localhost only | No | Allowlisted Docker API proxy for beszel-agent and autoheal. Host network, bound to `127.0.0.1`; see defence 4. |
+| 55555 | socket-proxy | localhost only | No | The proxy image's own healthcheck listener (`HEAD /health`); the image fixes the port. Bound to `127.0.0.1`. |
 
-The **Exposure** column states intent, not an unconditional guarantee: every port above is published on all interfaces, and "LAN"/"LAN only" is enforced for the admin ports by the `MEDIASTACK-DOCKER-RESTRICT` chain only when `UFW_ENABLED=true`. With the firewall declined it rests on the router not forwarding the port — see defence 1 and [`../decisions/admin-port-exposure.md`](../decisions/admin-port-exposure.md).
+The **Exposure** column states intent, not an unconditional guarantee: every port above except the two `socket-proxy` ports, which listen on `127.0.0.1` only, is published on all interfaces, and "LAN"/"LAN only" is enforced for the admin ports by the `MEDIASTACK-DOCKER-RESTRICT` chain only when `UFW_ENABLED=true`. With the firewall declined it rests on the router not forwarding the port — see defence 1 and [`../decisions/admin-port-exposure.md`](../decisions/admin-port-exposure.md).
 
 **Why `172.16.0.0/12` matters for qBittorrent.** qBittorrent's `WebUI\LocalHostAuth=false` only exempts 127.0.0.1. Sonarr and Radarr connect from Docker bridge IPs (e.g. `172.18.0.x`). The pre-seeded config therefore sets `WebUI\AuthSubnetWhitelist=172.16.0.0/12` (in `config/qbittorrent/qBittorrent/qBittorrent.conf`), covering every default Docker bridge range.
 
@@ -295,7 +298,7 @@ the VPN container's capability set (5).
    - **UFW declined** — port 81 is LAN-only by convention only: it relies on the router not forwarding it, and a comment in the npm service definition in `docker-compose.yml` warns against doing so.
 2. **Rate limiting (NPM + fail2ban) — disabled by default.** Optional nginx `limit_req` on internet-facing proxy hosts, **off by default** (`config.yml` `rate_limiting.enabled: false`) for parity with upstream Jellyfin/Seerr, neither of which rate-limits. A blanket server-level limit applies to *every* path including media streaming, so a multi-device household behind one NAT'd residential IP can hit 429s mid-playback — and the `[npm-ratelimit]` jail could then ban the household's own public IP. When enabled, it is 15 req/sec per IP with burst of 60 (settings in `rate_limiting:`), returning HTTP 429, and the `[npm-ratelimit]` fail2ban jail (also disabled by default) watches NPM access logs for 429s — 10 within 60 seconds triggers a ban. Login brute-force is covered regardless by the auth jails below. Field reference: [`rate_limiting`](../setup/configuration-schema.md#rate_limiting).
 3. **Brute-force ban (fail2ban).** Host-network container with `NET_ADMIN` + `NET_RAW` capabilities (fail2ban service definition in `docker-compose.yml`). Three jails active by default: `jellyfin`, `npm`, `seerr` — the `npm` jail bans repeated 401/403 responses on the proxy logs, covering credential-stuffing and login brute-force. A fourth jail, `npm-ratelimit`, ships disabled alongside rate limiting (above). Default: ban 30 min after 5 failures in 30 min (default jail settings in `config/fail2ban/jail.d/mediastack.conf`). `ignoreip = 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16` — 10.0.0.0/8 is deliberate because wg-easy hands out 10.8.0.0/24 to peers, and VPN peers are trusted friends/family by design.
-4. **Docker socket exposure.** Portainer and Beszel Agent mount `/var/run/docker.sock:ro`. The `:ro` bind option restricts the *bind mount*, not the Docker API behind it — a container with socket access can still exercise broad daemon control. Portainer needs it for container management, Beszel Agent for per-container metrics; Homepage's widgets read static YAML config and never touch the socket.
+4. **Docker socket exposure.** Only `portainer` and `socket-proxy` mount `/var/run/docker.sock` (`docker-compose.yml`, the `portainer` and `socket-proxy` volumes). The `:ro` bind option restricts the *bind mount*, not the Docker API behind it, so Portainer is root-equivalent by design: it needs the socket for container management. Beszel Agent and Autoheal (both `network_mode: host`, `DOCKER_HOST` / `DOCKER_SOCK` = `tcp://127.0.0.1:23750`) reach the API through `socket-proxy` instead. The proxy is [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy): deny by default, with a Go-regexp allowlist per HTTP method that the image anchors as `^...$` and matches against the decoded request path. It allows exactly `GET /containers/json`, `GET /containers/<id>/stats`, `GET /version`, `GET /info` and `POST /containers/<id>/restart`, where `<id>` is 12 to 64 lowercase hex characters. Inspect (which returns each container's `Env`, so MediaStack secrets), attach, logs, stop, kill, exec, create, images and events are denied. The proxy runs in the host network namespace and listens on `127.0.0.1:23750` with `-allowfrom=127.0.0.1/32`, so no Docker network carries it and no container on the `mediastack` bridge can reach it, not even through the bridge gateway; host-local users can. It runs read-only as root (the docker group ID differs per host) with every capability dropped and `no-new-privileges`. If the proxy is down, Beszel Agent and Autoheal lose Docker access and have no raw-socket fallback. Autoheal's service sets `stop_signal: SIGINT`: the image traps SIGTERM with `kill $$`, which crashes its shell with exit 139 on every stop, so a stop would look like a crash. `tests/unit/socket-proxy.sh` pins this contract on the rendered compose, and `tests/assertions/socket-proxy.sh` proves it against a running stack. Homepage's widgets read static YAML config and never touch the socket.
 5. **VPN access (wg-easy v15).** Profile-gated (wireguard service definition in `docker-compose.yml`). Takes plaintext `INIT_PASSWORD` at first boot (`profiles_build_args` reads `WG_INIT_PASSWORD` from `.env` as the activation marker). The value is single-quoted because it may contain shell-special chars. v15 runs on the `mediastack` bridge at `.11`, publishes `${WG_PORT}/udp` + `51821/tcp`, and uses per-client `firewallIps` (server-enforced) for the access-tier model (Full LAN / Server / Containers / Streaming / Streaming + requests — see [VPN access tiers](../setup/configuration-schema.md)). The wg-easy admin UI on `51821` is published on all interfaces, so — exactly as for port 81 in defence 1 — it is restricted to LAN by the `MEDIASTACK-DOCKER-RESTRICT` chain only when `UFW_ENABLED=true`; with the firewall declined no chain exists and 51821/tcp is reachable from anywhere the router forwards it. It is excluded from the Containers tier's `firewallIps` so a Containers-tier peer cannot add or modify other peers.
 
 ## Data layout

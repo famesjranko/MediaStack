@@ -39,7 +39,7 @@ setup_ufw() {
         return 0
     fi
 
-    if sudo ufw status 2>/dev/null | grep -q 'MediaStack:Beszel-agent'; then
+    if sudo ufw status 2>/dev/null | grep -q 'MediaStack:HTTP-ACME'; then
         if [[ "$(_ufw_defaults)" == "deny allow" ]]; then
             log_skip "UFW already configured"
         else
@@ -58,7 +58,6 @@ setup_ufw() {
     _ms_ufw_allow 443/tcp comment MediaStack:HTTPS >/dev/null
     # Configurable ports (TORRENT_PORT, WG_PORT) are opened by
     # setup_ufw_service_ports() after the wizard sets their values.
-    _ms_ufw_allow from 172.16.0.0/12 to any port 45876 proto tcp comment MediaStack:Beszel-agent >/dev/null
 
     if ! sudo ufw status 2>/dev/null | grep -q "Status: active"; then
         sudo ufw --force enable >/dev/null

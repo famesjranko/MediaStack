@@ -34,7 +34,7 @@ _compose_image_services() {
     printf '%s\n' \
         jellyfin sonarr radarr jackett qbittorrent flaresolverr seerr \
         unpackerr bazarr homepage portainer npm fail2ban wireguard \
-        ddns-updater uptime-kuma beszel beszel-agent autoheal
+        ddns-updater uptime-kuma beszel beszel-agent autoheal socket-proxy
 }
 
 _image_channel() {

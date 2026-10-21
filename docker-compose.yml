@@ -385,6 +385,10 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/portainer:/data
+      # Root-equivalent by design: Portainer must create, start, and remove
+      # containers, so it keeps the raw socket. A write-enabled socket-proxy
+      # would grant the same power. ":ro" limits the bind mount, not the Docker
+      # API. Portainer is the only service besides socket-proxy that mounts it.
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "9000:9000"
@@ -560,14 +564,28 @@ services:
     image: henrygd/beszel-agent:alpine
     container_name: beszel-agent
     network_mode: host
+    volumes:
+      - ./config/beszel/socket:/beszel_socket
     environment:
-      - PORT=45876
+      # Unix socket shared with the hub, not a TCP port: host networking would
+      # otherwise bind it on every host interface, where the DOCKER-USER
+      # admin-port chain never sees it. The hub reaches the same file as
+      # /beszel_data/socket/beszel.sock (see configure_beszel).
+      - LISTEN=/beszel_socket/beszel.sock
       - KEY=${BESZEL_AGENT_KEY:-}
       - HUB_URL=http://localhost:8090
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Docker API through the socket-proxy, never the raw socket. Both are in
+      # the host network namespace, so this is the proxy's loopback listener
+      # (see socket-proxy).
+      - DOCKER_HOST=tcp://127.0.0.1:23750
+      # The image-update check calls GET /images/{name}/json, which the proxy
+      # does not allow. Stable installs are digest-pinned and updated from the
+      # day-2 menu, so Beszel's own check adds only registry traffic.
+      - DOCKER_IMAGE_CHECK=false
     depends_on:
       beszel:
+        condition: service_healthy
+      socket-proxy:
         condition: service_healthy
     restart: unless-stopped
     security_opt: *default-security-opt
@@ -636,11 +654,11 @@ services:
   # ---------------------------------------------------------------------------
   # autoheal - Restart containers Docker has marked unhealthy
   # ---------------------------------------------------------------------------
-  # Reads container health via the Docker socket (read-only) and restarts
-  # any container in `unhealthy` state. Catches flaresolverr's Chromium
-  # failure loops, NPM config corruption, and any future health regression
-  # without operator intervention. AUTOHEAL_START_PERIOD=0 means it honours
-  # each container's own start_period.
+  # Reads container health through the socket-proxy (list containers and POST
+  # restart, nothing else) and restarts any container in `unhealthy` state.
+  # Catches flaresolverr's Chromium failure loops, NPM config corruption, and
+  # any future health regression without operator intervention.
+  # AUTOHEAL_START_PERIOD=0 means it honours each container's own start_period.
   autoheal:
     image: willfarrell/autoheal:latest
     container_name: autoheal
@@ -650,12 +668,98 @@ services:
       - AUTOHEAL_CONTAINER_LABEL=all
       - AUTOHEAL_INTERVAL=10
       - AUTOHEAL_START_PERIOD=0
+      - DOCKER_SOCK=tcp://127.0.0.1:23750
       - TZ=${TZ}
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
+    # Host network: the proxy listens on host loopback only (see socket-proxy),
+    # and autoheal needs no other service, so it stays off the mediastack bridge.
+    network_mode: host
+    restart: unless-stopped
+    # SIGINT, not the default SIGTERM: the image traps SIGTERM with `kill $$`,
+    # which re-raises the signal inside its own handler and crashes busybox ash
+    # (Exited 139, SIGSEGV) on every stop, reboot and Docker restart. The
+    # entrypoint has no SIGINT trap, so the shell ends cleanly with 130.
+    stop_signal: SIGINT
+    # SIGINT waits for the in-flight restart call before the shell exits. A heal
+    # is a `docker restart` (restart timeout: the target's own stop_grace_period,
+    # 10 s by default, plus its start), and autoheal's AUTOHEAL_DEFAULT_STOP_TIMEOUT
+    # is 10 s. The 10 s default kill hit mid-heal (Exited 137), so allow one full
+    # heal: 10 s stop + start + margin.
+    stop_grace_period: 60s
+    security_opt: *default-security-opt
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # socket-proxy - Filtered Docker API for beszel-agent and autoheal
+  # ---------------------------------------------------------------------------
+  # Replaces the raw /var/run/docker.sock mount in beszel-agent and autoheal.
+  # wollomatic/socket-proxy is deny-by-default with a Go-regexp allowlist per
+  # HTTP method (https://github.com/wollomatic/socket-proxy#readme). It
+  # matches the decoded request path, ignores the query, and wraps every
+  # pattern as ^...$. That wrapper is why no pattern below may use a top-level
+  # "|": "^a|b$" would leave both branches half-anchored. One flag per path
+  # (repeatable since 1.12) keeps each pattern whole.
+  #
+  # Allowed (the consumers' calls, read from their source):
+  #   GET  /containers/json            beszel-agent and autoheal list containers
+  #   GET  /containers/<id>/stats      beszel-agent per-container stats
+  #   GET  /version, /info             beszel-agent engine check and host summary
+  #   POST /containers/<id>/restart    autoheal's restart
+  # <id> is 12 to 64 lowercase hex characters (beszel-agent sends the short ID,
+  # autoheal the full one), so a container name or any path trick fails to
+  # match. Everything else is denied: inspect (GET /containers/<id>/json,
+  # which returns each container's Env and so MediaStack secrets), attach,
+  # logs, stop, kill, exec, create, images, events. Beszel's per-container
+  # info and logs views, which need inspect and logs, therefore do not work.
+  #
+  # Host network, loopback only: -listenip=127.0.0.1 is the listener and
+  # -allowfrom=127.0.0.1/32 the client filter. No Docker network carries the
+  # proxy, so no container on the mediastack bridge can reach it, not even
+  # through the bridge gateway address. 23750 avoids dockerd's 2375/2376 and
+  # Swarm's 2377, sits below Linux's ephemeral range (32768-60999), and appears
+  # nowhere else in this stack. -allowhealthcheck adds a second loopback-only
+  # listener, 127.0.0.1:55555, that answers HEAD /health from the image's
+  # ./healthcheck binary; the image fixes that port. The watchdog stops the
+  # proxy when the socket vanishes (a Docker engine restart), so restart:
+  # unless-stopped brings it back.
+  #
+  # Root, not the image's 65534: the Docker socket is root-owned with the
+  # docker group, and the group ID differs per host. Root owns the socket, so
+  # it needs no capability for it, and every capability is dropped.
+  # ":ro" limits the bind mount, not the Docker API, so the proxy is the filter.
+  socket-proxy:
+    image: wollomatic/socket-proxy:1
+    container_name: socket-proxy
+    network_mode: host
+    user: "0:0"
+    command:
+      - -listenip=127.0.0.1
+      - -proxyport=23750
+      - -allowfrom=127.0.0.1/32
+      - -allowGET=/containers/json
+      - -allowGET=/containers/[0-9a-f]{12,64}/stats
+      - -allowGET=/version
+      - -allowGET=/info
+      - -allowPOST=/containers/[0-9a-f]{12,64}/restart
+      - -allowhealthcheck
+      - -watchdoginterval=30
+      - -stoponwatchdog
+      - -loglevel=info
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      mediastack:
-        ipv4_address: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.60
     restart: unless-stopped
     security_opt: *default-security-opt
     logging: *default-logging
+    read_only: true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      # Short interval: beszel-agent and autoheal wait for this to pass, and
+      # Docker runs the first check one interval after start.
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
