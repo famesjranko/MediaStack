@@ -356,10 +356,23 @@ for j in jellyfin seerr npm; do
 done
 " 2>&1 | tail -1
 
+# Expected = every compose service in the profile set the VM's own .env selects
+# (same helper the installer uses), so a new service raises the bar by itself.
+# All services are long-running (no one-shot containers), so each must be up.
+check_container_count() { # <expected> <docker-ps-file>
+    local expected=$1 n
+    n=$(grep -c "(healthy)\|Up [0-9]" "$2")
+    if ((n >= expected)); then ok "$n/$expected containers up"; else bad "only $n/$expected containers up"; fi
+}
+
 step "10. Containers healthy"
 ssh -o StrictHostKeyChecking=no "$SSH_HOST" 'docker ps --format "{{.Names}}\t{{.Status}}"' >/tmp/gcp-ps.out
-N=$(grep -c "(healthy)\|Up [0-9]" /tmp/gcp-ps.out)
-if ((N >= 16)); then ok "$N containers up"; else bad "only $N containers healthy"; fi
+EXPECTED=$(ssh -o StrictHostKeyChecking=no "$SSH_HOST" 'cd /opt/MediaStack && source scripts/lib/profiles.sh && profiles_build_args P && docker compose "${P[@]}" config --services 2>/dev/null | wc -l' | tr -d '\r')
+if [[ "$EXPECTED" =~ ^[0-9]+$ ]] && ((EXPECTED > 0)); then
+    check_container_count "$EXPECTED" /tmp/gcp-ps.out
+else
+    bad "could not derive expected container count (got '$EXPECTED')"
+fi
 grep -q wireguard /tmp/gcp-ps.out && ok "wireguard up (remote profile auto-started)" || bad "wireguard not up"
 grep -q ddns-updater /tmp/gcp-ps.out && ok "ddns-updater up (proxy profile auto-started)" || bad "ddns-updater not up"
 
