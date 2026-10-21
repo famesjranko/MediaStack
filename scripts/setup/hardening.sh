@@ -264,9 +264,10 @@ setup_hardening() {
     local filter_rc=0
     setup_admin_filter || filter_rc=$?
 
+    local sysctl_rc=0
     if [[ "${HARDENING_ENABLED:-true}" == "true" ]]; then
         setup_unattended_upgrades
-        setup_sysctl_hardening
+        setup_sysctl_hardening || sysctl_rc=$?
     else
         log_skip "System hardening (auto-updates + kernel sysctl) disabled by user choice"
     fi
@@ -274,6 +275,10 @@ setup_hardening() {
     if ((filter_rc != 0)); then
         log_error "The admin-port filter is not active. Setup stops here so no admin port is published unfiltered."
         log_error "Fix the cause shown above and re-run, or turn the filter off (ADMIN_PORT_FILTER=false)."
+        return 1
+    fi
+    if ((sysctl_rc != 0)); then
+        log_error "Kernel hardening is not in effect. Fix the cause shown above and re-run."
         return 1
     fi
     log_ok "OS hardening step complete"

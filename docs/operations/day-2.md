@@ -195,7 +195,9 @@ and `HARDENING_ENABLED` in `.env`:
   can never be locked out. Run `sudo ufw disable` yourself if you want the firewall fully off.
 - **System hardening** — ON applies unattended security upgrades + kernel sysctl hardening; OFF
   reverts both (`_uninstall_sysctl` + `_uninstall_apt`), restoring pre-install sysctl values it still
-  owns and removing the MediaStack drop-ins.
+  owns and removing the MediaStack drop-ins. ON applies only MediaStack's own sysctl file and fails loudly if a key does not take effect or
+  `ip_forward` changes. UFW's `/etc/ufw/sysctl.conf` can override `log_martians` on each UFW reload;
+  setup and the OFF message then say that UFW owns the key.
 
 Both ON actions refuse (warn + skip) when no valid ownership ledger exists — run a full install or
 reset first. Toggling is add-only: turning a feature off never deletes user data or user-owned
