@@ -152,7 +152,7 @@ wg_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   # Stub IO + the docker-touching apply AFTER sourcing (later defs win).
   APPLIED=""
   _apply_service_update(){ APPLIED+="$1 "; }
-  ui_confirm(){ return 0; }
+  ui_confirm(){ return 0; }; _service_is_running(){ return 0; }   # Update all skips stopped services
   ui_log(){ :; }
   launcher_pause_for_menu(){ :; }
   tsv=$(printf "jellyfin\tlatest\tmanual\tUpdate available\ttrue\nsonarr\tstable\tdefault\tUp to date\tfalse\nwireguard\tlatest\tmanual\tUpdate available\ttrue\n")

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Owns: Per-service image-policy management, update scans, applies, reverts, and menu routing.
-# Sources: launcher globals, .env, override.sh, image_drift.py, compose helpers, and scripts/lib/ui.sh.
+# Sources: launcher globals, .env, override.sh, image_drift.py, compose helpers, scripts/lib/ui.sh,
+# and scripts/lib/update-restore.sh (restore points and the revert flow).
+
+# shellcheck source=scripts/lib/update-restore.sh
+source "$SCRIPT_DIR/scripts/lib/update-restore.sh"
 
 # Thin alias over the canonical service->profile mapping (scripts/lib/profiles.sh,
 # already sourced by ./mediastack). Kept as a name because the call site and its
@@ -104,14 +108,24 @@ _service_is_running() {
     [[ "$(docker inspect --format '{{.State.Running}}' "$1" 2>/dev/null || echo false)" == "true" ]]
 }
 
+# $3 (optional) names a function that swaps the service's config (a revert's
+# restore). It runs after the pull and with the service stopped, so the new image
+# never starts against the wrong config; it also runs for an already-stopped service.
+# $4 (optional) is "swapped" when $3 changes config (a failed `up -d` then leaves the
+# service stopped for the caller's undo, as starting it would pair the old container
+# with the swapped config), or "resume" when the caller's earlier attempt stopped a
+# running service (_MU_STOPPED_HERE=1 afterwards): treat it as running again.
+# A failed recreate must not leave a service we stopped down: _MU_STOPPED_HERE
+# is 1 only when this call returns with such a service still stopped.
 _recreate_service() {
-    local svc="$1" done_msg="$2"
+    local svc="$1" done_msg="$2" pre_up="${3:-}" mode="${4:-}" was_running=0
     # Profile flag(s) as a proper array — matches the `${profiles[@]}` pattern
     # used everywhere else (and profiles_build_args) and removes the
     # word-splitting hazard of an unquoted $pflag. read -ra on an empty string
     # yields an empty array, so a profile-less service passes no extra args.
     local pflag=()
     read -ra pflag <<<"$(_service_profile_flag "$svc")"
+    _MU_STOPPED_HERE=0
     # Record whether the pull actually fetched a fresh image. On failure we fall
     # back to the cached (old) image, so the caller must NOT then claim the
     # service is up to date. _MU_PULL_OK is read by _apply_service_update's flip
@@ -122,11 +136,28 @@ _recreate_service() {
         ui_log warn "Pull reported an issue; using cached image."
         _MU_PULL_OK=0
     fi
-    if ! _service_is_running "$svc"; then
+    _service_is_running "$svc" && was_running=1
+    [[ "$mode" == resume ]] && was_running=1
+    if [[ -n "$pre_up" ]]; then
+        if ((was_running)); then
+            docker compose "${pflag[@]}" stop "$svc" 2>&1
+            _MU_STOPPED_HERE=1
+        fi
+        "$pre_up" "$svc" || {
+            ui_log error "Could not swap the config of ${svc}."
+            # Nothing was recreated: wake the old container, still on its old image.
+            if ((was_running)); then
+                docker compose "${pflag[@]}" start "$svc" 2>&1 && _MU_STOPPED_HERE=0
+            fi
+            return 1
+        }
+    fi
+    if ((!was_running)); then
         ui_log info "${svc} is stopped - the new image is staged and applies next time it starts."
         return 0
     fi
     if docker compose "${pflag[@]}" up -d "$svc" 2>&1; then
+        _MU_STOPPED_HERE=0
         # An explicitly unhealthy container is a failed recreate. The readiness
         # helper deliberately keeps its existing timeout/still-starting policy
         # (return 0), so only a reported unhealthy state is propagated here.
@@ -137,6 +168,11 @@ _recreate_service() {
         ui_log ok "$done_msg"
     else
         ui_log error "Failed to recreate ${svc}."
+        # `up -d` failed before it replaced the container: with the config still
+        # the old one, the stopped container can simply start again.
+        if ((_MU_STOPPED_HERE)) && [[ "$mode" != swapped ]]; then
+            docker compose "${pflag[@]}" start "$svc" 2>&1 && _MU_STOPPED_HERE=0
+        fi
         return 1
     fi
 }
@@ -181,6 +217,11 @@ _apply_service_update() {
     # Latest install where updates otherwise leave no policy row. Written before the
     # pull so consent is sticky across a transient pull failure - the next apply (or
     # ./scripts/update.sh) still pulls it forward.
+    # The restore point must hold the config of the install image, so only the
+    # move off that image takes one; a service already floated keeps its point.
+    # It is taken by _recreate_service's pre-start hook, with the service stopped.
+    local snap_hook=_restore_hook_snapshot
+    [[ "$(_service_policy_raw "$svc")" == latest ]] && snap_hook=""
     _set_service_policy "$svc" latest
     _regenerate_override || {
         ui_log error "Could not regenerate compose override."
@@ -188,7 +229,7 @@ _apply_service_update() {
     }
     storage_guard_before_start || return 1
     ui_log info "Pulling ${svc}..."
-    _recreate_service "$svc" "${svc} updated." || return 1
+    _recreate_service "$svc" "${svc} updated." "$snap_hook" || return 1
     # Flip the row to "Up to date" for the next render without a full rescan, but
     # only when the container is actually running the freshly pulled image
     # (running == upstream by construction). A staged (stopped) service or a
@@ -212,40 +253,6 @@ _apply_service_update() {
         esac
     fi
     return 0
-}
-
-_reset_service_to_default() {
-    local svc="$1" install_ref prior
-    install_ref="$(_install_image_ref "$svc")"
-    if [[ -z "$install_ref" ]]; then
-        ui_log warn "${svc}: no recorded install digest; clearing its override instead."
-        _clear_service_policy "$svc"
-    else
-        prior="$(_service_policy_raw "$svc")"
-        _set_service_policy "$svc" "$install_ref"
-    fi
-    ui_log info "${svc}: reverting to the image it was installed with..."
-    _regenerate_override || {
-        ui_log error "Could not regenerate compose override."
-        return 1
-    }
-    storage_guard_before_start || return 1
-    if _recreate_service "$svc" "${svc} reverted to its installed image."; then
-        return 0
-    fi
-    # Recreate failed. Only a digest pin can point at an unfetchable image; restore
-    # the prior override and bring the service back up (onto its previous cached
-    # image when that pull also fails, else its prior tracking-tag image).
-    if [[ -n "$install_ref" ]]; then
-        ui_log warn "${svc}: revert failed (the installed image may no longer be available); restoring its previous image."
-        _restore_service_policy_row "$svc" "$prior"
-        _regenerate_override || {
-            ui_log error "Could not regenerate compose override."
-            return 1
-        }
-        _recreate_service "$svc" "${svc} restored to its previous image." || return 1
-    fi
-    return 1
 }
 
 _update_status_scan() {
@@ -334,23 +341,33 @@ _menu_update_selected() {
 
 _menu_update_all() {
     local tsv="$1" svc pol override status upd wg_updatable=0
-    local -a svcs=()
-    # Every updatable service. WireGuard is excluded - it restarts remote access
-    # and force-confirms, so it's updated explicitly via "Update a service".
+    local -a svcs=() stopped=()
+    # Every updatable, running service. WireGuard is excluded - it restarts remote
+    # access and force-confirms, so it's updated explicitly via "Update a service".
+    # A stopped service is skipped: its new image would only be staged, it would stay
+    # "Update available", and it would inflate the count below. "Update a service"
+    # still stages one on request.
     while IFS=$'\t' read -r svc pol override status upd; do
         [[ "$upd" == "true" ]] || continue
         if [[ "$svc" == "wireguard" ]]; then
             wg_updatable=1
             continue
         fi
-        svcs+=("$svc")
+        if _service_is_running "$svc"; then
+            svcs+=("$svc")
+        else
+            stopped+=("$svc")
+        fi
     done <<<"$tsv"
     if ((${#svcs[@]} == 0)); then
         if ((wg_updatable)); then
             ui_log info "Only WireGuard has an update - use 'Update a service' to update it explicitly."
+        elif ((${#stopped[@]})); then
+            ui_log info "No running service has an update."
         else
             ui_log info "No updates available."
         fi
+        ((${#stopped[@]})) && ui_log info "Skipped (stopped): ${stopped[*]} - start them, then update."
         launcher_pause_for_menu
         return 0
     fi
@@ -358,6 +375,7 @@ _menu_update_all() {
     ui_log info "This moves them off the images they were installed with."
     ui_log info "Services: ${svcs[*]}"
     ((wg_updatable)) && ui_log info "WireGuard is excluded (remote access) - update it explicitly if needed."
+    ((${#stopped[@]})) && ui_log info "Skipped (stopped): ${stopped[*]} - start them, then update."
     ui_confirm "Proceed?" no || {
         ui_log info "Cancelled."
         launcher_pause_for_menu

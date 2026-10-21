@@ -37,7 +37,20 @@ the global `IMAGE_CHANNEL` when generating the compose override. An updated serv
 **compose tag**, so the pin policy in the manifest below still bounds it (a `major:N` service stays
 within major N; an `exact-patch` service can't move). "Revert a service to its installed image"
 re-pins the service to its recorded install digest (falling back to clearing the override if none was
-recorded). See `docs/operations/day-2.md` for the menu and status semantics.
+recorded).
+
+When a service moves off its install image, MediaStack saves a **restore point** while the old
+container is stopped and the new one has not started (a running database is never copied): a
+size-bounded (256 MiB) archive of `config/<service>` (never the media or download paths) in
+`config/state/restore-points/`, indexed in `config/state/restore-points.tsv`. A service already
+floated keeps its first point, because Revert returns to the install image. Revert stops the
+service, puts the old config back with the old image, then checks that the service is healthy
+and, for qBittorrent, Sonarr, Radarr and Jellyfin, that MediaStack can still log in. A failed
+check is reported as a failure and the restore point is kept. With no restore point (config over
+the size limit, or an update from before this feature), Revert warns that the config may be newer
+than the image and asks for confirmation. The Revert list shows only services that differ from
+their install image. "Update all" skips stopped services and names them; "Update a service" can
+still stage one. See `docs/operations/day-2.md` for the menu and status semantics.
 
 ## Preflight a candidate image (no compose edit, test-only)
 
