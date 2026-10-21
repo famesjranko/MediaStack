@@ -384,6 +384,32 @@ ufw_remove_legacy_beszel_rule
 assert_eq "0" "$rc" "legacy beszel rule: absent rule returns success"
 assert_eq "0" "${#UFW_DELETES[@]}" "legacy beszel rule: absent rule means no delete"
 
+# Given a ledger holding a Beszel-agent rule between two other MediaStack rules
+# When the legacy rule cleanup runs on a host where that rule is already gone
+# Then the stale entry is dropped and the others are renumbered
+LEDGER=("allow 80/tcp comment MediaStack:HTTP" "allow 45876/tcp comment MediaStack:Beszel-agent" "allow 443/tcp comment MediaStack:HTTPS")
+LEDGER_COUNT=3
+_ms_state_get() {
+    case "$1" in
+        UFW_RULE_COUNT) echo "$LEDGER_COUNT" ;;
+        UFW_RULE_[0-9]*) echo "${LEDGER[${1#UFW_RULE_} - 1]}" ;;
+    esac
+}
+_ms_state_set() {
+    case "$1" in
+        UFW_RULE_COUNT) LEDGER_COUNT="$2" ;;
+        UFW_RULE_[0-9]*) LEDGER[${1#UFW_RULE_} - 1]="$2" ;;
+    esac
+}
+UFW_DELETES=()
+UFW_STATUS_TEXT="$ACTIVE_HEAD
+[ 1] 22/tcp                     ALLOW IN    Anywhere"
+ufw_remove_legacy_beszel_rule
+assert_eq "2" "$LEDGER_COUNT" "legacy beszel rule: ledger count drops by the stale entry"
+assert_eq "allow 80/tcp comment MediaStack:HTTP|allow 443/tcp comment MediaStack:HTTPS" "$(IFS='|' && echo "${LEDGER[*]:0:2}")" "legacy beszel rule: other ledger entries kept in order"
+_ms_state_set() { :; }
+_ms_state_get() { echo false; }
+
 # Given a Debian-like host: ufw exists only at the sbin path, not on PATH
 # When the legacy rule cleanup runs
 # Then the stale rule is still deleted

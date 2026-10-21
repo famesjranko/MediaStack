@@ -396,10 +396,14 @@ action_stack_stop() {
     # No --remove-orphans: the profile set is now disk-fresh (shared
     # profiles_build_args), so plain `down` stops exactly the selected services
     # without risking removal of containers that look orphaned to a stale profile.
+    # --volumes: images that declare VOLUME get a fresh anonymous volume on
+    # every `up`, and `down` without it leaves the old one behind, unlabelled
+    # and invisible to uninstall. docker-compose.yml declares no named volume
+    # and config/ and data/ are bind mounts, so this removes no user data.
     local profiles=()
     profiles_build_args profiles
     local rc=0
-    docker compose "${profiles[@]}" down 2>&1 || rc=$?
+    docker compose "${profiles[@]}" down --volumes 2>&1 || rc=$?
     _show_action_result "$rc" "Stop stack"
     launcher_pause_for_menu
 }

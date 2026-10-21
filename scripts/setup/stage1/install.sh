@@ -136,7 +136,8 @@ _stage1_install() {
     # here — before print_access_info advertises the share — instead of tacking
     # it on after the final summary at the very end of setup.
     [[ "${UFW_ENABLED:-true}" == "true" ]] && setup_ufw_service_ports
-    setup_samba
+    # SMB is optional: its error is already logged, so finish Stage 1 honestly.
+    setup_samba || log_warn "The SMB share was not configured (reason logged above). Retry: ./mediastack -> Features & settings -> File sharing (SMB): turn it OFF, then ON."
 
     print_access_info
 

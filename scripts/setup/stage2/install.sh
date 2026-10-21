@@ -26,6 +26,14 @@ _stage2_install() {
     # the wireguard container; without it UFW drops tier traffic to host ports.
     setup_ufw_wireguard_clients || log_warn "Could not converge the WireGuard firewall rule; peers may not reach host services. 'Apply changes from a MediaStack update' retries it."
 
+    # Same service-port rules the UFW toggle opens once a domain is set (torrent
+    # and the WireGuard port), so Stage 1+2 and the toggle end on one rule set.
+    # Docker-published ports skip UFW's INPUT chain, so the rules document intent
+    # rather than gate traffic; what matters is that both paths agree.
+    if [[ "${UFW_ENABLED:-true}" == "true" ]]; then
+        setup_ufw_service_ports || log_warn "Could not open the service-port firewall rules; 'Enable UFW firewall' in Features & settings retries them."
+    fi
+
     # Apply chosen Jellyfin remote-streaming cap to config.yml so the
     # post-LE-gate `configure.sh --only npm,jellyfin,homepage` run picks
     # it up via configure_jellyfin_streaming. Skip when no value was set
