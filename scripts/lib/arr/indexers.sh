@@ -33,8 +33,8 @@ print('['+','.join(c.strip() for c in cats)+']')
         local lib_dir="$8"
 
         local cat_json
-        cat_json=$(curl -sf --max-time 5 \
-            "${jackett_local_url}/api/v2.0/indexers/$indexer_id/results/torznab/?apikey=$jackett_key&t=caps" 2>/dev/null \
+        cat_json=$(curl -sf --max-time 5 -K - \
+            < <(curl_url_config "${jackett_local_url}/api/v2.0/indexers/$indexer_id/results/torznab/?apikey=$jackett_key&t=caps") 2>/dev/null \
             | python3 "$lib_dir/render/torznab_caps.py" "$app" 2>/dev/null || echo "")
 
         if [[ -z "$cat_json" || "$cat_json" == "[]" ]]; then

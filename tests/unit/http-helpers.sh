@@ -300,5 +300,27 @@ assert_eq "1" "$rc" "http_json_post: 4xx returns 1"
 assert_eq "log_warn" "$LAST_LOG_FN" "http_json_post: 4xx calls log_warn"
 assert_contains "$LAST_LOG_MSG" "validation failed" "http_json_post: 4xx includes response body"
 
+# ---------------------------------------------------------------------------
+# curl_url_config — secret-bearing URL (and body) as a curl config
+# ---------------------------------------------------------------------------
+
+# Given a URL whose query carries a key and a quote that curl's config parser would eat
+# When the config is built, with and without a body
+# Then the url line is escaped, and the body is a data-raw line with newlines escaped
+cfg=$(curl_url_config 'http://svc/api?apikey=k"1&t=caps')
+assert_eq 'url = "http://svc/api?apikey=k\"1&t=caps"' "$cfg" \
+    "curl_url_config: url line escapes a double quote"
+cfg=$(curl_url_config 'http://svc/x' $'{"a":\n"@b"}')
+assert_eq $'url = "http://svc/x"\ndata-raw = "{\\"a\\":\\n\\"@b\\"}"' "$cfg" \
+    "curl_url_config: body becomes an escaped data-raw line"
+
+# Given a URL containing a newline, which would smuggle a second config directive
+# When the config is built
+# Then it is refused and prints nothing
+cfg=$(curl_url_config $'http://svc/x\nheader = "X: y"')
+rc=$?
+assert_eq "2" "$rc" "curl_url_config: newline in url is refused"
+assert_eq "" "$cfg" "curl_url_config: a refused url prints no config"
+
 echo -e "${CYAN}◀ http-helpers done${NC}"
 summary

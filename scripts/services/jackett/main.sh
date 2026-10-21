@@ -37,8 +37,8 @@ configure_jackett() {
     # the empty-body POST unauthenticated, cascading into every indexer
     # reporting "not available in Jackett").
     local probe_code
-    probe_code=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" \
-        "${jackett_url}?configured=true&apikey=${jackett_key}" 2>/dev/null || echo "000")
+    probe_code=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -K - \
+        < <(curl_url_config "${jackett_url}?configured=true&apikey=${jackett_key}") 2>/dev/null || echo "000")
     if [[ "$probe_code" != "200" && -n "$jf_pw" ]]; then
         curl_data_urlencode_stdin password "$jf_pw" \
             -sf -c "$jar" -X POST "${jackett_base}/UI/Dashboard" >/dev/null 2>&1 || true
@@ -57,8 +57,8 @@ with open('$SCRIPT_DIR/config/jackett/Jackett/ServerConfig.json') as f:
         log_skip "FlareSolverr already configured ($current_flare)"
     else
         local server_cfg
-        server_cfg=$(curl -sf -b "$jar" \
-            "${jackett_base}/api/v2.0/server/config?apikey=${jackett_key}" 2>/dev/null)
+        server_cfg=$(curl -sf -b "$jar" -K - \
+            < <(curl_url_config "${jackett_base}/api/v2.0/server/config?apikey=${jackett_key}") 2>/dev/null)
         if [[ -n "$server_cfg" ]]; then
             local patched
             patched=$(echo "$server_cfg" | FLARESOLVERR_URL="$(service_internal_url flaresolverr)" python3 -c "
@@ -68,10 +68,10 @@ d['flaresolverrurl'] = os.environ['FLARESOLVERR_URL']
 d['flaresolverr_maxtimeout'] = 60000
 print(json.dumps(d))
 " 2>/dev/null)
-            if [[ -n "$patched" ]] && curl -sf -b "$jar" -X POST \
-                "${jackett_base}/api/v2.0/server/config?apikey=${jackett_key}" \
+            # The server config carries api_key, so the body rides stdin too.
+            if [[ -n "$patched" ]] && curl -sf -b "$jar" -X POST -K - \
                 -H "Content-Type: application/json" \
-                -d "$patched" >/dev/null 2>&1; then
+                < <(curl_url_config "${jackett_base}/api/v2.0/server/config?apikey=${jackett_key}" "$patched") >/dev/null 2>&1; then
                 log_ok "FlareSolverr connected: $(service_internal_url flaresolverr)"
             else
                 log_warn "Failed to set FlareSolverr URL"
@@ -88,7 +88,7 @@ print(json.dumps(d))
 
     # Get already-configured indexers
     local configured
-    if ! configured=$(api_fetch "Jackett configured indexers" -b "$jar" "${jackett_url}?configured=true&apikey=${jackett_key}"); then
+    if ! configured=$(api_fetch "Jackett configured indexers" -b "$jar" -K - < <(curl_url_config "${jackett_url}?configured=true&apikey=${jackett_key}")); then
         configured="[]"
     fi
 
@@ -105,7 +105,7 @@ sys.exit(0 if any(i.get('id','')=='$indexer_id' and i.get('configured',False) fo
 
         # Get default config and save it (enables the indexer)
         local config
-        if ! config=$(api_fetch "Jackett $indexer_id config" -b "$jar" "${jackett_url}/${indexer_id}/config?apikey=${jackett_key}"); then
+        if ! config=$(api_fetch "Jackett $indexer_id config" -b "$jar" -K - < <(curl_url_config "${jackett_url}/${indexer_id}/config?apikey=${jackett_key}")); then
             config=""
         fi
         if [[ -z "$config" || "$config" == "[]" ]]; then
@@ -113,8 +113,9 @@ sys.exit(0 if any(i.get('id','')=='$indexer_id' and i.get('configured',False) fo
             continue
         fi
 
-        if curl -sf -b "$jar" -X POST "${jackett_url}/${indexer_id}/config?apikey=${jackett_key}" \
-            -H "Content-Type: application/json" -d "$config" >/dev/null 2>&1; then
+        if curl -sf -b "$jar" -X POST -K - \
+            -H "Content-Type: application/json" \
+            < <(curl_url_config "${jackett_url}/${indexer_id}/config?apikey=${jackett_key}" "$config") >/dev/null 2>&1; then
             log_ok "Indexer added: $indexer_id ($indexer_type)"
         else
             log_warn "Failed: $indexer_id"
@@ -137,9 +138,10 @@ with open('$SCRIPT_DIR/config/jackett/Jackett/ServerConfig.json') as f:
         else
             local pw_json
             pw_json=$(JF_PW="$jf_pw" python3 -c "import json,os; print(json.dumps(os.environ['JF_PW']))" 2>/dev/null)
-            if curl_data_stdin "$pw_json" -sf -b "$jar" -X POST \
-                "${jackett_base}/api/v2.0/server/adminpassword?apikey=${jackett_key}" \
-                -H "Content-Type: application/json" >/dev/null 2>&1; then
+            # The password body and the key-bearing URL share one stdin config.
+            if curl -sf -b "$jar" -X POST -K - \
+                -H "Content-Type: application/json" \
+                < <(curl_url_config "${jackett_base}/api/v2.0/server/adminpassword?apikey=${jackett_key}" "$pw_json") >/dev/null 2>&1; then
                 log_ok "Jackett admin password set"
             else
                 log_warn "Failed to set Jackett admin password"
