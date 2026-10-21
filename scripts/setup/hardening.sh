@@ -40,10 +40,19 @@ MEDIASTACK_UFW_AFTER_RULES=/etc/ufw/after.rules
 MEDIASTACK_UFW_AFTER6_RULES=/etc/ufw/after6.rules
 # shellcheck disable=SC2034
 MEDIASTACK_UFW_AFTER_INIT=/etc/ufw/after.init
+# The admin-port filter's systemd path (hardening/admin-filter.sh). The
+# script lives outside the checkout so the filter survives a moved or deleted repo.
+# shellcheck disable=SC2034
+MEDIASTACK_ADMIN_FILTER_UNIT_NAME=mediastack-admin-filter.service
+# shellcheck disable=SC2034
+MEDIASTACK_ADMIN_FILTER_UNIT=/etc/systemd/system/$MEDIASTACK_ADMIN_FILTER_UNIT_NAME
+# shellcheck disable=SC2034
+MEDIASTACK_ADMIN_FILTER_DROPIN=/etc/systemd/system/docker.service.d/mediastack-admin-filter.conf
+# shellcheck disable=SC2034
+MEDIASTACK_ADMIN_FILTER_SCRIPT=/usr/local/sbin/mediastack-admin-filter
 
 # RFC1918 private ranges — the LAN scope for ufw "allow from <cidr>" rules.
-# The iptables after.rules heredoc keeps its own literals (interpolating an
-# array into that generated block is net-positive LoC).
+# The admin-port filter's own source ranges live in hardening/admin-filter.sh.
 # shellcheck disable=SC2034
 LAN_CIDRS=(10.0.0.0/8 172.16.0.0/12 192.168.0.0/16)
 
@@ -97,6 +106,8 @@ _HARDENING_CONCERNS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/hardening" && pwd)
 source "$_HARDENING_CONCERNS_DIR/ssh.sh"
 # shellcheck source=hardening/firewall.sh
 source "$_HARDENING_CONCERNS_DIR/firewall.sh"
+# shellcheck source=hardening/admin-filter.sh
+source "$_HARDENING_CONCERNS_DIR/admin-filter.sh"
 # shellcheck source=hardening/updates.sh
 source "$_HARDENING_CONCERNS_DIR/updates.sh"
 # shellcheck source=hardening/sysctl.sh
@@ -206,6 +217,10 @@ validate_install_state() {
             _ms_state_get "SYSCTL_BEFORE_NET_IPV4_$key" >/dev/null 2>&1 || return 1
         done
     fi
+    for key in ADMIN_FILTER_UNIT_INSTALLED ADMIN_FILTER_DROPIN_DIR_CREATED; do
+        value=$(_ms_state_get "$key" 2>/dev/null || true)
+        [[ -z "$value" || "$value" =~ ^(true|false)$ ]] || return 1
+    done
     for key in APT_AUTO_SHA256 APT_POLICY_SHA256; do
         value=$(_ms_state_get "$key" 2>/dev/null || true)
         [[ -z "$value" || "$value" =~ ^[0-9a-f]{64}$ ]] || return 1
@@ -242,6 +257,12 @@ setup_hardening() {
     else
         log_skip "UFW firewall disabled by user choice"
     fi
+    # The admin-port filter does not depend on UFW: it has its own opt-out and one
+    # install path, UFW on or off. A failed install is fatal for the caller (set -e
+    # stops setup before the stack starts), because published admin ports would
+    # otherwise go out unfiltered.
+    local filter_rc=0
+    setup_admin_filter || filter_rc=$?
 
     if [[ "${HARDENING_ENABLED:-true}" == "true" ]]; then
         setup_unattended_upgrades
@@ -250,6 +271,11 @@ setup_hardening() {
         log_skip "System hardening (auto-updates + kernel sysctl) disabled by user choice"
     fi
 
+    if ((filter_rc != 0)); then
+        log_error "The admin-port filter is not active. Setup stops here so no admin port is published unfiltered."
+        log_error "Fix the cause shown above and re-run, or turn the filter off (ADMIN_PORT_FILTER=false)."
+        return 1
+    fi
     log_ok "OS hardening step complete"
 }
 
@@ -290,6 +316,10 @@ _uninstall_host_artefacts() {
     local failed=0
     _uninstall_ufw || {
         log_error "UFW cleanup failed"
+        failed=1
+    }
+    admin_filter_disable || {
+        log_error "Admin-port filter cleanup failed"
         failed=1
     }
     _uninstall_apt || {

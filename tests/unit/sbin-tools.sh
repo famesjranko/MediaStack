@@ -34,8 +34,6 @@ ALLOW=(
     "scripts/setup/hardening/admin-filter.sh|runs only as root: systemd oneshot and sudo-invoked apply script"
     # `command -v sshd` is followed by an explicit /usr/sbin/sshd fallback.
     "scripts/setup/hardening/ssh.sh|falls back to the explicit /usr/sbin/sshd path"
-    # Literal text emitted into /etc/ufw/after.init, which ufw-init runs as root.
-    "scripts/setup/hardening/firewall.sh|the dedup hook text runs as root inside ufw-init"
 )
 
 # Prints "file:line:text" for each bare sbin call in a file.

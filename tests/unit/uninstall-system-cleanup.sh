@@ -46,6 +46,8 @@ SYSCTL_FILE_CREATED=false
 SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK=false
 SAMBA_OWNERSHIP_RECORDED=false
 SAMBA_CONFIGURED=false
+DOCKER_APT_LIST_SHA256=0000000000000000000000000000000000000000000000000000000000000000
+DOCKER_APT_KEY_SHA256=0000000000000000000000000000000000000000000000000000000000000000
 EOF
 chmod 0600 "$MEDIASTACK_STATE_FILE"
 SUDO_TRACE="$TMP_DIR/sudo-trace"
@@ -56,10 +58,10 @@ sudo() {
 assert_eq "1" "$(_ms_state_get STATE_FORMAT)" "ledger: root-owned state is read through sudo"
 assert_contains "$(cat "$SUDO_TRACE")" "awk" "ledger: reader invokes sudo awk"
 validate_install_state
-assert_eq "0" "$?" "ledger: valid ownership state accepted"
+assert_eq "0" "$?" "ledger: valid ownership state accepted, including retired DOCKER_APT_*_SHA256 keys"
 unset -f sudo
 
-# Tagged UFW rules are removed in descending order; user rules and later text survive.
+# Tagged UFW rules are removed in descending order; user rules survive.
 UFW_CALLS=()
 NUMBERED_MARKER="$TMP_DIR/numbered-read"
 printf '%s\n' '# MEDIASTACK-DOCKER-RULES' '*filter' 'COMMIT' '# END MEDIASTACK-DOCKER-RULES' '# user tail' >"$MEDIASTACK_UFW_AFTER_RULES"
@@ -102,14 +104,12 @@ case "${UFW_CALLS[*]}" in
     *"--force delete 4"*"--force delete 2"*) pass "UFW: tagged rules deleted in descending order" ;;
     *) fail "UFW: tagged rules deleted in descending order" "${UFW_CALLS[*]}" ;;
 esac
-assert_contains "$(cat "$MEDIASTACK_UFW_AFTER_RULES")" "# user tail" "UFW: content after owned block survives"
-# The IPv6 mirror is torn down the same way, or an uninstalled host keeps a live
-# v6 chain DROPping ports for a stack that is gone.
-assert_eq "0" "$(grep -c 'MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER_RULES")" \
-    "UFW: owned block removed from after.rules"
-assert_eq "0" "$(grep -c 'MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER6_RULES")" \
-    "UFW: owned block removed from after6.rules"
-assert_contains "$(cat "$MEDIASTACK_UFW_AFTER6_RULES")" "# user v6 tail" "UFW: content after owned v6 block survives"
+# The admin-port filter is not UFW's: a UFW cleanup leaves both after files as they were
+# (admin_filter_disable owns removing a legacy block; see uninstall-admin-filter.sh).
+assert_eq "1" "$(grep -c '^# MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER_RULES")" \
+    "UFW: cleanup does not edit the admin-filter block in after.rules"
+assert_eq "1" "$(grep -c '^# MEDIASTACK-DOCKER-RULES' "$MEDIASTACK_UFW_AFTER6_RULES")" \
+    "UFW: cleanup does not edit the admin-filter block in after6.rules"
 assert_contains "${UFW_CALLS[*]}" "--force disable" "UFW: firewall enabled by MediaStack is disabled when no drift remains"
 unset -f sudo
 
@@ -415,11 +415,11 @@ storage_uninstall_watchdog() { return 0; }
 f2b_uninstall_reload_watcher() { return 0; }
 remove_broken_docker_apt_source() { DOCKER_SRC_CALLED=1; }
 validate_install_state() { return 0; }
-# Sandbox sudo: absent host artefacts, and removals confined to TMP_DIR.
+# Sandbox sudo: absent host artefacts and no live chain, and removals confined to TMP_DIR.
 sudo() {
     local arg
     case "$1" in
-        test) return 1 ;;
+        test | iptables | ip6tables) return 1 ;;
         rm)
             for arg in "$@"; do
                 [[ "$arg" == "$TMP_DIR"/* ]] && command rm -f "$arg"

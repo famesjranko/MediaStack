@@ -2,7 +2,7 @@
 # Unit test - GCP WAN blocked-port coverage
 #
 # Keeps tests/gcp-vm/run-fresh.sh aligned with the Docker LAN-only ports
-# enforced by scripts/setup/hardening/firewall.sh.
+# enforced by scripts/setup/hardening/admin-filter.sh.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,21 +13,12 @@ CURRENT_SCENARIO="gcp-wan-ports"
 scenario_begin "$CURRENT_SCENARIO"
 
 extract_hardening_ports() {
-    # TCP rules only, deduplicated: the GCP list is a TCP probe list, and the
-    # firewall module states the same TCP ports twice — once for after.rules and
-    # once for its IPv6 mirror in after6.rules.
-    awk '
-        /-p tcp/ && /--dports/ {
-            for (i = 1; i <= NF; i++) {
-                if ($i == "--dports") {
-                    split($(i + 1), ports, ",")
-                    for (port in ports) {
-                        print ports[port]
-                    }
-                }
-            }
-        }
-    ' "$REPO_ROOT/scripts/setup/hardening/firewall.sh" | sort -nu
+    # The admin-port filter keeps its TCP port groups once, in ADMIN_FILTER_TCP_GROUPS
+    # (scripts/setup/hardening/admin-filter.sh), and renders both address families
+    # and both install paths from it. Deduplicated and sorted: the GCP list is a
+    # TCP probe list.
+    sed -n 's/^ADMIN_FILTER_TCP_GROUPS=(\(.*\))$/\1/p' "$REPO_ROOT/scripts/setup/hardening/admin-filter.sh" \
+        | tr -d '"' | tr ' ,' '\n' | sort -nu
 }
 
 extract_gcp_ports() {

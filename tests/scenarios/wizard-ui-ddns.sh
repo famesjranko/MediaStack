@@ -111,7 +111,7 @@ chmod +x $fixture"
     dind_exec "echo 0 > /tmp/ddns_verify_rc; echo 0 > /tmp/ddns_restart_rc"
     _ddns_pty_run "success" '[
   {"expect": "Manage features & settings"},
-  {"send": "8\n"},
+  {"send": "9\n"},
   {"expect": "Current DDNS provider: cloudflare"},
   {"expect": "Choose your DDNS provider:"},
   {"send": "6\n"},
@@ -125,7 +125,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "9\n"}
+  {"send": "10\n"}
 ]' || return 1
     cfg="$(dind_exec "cat /root/MediaStack/config/ddns-updater/config.json")"
     assert_contains "$cfg" "porkbun" "wizard-ui ddns [success]: config.json switched to porkbun"
@@ -141,7 +141,7 @@ chmod +x $fixture"
     dind_exec "echo 1 > /tmp/ddns_verify_rc; echo 0 > /tmp/ddns_restart_rc"
     _ddns_pty_run "reject" '[
   {"expect": "Manage features & settings"},
-  {"send": "8\n"},
+  {"send": "9\n"},
   {"expect": "Choose your DDNS provider:"},
   {"send": "6\n"},
   {"expect": "Enter api key"},
@@ -160,7 +160,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "9\n"}
+  {"send": "10\n"}
 ]' || return 1
     cfg="$(dind_exec "cat /root/MediaStack/config/ddns-updater/config.json")"
     assert_contains "$cfg" "cloudflare" "wizard-ui ddns [reject]: live config still cloudflare"
@@ -180,7 +180,7 @@ chmod +x $fixture"
     dind_exec "echo 0 > /tmp/ddns_verify_rc; echo 1 > /tmp/ddns_restart_rc; echo pending > /tmp/ddns_wrote_new"
     _ddns_pty_run "restore" '[
   {"expect": "Manage features & settings"},
-  {"send": "8\n"},
+  {"send": "9\n"},
   {"expect": "Choose your DDNS provider:"},
   {"send": "6\n"},
   {"expect": "Enter api key"},
@@ -194,7 +194,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "9\n"}
+  {"send": "10\n"}
 ]' || return 1
     # Prove the forward write LANDED (config held porkbun when the up-check ran),
     # so the cloudflare end-state is a real rollback, not a write that never happened.
@@ -218,7 +218,7 @@ chmod +x $fixture"
     _ddns_seed_state dynu
     _ddns_pty_run "route" '[
   {"expect": "Manage features & settings"},
-  {"send": "8\n"},
+  {"send": "9\n"},
   {"expect": "Current DDNS provider: dynu"},
   {"expect": "Choose your DDNS provider:"},
   {"send": "1\n"},
@@ -229,7 +229,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "9\n"}
+  {"send": "10\n"}
 ]' || return 1
     cfg="$(dind_exec "cat /root/MediaStack/config/ddns-updater/config.json")"
     assert_contains "$cfg" "dynu" "wizard-ui ddns [route]: live config still dynu (not touched)"

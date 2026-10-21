@@ -100,10 +100,22 @@ CERT_BOUND="live/npm-1"
 CERT_END="Jan  1 00:00:00 2099 GMT"
 DU_JUMP=1
 DU_RULES="-A X -p tcp -m multiport --dports 80 -j DROP"
+# DOCKER-USER itself, in the order iptables -S prints it: one jump, no RETURN ahead of it.
+DU_USER_RULES=$'-N DOCKER-USER\n-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT'
+# systemd unit state for the UFW-off path (the unit docker.service Requires=).
+SC_ACTIVE=1
+SC_FAILED=0
+systemctl() {
+    case "$1" in
+        is-failed) return $((1 - SC_FAILED)) ;;
+        is-active) return $((1 - SC_ACTIVE)) ;;
+    esac
+}
 # IPv6 defaults to "Docker has no v6 DOCKER-USER chain", the state of a host
 # whose Docker is v4-only: the v6 arm must stay silent there.
 DU6_PRESENT=0
 DU6_JUMP=1
+ufw_installed() { return $((1 - UFW_INSTALLED)); }
 sudo() {
     [[ "${1:-}" == "-n" ]] && shift
     case "${1:-}" in
@@ -118,6 +130,7 @@ sudo() {
         iptables)
             case "$*" in
                 *"-C DOCKER-USER"*) return $((1 - DU_JUMP)) ;;
+                *"-S DOCKER-USER"*) printf '%s\n' "$DU_USER_RULES" ;;
                 *"-S "*) printf '%s\n' "$DU_RULES" ;;
             esac
             ;;
@@ -233,6 +246,11 @@ _v skip "ufw: no sudo => skip" health_ufw_active
 SUDO_OK=1
 
 # --- docker-user restrict --------------------------------------------------
+# The unit and drop-in the chain comes from exist in every case below unless a case removes them.
+AF_DIR=$(mktemp -d)
+export MEDIASTACK_ADMIN_FILTER_DROPIN="$AF_DIR/mediastack-admin-filter.conf"
+export MEDIASTACK_ADMIN_FILTER_UNIT="$AF_DIR/mediastack-admin-filter.service"
+touch "$MEDIASTACK_ADMIN_FILTER_DROPIN" "$MEDIASTACK_ADMIN_FILTER_UNIT"
 _v ok "docker-user: jump + DROP rules => ok" health_docker_user_restrict
 DU_JUMP=0
 _v fail "docker-user: jump missing => fail" health_docker_user_restrict
@@ -250,6 +268,121 @@ DU6_PRESENT=0
 SUDO_OK=0
 _v skip "docker-user: no sudo => skip" health_docker_user_restrict
 SUDO_OK=1
+
+# Given a jump that sits behind Docker's own RETURN rule
+# When the port-lock check runs
+# Then it fails, because rules behind a RETURN never run
+DU_USER_RULES=$'-N DOCKER-USER\n-A DOCKER-USER -j RETURN\n-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT'
+_v fail "docker-user: jump behind a RETURN => fail" health_docker_user_restrict
+DU_USER_RULES=$'-N DOCKER-USER\n-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT\n-A DOCKER-USER -j RETURN'
+_v ok "docker-user: jump ahead of RETURN => ok" health_docker_user_restrict
+
+# --- admin-port filter: unit + drop-in + chain, with UFW on or off -----------
+# Given the unit path is the only install path
+# When the port-lock check runs with UFW on, then off
+# Then every unit-path failure is reported in both cases
+for UFW_ENABLED in true false; do
+    _v ok "filter UFW=$UFW_ENABLED: unit, drop-in and chain all present => ok" health_docker_user_restrict
+    rm "$MEDIASTACK_ADMIN_FILTER_DROPIN"
+    _v fail "filter UFW=$UFW_ENABLED: drop-in missing => fail" health_docker_user_restrict
+    touch "$MEDIASTACK_ADMIN_FILTER_DROPIN"
+    rm "$MEDIASTACK_ADMIN_FILTER_UNIT"
+    _v fail "filter UFW=$UFW_ENABLED: unit file missing => fail" health_docker_user_restrict
+    touch "$MEDIASTACK_ADMIN_FILTER_UNIT"
+    SC_FAILED=1
+    _v fail "filter UFW=$UFW_ENABLED: unit failed => fail" health_docker_user_restrict
+    SC_FAILED=0
+    SC_ACTIVE=0
+    _v fail "filter UFW=$UFW_ENABLED: unit not active => fail" health_docker_user_restrict
+    SC_ACTIVE=1
+    DU_JUMP=0
+    _v fail "filter UFW=$UFW_ENABLED: jump missing => fail" health_docker_user_restrict
+    DU_JUMP=1
+    DU_RULES="-A X -j RETURN"
+    _v fail "filter UFW=$UFW_ENABLED: chain empty => fail" health_docker_user_restrict
+    DU_RULES="-A X -p tcp -m multiport --dports 80 -j DROP"
+    SUDO_OK=0
+    SC_FAILED=1
+    _v fail "filter UFW=$UFW_ENABLED: a failed unit is reported even without sudo" health_docker_user_restrict
+    SC_FAILED=0
+    SUDO_OK=1
+done
+# Given UFW is on and the unit path is missing entirely (a host that kept only an after.rules block)
+# When the port-lock check runs
+# Then it fails: that block is not a working filter
+UFW_ENABLED=true
+rm "$MEDIASTACK_ADMIN_FILTER_DROPIN" "$MEDIASTACK_ADMIN_FILTER_UNIT"
+_v fail "filter with UFW: no unit path installed => fail" health_docker_user_restrict
+DU_JUMP=0
+ADMIN_PORT_FILTER=false
+_v skip "filter opted out: reported as the user's choice, not a failure" health_docker_user_restrict
+assert_contains "$(health_docker_user_restrict)" "OFF by your choice" "filter opted out: message says it is the user's choice"
+DU_JUMP=1
+# Given a value that is not exactly false (TRUE, yes, 1, "true ", off)
+# When the port-lock check runs
+# Then the filter still counts as wanted, so a missing drop-in fails instead of skipping
+for v in TRUE FALSE False yes 1 "true " off; do
+    ADMIN_PORT_FILTER="$v"
+    rm -f "$MEDIASTACK_ADMIN_FILTER_DROPIN"
+    _v fail "filter value [$v]: fails closed, not an opt-out" health_docker_user_restrict
+done
+unset ADMIN_PORT_FILTER
+
+# --- ./mediastack status warning -------------------------------------------
+source "$REPO_ROOT/scripts/launcher/status-admin-filter.sh"
+launcher_is_installed() { return 0; }
+WARN_OUT=""
+ui_log() { WARN_OUT+="$1:$2;"; }
+UFW_ENABLED=false
+# Given the filter is wanted (the key is absent) but its unit has failed
+# When the main menu draws
+# Then a warning line appears
+SC_FAILED=1
+launcher_admin_filter_warning
+assert_contains "$WARN_OUT" "warn:Admin-port filter NOT active" "status line: warns when the filter is wanted but inactive (key absent => wanted)"
+# Given the same failed unit with UFW on
+# When the main menu draws
+# Then the warning appears there too
+WARN_OUT=""
+UFW_ENABLED=true
+launcher_admin_filter_warning
+assert_contains "$WARN_OUT" "warn:Admin-port filter NOT active" "status line: warns with UFW on as well"
+UFW_ENABLED=false
+# Given the user turned the filter off and the unit is not there
+# When the main menu draws
+# Then there is no warning
+WARN_OUT=""
+ADMIN_PORT_FILTER=false
+launcher_admin_filter_warning
+assert_eq "" "$WARN_OUT" "status line: no warning when the user turned the filter off"
+# Given an unrecognised value and a failed unit
+# When the main menu draws
+# Then the warning appears, because only the exact value false is an opt-out
+WARN_OUT=""
+export ADMIN_PORT_FILTER=TRUE
+SC_FAILED=1
+launcher_admin_filter_warning
+assert_contains "$WARN_OUT" "warn:Admin-port filter NOT active" "status line: warns for ADMIN_PORT_FILTER=TRUE"
+# Given a working filter
+# When the main menu draws
+# Then there is no warning
+WARN_OUT=""
+unset ADMIN_PORT_FILTER
+SC_FAILED=0
+touch "$MEDIASTACK_ADMIN_FILTER_DROPIN" "$MEDIASTACK_ADMIN_FILTER_UNIT"
+launcher_admin_filter_warning
+assert_eq "" "$WARN_OUT" "status line: no warning while the filter is active"
+# Given a check that cannot run (no passwordless sudo to read iptables)
+# When the main menu draws
+# Then there is no warning, because nothing is shown to be broken
+WARN_OUT=""
+SUDO_OK=0
+launcher_admin_filter_warning
+assert_eq "" "$WARN_OUT" "status line: no warning when the check is skipped"
+SUDO_OK=1
+UFW_ENABLED=true
+rm -rf "$AF_DIR"
+unset MEDIASTACK_ADMIN_FILTER_DROPIN MEDIASTACK_ADMIN_FILTER_UNIT
 
 # --- health_present maps STATUS -> log_* -----------------------------------
 LP=""

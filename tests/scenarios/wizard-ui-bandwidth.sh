@@ -32,7 +32,7 @@ source ./.ms-launcher-test.sh
 recovery_menu_remote_available(){ return 1; }   # fix submenu indices (no remote-add row)
 # remote_available=false makes the DDNS row's remote-gate TRUE, so its visibility
 # falls to _ddns_configured — suppress it EXPLICITLY (never inferred from fixture
-# state) so the numeric sends 7/8 below stay stable.
+# state) so the numeric sends 8/9 below stay stable.
 _ddns_configured(){ return 1; }
 _docker_reachable(){ return 0; }
 _service_is_running(){ return 0; }
@@ -47,7 +47,7 @@ chmod +x $fixture"
   {"expect": "What would you like to do\\?"},
   {"send": "4\n"},
   {"expect": "Manage features & settings"},
-  {"send": "7\n"},
+  {"send": "8\n"},
   {"expect": "Current: download 3 MB/s, upload 1 MB/s"},
   {"expect": "Download limit \\(MB/s"},
   {"send": "5\n"},
@@ -60,7 +60,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "8\n"}
+  {"send": "9\n"}
 ]
 JSON'
 

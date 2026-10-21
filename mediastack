@@ -122,6 +122,7 @@ source "$SCRIPT_DIR/scripts/launcher/diagnostics.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/fail2ban.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/hardware.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/quality.sh" || exit 1
+source "$SCRIPT_DIR/scripts/launcher/status-admin-filter.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/storage.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/uninstall.sh" || exit 1
 source "$SCRIPT_DIR/scripts/launcher/manage-updates.sh" || exit 1
@@ -313,6 +314,7 @@ main() {
     while true; do
         clear 2>/dev/null || printf '\033[2J\033[H'
         render_banner
+        launcher_admin_filter_warning
         if launcher_is_installed; then
             launcher_menu_post
         else

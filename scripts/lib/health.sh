@@ -33,6 +33,9 @@ if ! declare -F net_dns_classify >/dev/null 2>&1; then
 fi
 # shellcheck source=/dev/null
 declare -F host_tool_installed >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/host-tools.sh"
+# The admin-port filter's one opt-out rule (admin_filter_opted_out).
+# shellcheck source=/dev/null
+declare -F admin_filter_opted_out >/dev/null 2>&1 || source "$_HEALTH_REPO_ROOT/scripts/setup/hardening/admin-filter.sh"
 
 # =============================================================================
 # internals
@@ -381,8 +384,7 @@ health_ufw_active() {
         echo "skip|UFW: needs passwordless sudo to read status"
         return 0
     }
-    # ufw lives in /usr/sbin (often not in a non-root PATH) — check via root's PATH.
-    sudo -n sh -c 'command -v ufw' >/dev/null 2>&1 || {
+    ufw_installed || {
         echo "skip|UFW: not installed"
         return 0
     }
@@ -396,10 +398,29 @@ health_ufw_active() {
     return 0
 }
 
-# The DOCKER-USER → MEDIASTACK-DOCKER-RESTRICT jump AND its DROP rules are what
-# hide LAN-only admin ports. Docker flushes DOCKER-USER on daemon restart; a jump
-# with an emptied chain still re-exposes everything, so check both.
+# The DOCKER-USER → MEDIASTACK-DOCKER-RESTRICT jump AND its DROP rules hide the
+# LAN-only admin ports. Another tool, or a failed boot-time apply, can lose either,
+# and a jump behind Docker's own RETURN never runs, so check all three. The chain
+# comes from a unit that docker.service Requires=, with UFW on or off, so check the
+# unit and drop-in too. Paths mirror MEDIASTACK_ADMIN_FILTER_* (setup/hardening.sh).
 health_docker_user_restrict() {
+    if admin_filter_opted_out; then
+        echo "skip|Admin-port filter is OFF by your choice - admin ports are reachable from any forwarded source"
+        return 0
+    fi
+    local unit_name=mediastack-admin-filter.service
+    [[ -f "${MEDIASTACK_ADMIN_FILTER_DROPIN:-/etc/systemd/system/docker.service.d/mediastack-admin-filter.conf}" ]] || {
+        echo "fail|Admin-port filter drop-in MISSING - Docker would start without the filter; re-run setup"
+        return 0
+    }
+    [[ -f "${MEDIASTACK_ADMIN_FILTER_UNIT:-/etc/systemd/system/$unit_name}" ]] || {
+        echo "fail|Admin-port filter unit MISSING - Docker cannot start; re-run setup"
+        return 0
+    }
+    if systemctl is-failed --quiet "$unit_name" 2>/dev/null || ! systemctl is-active --quiet "$unit_name" 2>/dev/null; then
+        echo "fail|Admin-port filter unit is not active - Docker will not start (systemctl status $unit_name)"
+        return 0
+    fi
     _health_sudo_ok || {
         echo "skip|firewall chain: needs passwordless sudo to read iptables"
         return 0
@@ -408,16 +429,21 @@ health_docker_user_restrict() {
         echo "fail|LAN-only port protection MISSING from DOCKER-USER — admin ports exposed to the internet"
         return 0
     fi
-    local rules ndrop
+    local rules ndrop du
+    du=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || true
+    if [[ "$du" == *$'-A DOCKER-USER -j RETURN\n'*'-j MEDIASTACK-DOCKER-RESTRICT'* ]]; then
+        echo "fail|LAN-only port protection sits BEHIND a RETURN rule in DOCKER-USER, so it never runs — admin ports exposed"
+        return 0
+    fi
     rules=$(sudo -n iptables -S MEDIASTACK-DOCKER-RESTRICT 2>/dev/null) || true
     ndrop=$(grep -c 'multiport.*DROP' <<<"$rules") || true
     if [[ "${ndrop:-0}" -lt 1 ]]; then
-        echo "fail|Port-restriction chain is EMPTY (Docker flushed it) — LAN-only ports exposed"
+        echo "fail|Port-restriction chain is EMPTY — LAN-only ports exposed"
         return 0
     fi
     # IPv6 only matters once Docker actually filters there — it creates a v6
-    # DOCKER-USER chain when it gains an IPv6 bridge. Until then our after6.rules
-    # mirror sits inert and there is nothing to report.
+    # DOCKER-USER chain when it gains an IPv6 bridge. Until then there is nothing
+    # to report.
     if sudo -n ip6tables -S DOCKER-USER >/dev/null 2>&1 \
         && ! sudo -n ip6tables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT 2>/dev/null; then
         echo "fail|LAN-only port protection MISSING from IPv6 DOCKER-USER — admin ports exposed over IPv6"

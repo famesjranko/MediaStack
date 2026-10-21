@@ -111,29 +111,19 @@ PY
         prev_mediastack_gateway="${MEDIASTACK_GATEWAY:-$prev_mediastack_gateway}"
     fi
 
+    # GPU detail keys survive only while Stage 3 completed for a known vendor.
     local jellyfin_gpu="none"
     case "$prev_jellyfin_gpu" in
-        intel | amd | nvidia)
-            if [[ "$prev_stage3_state" == "complete" ]]; then
-                jellyfin_gpu="$prev_jellyfin_gpu"
-            else
-                prev_stage3_hw_decoding_codecs=""
-                prev_stage3_decode_hevc_10bit=""
-                prev_stage3_decode_vp9_10bit=""
-                prev_stage3_allow_hevc_encoding=""
-                prev_stage3_allow_av1_encoding=""
-                prev_stage3_render_device=""
-            fi
-            ;;
-        *)
-            prev_stage3_hw_decoding_codecs=""
-            prev_stage3_decode_hevc_10bit=""
-            prev_stage3_decode_vp9_10bit=""
-            prev_stage3_allow_hevc_encoding=""
-            prev_stage3_allow_av1_encoding=""
-            prev_stage3_render_device=""
-            ;;
+        intel | amd | nvidia) [[ "$prev_stage3_state" == "complete" ]] && jellyfin_gpu="$prev_jellyfin_gpu" ;;
     esac
+    if [[ "$jellyfin_gpu" == "none" ]]; then
+        prev_stage3_hw_decoding_codecs=""
+        prev_stage3_decode_hevc_10bit=""
+        prev_stage3_decode_vp9_10bit=""
+        prev_stage3_allow_hevc_encoding=""
+        prev_stage3_allow_av1_encoding=""
+        prev_stage3_render_device=""
+    fi
 
     # NVIDIA driver-management mode is the single source of truth (patch-enabled
     # is derived: true iff "unlock"). Legacy NVIDIA_PATCH_ENABLED=true migrates to
@@ -379,6 +369,8 @@ SMB_SHARE_SCOPE=${_WIZ_SMB_SHARE_SCOPE:-data}
 # --- host security (opt-in via wizard / day-2 toggles; default on) ---
 UFW_ENABLED=${_WIZ_UFW_ENABLED:-true}
 HARDENING_ENABLED=${_WIZ_HARDENING_ENABLED:-true}
+# Absent => true. A wizard path that never asks (demo, resume) keeps the old choice.
+ADMIN_PORT_FILTER=${_WIZ_ADMIN_PORT_FILTER:-${ADMIN_PORT_FILTER:-true}}
 
 # --- autoheal sidecar ---
 AUTOHEAL_ENABLED=${AUTOHEAL_ENABLED:-true}

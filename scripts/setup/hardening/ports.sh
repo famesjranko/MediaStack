@@ -33,7 +33,7 @@ _setup_ufw_revoke_tag() {
     # Keep the ledger honest: _uninstall_ufw replays UFW_RULE_* verbatim, so a
     # stale port there would outlive the rule it names. One tag owns one rule,
     # so rewriting in place is the whole update — and it leaves _ms_ufw_allow's
-    # dedup to recognise the rule it is about to add.
+    # duplicate check to recognise the rule it is about to add.
     count=$(_ms_state_get UFW_RULE_COUNT 2>/dev/null || echo 0)
     for ((i = 1; i <= count; i++)); do
         rule=$(_ms_state_get "UFW_RULE_$i" 2>/dev/null || true)

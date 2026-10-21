@@ -36,7 +36,7 @@ render_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   recovery_menu_remote_available(){ return 1; }
   recovery_menu_transcoding_available(){ return 1; }
   BAZARR_ENABLED=true; SMB_ENABLED=false; PUBLIC_INDEXERS_ENABLED=false
-  UFW_ENABLED=false; HARDENING_ENABLED=true
+  UFW_ENABLED=false; HARDENING_ENABLED=true; ADMIN_PORT_FILTER=false
   submenu_features >/dev/null 2>&1
   tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
 ' 2>&1)
@@ -45,6 +45,24 @@ assert_contains "$render_out" "File sharing (SMB): OFF" "features: smb state OFF
 assert_contains "$render_out" "Search indexers: OFF" "features: indexers state OFF read from .env"
 assert_contains "$render_out" "Firewall (UFW): OFF" "features: ufw state OFF read from .env"
 assert_contains "$render_out" "System hardening: ON" "features: hardening state ON read from .env"
+assert_contains "$render_out" "Admin-port filter: OFF" "features: admin-port filter state OFF read from .env"
+# Given a value that is not exactly false (a typo, or FALSE/False)
+# When the features menu renders
+# Then the admin-port filter shows ON
+for v in yes FALSE False; do
+    typo_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" ADMIN_PORT_FILTER_CASE="$v" bash -c '
+    source "$REPO_ROOT/mediastack" </dev/null
+    LABELS=$(mktemp)
+    render_banner(){ :; }
+    ui_choose(){ shift; printf "%s\n" "$@" > "$LABELS"; echo "Back"; }
+    recovery_menu_remote_available(){ return 1; }
+    recovery_menu_transcoding_available(){ return 1; }
+    ADMIN_PORT_FILTER=$ADMIN_PORT_FILTER_CASE
+    submenu_features >/dev/null 2>&1
+    tr "\n" "|" < "$LABELS"; rm -f "$LABELS"
+  ' 2>&1)
+    assert_contains "$typo_out" "Admin-port filter: ON" "features: ADMIN_PORT_FILTER=$v is not the exact opt-out, so the menu shows ON (fails closed)"
+done
 if grep -q "NAS storage watchdog" <<<"$render_out"; then
     fail "features: NAS watchdog hidden on non-NAS install"
 else
@@ -128,6 +146,21 @@ route_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 assert_contains "$route_out" "DISPATCH_FEATURES" "launcher_menu_post: Features routes to submenu_features"
 
+# The main menu loop draws the admin-port filter warning right under the banner.
+main_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  clear(){ :; }
+  render_banner(){ echo BANNER; }
+  launcher_admin_filter_warning(){ echo FILTER_WARNING; }
+  launcher_is_installed(){ return 0; }
+  launcher_menu_post(){ exit 0; }
+  main
+' 2>&1)
+case "$main_out" in
+    *BANNER*FILTER_WARNING*) pass "main menu: the admin-port filter warning is drawn under the banner" ;;
+    *) fail "main menu: the admin-port filter warning is drawn under the banner" "$main_out" ;;
+esac
+
 # ---------------------------------------------------------------------------
 # 3. submenu_features dispatches each toggle label to the right handler.
 # ---------------------------------------------------------------------------
@@ -143,6 +176,7 @@ dispatch() {
     action_toggle_indexers(){ echo DISPATCH_INDEXERS; exit 0; }
     action_toggle_ufw(){ echo DISPATCH_UFW; exit 0; }
     action_toggle_hardening(){ echo DISPATCH_HARDENING; exit 0; }
+    action_toggle_admin_filter(){ echo DISPATCH_ADMIN_FILTER; exit 0; }
     BAZARR_ENABLED=true; SMB_ENABLED=false; PUBLIC_INDEXERS_ENABLED=false
     submenu_features 2>&1
   ' 2>&1
@@ -152,6 +186,7 @@ assert_contains "$(dispatch 'File sharing (SMB): OFF')" "DISPATCH_SMB" "dispatch
 assert_contains "$(dispatch 'Search indexers: OFF')" "DISPATCH_INDEXERS" "dispatch: indexers -> indexers toggle"
 assert_contains "$(dispatch 'Firewall (UFW): OFF')" "DISPATCH_UFW" "dispatch: firewall -> ufw toggle"
 assert_contains "$(dispatch 'System hardening: ON')" "DISPATCH_HARDENING" "dispatch: hardening -> hardening toggle"
+assert_contains "$(dispatch 'Admin-port filter: ON')" "DISPATCH_ADMIN_FILTER" "dispatch: admin-port filter -> its toggle"
 
 # Watchdog dispatch needs STORAGE_MODE=nas for the option to be built.
 watchdog_dispatch=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
@@ -172,7 +207,7 @@ assert_contains "$watchdog_dispatch" "DISPATCH_WATCHDOG" "dispatch: NAS watchdog
 # run_toggle <handler> <init-env-lines>  -> prints "=== ENV ===" .env then
 # "=== CAP ===" the captured external commands.
 run_toggle() {
-    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" FAIL_PERSIST="${3:-0}" bash -c '
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" HANDLER="$1" INIT="$2" FAIL_PERSIST="${3:-0}" FAIL_ADMIN="${FAIL_ADMIN:-0}" bash -c '
     source "$REPO_ROOT/mediastack" </dev/null
     tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
     mkdir -p "$tmp/scripts/setup"
@@ -188,7 +223,9 @@ setup_ufw(){ echo "UFW_SETUP" >> "$CAPTURE"; }
 setup_ufw_service_ports(){ echo "UFW_PORTS" >> "$CAPTURE"; }
 setup_unattended_upgrades(){ echo "APT_HARDEN" >> "$CAPTURE"; }
 setup_sysctl_hardening(){ echo "SYSCTL_HARDEN" >> "$CAPTURE"; }
-_uninstall_ufw(){ echo "UFW_UNINSTALL" >> "$CAPTURE"; return 0; }
+_uninstall_ufw(){ echo "UFW_UNINSTALL ${1:-}" >> "$CAPTURE"; return 0; }
+setup_admin_filter(){ echo "ADMIN_FILTER_SETUP" >> "$CAPTURE"; return "${FAIL_ADMIN:-0}"; }
+admin_filter_disable(){ echo "ADMIN_FILTER_DISABLE" >> "$CAPTURE"; return "${FAIL_ADMIN:-0}"; }
 _uninstall_sysctl(){ echo "SYSCTL_UNINSTALL" >> "$CAPTURE"; return 0; }
 _uninstall_apt(){ echo "APT_UNINSTALL" >> "$CAPTURE"; return 0; }
 _ms_state_set(){ echo "STATE_SET $*" >> "$CAPTURE"; }
@@ -196,7 +233,7 @@ validate_install_state(){ return 0; }
 EOF
     # UFW OFF path probes `sudo ufw status`; stub sudo so it never really runs.
     sudo(){ echo "SUDO $*" >> "$CAPTURE"; return 0; }
-    _docker_reachable(){ return 0; }
+    _docker_reachable(){ [[ "${DOCKER_DOWN:-0}" != 1 ]]; }
     _regenerate_override(){ :; }
     docker(){ echo "DOCKER $*" >> "$CAPTURE"; }
     # Capture wizard_apply.py calls, but let the real python3 run the .env writer
@@ -272,6 +309,62 @@ assert_contains "$u_off" "UFW_UNINSTALL" "ufw OFF: runs _uninstall_ufw (ledger-a
 assert_contains "$u_off" "STATE_SET UFW_DEFAULTS_APPLIED false" "ufw OFF: resets latch so re-enable reconfigures"
 assert_contains "$u_off" "STATE_SET UFW_RULE_COUNT 0" "ufw OFF: resets recorded rule count"
 assert_contains "$u_off" "UFW_ENABLED='false'" "ufw OFF: .env flag set false (single-quoted)"
+
+# --- Admin-port filter ON / OFF: install via setup_admin_filter; opt-out removes both paths
+f_on=$(run_toggle action_toggle_admin_filter "ADMIN_PORT_FILTER=false")
+assert_contains "$f_on" "ADMIN_FILTER_SETUP" "admin filter ON: installs through setup_admin_filter"
+assert_contains "$f_on" "ADMIN_PORT_FILTER='true'" "admin filter ON: .env flag set true (single-quoted)"
+
+# An unrecognised value is not an opt-out: the toggle offers to turn the filter OFF
+f_typo=$(run_toggle action_toggle_admin_filter "ADMIN_PORT_FILTER=TRUE")
+assert_contains "$f_typo" "ADMIN_PORT_FILTER='false'" "admin filter TRUE: still on, so the toggle turns it off"
+
+f_off=$(run_toggle action_toggle_admin_filter "ADMIN_PORT_FILTER=true")
+assert_contains "$f_off" "ADMIN_FILTER_DISABLE" "admin filter OFF: removes whichever path owns the chain"
+assert_contains "$f_off" "ADMIN_PORT_FILTER='false'" "admin filter OFF: .env flag set false (single-quoted)"
+assert_contains "$f_off" "RESULT rc=0 label=Disable admin-port filter" "admin filter OFF: reports success"
+
+f_off_fail=$(FAIL_ADMIN=1 run_toggle action_toggle_admin_filter "ADMIN_PORT_FILTER=true")
+assert_contains "$f_off_fail" "RESULT rc=1 label=Disable admin-port filter" "admin filter OFF: a removal failure is reported as a failure"
+
+f_on_fail=$(FAIL_ADMIN=1 run_toggle action_toggle_admin_filter "ADMIN_PORT_FILTER=false")
+assert_contains "$f_on_fail" "RESULT rc=1 label=Enable admin-port filter" "admin filter ON: an install failure is reported as a failure"
+
+f_persist_fail=$(run_toggle action_toggle_admin_filter "ADMIN_PORT_FILTER=true" 1)
+assert_not_contains "$f_persist_fail" "ADMIN_FILTER_DISABLE" "admin filter persist failure: nothing is removed when .env cannot be written"
+
+# --- UFW toggles never touch the chain; they only converge the filter first -----
+# Given the filter is wanted
+# When UFW is turned off
+# Then the filter converges (moving any legacy block out) before the UFW teardown, which takes no chain argument
+case "$u_off" in
+    *ADMIN_FILTER_SETUP*"UFW_UNINSTALL "$'\n'*) pass "ufw OFF: the filter converges first, then UFW's teardown runs with no chain argument" ;;
+    *) fail "ufw OFF: the filter converges first, then UFW's teardown runs with no chain argument" "$u_off" ;;
+esac
+assert_not_contains "$u_off" "ADMIN_FILTER_DISABLE" "ufw OFF: the filter is not removed"
+u_off_nofilter=$(run_toggle action_toggle_ufw $'UFW_ENABLED=true\nADMIN_PORT_FILTER=false')
+assert_not_contains "$u_off_nofilter" "ADMIN_FILTER_SETUP" "ufw OFF, filter opted out: the filter is not installed"
+u_off_fail=$(FAIL_ADMIN=1 run_toggle action_toggle_ufw "UFW_ENABLED=true")
+assert_not_contains "$u_off_fail" "UFW_UNINSTALL" "ufw OFF: a failed filter install stops before UFW is torn down"
+assert_contains "$u_off_fail" "RESULT rc=1 label=Disable UFW firewall" "ufw OFF: a failed filter install is reported"
+# Given the filter is wanted
+# When UFW is turned on
+# Then the filter converges before UFW is configured, so UFW never loads a legacy block
+case "$u_on" in
+    *ADMIN_FILTER_SETUP*UFW_SETUP*) pass "ufw ON: the filter converges before UFW is configured" ;;
+    *) fail "ufw ON: the filter converges before UFW is configured" "$u_on" ;;
+esac
+u_on_fail=$(FAIL_ADMIN=1 run_toggle action_toggle_ufw "UFW_ENABLED=false")
+assert_not_contains "$u_on_fail" "UFW_SETUP" "ufw ON: a failed filter install stops before UFW is configured"
+assert_contains "$u_on_fail" "RESULT rc=1 label=Enable UFW firewall" "ufw ON: a failed filter install is reported"
+u_on_nofilter=$(run_toggle action_toggle_ufw $'UFW_ENABLED=false\nADMIN_PORT_FILTER=false')
+assert_not_contains "$u_on_nofilter" "ADMIN_FILTER_SETUP" "ufw ON, filter opted out: the filter is not installed"
+assert_contains "$u_on_nofilter" "UFW_SETUP" "ufw ON, filter opted out: UFW is still configured"
+# Given Docker is not running and UFW is on
+# When the filter is turned on
+# Then it installs anyway: the unit path creates DOCKER-USER itself
+f_on_nodocker=$(DOCKER_DOWN=1 run_toggle action_toggle_admin_filter $'ADMIN_PORT_FILTER=false\nUFW_ENABLED=true')
+assert_contains "$f_on_nodocker" "ADMIN_FILTER_SETUP" "admin filter ON, UFW on, Docker down: still installs through setup_admin_filter"
 
 # --- Hardening ON / OFF: apply/revert sysctl + unattended-upgrades ----------
 h_on=$(run_toggle action_toggle_hardening "HARDENING_ENABLED=false")
