@@ -829,9 +829,9 @@ def record_install(compose_path: pathlib.Path, out_path: pathlib.Path) -> int:
 def read_policy(path: pathlib.Path) -> dict[str, str]:
     """Per-service policy overrides: {service: 'stable'|'latest'|'<image>@sha256:...'}.
 
-    A digest-pin value ("Revert to installed image") is a real override too,
-    so it's kept — presence drives the `manual` override flag; the value is
-    normalized to the display token `pinned` by the status formatters.
+    A digest-pin value ("Revert to installed image") is kept so the policy
+    column can show it, normalized to the display token `pinned` by the status
+    formatters. Only floated rows (not pins) count as a `manual` override.
     """
     if not path.exists():
         return {}
@@ -886,9 +886,11 @@ def scan_status(
 
     def scan_one(item: tuple[str, str]) -> dict[str, Any]:
         service, image = item
-        # "manual" = an explicit per-service row; "default" = inherits the global
-        # channel. The launcher uses this to offer reset only for real overrides.
-        override = "manual" if service in policy else "default"
+        # "manual" = a floated per-service row (stable/latest); "default" = inherits
+        # the global channel OR already pinned to its install digest. A pin row is
+        # the end state of a revert, so counting it manual would keep offering
+        # "Revert" for a service that already runs its install image.
+        override = "manual" if service in policy and not _is_pin(policy[service]) else "default"
         effective = policy.get(service, global_channel)
         image_id = container_image_id(service)
         present = image_id is not None
