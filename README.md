@@ -10,7 +10,7 @@ Turnkey media server for home networks. Installs and configures the full stack o
 [![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange)](#license)<br>
 
 <!-- stable-image-badges:start -->
-[![Stable image baseline: 19 pinned digests](https://img.shields.io/badge/Stable%20image%20baseline-19%20pinned%20digests-2ea44f?logo=docker&logoColor=white)](docs/operations/day-2.md)
+[![Stable image baseline: 20 pinned digests](https://img.shields.io/badge/Stable%20image%20baseline-20%20pinned%20digests-2ea44f?logo=docker&logoColor=white)](docs/operations/day-2.md)
 <!-- stable-image-badges:end -->
 
 </div>
@@ -84,7 +84,7 @@ Power-user paths with no menu equivalent (hand-editing `config.yml`, image pruni
 
 ## Services & Ports
 
-MediaStack runs 19 containers. The default services start automatically. Remote access adds the `proxy` and `remote` profiles, subtitles adds Bazarr, and the `autoheal` sidecar runs by default (opt out with `AUTOHEAL_ENABLED=false` in `.env`).
+MediaStack runs 20 containers. The default services start automatically. Remote access adds the `proxy` and `remote` profiles, subtitles adds Bazarr, and the `autoheal` sidecar runs by default (opt out with `AUTOHEAL_ENABLED=false` in `.env`).
 
 | Service | Port | Purpose | Profile |
 |:--------|:-----|:--------|:--------|
@@ -105,8 +105,9 @@ MediaStack runs 19 containers. The default services start automatically. Remote 
 | Bazarr | 6767 | Subtitle management | subtitles |
 | DDNS Updater | 8000 | Dynamic DNS | proxy |
 | Beszel Hub | 8090 | System resource dashboard | default |
-| Beszel Agent | 45876 | Host metrics collector | default |
+| Beszel Agent | - | Host metrics collector (unix socket to the hub, no network port) | default |
 | Autoheal | - | Restart unhealthy containers | autoheal |
+| Socket Proxy | - | Filtered Docker API for Beszel Agent and Autoheal | default |
 
 ---
 

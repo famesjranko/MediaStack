@@ -5,6 +5,172 @@
 # This configurator authenticates, retrieves the agent SSH key, saves it to .env,
 # recreates the agent container to pick up the key, and registers this host as a
 # monitored system.
+#
+# The agent listens on a unix socket, not a TCP port (docker-compose.yml): it
+# runs on the host network, where a port would be open on every host interface.
+# Beszel documents this for a hub and agent on one host: the agent's LISTEN
+# value may be a socket path, and the hub takes that path as the system's
+# "Host / IP" (https://beszel.dev/guide/agent-installation#connecting-to-a-local-agent;
+# agent: internal/agent/server.go GetNetwork(), addresses starting with "/" are
+# unix). The socket directory is ./config/beszel/socket, which the hub already
+# sees under its /beszel_data mount.
+
+BESZEL_LOCAL_SOCKET="/beszel_data/socket/beszel.sock"
+
+# Logs in to the hub as the shared admin and sets BESZEL_TOKEN and
+# BESZEL_USER_ID. Returns 1 (after logging why) when it cannot.
+# Usage: _beszel_login <hub_url> <email> <password>
+_beszel_login() {
+    local hub_url="$1" admin_email="$2" admin_pw="$3"
+    local auth_body auth_resp auth_code
+    BESZEL_TOKEN="" BESZEL_USER_ID=""
+    auth_body=$(B_EMAIL="$admin_email" B_PW="$admin_pw" python3 -c '
+import os, json
+print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_PW"]}))
+' 2>/dev/null) || {
+        log_warn "Failed to build auth payload"
+        return 1
+    }
+
+    auth_resp=$(curl_data_stdin "$auth_body" \
+        -sS -X POST "$hub_url/api/collections/users/auth-with-password" \
+        -H "Content-Type: application/json" -w "\n%{http_code}" 2>/dev/null) || {
+        log_warn "Beszel hub not reachable - skipping"
+        return 1
+    }
+
+    auth_code="${auth_resp##*$'\n'}"
+    auth_resp="${auth_resp%$'\n'*}"
+
+    if [[ ! "$auth_code" =~ ^2 ]]; then
+        log_warn "Beszel auth failed (HTTP $auth_code) - hub may still be initializing"
+        return 1
+    fi
+
+    BESZEL_TOKEN=$(echo "$auth_resp" | json_get token)
+    BESZEL_USER_ID=$(echo "$auth_resp" | json_path record.id)
+    if [[ -z "$BESZEL_TOKEN" ]]; then
+        log_warn "Beszel auth returned no token"
+        return 1
+    fi
+    return 0
+}
+
+# Reads a systems list from stdin and prints "<state> <id>" for the record named
+# MediaStack: none, current (the socket), legacy (exactly MediaStack's old
+# host.docker.internal:45876) or other (anything else, which is user state).
+_beszel_local_system_state() {
+    BESZEL_SOCKET="$BESZEL_LOCAL_SOCKET" python3 -c '
+import os, sys, json
+try:
+    items = json.load(sys.stdin).get("items", [])
+except Exception:
+    print("unreadable -")
+    sys.exit(0)
+for it in items:
+    if it.get("name") != "MediaStack":
+        continue
+    host, port = it.get("host"), str(it.get("port"))
+    if host == os.environ["BESZEL_SOCKET"]:
+        state = "current"
+    elif host == "host.docker.internal" and port == "45876":
+        state = "legacy"
+    else:
+        state = "other"
+    print(state, it.get("id", ""))
+    break
+else:
+    print("none -")
+' 2>/dev/null || echo "unreadable -"
+}
+
+# Registers this host in the hub, or moves MediaStack's own old TCP entry to the
+# socket. A MediaStack entry with any other host or port is the user's: reported
+# as drift, never rewritten. Needs a prior _beszel_login.
+# Usage: beszel_sync_local_system <hub_url>
+beszel_sync_local_system() {
+    local hub_url="$1" systems_resp state record_id
+    systems_resp=$(curl_header_stdin "Authorization" "Bearer $BESZEL_TOKEN" -sS "$hub_url/api/collections/systems/records" \
+        2>/dev/null)
+    read -r state record_id < <(_beszel_local_system_state <<<"$systems_resp")
+
+    local body code out
+    case "$state" in
+        current)
+            log_skip "Beszel system 'MediaStack' already registered"
+            return 0
+            ;;
+        other)
+            log_drift "Beszel system 'MediaStack' was changed outside MediaStack - left as is (the local agent listens on $BESZEL_LOCAL_SOCKET)"
+            return 0
+            ;;
+        legacy)
+            body=$(B_SOCKET="$BESZEL_LOCAL_SOCKET" python3 -c '
+import os, json
+print(json.dumps({"host": os.environ["B_SOCKET"]}))' 2>/dev/null)
+            out=$(curl_header_data_stdin "Authorization" "Bearer $BESZEL_TOKEN" "$body" \
+                -sS -X PATCH "$hub_url/api/collections/systems/records/$record_id" \
+                -H "Content-Type: application/json" \
+                -w "\n%{http_code}" 2>/dev/null)
+            code="${out##*$'\n'}"
+            if [[ "$code" =~ ^2 ]]; then
+                log_ok "Beszel system 'MediaStack' moved from host.docker.internal:45876 to the agent's unix socket"
+                return 0
+            fi
+            log_warn "Beszel system migration returned HTTP $code: ${out:0:200}"
+            return 1
+            ;;
+        none) ;;
+        *)
+            log_warn "Could not parse the Beszel systems list - system 'MediaStack' left unchanged"
+            return 1
+            ;;
+    esac
+
+    body=$(B_USER_ID="$BESZEL_USER_ID" B_SOCKET="$BESZEL_LOCAL_SOCKET" python3 -c '
+import os, json
+print(json.dumps({
+    "name": "MediaStack",
+    "host": os.environ["B_SOCKET"],
+    "users": [os.environ["B_USER_ID"]],
+}))' 2>/dev/null)
+    out=$(curl_header_data_stdin "Authorization" "Bearer $BESZEL_TOKEN" "$body" \
+        -sS -X POST "$hub_url/api/collections/systems/records" \
+        -H "Content-Type: application/json" \
+        -w "\n%{http_code}" 2>/dev/null)
+    code="${out##*$'\n'}"
+    if [[ "$code" =~ ^2 ]]; then
+        log_ok "Beszel system 'MediaStack' registered"
+        return 0
+    fi
+    out="${out%$'\n'*}"
+    log_warn "Beszel system registration returned HTTP $code: ${out:0:200}"
+    return 1
+}
+
+# Day-2 convergence (scripts/launcher/converge.sh): an existing install keeps
+# its host.docker.internal:45876 entry across an update, and the agent no longer
+# listens there. Moves that entry to the socket; touches nothing else.
+beszel_converge_local_system() {
+    if ! docker inspect beszel >/dev/null 2>&1; then
+        log_skip "Beszel is not installed - its local system entry was not checked"
+        return 0
+    fi
+    if [[ -z "${NPM_ADMIN_EMAIL:-}" || -z "${JELLYFIN_ADMIN_PASSWORD:-}" ]]; then
+        log_warn "Cannot check the Beszel system entry: admin credentials (NPM_ADMIN_EMAIL, JELLYFIN_ADMIN_PASSWORD) are not set."
+        return 1
+    fi
+    local hub_url health
+    hub_url="$(service_local_url beszel)"
+    # A hub recreated a moment ago can still be starting.
+    for _ in $(seq 1 30); do
+        health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' beszel 2>/dev/null || true)
+        [[ -z "$health" || "$health" == "healthy" ]] && break
+        sleep 2
+    done
+    _beszel_login "$hub_url" "$NPM_ADMIN_EMAIL" "$JELLYFIN_ADMIN_PASSWORD" || return 1
+    beszel_sync_local_system "$hub_url"
+}
 
 configure_beszel() {
     echo ""
@@ -42,42 +208,12 @@ configure_beszel() {
     fi
 
     # --- 1. Authenticate to hub ---
-    local auth_body auth_resp token user_id
-    auth_body=$(B_EMAIL="$admin_email" B_PW="$admin_pw" python3 -c '
-import os, json
-print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_PW"]}))
-' 2>/dev/null) || {
-        log_warn "Failed to build auth payload"
-        return 0
-    }
-
-    auth_resp=$(curl_data_stdin "$auth_body" \
-        -sS -X POST "$hub_url/api/collections/users/auth-with-password" \
-        -H "Content-Type: application/json" -w "\n%{http_code}" 2>/dev/null) || {
-        log_warn "Beszel hub not reachable - skipping"
-        return 0
-    }
-
-    local auth_code="${auth_resp##*$'\n'}"
-    auth_resp="${auth_resp%$'\n'*}"
-
-    if [[ ! "$auth_code" =~ ^2 ]]; then
-        log_warn "Beszel auth failed (HTTP $auth_code) - hub may still be initializing"
-        return 0
-    fi
-
-    token=$(echo "$auth_resp" | json_get token)
-    user_id=$(echo "$auth_resp" | json_path record.id)
-
-    if [[ -z "$token" ]]; then
-        log_warn "Beszel auth returned no token"
-        return 0
-    fi
+    _beszel_login "$hub_url" "$admin_email" "$admin_pw" || return 0
     log_ok "Beszel hub authenticated"
 
     # --- 2. Get SSH key from hub ---
     local key_resp hub_key
-    key_resp=$(curl_header_stdin "Authorization" "Bearer $token" -sS "$hub_url/api/beszel/getkey" \
+    key_resp=$(curl_header_stdin "Authorization" "Bearer $BESZEL_TOKEN" -sS "$hub_url/api/beszel/getkey" \
         2>/dev/null)
     hub_key=$(echo "$key_resp" | json_get key)
 
@@ -99,35 +235,6 @@ print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_P
         log_ok "Beszel agent restarted with key"
     fi
 
-    # --- 5. Register this host as a monitored system ---
-    local systems_resp
-    systems_resp=$(curl_header_stdin "Authorization" "Bearer $token" -sS "$hub_url/api/collections/systems/records" \
-        2>/dev/null)
-
-    if echo "$systems_resp" | json_has_name "MediaStack" --key items; then
-        log_skip "Beszel system 'MediaStack' already registered"
-    else
-        local sys_body sys_code sys_out
-        sys_body=$(B_USER_ID="$user_id" python3 -c '
-import os, json
-print(json.dumps({
-    "name": "MediaStack",
-    "host": "host.docker.internal",
-    "port": 45876,
-    "users": [os.environ["B_USER_ID"]],
-}))' 2>/dev/null)
-
-        sys_out=$(curl_header_data_stdin "Authorization" "Bearer $token" "$sys_body" \
-            -sS -X POST "$hub_url/api/collections/systems/records" \
-            -H "Content-Type: application/json" \
-            -w "\n%{http_code}" 2>/dev/null)
-        sys_code="${sys_out##*$'\n'}"
-
-        if [[ "$sys_code" =~ ^2 ]]; then
-            log_ok "Beszel system 'MediaStack' registered"
-        else
-            sys_out="${sys_out%$'\n'*}"
-            log_warn "Beszel system registration returned HTTP $sys_code: ${sys_out:0:200}"
-        fi
-    fi
+    # --- 5. Register this host as a monitored system (or move the old entry) ---
+    beszel_sync_local_system "$hub_url" || true
 }

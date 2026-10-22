@@ -16,7 +16,7 @@ generate_override() {
     # not masked by `local` (SC2155).
     local jf_mem sonarr_mem radarr_mem jackett_mem qbt_mem flare_mem seerr_mem \
         npm_mem unpackerr_mem bazarr_mem homepage_mem portainer_mem f2b_mem \
-        wg_mem ddns_mem kuma_mem beszel_mem beszel_agent_mem autoheal_mem
+        wg_mem ddns_mem kuma_mem beszel_mem beszel_agent_mem autoheal_mem socket_proxy_mem
     jf_mem=$(compute_mem_limit 40 1024 8192)
     sonarr_mem=$(compute_mem_limit 12 256 4096)
     radarr_mem=$(compute_mem_limit 12 256 4096)
@@ -36,6 +36,7 @@ generate_override() {
     beszel_mem=$(compute_mem_limit 3 64 512)
     beszel_agent_mem=$(compute_mem_limit 2 64 256)
     autoheal_mem=$(compute_mem_limit 1 32 128)
+    socket_proxy_mem=$(compute_mem_limit 1 32 128)
 
     # memswap_limit = 1.5x mem_limit (existing convention: 1g/1536m, 512m/768m)
     _swap() {
@@ -189,6 +190,10 @@ $(_compose_image_line autoheal)
 $(_compose_image_line beszel-agent)
     mem_limit: ${beszel_agent_mem}
     memswap_limit: $(_swap "$beszel_agent_mem")
+  socket-proxy:
+$(_compose_image_line socket-proxy)
+    mem_limit: ${socket_proxy_mem}
+    memswap_limit: $(_swap "$socket_proxy_mem")
 YAML
 
     # --- S.M.A.R.T. disk monitoring for beszel-agent ---

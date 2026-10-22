@@ -10,6 +10,11 @@
 # willfarrell/docker-autoheal's docker-entrypoint, which drops its label filter
 # entirely when that var is "all". So the fixture below needs no autoheal label.
 #
+# Autoheal holds no Docker socket: it reaches the daemon only through the
+# socket-proxy (docker-compose.yml), which allows listing containers and the
+# restart verb on host loopback. A restart that lands therefore also proves the
+# proxy forwards POST /containers/{id}/restart.
+#
 # The fixture is a disposable, immutable BusyBox image launched via plain
 # `docker run` (no compose, no MediaStack network) with a healthcheck that
 # always fails fast (2s interval, 1 retry) — isolated from every real
@@ -26,7 +31,7 @@ AUTOHEAL_FIXTURE=autoheal-fixture
 AUTOHEAL_FIXTURE_IMAGE=busybox@sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028
 
 autoheal_cleanup() {
-    dind_exec "docker rm -f $AUTOHEAL_FIXTURE autoheal" >/dev/null 2>&1 || true
+    dind_exec "docker rm -f $AUTOHEAL_FIXTURE autoheal socket-proxy" >/dev/null 2>&1 || true
 }
 
 autoheal_finish() {
@@ -61,7 +66,7 @@ run_scenario() {
     #    ask for `autoheal`, so a missing/blank DATA_DIR etc. breaks
     #    parsing for unrelated services' volume specs. .env.example's
     #    defaults are enough; no config dirs or override needed since
-    #    Autoheal itself only mounts the docker socket.
+    #    Autoheal itself needs only the socket-proxy.
     # ------------------------------------------------------------------
     dind_exec "cp .env.example .env"
     env_set TZ Etc/UTC
@@ -69,7 +74,8 @@ run_scenario() {
     dind_exec "mkdir -p /tmp/ms-data"
 
     # ------------------------------------------------------------------
-    # 2. Bring up Autoheal alone.
+    # 2. Bring up Autoheal alone; compose starts the socket-proxy it
+    #    depends on, healthy, first.
     # ------------------------------------------------------------------
     if ! dind_exec "docker compose --profile autoheal up -d autoheal" >/dev/null 2>&1; then
         fail "autoheal: compose up -d autoheal"
@@ -172,6 +178,24 @@ run_scenario() {
         return 1
     fi
 
+    # Third signal, from the other side of the proxy: autoheal has no raw
+    # socket and aims at the proxy's loopback listener, so the restart above can
+    # only have gone through it. The proxy logs denied requests (and, at its
+    # default level, nothing it allows), so an empty denial log shows autoheal
+    # asked for nothing outside the allowlist.
+    local mounts docker_sock denied
+    mounts=$(dind_exec "docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' autoheal" | tr -d '\r\n')
+    docker_sock=$(dind_exec "docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' autoheal | grep '^DOCKER_SOCK='" | tr -d '\r\n')
+    denied=$(dind_exec "docker logs socket-proxy 2>&1 | grep -c 'blocked request'" | tr -d '\r\n')
+    if [[ "$mounts" != *docker.sock* && "$docker_sock" == "DOCKER_SOCK=tcp://127.0.0.1:23750" && "$denied" == "0" ]]; then
+        pass "autoheal: healed through the socket-proxy only, and the proxy denied nothing"
+    else
+        fail "autoheal: healed through the socket-proxy only, and the proxy denied nothing" \
+            "mounts='$mounts' $docker_sock denied=$denied $(dind_exec 'docker logs socket-proxy 2>&1 | grep "blocked request" | tail -3')"
+        autoheal_finish
+        return 1
+    fi
+
     if echo "$logs" | grep -qiE "panic|fatal"; then
         fail "autoheal: log clean of panic/fatal" "$(echo "$logs" | grep -iE "panic|fatal" | head -3)"
         autoheal_finish
@@ -181,7 +205,77 @@ run_scenario() {
     fi
 
     # ------------------------------------------------------------------
-    # 7. Cleanup so downstream scenarios in the same DinD don't inherit
+    # 7. A stop must not read as a crash. The image traps SIGTERM with
+    #    `kill $$`, which re-raises SIGTERM inside the handler and makes busybox
+    #    ash segfault (Exited 139). docker-compose.yml sets stop_signal: SIGINT
+    #    so a stop ends the shell with 130 instead. After the stop, a start must
+    #    heal again: the stop path may not leave the watcher unusable.
+    # ------------------------------------------------------------------
+    local stop_code
+    dind_exec "docker stop autoheal" >/dev/null 2>&1
+    stop_code=$(dind_exec "docker inspect --format '{{.State.ExitCode}}' autoheal" | tr -d '\r\n')
+    if [[ "$stop_code" == "130" ]]; then
+        pass "autoheal: docker stop exits 130, not a SIGSEGV 139"
+    else
+        fail "autoheal: docker stop exits 130, not a SIGSEGV 139" "exit code was '$stop_code'"
+        autoheal_finish
+        return 1
+    fi
+
+    dind_exec "docker start autoheal" >/dev/null 2>&1
+    baseline_started=$(dind_exec "docker inspect --format '{{.State.StartedAt}}' $AUTOHEAL_FIXTURE" | tr -d '\r\n')
+    started="$baseline_started"
+    waited=0
+    while ((waited < 90)); do
+        started=$(dind_exec "docker inspect --format '{{.State.StartedAt}}' $AUTOHEAL_FIXTURE 2>/dev/null" | tr -d '\r\n')
+        [[ -n "$started" && "$started" != "$baseline_started" ]] && break
+        sleep 3
+        waited=$((waited + 3))
+    done
+    if [[ -n "$started" && "$started" != "$baseline_started" ]]; then
+        pass "autoheal: heals the fixture again after a stop and start (${waited}s)"
+    else
+        fail "autoheal: heals the fixture again after a stop and start" "StartedAt stayed at $baseline_started after ${waited}s"
+        dind_exec "docker logs --tail 30 autoheal" 2>&1 || true
+        autoheal_finish
+        return 1
+    fi
+
+    # ------------------------------------------------------------------
+    # 8. Optional soak: AUTOHEAL_SOAK_SECONDS=1800 keeps the watcher up for that
+    #    long. Each minute it must still run on the same start (no crash and no
+    #    restart-policy rescue, which would reset StartedAt) and the fixture must
+    #    keep being healed. Off by default: a 30-minute wait does not belong in
+    #    the routine gate.
+    # ------------------------------------------------------------------
+    local soak="${AUTOHEAL_SOAK_SECONDS:-0}"
+    if ((soak > 0)); then
+        local ah_started ah_now elapsed=0 heals_before heals_after
+        ah_started=$(dind_exec "docker inspect --format '{{.State.StartedAt}}' autoheal" | tr -d '\r\n')
+        heals_before=$(dind_exec "docker logs autoheal 2>&1 | grep -c 'Restarting container now'" | tr -d '\r\n')
+        while ((elapsed < soak)); do
+            sleep 60
+            elapsed=$((elapsed + 60))
+            ah_now=$(dind_exec "docker inspect --format '{{.State.Status}} {{.State.StartedAt}} {{.RestartCount}}' autoheal" | tr -d '\r\n')
+            if [[ "$ah_now" != "running $ah_started 0" ]]; then
+                fail "autoheal: stays up for ${soak}s" "after ${elapsed}s: '$ah_now' (started $ah_started)"
+                dind_exec "docker logs --tail 20 autoheal" 2>&1 || true
+                autoheal_finish
+                return 1
+            fi
+        done
+        heals_after=$(dind_exec "docker logs autoheal 2>&1 | grep -c 'Restarting container now'" | tr -d '\r\n')
+        if ((heals_after > heals_before)); then
+            pass "autoheal: stayed up ${soak}s and kept healing ($heals_before -> $heals_after restarts)"
+        else
+            fail "autoheal: kept healing during the soak" "restart lines stayed at $heals_before"
+            autoheal_finish
+            return 1
+        fi
+    fi
+
+    # ------------------------------------------------------------------
+    # 9. Cleanup so downstream scenarios in the same DinD don't inherit
     #    a live label=all watcher.
     # ------------------------------------------------------------------
     autoheal_finish

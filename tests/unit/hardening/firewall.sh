@@ -212,6 +212,36 @@ _ms_state_set() { :; }
 _ms_state_get() { echo false; }
 
 # ===========================================================================
+# setup_ufw — re-run on a host MediaStack already configured
+# ===========================================================================
+
+# Given UFW is active with MediaStack's HTTP rule and the deny/allow defaults
+# When setup_ufw runs again
+# Then it reports the firewall as configured and adds no rule
+UFW_CALLS=()
+_ufw_defaults() { echo "deny allow"; }
+sudo() {
+    if [[ "${1:-}" == "ufw" ]]; then
+        UFW_CALLS+=("$*")
+        if [[ "${2:-}" == "status" ]]; then
+            echo "Status: active"
+            echo "80/tcp                     ALLOW       Anywhere                   # MediaStack:HTTP-ACME"
+        fi
+        return 0
+    fi
+    return 0
+}
+ufw() { UFW_CALLS+=("ufw $*"); }
+log_skip() { echo "SKIP $*"; }
+rerun_out=$(setup_ufw 2>&1)
+rerun_adds=0
+for c in "${UFW_CALLS[@]}"; do [[ "$c" == *" allow "* ]] && rerun_adds=$((rerun_adds + 1)); done
+assert_contains "$rerun_out" "UFW already configured" "setup_ufw: re-run — MediaStack's own HTTP rule marks the firewall as configured"
+assert_eq "0" "$rerun_adds" "setup_ufw: re-run — no rule is added again"
+log_skip() { :; }
+unset -f sudo ufw _ufw_defaults
+
+# ===========================================================================
 # setup_ufw — fresh path (verify correct ufw commands called)
 # ===========================================================================
 
@@ -267,7 +297,7 @@ assert_eq "false" "$found_reset" "setup_ufw: fresh path — preserves pre-existi
 assert_eq "true" "$found_enable" "setup_ufw: fresh path — ufw enable called"
 assert_eq "false" "$found_8096" "setup_ufw: fresh path — Jellyfin 8096 not directly allowed"
 assert_eq "false" "$found_3000" "setup_ufw: fresh path — Homepage 3000 not directly allowed"
-assert_eq "true" "$found_45876" "setup_ufw: fresh path — Beszel bridge marker allowed"
+assert_eq "false" "$found_45876" "setup_ufw: fresh path — no UFW rule for the Beszel agent (it listens on a unix socket)"
 assert_eq "false" "$found_ssh_broad" "setup_ufw: fresh path — SSH is not open to all sources"
 assert_eq "true" "$found_ssh_10" "setup_ufw: fresh path — SSH allows 10.0.0.0/8"
 assert_eq "true" "$found_ssh_172" "setup_ufw: fresh path — SSH allows 172.16.0.0/12"

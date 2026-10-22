@@ -20,3 +20,4 @@ beszel	henrygd/beszel:latest	sha256:6b39a8b64f9b15d00a25e7683e31a93c46161182a54f
 beszel-agent	henrygd/beszel-agent:alpine	sha256:b133b004335261dd10d8e2f1fd989eb4ee6f424ec2f8a8050cce800e014da180	2026-10-20T03:25:34Z	scenario:fresh-install
 wireguard	ghcr.io/wg-easy/wg-easy:15	sha256:0e7bc9d34e86ddcaa92bc700d4d7dc9b33291dbc07ac8d13382f7c2095f949ec	2026-09-07T16:47:56Z	scenario:wireguard
 autoheal	willfarrell/autoheal:latest	sha256:8a79b7fc9654f8bc9785330c90791f4bb6688f4f749bb42a00844023f5c2ccd0	2026-10-20T03:25:34Z	scenario:autoheal
+socket-proxy	wollomatic/socket-proxy:1	sha256:3935b709275e4ec35d6ed5a5c4a1f0d01ed31eec5e7234efc3357ecd47689002	2026-10-20T08:06:23Z	scenario:fresh-install

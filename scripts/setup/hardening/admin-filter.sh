@@ -37,7 +37,7 @@ ADMIN_FILTER_CHAIN="MEDIASTACK-DOCKER-RESTRICT"
 # iptables -m multiport takes at most 15 ports per match (kernel limit), so the
 # TCP list is split in two. Going over fails iptables-restore with "too many
 # ports specified" and the apply script fails.
-ADMIN_FILTER_TCP_GROUPS=("8989,7878,9117,8080,5055,9000,81,51821" "8000,8090,3001,45876,8191,6767,8096,3000")
+ADMIN_FILTER_TCP_GROUPS=("8989,7878,9117,8080,5055,9000,81,51821" "8000,8090,3001,8191,6767,8096,3000")
 # 7359 is Jellyfin's LAN auto-discovery responder: it answers unauthenticated and
 # leaks the server URL. The torrent and WireGuard UDP ports stay public.
 ADMIN_FILTER_UDP_PORTS="7359"
