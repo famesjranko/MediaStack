@@ -556,6 +556,26 @@ installed natively or cached via `./tests/lint.sh install`) and `uv` for mypy.
 ./tests/unit.sh        # static validation + every host unit
 ```
 
+Two rules keep a unit's verdict honest:
+
+### Unit files must end with summary
+
+The runner gates each file on its exit code alone, and only `summary`
+(`tests/lib/assert.sh`) turns a failed assertion into a nonzero exit. A
+top-level `tests/unit/*.sh` file therefore ends with a bare `summary` line.
+`tests/structure.sh` fails on a file that does not. Fragments under
+`tests/unit/<dir>/` are sourced by a parent that owns the verdict and are
+exempt.
+
+### Units run with stdin from /dev/null
+
+The runner starts every unit with `</dev/null`, so no test depends on the
+caller's stdin. A product path that reads stdin (the typed `DESTROY`
+confirmation of `main --uninstall`) must get its input from the test: stub the
+prompt function, or redirect `</dev/null` at the call site, as
+`uninstall-system-cleanup` does. A direct `bash tests/unit/<file>.sh` run
+inherits your stdin, so give it `</dev/null` as well.
+
 Current units:
 
 - **gpu-branching** — exercises the split GPU helpers under `scripts/setup/gpu/` (through the `scripts/setup/gpu.sh` entry) by shimming `lspci`/`mokutil`/`nvidia-smi`/`docker` and render-device helpers as in-shell functions. Catches regressions in GPU selection logic, including no-GPU `set -e` behavior and vendor-aware Intel/AMD render-node routing, without needing real hardware.
@@ -574,7 +594,7 @@ Current units:
 - **launcher-uninstall / uninstall-system-cleanup** — cover launcher routing/result reporting, root-only ledger reads, selective UFW/APT/sysctl/Samba cleanup, teardown failure rollback, and Stage 3 routing precedence.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
 - **lint-sweep** — checks the `tests/lint.sh` single-sweep contract against a fixture repo with a stub shellcheck: the sweep is invoked exactly once over the whole discovered file list, covers every file in it, and still propagates a non-zero result. Pure bash + git, no Docker and no network; run directly with `./tests/unit/lint-sweep.sh`.
-- **structure-gate** — proves `tests/structure.sh` fails on a fabricated violation: a `scripts/services/<svc>/main.sh` missing its `configure_<svc>()` (including the hyphen→underscore mapping a literal comparison would get wrong), a service module sourcing another service, a `scripts/setup/` module sourcing a peer top-level module, a service module sourcing a top-level `scripts/setup/*.sh` module (including behind an if-guarded directory-variable assignment), and a sanctioned seam whose import has gone. The fixture is a throwaway git repo built from `git archive HEAD` with the working-tree gate copied in; the real tree is never written to. Pure bash + git, no Docker and no network; run directly with `./tests/unit/structure-gate.sh`.
+- **structure-gate** — proves `tests/structure.sh` fails on a fabricated violation: a `scripts/services/<svc>/main.sh` missing its `configure_<svc>()` (including the hyphen→underscore mapping a literal comparison would get wrong), a service module sourcing another service, a `scripts/setup/` module sourcing a peer top-level module, a service module sourcing a top-level `scripts/setup/*.sh` module (including behind an if-guarded directory-variable assignment), a sanctioned seam whose import has gone, and the closing-`summary` rule for top-level `tests/unit/*.sh` files (a missing `summary`, a `summary` that is not the last command, and an exempt fragment). The fixture is a throwaway git repo built from `git archive HEAD` with the working-tree gate copied in; the real tree is never written to. Pure bash + git, no Docker and no network; run directly with `./tests/unit/structure-gate.sh`.
 - **contracts-gate** — proves the failure paths of `tests/contracts/check.py` route to a remedy: a fabricated API call no contract covers must report `missing contract`, say the call needs an entry (or is malformed) and name `tests/contracts/`; a fabricated endpoint nothing calls must report `dead contract entry` and steer to deleting it. The fixture is a throwaway copy of `git archive HEAD` with the working-tree checker copied in. Pure bash + python3 + git, no Docker and no network; run directly with `./tests/unit/contracts-gate.sh`.
 - **line-cap-gate** — proves the two ratchet refusals in `tests/shell-line-cap.sh` (`new allowlist entry is not permitted`, `allowlist count increased`) carry the same routing as the main violation: shrink-only grandfather list, split the file, see `docs/conventions.md` "Shell structure". The tree's allowlist was emptied and deleted, so neither refusal is reproducible here; both are probed against a fabricated allowlist in a throwaway repository, and nothing recreates one in the tree. Pure bash + git, no Docker and no network; run directly with `./tests/unit/line-cap-gate.sh`.
 - **wizard-prompts** — guards the shared wizard-prompt SSOT (`tests/lib/wizard_prompts.json`): every regex compiles, the step-builder (`wizard_steps_build.py`) renders name/`@timeout`/`ENTER`/`NONE` and rejects unknown names, no `wizard-ui-*` scenario that builds from the SSOT re-inlines a prompt regex or references an undefined name, and any scenario calling the builder sources a lib that defines it.

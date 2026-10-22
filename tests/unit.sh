@@ -12,7 +12,7 @@
 #   3. python bytecode — py_compile over every tracked *.py
 #   4. python types    — pinned mypy (recorded in tools.toml) over every tracked *.py
 #   5. compose render  — docker compose config across the profile combinations
-#   6. host unit tests — every tests/unit/*.sh, each under a 300s timeout
+#   6. host unit tests — every tests/unit/*.sh, each under a 300s timeout, stdin from /dev/null
 #
 # Tiers 2 and 4 duplicate a stage a caller may already have run as its own gate
 # (e.g. CI's lint-shellcheck / type-mypy jobs). Set MS_UNIT_SKIP_SHELLCHECK=1 /
@@ -264,7 +264,9 @@ else
         group "unit: $name"
         # Per-test timeout so a stuck test (e.g. a non-TTY re-prompt loop that never
         # reaches EOF) fails fast instead of hanging the run.
-        timeout 300 bash "$f"
+        # stdin from /dev/null: a test must never depend on the caller's stdin
+        # (an open pipe or terminal makes a stdin-reading product path hang).
+        timeout 300 bash "$f" </dev/null
         rc=$?
         endgroup
         if ((rc != 0)); then
