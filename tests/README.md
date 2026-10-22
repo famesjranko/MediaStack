@@ -563,13 +563,17 @@ only the shim shows the difference.
 ./tests/unit.sh        # static validation + every host unit
 ```
 
-Two rules keep a unit's verdict honest:
+These rules keep a unit's verdict honest:
 
 ### Unit files must end with summary
 
-The runner gates each file on its exit code alone, and only `summary`
+The runner gates each file on its exit code, and only `summary`
 (`tests/lib/assert.sh`) turns a failed assertion into a nonzero exit. A
 top-level `tests/unit/*.sh` file therefore ends with a bare `summary` line.
+The runner also fails a file that exits 0 without reaching `summary`:
+`summary` writes a verdict file (`MS_UNIT_VERDICT_FILE`), so sourced code
+that calls `exit 0` part-way through cannot pass with the remaining checks
+unrun.
 `tests/structure.sh` fails on a file that does not. Fragments under
 `tests/unit/<dir>/` are sourced by a parent that owns the verdict and are
 exempt.

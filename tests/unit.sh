@@ -274,6 +274,7 @@ exit 1
 SHIM
     chmod +x "$sudo_guard_dir/sudo"
     export MS_UNIT_SUDO_GUARD_LOG="$sudo_guard_log"
+    verdict_file="$sudo_guard_dir/verdict"
     export PATH="$sudo_guard_dir:$PATH"
     for f in "${unit_tests[@]}"; do
         name="$(basename "$f" .sh)"
@@ -282,9 +283,16 @@ SHIM
         # reaches EOF) fails fast instead of hanging the run.
         # stdin from /dev/null: a test must never depend on the caller's stdin
         # (an open pipe or terminal makes a stdin-reading product path hang).
-        timeout 300 bash "$f" </dev/null
+        rm -f "$verdict_file"
+        MS_UNIT_VERDICT_FILE="$verdict_file" timeout 300 bash "$f" </dev/null
         rc=$?
         endgroup
+        # Exit 0 is a pass only if summary ran: sourced code that calls `exit 0`
+        # part-way through would otherwise pass with the remaining checks unrun.
+        if ((rc == 0)) && [[ ! -s "$verdict_file" ]]; then
+            err "unit ended without a verdict" "$name exited 0 before summary ran - an early exit skipped its remaining checks"
+            fail=1
+        fi
         if [[ -s "$sudo_guard_log" ]]; then
             err "unit reached real sudo" "$name: $(head -n 3 "$sudo_guard_log" | tr '\n' ';') - stub sudo in the test"
             : >"$sudo_guard_log"
