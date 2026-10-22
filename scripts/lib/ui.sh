@@ -15,11 +15,21 @@ UI_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Distinct exit code for "stdin exhausted in a non-interactive session."
 # Backends return exit 3 from input primitives on EOF; ui_choose/ui_confirm/
-# ui_input/ui_password map that to a SIGTERM of the process group when ! -t 0.
-# Parents install a TERM trap that maps the group-kill to this code so a piped
+# ui_input/ui_password map that to a SIGTERM of the top-level shell when ! -t 0.
+# Parents install a TERM trap that maps that signal to this code so a piped
 # driver can tell "ran out of input" from a generic kill (143) or a real failure.
 # Exported so it survives the trap subshell at call sites.
 export UI_EXIT_INPUT_EXHAUSTED=3
+
+# Stop a non-interactive session whose stdin ran dry. The prompt loops run in a
+# command-substitution subshell, so a plain `exit` cannot stop the caller; the
+# caller's TERM trap does. Signal only the top-level shell ($$), never the
+# process group: a group-kill also hits a `timeout` wrapper in that group, and
+# uutils `timeout` (Ubuntu 26.04's default) then exits 143 itself instead of
+# passing the child's exit 3 through (GNU timeout passes it through).
+_ui_signal_input_exhausted() {
+    kill -TERM "$$" 2>/dev/null || true
+}
 
 # Backend selection — sources ui-render-<backend>.sh which provides all
 # _render_* and _render_spin_demo primitives.
@@ -58,7 +68,7 @@ unset -f _ui_select_backend
 # stdin is exhausted (EOF). If the validator rejects the default, the loop
 # would spin forever. The two-strike latch detects this: two consecutive
 # results equal to the default that both fail validation = stdin exhausted →
-# SIGTERM the process group. A distinct (non-default) invalid result resets
+# SIGTERM the top-level shell. A distinct (non-default) invalid result resets
 # the strike counter so a non-TTY driver that sends blank-then-valid input
 # still reaches the valid value without tripping the latch.
 _ui_validated_loop() {
@@ -85,7 +95,7 @@ _ui_validated_loop() {
             ((++consecutive_default))
             if ((!interactive && consecutive_default >= 2)); then
                 _render_log warn "No more usable input on stdin - exiting non-interactive session (exit ${UI_EXIT_INPUT_EXHAUSTED}: input exhausted)."
-                kill -TERM 0 2>/dev/null || true
+                _ui_signal_input_exhausted
                 exit 0
             fi
             # Interactive safety valve: a required field (empty default) that keeps
@@ -349,7 +359,7 @@ ui_choose() {
             3) # EOF
                 if ((!interactive)); then
                     _render_log warn "No more input on stdin - exiting non-interactive session (exit ${UI_EXIT_INPUT_EXHAUSTED}: input exhausted)."
-                    kill -TERM 0 2>/dev/null || true
+                    _ui_signal_input_exhausted
                     exit 0
                 fi
                 # Interactive EOF (Ctrl-D): treat as blank Enter.
