@@ -75,6 +75,7 @@ PATCH_CALLED=0
 apply_nvidia_patch() { PATCH_CALLED=1; }
 INSTALL_ARGS=""
 sudo() {
+    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
     case "${1:-}:${2:-}" in
         apt-get:install) INSTALL_ARGS="$*" ;;
     esac
@@ -163,6 +164,7 @@ nvidia_driver_check_secure_boot() { printf 'disabled'; }
 nvidia_driver_ensure_debian_nonfree() { return 0; }
 INSTALL_CALLED=0
 sudo() {
+    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
     case "${1:-}:${2:-}" in
         apt-get:install) INSTALL_CALLED=1 ;;
     esac
@@ -198,6 +200,7 @@ _install_nvidia_container_toolkit() { return 0; }
 nvidia_driver_nouveau_is_active() { return 0; }
 INSTALL_ARGS=""
 sudo() {
+    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
     case "${1:-}:${2:-}" in
         apt-get:install) INSTALL_ARGS="$*" ;;
     esac
@@ -228,6 +231,7 @@ _configure_nvidia_container_toolkit() {
 }
 REPAIR_CALLS=()
 sudo() {
+    [[ "${1:-}" == env ]] && shift 2 # drop the "env DEBIAN_FRONTEND=..." prefix of MS_APT_INSTALL
     REPAIR_CALLS+=("$*")
     return 0
 }
@@ -237,7 +241,7 @@ rc=0
 install_nvidia_drivers_apt repair || rc=$?
 assert_eq "0" "$rc" "install_nvidia_drivers_apt repair: succeeds"
 assert_contains "${REPAIR_CALLS[*]}" "apt-get update -qq" "install_nvidia_drivers_apt repair: refreshes apt metadata"
-assert_contains "${REPAIR_CALLS[*]}" "apt-get install -y -qq --reinstall nvidia-driver libnvidia-encode1:amd64" "install_nvidia_drivers_apt repair: reinstalls existing driver/userspace packages once"
+assert_contains "${REPAIR_CALLS[*]}" "--reinstall nvidia-driver libnvidia-encode1:amd64" "install_nvidia_drivers_apt repair: reinstalls existing driver/userspace packages once"
 assert_eq "1" "$TOOLKIT_CONFIGURES" "install_nvidia_drivers_apt repair: configures toolkit once"
 assert_eq "standard" "$NVIDIA_DRIVER_MODE" "install_nvidia_drivers_apt repair: persists Standard mode"
 unset -f nvidia_driver_source nvidia_driver_check_secure_boot nvidia_driver_ensure_debian_nonfree _nvidia_debian_repair_packages \
@@ -313,6 +317,7 @@ EOF
 }
 sudo() {
     local args=("$@")
+    [[ "${args[0]:-}" == env ]] && args=("${args[@]:1}")
     [[ "${args[0]:-}" == DEBIAN_FRONTEND=* ]] && args=("${args[@]:1}")
     case "${args[0]:-}:${args[1]:-}" in
         apt-mark:manual)
@@ -352,6 +357,7 @@ unset NEEDS_REBOOT APT_MARK_CALLED PURGE_ARGS BLACKLIST_CALLED rc
 dpkg-query() { printf 'nvidia-driver ii \n'; }
 sudo() {
     local args=("$@")
+    [[ "${args[0]:-}" == env ]] && args=("${args[@]:1}")
     [[ "${args[0]:-}" == DEBIAN_FRONTEND=* ]] && args=("${args[@]:1}")
     case "${args[0]:-}:${args[1]:-}" in
         apt-get:purge | apt-mark:manual) return 0 ;;

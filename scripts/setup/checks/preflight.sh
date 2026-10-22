@@ -10,12 +10,44 @@ check_not_root() {
     fi
 }
 
+# Reads one KEY from an os-release file without sourcing it (the file is data,
+# not code). Accepts KEY=value, KEY="value" and KEY='value'; the last
+# assignment wins, as it does when the file is sourced. Prints nothing when
+# the key or file is absent.
+_os_release_value() {
+    local file="$1" key="$2" line value=""
+    [[ -r "$file" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" == "$key="* ]] || continue
+        value="${line#"$key="}"
+        if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+    done <"$file"
+    printf '%s' "$value"
+}
+
+# Fail closed: only Debian 12 or 13 passes. ID_LIKE=debian derivatives
+# (Ubuntu, Raspbian) and Debian testing/sid (no VERSION_ID) are refused, as is a
+# missing or unreadable os-release. Returns 1 instead of exiting so main can
+# repair a host broken by older code before it stops. Reads
+# $MEDIASTACK_OS_RELEASE (packages.sh); tests point it at a fixture.
 check_debian() {
-    if ! grep -qi 'debian' /etc/os-release 2>/dev/null; then
-        log_error "This script is designed for Debian Server. Detected: $(. /etc/os-release && echo "$NAME")"
-        exit 1
+    local file="${MEDIASTACK_OS_RELEASE:-/etc/os-release}" id version pretty
+    id=$(_os_release_value "$file" ID)
+    version=$(_os_release_value "$file" VERSION_ID)
+    pretty=$(_os_release_value "$file" PRETTY_NAME)
+    if [[ "$id" == "debian" && "$version" == "11" ]]; then
+        # Named apart from other refusals: bullseye's mirrors are gone, so the
+        # cause of every install failure there is not the user's setup.
+        log_error "Debian 11 (bullseye) reached end of life on 2026-08-31 and its package mirrors no longer serve it; upgrade to Debian 12 or 13."
+        return 1
     fi
-    log_ok "Debian detected: $(. /etc/os-release && echo "$PRETTY_NAME")"
+    if [[ "$id" != "debian" ]] || ! [[ "$version" =~ ^(12|13)$ ]]; then
+        log_error "Unsupported OS: ${pretty:-unknown}. MediaStack supports Debian 12 or 13 only."
+        return 1
+    fi
+    log_ok "Debian detected: $pretty"
 }
 
 check_docker() {

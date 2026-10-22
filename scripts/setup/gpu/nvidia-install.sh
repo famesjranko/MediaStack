@@ -81,7 +81,7 @@ install_nvidia_drivers() {
     esac
 
     if ! ui_spin "Installing kernel headers and build prerequisites..." \
-        sudo apt-get install -y -qq "linux-headers-$(uname -r)" build-essential dkms pkg-config libglvnd-dev; then
+        "${MS_APT_INSTALL[@]}" "linux-headers-$(uname -r)" build-essential dkms pkg-config libglvnd-dev; then
         log_error "Failed to install NVIDIA kernel build prerequisites"
         log_warn "Falling back to software transcoding"
         GPU_TYPE="none"
@@ -199,7 +199,7 @@ _install_nvidia_container_toolkit() {
             return 1
         fi
         if ! ui_spin "Installing nvidia-container-toolkit..." \
-            sudo apt-get install -y -qq --reinstall \
+            "${MS_APT_INSTALL[@]}" --reinstall \
             libnvidia-container1 libnvidia-container-tools \
             nvidia-container-toolkit-base nvidia-container-toolkit; then
             log_error "Failed to install nvidia-container-toolkit"

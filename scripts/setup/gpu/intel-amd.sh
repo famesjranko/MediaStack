@@ -17,7 +17,7 @@ install_intel_drivers() {
             return 1
         fi
         if ! ui_spin "Installing intel-media-va-driver-non-free..." \
-            sudo apt-get install -y -qq intel-media-va-driver-non-free vainfo; then
+            "${MS_APT_INSTALL[@]}" intel-media-va-driver-non-free vainfo; then
             log_error "Failed to install Intel media drivers"
             return 1
         fi
@@ -45,7 +45,7 @@ install_amd_drivers() {
             return 1
         fi
         if ! ui_spin "Installing mesa-va-drivers..." \
-            sudo apt-get install -y -qq mesa-va-drivers vainfo; then
+            "${MS_APT_INSTALL[@]}" mesa-va-drivers vainfo; then
             log_error "Failed to install AMD VAAPI drivers"
             return 1
         fi

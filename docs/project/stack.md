@@ -11,14 +11,14 @@ re-read them when a service changes.
 ## Project Profile
 - Type: Self-hosted Docker Compose deployment tool + bash configuration engine
 - Scale: Production (single-box, designed for non-technical end users)
-- Deployment: Bare Debian 11/12/13 (headless), single machine; 13 (Trixie) is the newest verified
+- Deployment: Bare Debian 12/13 (headless), single machine; 13 (Trixie) is the newest verified
 - Budget: Hobby / self-hosted (no cloud costs)
 - Team: Solo-maintained project
 
 ## Language & Runtime
 - Primary: Bash 5.x (Debian default)
 - Secondary: Python 3.9+ (small render/config helpers using the stdlib plus distro `python3-yaml`; no pip)
-- Runtime: Debian 11 (Bullseye), 12 (Bookworm), or 13 (Trixie), headless. 11 is the floor (Python 3.9+, bash 5.x); 13 is the newest verified on real hardware
+- Runtime: Debian 12 (Bookworm) or 13 (Trixie), headless. 12 is the floor (Python 3.9+, bash 5.x; 11 reached end of life on 2026-08-31); 13 is the newest verified on real hardware
 - Package manager: apt (system packages only; no pip/npm/cargo)
 - Shell: bash with `set -euo pipefail` throughout
 

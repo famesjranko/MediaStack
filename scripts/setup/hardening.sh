@@ -302,6 +302,11 @@ _uninstall_host_artefacts() {
         log_error "GPU apt source cleanup failed"
         failed=1
     }
+    # Keeps a working Docker source; removes only one that cannot work here.
+    remove_broken_docker_apt_source || {
+        log_error "Docker apt source cleanup failed"
+        failed=1
+    }
     _uninstall_sysctl "$unledgered" || {
         log_error "sysctl cleanup failed"
         failed=1

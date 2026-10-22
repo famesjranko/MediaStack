@@ -2,9 +2,12 @@
 # Sources: hardening.sh ledger paths and common.sh state/hash helpers.
 # Globals: MEDIASTACK_APT_AUTO_CONF and MEDIASTACK_APT_POLICY_CONF.
 
+# shellcheck source=../../lib/apt.sh
+declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
+
 setup_unattended_upgrades() {
     if ! command -v unattended-upgrade &>/dev/null; then
-        ui_spin "Installing unattended-upgrades..." sudo apt-get install -y -qq unattended-upgrades
+        ui_spin "Installing unattended-upgrades..." "${MS_APT_INSTALL[@]}" unattended-upgrades
     fi
 
     if sudo test -e "$MEDIASTACK_APT_AUTO_CONF" \

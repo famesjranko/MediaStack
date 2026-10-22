@@ -319,3 +319,104 @@ sudo() {
 rc=$?
 assert_eq "1" "$rc" "prompt_sudo_cache: sudo -v fails → exit 1"
 unset -f sudo
+
+# ---------------------------------------------------------------------------
+# check_debian — only Debian 12 or 13 passes (fail closed)
+# ---------------------------------------------------------------------------
+
+# Writes an os-release fixture and runs check_debian against it via the
+# MEDIASTACK_OS_RELEASE path variable. log_error is made visible so the refusal
+# message can be asserted. Prints the output, then "RC=<status>".
+_os_fixture_dir=$(mktemp -d)
+_check_debian_on() {
+    local f="$_os_fixture_dir/os-release"
+    if [[ $# -gt 0 ]]; then
+        printf '%b' "$1" >"$f"
+    else
+        rm -f "$f"
+    fi
+    (
+        # shellcheck disable=SC2034 # read by check_debian
+        MEDIASTACK_OS_RELEASE="$f"
+        log_error() { echo "ERROR $*"; }
+        check_debian
+        echo "RC=$?"
+    ) 2>&1
+}
+
+# Given an Ubuntu 24.04 os-release (ID=ubuntu, ID_LIKE=debian)
+# When check_debian runs
+# Then it refuses and names the detected PRETTY_NAME
+out=$(_check_debian_on 'PRETTY_NAME="Ubuntu 24.04 LTS"\nID=ubuntu\nID_LIKE=debian\nVERSION_ID="24.04"\n')
+assert_contains "$out" "RC=1" "check_debian: Ubuntu 24.04 is refused"
+assert_contains "$out" "ERROR Unsupported OS: Ubuntu 24.04 LTS" "check_debian: Ubuntu refusal names PRETTY_NAME"
+
+# Given a Debian 10 os-release
+# When check_debian runs
+# Then it refuses and names Debian 10
+out=$(_check_debian_on 'PRETTY_NAME="Debian GNU/Linux 10 (buster)"\nID=debian\nVERSION_ID="10"\n')
+assert_contains "$out" "RC=1" "check_debian: Debian 10 is refused"
+assert_contains "$out" "Debian GNU/Linux 10 (buster)" "check_debian: Debian 10 refusal names PRETTY_NAME"
+
+# Given a Debian 11 os-release, in every VERSION_ID quoting form
+# When check_debian runs
+# Then it refuses with the end-of-life message and the upgrade advice
+for _fmt in '"11"' "'11'" '11'; do
+    out=$(_check_debian_on "PRETTY_NAME=\"Debian GNU/Linux 11 (bullseye)\"\nID=debian\nVERSION_ID=$_fmt\n")
+    assert_contains "$out" "RC=1" "check_debian: Debian 11 with VERSION_ID=$_fmt is refused"
+    assert_contains "$out" "Debian 11 (bullseye) reached end of life on 2026-08-31 and its package mirrors no longer serve it; upgrade to Debian 12 or 13" "check_debian: Debian 11 refusal gives the EOL message"
+done
+
+# Given a Debian testing os-release with no VERSION_ID
+# When check_debian runs
+# Then it refuses
+out=$(_check_debian_on 'PRETTY_NAME="Debian GNU/Linux forky/sid"\nID=debian\n')
+assert_contains "$out" "RC=1" "check_debian: Debian testing without VERSION_ID is refused"
+assert_contains "$out" "forky/sid" "check_debian: testing refusal names PRETTY_NAME"
+
+# Given a Raspbian os-release (ID=raspbian, ID_LIKE=debian)
+# When check_debian runs
+# Then it refuses
+out=$(_check_debian_on 'PRETTY_NAME="Raspbian GNU/Linux 12 (bookworm)"\nID=raspbian\nID_LIKE=debian\nVERSION_ID="12"\n')
+assert_contains "$out" "RC=1" "check_debian: Raspbian is refused"
+assert_contains "$out" "Raspbian GNU/Linux 12" "check_debian: Raspbian refusal names PRETTY_NAME"
+
+# Given no os-release file
+# When check_debian runs
+# Then it refuses
+out=$(_check_debian_on)
+assert_contains "$out" "RC=1" "check_debian: missing os-release is refused"
+assert_contains "$out" "ERROR Unsupported OS" "check_debian: missing os-release logs an error"
+
+# Given a Debian os-release whose VERSION_ID is a lookalike (12.5, 120, empty)
+# When check_debian runs
+# Then it refuses, because only an exact 12 or 13 is accepted
+for _bad in '12.5' '120' '' '1'; do
+    out=$(_check_debian_on "PRETTY_NAME=\"Debian x\"\nID=debian\nVERSION_ID=\"$_bad\"\n")
+    assert_contains "$out" "RC=1" "check_debian: Debian VERSION_ID='$_bad' is refused"
+done
+
+# Given an os-release whose ID is only a prefix match or merely mentions debian
+# When check_debian runs
+# Then it refuses
+out=$(_check_debian_on 'PRETTY_NAME="Not Debian"\nID="debian-derived"\nVERSION_ID="12"\n')
+assert_contains "$out" "RC=1" "check_debian: ID that only starts with debian is refused"
+
+# Given Debian 12 and 13 with quoted, single-quoted and unquoted VERSION_ID
+# When check_debian runs
+# Then it passes
+for _v in 12 13; do
+    for _fmt in "\"$_v\"" "'$_v'" "$_v"; do
+        out=$(_check_debian_on "PRETTY_NAME=\"Debian GNU/Linux $_v\"\nID=debian\nVERSION_ID=$_fmt\n")
+        assert_contains "$out" "RC=0" "check_debian: Debian $_v with VERSION_ID=$_fmt passes"
+    done
+done
+
+# Given a Debian 12 os-release with a quoted ID
+# When check_debian runs
+# Then it passes
+out=$(_check_debian_on 'PRETTY_NAME="Debian GNU/Linux 12"\nID="debian"\nVERSION_ID=12\n')
+assert_contains "$out" "RC=0" "check_debian: quoted ID=\"debian\" passes"
+
+rm -rf "$_os_fixture_dir"
+unset -f _check_debian_on

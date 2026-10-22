@@ -338,7 +338,7 @@ sudo() {
     case "$1" in
         testparm) printf '%s\n' "$effective" ;;
         pdbedit) return 0 ;;
-        smbpasswd | gpasswd | apt-get | systemctl)
+        smbpasswd | gpasswd | apt-get | env | systemctl)
             SAMBA_CALLS+=("$*")
             return 0
             ;;
@@ -349,7 +349,7 @@ _uninstall_samba
 assert_eq "0" "$?" "Samba: owned configuration cleanup succeeds"
 assert_contains "${SAMBA_CALLS[*]}" "smbpasswd -x mediaadmin" "Samba: MediaStack-created passdb principal removed"
 assert_contains "${SAMBA_CALLS[*]}" "gpasswd -d mediaadmin media" "Samba: MediaStack-added group membership removed"
-assert_contains "${SAMBA_CALLS[*]}" "apt-get remove -y -qq samba" "Samba: explicitly owned package removed"
+assert_contains "${SAMBA_CALLS[*]}" "env DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq samba" "Samba: explicitly owned package removed non-interactively"
 case "${SAMBA_CALLS[*]}" in
     *autoremove* | *userdel*) fail "Samba: no autoremove or Linux-account deletion" "${SAMBA_CALLS[*]}" ;;
     *) pass "Samba: no autoremove or Linux-account deletion" ;;
@@ -413,6 +413,7 @@ _uninstall_sysctl() { return 0; }
 _uninstall_samba() { return 0; }
 storage_uninstall_watchdog() { return 0; }
 f2b_uninstall_reload_watcher() { return 0; }
+remove_broken_docker_apt_source() { DOCKER_SRC_CALLED=1; }
 validate_install_state() { return 0; }
 # Sandbox sudo: absent host artefacts, and removals confined to TMP_DIR.
 sudo() {
@@ -433,8 +434,8 @@ assert_eq "0" "$?" "uninstall: system cleanup completes with owning-module teard
 [[ -f "$MEDIASTACK_GPU_NONFREE_LIST" || -f "$MEDIASTACK_GPU_BACKPORTS_LIST" ]] \
     && fail "uninstall: GPU-owned apt sources removed by uninstall_system_cleanup" \
     || pass "uninstall: GPU-owned apt sources removed by uninstall_system_cleanup"
-unset -f sudo _uninstall_ufw _uninstall_apt _uninstall_sysctl _uninstall_samba
-unset -f storage_uninstall_watchdog f2b_uninstall_reload_watcher validate_install_state
+assert_eq "1" "${DOCKER_SRC_CALLED:-}" "uninstall: host teardown calls remove_broken_docker_apt_source"
+unset -f sudo _uninstall_ufw _uninstall_apt _uninstall_sysctl _uninstall_samba storage_uninstall_watchdog f2b_uninstall_reload_watcher validate_install_state remove_broken_docker_apt_source
 
 # --uninstall dispatch precedes a ready Stage 3 marker.
 STAGE3_CALLS=0

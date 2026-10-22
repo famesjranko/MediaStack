@@ -2,6 +2,9 @@
 # Sources: hardening.sh Samba paths, ledger helpers, and firewall helpers.
 # Globals: SAMBA_* paths, SMB_ENABLED, SMB_SHARE_SCOPE, DATA_DIR, PGID, and admin .env values.
 
+# shellcheck source=../../lib/apt.sh
+declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
+
 setup_samba() {
     if [[ "${SMB_ENABLED:-false}" != "true" ]]; then
         # Cleanup path: undo a prior SMB_ENABLED=true install. Removing the
@@ -122,7 +125,7 @@ setup_samba() {
         _ms_state_set SAMBA_OWNERSHIP_RECORDED true
         if ! $samba_was_present; then
             _ms_state_set SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK true
-            ui_spin "Installing samba..." sudo apt-get install -y -qq samba
+            ui_spin "Installing samba..." "${MS_APT_INSTALL[@]}" samba
         fi
     else
         if [[ "$(_ms_state_get SAMBA_USER)" != "$admin_user" ]]; then
@@ -134,7 +137,7 @@ setup_samba() {
                 log_warn "Recorded Samba package is missing; leaving state unchanged"
                 return 0
             fi
-            ui_spin "Retrying Samba installation..." sudo apt-get install -y -qq samba
+            ui_spin "Retrying Samba installation..." "${MS_APT_INSTALL[@]}" samba
         fi
         passdb_preexisted=$(_ms_state_get SAMBA_PASSDB_PREEXISTED)
         group_preexisted=$(_ms_state_get SAMBA_GROUP_PREEXISTED)
@@ -250,7 +253,7 @@ _uninstall_samba() {
         if $adopted; then
             log_warn "Samba has non-MediaStack configuration; preserving the package"
         else
-            sudo apt-get remove -y -qq samba >/dev/null 2>&1 || return 1
+            "${MS_APT_REMOVE[@]}" samba >/dev/null 2>&1 || return 1
         fi
     else
         if [[ "$(_ms_state_get SAMBA_SERVICE_WAS_ENABLED)" == "false" ]] \
