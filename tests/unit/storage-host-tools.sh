@@ -2,9 +2,12 @@
 # tests/unit/storage-host-tools.sh
 #
 # Root-only tools (visudo, mount.nfs, ufw) live in /usr/sbin, which a normal
-# user's PATH omits on Debian. Verifies:
+# user's PATH omits on Debian; and the NAS status probes must give up when a
+# hard NFS mount stalls. Verifies:
 #   1. host_tool_path / host_tool_installed / ufw_installed look in the sbin dirs.
 #   2. storage_ensure_nfs_common sees mount.nfs there and does not reinstall it.
+#   3. storage_bounded cuts off a command (or shell function) that hangs.
+#   4. The storage view answers promptly and says "unreachable" when the mount hangs.
 # The visudo/watchdog-install case lives in tests/unit/storage/watchdog.sh.
 set -uo pipefail
 
@@ -83,6 +86,57 @@ mkdir -p "$TMP_DIR/path-without-nfs"
 PATH="$TMP_DIR/path-without-nfs" MS_SBIN_DIRS="$TMP_DIR/empty-sbin" storage_ensure_nfs_common
 assert_contains "$(cat "$APT_CALLS")" "apt-get install" "storage_ensure_nfs_common: a missing mount.nfs triggers the install"
 unset -f sudo ui_spin storage_log_info
+
+# ---------------------------------------------------------------------------
+# 3. storage_bounded cuts off hangs.
+# ---------------------------------------------------------------------------
+# Given an external command and a shell function that both hang
+# When they run under storage_bounded with a 1 s deadline
+# Then each returns 124 within a few seconds, even inside a command substitution
+hang_fn() { sleep 30; }
+start=$SECONDS
+out="$(storage_bounded 1 sleep 30)"
+rc_ext=$?
+out_fn="$(storage_bounded 1 hang_fn)"
+rc_fn=$?
+assert_eq "" "$out$out_fn" "storage_bounded: a hung command leaves no output behind"
+assert_eq "124" "$rc_ext" "storage_bounded: a hanging command returns 124"
+assert_eq "124" "$rc_fn" "storage_bounded: a hanging shell function returns 124"
+((SECONDS - start < 6)) && pass "storage_bounded: both hangs were cut off promptly" || fail "storage_bounded: both hangs were cut off promptly"
+
+# Given a command that finishes in time
+# When it runs under storage_bounded
+# Then its output and exit code come through
+ok_out="$(storage_bounded 5 bash -c 'echo hello; exit 3')"
+assert_eq "3" "$?" "storage_bounded: the command's own exit code is kept"
+assert_eq "hello" "$ok_out" "storage_bounded: the command's output is kept"
+
+# ---------------------------------------------------------------------------
+# 4. The storage view does not wait on a stalled mount.
+# ---------------------------------------------------------------------------
+# Given a NAS mount where every stat, findmnt and df hangs
+# When the storage view renders
+# Then it answers within a few seconds and says the NAS is unreachable
+mkdir -p "$TMP_DIR/hang-bin" "$TMP_DIR/data"
+for tool in test findmnt df; do
+    printf '#!/bin/sh\nsleep 30\n' >"$TMP_DIR/hang-bin/$tool"
+    chmod +x "$TMP_DIR/hang-bin/$tool"
+done
+view_out=$(
+    PATH="$TMP_DIR/hang-bin:$PATH" STORAGE_PROBE_TIMEOUT=1 REPO_ROOT="$REPO_ROOT" DATA_DIR="$TMP_DIR/data" \
+        STORAGE_MODE=nas STORAGE_EXPECTED_SOURCE=192.0.2.10:/exports/m bash -c '
+  MEDIASTACK_NONINTERACTIVE=1
+  source "$REPO_ROOT/mediastack" </dev/null
+  ui_box() { shift; printf "%s\n" "$@"; }
+  docker() { :; }
+  start=$SECONDS
+  _storage_info
+  echo "ELAPSED=$((SECONDS - start))"
+' 2>&1
+)
+assert_contains "$view_out" "NAS unreachable" "storage view: a stalled mount is reported as unreachable"
+elapsed="$(sed -n 's/^ELAPSED=//p' <<<"$view_out")"
+((${elapsed:-99} < 5)) && pass "storage view: answered in ${elapsed}s with every probe hanging" || fail "storage view: answered in ${elapsed:-?}s with every probe hanging"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

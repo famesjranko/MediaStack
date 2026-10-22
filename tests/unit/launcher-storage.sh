@@ -100,3 +100,68 @@ ok_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 assert_contains "$ok_out" "RESULT rc=0 label=Re-check NAS" \
     "launcher: a healthy NAS re-check reports rc=0 into the action result"
+
+# 7. The re-check warning names the watchdog state the host really has.
+# Given a NAS that fails the check and each possible watchdog state
+# When the operator runs "Re-check NAS now"
+# Then the warning only claims retrying when a watchdog runs, and otherwise gives the remedy
+recheck_hint() { # <enabled> <installed rc> <active rc>
+    MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" WD_ENABLED="$1" WD_INSTALLED="$2" WD_ACTIVE="$3" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  storage_nas_ok(){ return 1; }
+  storage_watchdog_enabled(){ [[ "$WD_ENABLED" == yes ]]; }
+  storage_watchdog_installed(){ return "$WD_INSTALLED"; }
+  systemctl(){ return "$WD_ACTIVE"; }
+  launcher_pause_for_menu(){ :; }
+  _show_action_result(){ :; }
+  action_recheck_nas
+' 2>&1
+}
+not_installed_out="$(recheck_hint yes 1 3)"
+assert_contains "$not_installed_out" "No watchdog is installed" \
+    "launcher: re-check says no watchdog is installed when the unit is missing"
+assert_contains "$not_installed_out" "Apply changes from a MediaStack update" \
+    "launcher: re-check names the remedy for a missing watchdog"
+assert_not_contains "$not_installed_out" "keeps retrying" \
+    "launcher: re-check does not claim retrying without a watchdog"
+assert_contains "$(recheck_hint yes 0 0)" "keeps retrying" \
+    "launcher: re-check says the watchdog keeps retrying when it runs"
+stopped_out="$(recheck_hint yes 0 3)"
+assert_contains "$stopped_out" "installed but not running" \
+    "launcher: re-check says an installed watchdog is not running"
+assert_not_contains "$stopped_out" "keeps retrying" \
+    "launcher: re-check does not claim retrying from a stopped watchdog"
+assert_contains "$(recheck_hint no 1 3)" "turned off" \
+    "launcher: re-check says a disabled watchdog is off"
+
+# 8. The view row for the watchdog tells the same story.
+# Given a NAS install with no watchdog unit
+# When the storage view renders
+# Then the Watchdog row says it is not installed
+view_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  ui_box(){ shift; printf "%s\n" "$@"; }
+  storage_sentinel_ok(){ return 0; }
+  storage_mount_matches(){ return 0; }
+  storage_watchdog_enabled(){ return 0; }
+  storage_watchdog_installed(){ return 1; }
+  docker(){ :; }
+  STORAGE_MODE=nas
+  _storage_info
+' 2>&1)
+assert_contains "$view_out" "not installed" \
+    "launcher: storage view shows the watchdog as not installed"
+
+# 9. A timed-out probe (rc 124) is reported as a plain failure, not "exited with code 124".
+# Given the NAS check times out
+# When the operator runs "Re-check NAS now"
+# Then the action result carries rc=1
+timeout_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  storage_nas_ok(){ return 124; }
+  launcher_pause_for_menu(){ :; }
+  _show_action_result(){ echo "RESULT rc=$1 label=$2"; }
+  action_recheck_nas
+' 2>&1)
+assert_contains "$timeout_out" "RESULT rc=1 label=Re-check NAS" \
+    "launcher: a timed-out NAS re-check reports rc=1"

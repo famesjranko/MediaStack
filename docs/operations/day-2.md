@@ -231,15 +231,21 @@ A read-only status box built entirely from the `storage_*` getters in
 - **NAS source** — the expected `host:/export` (`storage_expected_source`).
 - **Filesystem** — expected type plus live state: `mounted, healthy`; `mounted, verifying…`
   (sentinel not yet present); `WRONG: <live source> (<live fstype>) — expected nfs4` when a
-  different disk is mounted at the mountpoint; or `not mounted`.
-- **Data** — the data dir and free space (`df -h`).
-- **Watchdog** — `running`, `running (services paused — NAS down since <ts>)`, `stopped`, or
-  `disabled`, from the unit's `systemctl is-active` state + the `config/state/storage-watchdog-stopped` flag.
+  different disk is mounted at the mountpoint; `not mounted`; or `NAS unreachable` when the
+  mount does not answer. Every probe that touches the mount has a deadline
+  (`STORAGE_PROBE_TIMEOUT`, default 5 s), so a hard NFS mount that stalls while the server is
+  down cannot hang the screen.
+- **Data** — the data dir and free space (`df -h`); skipped while the NAS is unreachable.
+- **Watchdog** — `running`, `running (services paused — NAS down since <ts>)`, `installed but
+  stopped`, `not installed (nothing will remount the NAS)`, or `disabled`, from the unit file,
+  its `systemctl is-active` state and the `config/state/storage-watchdog-stopped` flag.
 - **Services** — how many of the NAS-dependent services (`storage_data_services`) are running.
 
 The one action, **Re-check NAS now**, re-runs `storage_nas_ok` (mount + sentinel) and reports a
 verdict; the box then redraws with the live mount state. Remount/restart are intentionally not
-offered here — the watchdog already auto-repairs the mount and restarts paused services.
+offered here — a running watchdog already auto-repairs the mount and restarts paused services.
+When the check fails, the message states the real watchdog state: running (it keeps retrying),
+installed but stopped, turned off, or not installed (run **Apply changes from a MediaStack update**).
 
 ## `./mediastack` → Features & settings → NAS storage watchdog
 

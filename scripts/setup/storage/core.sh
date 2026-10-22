@@ -70,12 +70,43 @@ storage_sentinel_is_under_mountpoint() {
     storage_path_is_under_mountpoint "$(storage_sentinel_path)" "$(storage_mountpoint)"
 }
 
+# Run a command with a deadline (seconds), returning 124 when it ran out. A hard
+# NFS mount blocks any stat of its files while the server is down, and a status
+# screen must not block with it. Plain bash rather than timeout(1) so shell
+# functions (test stubs) are bounded too; SIGKILL because a stalled NFS call
+# ignores SIGTERM until the server answers.
+storage_bounded() {
+    local secs="$1" pid watcher rc=0
+    shift
+    "$@" &
+    pid=$!
+    # Output is detached so a command substitution around us never waits on the sleeper.
+    # A shell function runs in its own subshell: kill its children first or they
+    # keep the caller's pipe open.
+    (sleep "$secs" && {
+        pkill -KILL -P "$pid"
+        kill -KILL "$pid"
+    }) >/dev/null 2>&1 &
+    watcher=$!
+    wait "$pid" 2>/dev/null || rc=$?
+    kill "$watcher" >/dev/null 2>&1
+    wait "$watcher" 2>/dev/null
+    ((rc == 137)) && rc=124
+    return "$rc"
+}
+
+# Deadline for every storage probe that touches the mount; the watchdog's
+# sentinel probe uses the same 5 s.
+storage_probe_timeout() {
+    printf '%s\n' "${STORAGE_PROBE_TIMEOUT:-5}"
+}
+
 storage_findmnt_source() {
-    findmnt -rn -M "$(storage_mountpoint)" -o SOURCE 2>/dev/null || true
+    storage_bounded "$(storage_probe_timeout)" findmnt -rn -M "$(storage_mountpoint)" -o SOURCE 2>/dev/null || true
 }
 
 storage_findmnt_fstype() {
-    findmnt -rn -M "$(storage_mountpoint)" -o FSTYPE 2>/dev/null || true
+    storage_bounded "$(storage_probe_timeout)" findmnt -rn -M "$(storage_mountpoint)" -o FSTYPE 2>/dev/null || true
 }
 
 storage_mount_matches() {
@@ -93,11 +124,13 @@ storage_mount_matches() {
     esac
 }
 
+# 0 = sentinel present, 1 = absent (or outside the mountpoint), 124 = the probe
+# timed out, which on a hard NFS mount means the NAS is unreachable.
 storage_sentinel_ok() {
     local sentinel
     sentinel="$(storage_sentinel_path)"
     storage_sentinel_is_under_mountpoint || return 1
-    timeout 5 test -e "$sentinel" >/dev/null 2>&1
+    timeout -k 1 "$(storage_probe_timeout)" test -e "$sentinel" >/dev/null 2>&1
 }
 
 storage_nas_ok() {
@@ -112,5 +145,10 @@ storage_watchdog_enabled() {
 }
 
 storage_mountpoint_has_mount() {
-    findmnt -rn -M "$(storage_mountpoint)" >/dev/null 2>&1
+    storage_bounded "$(storage_probe_timeout)" findmnt -rn -M "$(storage_mountpoint)" >/dev/null 2>&1
+}
+
+# True when the watchdog unit file exists on the host, whether or not it runs.
+storage_watchdog_installed() {
+    systemctl cat mediastack-storage-watchdog.service >/dev/null 2>&1
 }
