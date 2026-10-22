@@ -279,18 +279,12 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
 - **README menu screenshot freshness.** The PNGs under `docs/assets/` are
   manually refreshed snapshots. This repository has no capture generator or
   freshness gate, so review them when launcher menus change.
-- **The admin-port list in `scripts/setup/hardening/firewall.sh`.** Nothing checks that
-  the `MEDIASTACK-DOCKER-RESTRICT` multiport rules still cover every admin port
-  published by `docker-compose.yml`, nor that the IPv4 and IPv6 blocks list the
-  same ports. A new admin service whose port is not added to both is exposed on
-  a hardened host and lints clean. See
+- **The admin-port list in `scripts/setup/hardening/admin-filter.sh`.** Nothing checks that
+  `ADMIN_FILTER_TCP_GROUPS` and `ADMIN_FILTER_UDP_PORTS` still cover every admin port
+  published by `docker-compose.yml`. `tests/unit/hardening/admin-filter.sh` proves the IPv4
+  and IPv6 rules DROP the same ports, but a new admin service whose port is not added to the
+  lists is exposed on a filtered host and lints clean. See
   [`decisions/admin-port-exposure.md`](decisions/admin-port-exposure.md).
-- **The uninstall teardown of `MEDIASTACK-DOCKER-RESTRICT`.**
-  `tests/unit/uninstall-system-cleanup.sh` drives `_uninstall_ufw`, but its `sudo`
-  stub fails every `iptables` call, so the delete/flush/delete-chain block in
-  `scripts/setup/hardening/firewall.sh` is never observed. Deleting that block leaves every
-  host unit suite green while an uninstalled or firewall-disabled host keeps a
-  live chain DROPping 16 ports.
 - **Lint suppressions.** Nothing inventories the inline `# shellcheck disable=`,
   `# noqa` and `# type: ignore` directives or the tool-wide disable lists, so a
   new one lands unreviewed unless a reader notices it in the diff.

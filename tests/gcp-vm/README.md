@@ -29,7 +29,7 @@ re-pulled every default-profile image; see `scripts/setup/stack.sh:pull_images`.
 | 11 | Fail2ban: 3 jails                  | NPM/Jellyfin/Seerr jails active (ratelimit disabled by default) |
 | 12 | `tests/assertions/npm.sh`          | NPM proxy hosts have rendered `.conf` + cert files on disk |
 | 13 | External HTTPS + cert issuer       | DDNS push → real public DNS → public HTTPS reaches the proxy |
-| 14 | LAN-only TCP ports blocked from WAN | UFW + DOCKER-USER + GCP firewall hide every Docker LAN-only TCP port from `setup_ufw_docker_rules` |
+| 14 | LAN-only TCP ports blocked from WAN | UFW + DOCKER-USER + GCP firewall hide every Docker LAN-only TCP port from `setup_admin_filter` |
 | 15 | Public ports open (80/443/6881)    | external reachability for the user-facing services         |
 
 ## Prerequisites (one-time)

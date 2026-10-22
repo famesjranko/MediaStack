@@ -28,11 +28,48 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 ## [Unreleased]
 
 - Initial public release: guided single-box installer for the full media stack
-  (Jellyfin, Sonarr, Radarr, Jackett, qBittorrent, Seerr, and 13 supporting
-  services) on Debian, driven entirely by `./mediastack`.
+  (Jellyfin, Sonarr, Radarr, Jackett, qBittorrent, Seerr, and 14 supporting
+  services) on Debian 12 or 13, driven entirely by `./mediastack`. Setup
+  refuses other hosts, Ubuntu included, and Debian 11 as end of life.
 - Day-2 management from the same menu: status, updates on a Stable
   (digest-pinned, MediaStack-tested) or Latest image channel, feature
-  add/remove, storage, DDNS, fail2ban, diagnostics, uninstall.
+  add/remove, storage, DDNS, fail2ban, diagnostics, uninstall. Health lists
+  every container of the enabled profiles, stopped ones included.
 - Hardening on by default: UFW Docker rules, fail2ban jails, admin ports
-  restricted to private sources, WireGuard remote access tiers.
+  restricted to private sources, WireGuard remote access tiers (peers reach
+  host services with UFW on). The
+  admin-port filter is its own `ADMIN_PORT_FILTER` choice, applied by a
+  systemd unit that Docker requires, so a filter failure stops Docker instead
+  of publishing admin ports; the health check and main menu warn when it is
+  wanted but not active.
+- Docker socket access is filtered: Beszel Agent and Autoheal reach Docker
+  through a `socket-proxy` container on the host network that listens on
+  127.0.0.1 only and, as a path allowlist, permits container list, stats and
+  restart plus version and info. Portainer keeps the socket. Beszel's image-update indicator and
+  per-container info and log views are off; use Portainer for container
+  details and logs. The Beszel agent talks to its hub over a unix socket, so
+  it opens no TCP port.
+- New day-2 action, Health & security -> "Apply changes from a MediaStack
+  update" (`scripts/update.sh` runs it too): installs the admin-port filter,
+  narrows qBittorrent's old auth whitelist, moves Beszel's hub entry to the
+  socket, deletes the unused `MediaStack:Beszel-agent` UFW rule, converges the
+  WireGuard UFW rule and installs a missing NAS watchdog. Run it once after
+  pulling new code onto an existing install.
+- NVIDIA GPU install runs apt non-interactively, builds the DKMS module for a
+  pending kernel, and detects Secure Boot with MOK enrolment guidance. Jellyfin
+  NVENC needs driver 520.56.06 or newer; an older GPU falls back to software
+  transcoding with the reason shown in status and health. Hardware decode is
+  enabled only for codecs the setup probe proved.
+- Image updates save a restore point of the service's config first; Revert
+  puts back the old image and that config.
+- NAS storage gets a watchdog that repairs a dropped mount; `STORAGE_WATCHDOG=false`
+  opts out.
+- Turning the Samba share OFF stops Samba when MediaStack installed it and
+  closes its firewall rules. Uninstall removes MediaStack's Docker volumes and
+  networks, and its Samba account when nothing else uses it.
+- DDNS credential prompts hint at a narrower credential for providers that
+  send the secret in the request URL (it can appear in ddns-updater logs).
+- qBittorrent keeps WebUI login on for the Docker network; only Sonarr, Radarr
+  and Homepage are exempt. A whitelist you set yourself is reported as drift,
+  never overwritten.
 - `./mediastack --version` reports the installed release and commit.
