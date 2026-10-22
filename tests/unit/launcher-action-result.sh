@@ -304,6 +304,35 @@ recreated_stop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_eq "VOLS=mydata" "$(grep '^VOLS=' <<<"$recreated_stop")" \
     "launcher: Stop all removes a recreated container's anonymous volume and keeps the user's volume"
 
+# Given a recreated container's anonymous volume that Docker refuses to remove
+# When the stack is stopped
+# Then Stop all warns and names the volume it left behind
+failed_rm_stop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  UP=1
+  docker() {
+    if [[ "$1" == volume ]]; then
+      [[ "$2" == ls ]] && { printf "%s\n" anon1; return 0; }
+      [[ "$2" == rm ]] && return 1
+      [[ "$2" == inspect ]] && return 0
+    fi
+    [[ "$1" == inspect ]] && { printf "%s\n" anon1; return 0; }
+    [[ "$1" == ps ]] && { echo c1; return 0; }
+    [[ "$1" == compose ]] || return 0
+    case " $* " in
+      *" config "*) echo "{\"name\":\"mediastack\"}" ;;
+      *" ps -q "*) ((UP)) && echo c1 ;;
+      *" down "*) UP=0 ;;
+    esac
+    return 0
+  }
+  profiles_build_args() { :; }; ui_confirm() { return 0; }
+  launcher_pause_for_menu() { :; }; ui_log() { echo "LOG $*"; }; _show_action_result() { :; }
+  action_stack_stop
+' 2>&1)
+assert_contains "$failed_rm_stop" "LOG warn" "launcher: Stop all warns when an anonymous volume cannot be removed"
+assert_contains "$failed_rm_stop" "anon1" "launcher: the warning names the volume left behind"
+
 # Given a stack with one running and one stopped service
 # When the Manage stack status table is drawn
 # Then both services are listed, as the header count and the Health menu already do

@@ -29,3 +29,17 @@ project_anonymous_volumes() {
         grep -Fxf <(printf '%s\n' "$anon") <<<"$mounted" || true
     done < <(docker ps -aq --filter "label=com.docker.compose.project=${project}" 2>/dev/null)
 }
+
+# Removes volumes $2.. and stores in the array named by $1 each one that still
+# exists afterwards (one already gone is fine), so the caller can name it.
+# Docker refuses to remove a volume that a remaining container still uses.
+remove_volumes_report_kept() {
+    local -n _kept_out="$1"
+    shift
+    local vol
+    _kept_out=()
+    for vol in "$@"; do
+        docker volume rm "$vol" >/dev/null 2>&1 && continue
+        ! docker volume inspect "$vol" >/dev/null 2>&1 || _kept_out+=("$vol")
+    done
+}

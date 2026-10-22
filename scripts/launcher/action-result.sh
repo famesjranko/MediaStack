@@ -405,18 +405,22 @@ action_stack_stop() {
     # every `up`, and `down` without it leaves the old one behind, unlabelled
     # and invisible to uninstall. docker-compose.yml declares no named volume
     # and config/ and data/ are bind mounts, so this removes no user data.
-    # `down --volumes` still skips a volume that a recreated container
-    # re-mounted by name, so collect the anonymous volumes first and remove
-    # them after; Docker refuses to remove one that a kept container uses.
+    # `down --volumes` skips a volume a recreated container re-mounted by name,
+    # so collect the anonymous volumes first and remove them after.
     local profiles=()
     profiles_build_args profiles
-    local rc=0 project anon_volumes=() vol
+    local rc=0 project anon_volumes=() kept_volumes=() vol
     project=$(_compose_project_name) || project=""
-    [[ -z "$project" ]] || mapfile -t anon_volumes < <(project_anonymous_volumes "$project")
+    if [[ -n "$project" ]]; then
+        mapfile -t anon_volumes < <(project_anonymous_volumes "$project")
+    else
+        ui_log warn "Could not resolve the Compose project name; anonymous volumes were not checked."
+    fi
     docker compose "${profiles[@]}" down --volumes 2>&1 || rc=$?
     if ((rc == 0)); then
-        for vol in "${anon_volumes[@]}"; do
-            docker volume rm "$vol" >/dev/null 2>&1 || true
+        remove_volumes_report_kept kept_volumes "${anon_volumes[@]}"
+        for vol in "${kept_volumes[@]}"; do
+            ui_log warn "Could not remove anonymous volume $vol; remove it with: docker volume rm $vol"
         done
     fi
     _show_action_result "$rc" "Stop stack"
