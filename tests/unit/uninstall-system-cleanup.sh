@@ -314,12 +314,11 @@ case "$(tr '\n' ' ' <"$SYSCTL_TRACE")" in
 esac
 unset -f sudo sysctl _ms_state_set
 
-# Samba removes only recorded ownership and never invokes autoremove/userdel.
+# Samba removes only recorded ownership and never invokes autoremove.
 printf 'managed samba\n' >"$SAMBA_INCLUDE_FILE"
 printf '%s\n' '[global]' '# MEDIASTACK include - managed by setup.sh' "include = $SAMBA_INCLUDE_FILE" >"$SAMBA_MAIN_CONF"
 samba_hash=$(sha256sum "$SAMBA_INCLUDE_FILE" | awk '{print $1}')
-effective='effective config'
-effective_hash=$(printf '%s\n' "$effective" | sha256sum | awk '{print $1}')
+effective='effective config' effective_hash=$(printf '%s\n' 'effective config' | sha256sum | awk '{print $1}')
 SAMBA_CALLS=()
 id() { [[ "$1" == -nG ]] && echo media; }
 smbd() { :; }
@@ -334,6 +333,7 @@ _ms_state_get() {
         SAMBA_GROUP) echo media ;;
     esac
 }
+_ms_state_set() { SAMBA_CALLS+=("state:$1=$2"); }
 sudo() {
     case "$1" in
         testparm) printf '%s\n' "$effective" ;;
@@ -349,10 +349,10 @@ _uninstall_samba
 assert_eq "0" "$?" "Samba: owned configuration cleanup succeeds"
 assert_contains "${SAMBA_CALLS[*]}" "smbpasswd -x mediaadmin" "Samba: MediaStack-created passdb principal removed"
 assert_contains "${SAMBA_CALLS[*]}" "gpasswd -d mediaadmin media" "Samba: MediaStack-added group membership removed"
-assert_contains "${SAMBA_CALLS[*]}" "env DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq samba" "Samba: explicitly owned package removed non-interactively"
+assert_contains "${SAMBA_CALLS[*]}" "env DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq samba" "Samba: explicitly owned package purged non-interactively"
 case "${SAMBA_CALLS[*]}" in
-    *autoremove* | *userdel*) fail "Samba: no autoremove or Linux-account deletion" "${SAMBA_CALLS[*]}" ;;
-    *) pass "Samba: no autoremove or Linux-account deletion" ;;
+    *autoremove*) fail "Samba: package removal never autoremoves other packages" "${SAMBA_CALLS[*]}" ;;
+    *) pass "Samba: package removal never autoremoves other packages" ;;
 esac
 
 # A failed first install may record intent before applying any mutation. It must

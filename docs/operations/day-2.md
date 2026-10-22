@@ -5,7 +5,7 @@ long-term data protection are intentionally out of scope for MediaStack.
 
 ## `./mediastack` → Uninstall MediaStack
 
-Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership, watchdog units, and setup banners. `data/`, `config/`, and the checkout are preserved.
+Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership (MediaStack-installed Samba is purged, not just removed, and the Linux account MediaStack created is deleted when nothing outside MediaStack's paths uses it; no autoremove runs, so Samba's dependency packages stay), watchdog units, and setup banners. `data/`, `config/`, and the checkout are preserved.
 
 The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts the recorded teardown and instead offers a best-effort cleanup of the host changes MediaStack can still identify on its own. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried. User-modified MediaStack-owned files are preserved and reported instead of overwritten or deleted.
 
@@ -389,3 +389,5 @@ If `scripts/services/npm/main.sh` logs `NPM password rotation FAILED`:
 - Stop the stack.
 - `docker compose run --rm --entrypoint sh npm` → `cd /data && sqlite3 database.sqlite` → `DELETE FROM user;` → exit.
 - Restart. NPM rebuilds as empty-user state, next configure.sh will seed correctly with `JELLYFIN_ADMIN_PASSWORD` + `NPM_ADMIN_EMAIL`.
+
+**SMB OFF** (Features) removes MediaStack's share block and its `MediaStack:SMB-LAN` firewall rules and resets `SMB_SHARE_SCOPE` to `data`. It also stops and disables `smbd`/`nmbd` only when MediaStack installed Samba; a Samba that was already there keeps running with the user's own shares.

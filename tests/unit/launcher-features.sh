@@ -296,9 +296,10 @@ assert_contains "$s_on" "SAMBA enabled=true scope=data" "smb ON: runs setup_samb
 assert_contains "$s_on" "SMB_ENABLED='true'" "smb ON: .env flag set true (single-quoted)"
 assert_contains "$s_on" "SMB_SHARE_SCOPE='data'" "smb ON: .env scope recorded (single-quoted)"
 
-s_off=$(run_toggle action_toggle_smb "SMB_ENABLED=true")
+s_off=$(run_toggle action_toggle_smb $'SMB_ENABLED=true\nSMB_SHARE_SCOPE=system') # Given SMB on with the system scope
 assert_contains "$s_off" "SAMBA enabled=false" "smb OFF: runs setup_samba cleanup path"
 assert_contains "$s_off" "SMB_ENABLED='false'" "smb OFF: .env flag set false (single-quoted)"
+assert_contains "$s_off" "SMB_SHARE_SCOPE='data'" "smb OFF: Then the stale system scope resets to data"
 
 # --- UFW ON / OFF: configure via setup_ufw; revert via _uninstall_ufw + latch reset
 u_on=$(run_toggle action_toggle_ufw "UFW_ENABLED=false")

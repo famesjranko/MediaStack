@@ -56,6 +56,8 @@ source "$HARDENING_TEST_DIR/hardening/updates.sh"
 source "$HARDENING_TEST_DIR/hardening/sysctl.sh"
 source "$HARDENING_TEST_DIR/hardening/gpu-runtime.sh"
 source "$HARDENING_TEST_DIR/hardening/samba.sh"
+source "$HARDENING_TEST_DIR/hardening/samba-off.sh"
+source "$HARDENING_TEST_DIR/hardening/samba-failures.sh"
 source "$HARDENING_TEST_DIR/hardening/ports.sh"
 
 echo -e "${CYAN}◀ hardening done${NC}"

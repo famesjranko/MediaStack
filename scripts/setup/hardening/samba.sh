@@ -9,22 +9,99 @@ declare -F host_tool_installed >/dev/null 2>&1 || source "$(cd "$(dirname "${BAS
 # shellcheck source=../../lib/apt.sh
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
 
+# Rules MediaStack opened for SMB carry this exact ufw comment.
+MS_SMB_UFW_COMMENT="MediaStack:SMB-LAN"
+
+# True when the live Samba config differs from what MediaStack recorded after its
+# own setup: the user has added shares or settings, so Samba is no longer only
+# MediaStack's. A missing hash counts as differing, which keeps Samba running.
+_setup_samba_config_adopted() {
+    local current
+    current=$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)
+    [[ "$current" != "$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)" ]]
+}
+
+# Drops MediaStack's SMB UFW rules (live and in the ledger). The comment match is
+# exact so a user's own rule, or another MediaStack tag, is never touched.
+# While ufw is inactive it lists no rules, so each ledger entry is deleted by
+# its rule spec instead; only entries actually deleted leave the ledger.
+_setup_samba_ufw_rules_remove() {
+    ufw_installed || return 0
+    local numbers=() number count i rule kept=0 failed=0 status_out inactive=false spec
+    status_out=$(LC_ALL=C sudo ufw status numbered 2>/dev/null || true)
+    [[ "$status_out" == "Status: inactive"* ]] && inactive=true
+    mapfile -t numbers < <(awk -v tag="# $MS_SMB_UFW_COMMENT" '
+            { sub(/[[:space:]]+$/, "") }
+            substr($0, length($0) - length(tag) + 1) == tag && match($0, /^\[[[:space:]]*[0-9]+\]/) {
+                n = substr($0, RSTART + 1, RLENGTH - 2); gsub(/ /, "", n); print n
+            }' <<<"$status_out" \
+        | sort -rn)
+    for number in "${numbers[@]}"; do
+        sudo ufw --force delete "$number" >/dev/null || return 1
+    done
+    ((${#numbers[@]} == 0)) || sudo ufw reload >/dev/null 2>&1 || return 1
+
+    # Compact the ledger so uninstall does not retry rules that are already gone.
+    count=$(_ms_state_get UFW_RULE_COUNT 2>/dev/null || echo 0)
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
+    for ((i = 1; i <= count; i++)); do
+        rule=$(_ms_state_get "UFW_RULE_$i" 2>/dev/null || true)
+        if [[ "$rule" == *" comment $MS_SMB_UFW_COMMENT" ]]; then
+            $inactive || continue
+            spec=${rule% comment "$MS_SMB_UFW_COMMENT"}
+            # shellcheck disable=SC2086 # the ledger rule spec is deliberately word-split
+            if sudo ufw --force delete $spec >/dev/null 2>&1; then
+                continue
+            fi
+            failed=1
+        fi
+        kept=$((kept + 1))
+        ((kept == i)) || _ms_state_set "UFW_RULE_$kept" "$rule" || return 1
+    done
+    ((kept == count)) || _ms_state_set UFW_RULE_COUNT "$kept" || return 1
+    return "$failed"
+}
+
+# SMB OFF: remove MediaStack's share block and firewall rules. The daemons stop
+# only when MediaStack installed Samba and the user has added nothing to it; a
+# Samba with the user's own shares keeps serving them.
+_setup_samba_disable() {
+    local unit adopted=false
+    [[ -f "$SAMBA_INCLUDE_FILE" || "$(_ms_state_get SAMBA_CONFIGURED 2>/dev/null || true)" == "true" ]] || return 0
+
+    log_info "SMB_ENABLED=false - removing MediaStack samba config..."
+    # Judge adoption before the include goes: removing it changes the effective config.
+    ! _setup_samba_config_adopted || adopted=true
+    # Samba tolerates the now-dangling `include = ...` line in main smb.conf with
+    # just a warning, so it stays: re-enabling SMB rewrites the same path.
+    sudo rm -f "$SAMBA_INCLUDE_FILE" || return 1
+    _setup_samba_ufw_rules_remove || {
+        log_error "Could not remove the MediaStack SMB firewall rules"
+        return 1
+    }
+    if [[ "$(_ms_state_get SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK 2>/dev/null || true)" == "true" ]] && ! $adopted; then
+        for unit in smbd nmbd; do
+            sudo systemctl cat "$unit" >/dev/null 2>&1 || continue
+            sudo systemctl disable --now "$unit" >/dev/null 2>&1 || {
+                log_error "Could not stop and disable $unit"
+                return 1
+            }
+        done
+        log_ok "Samba stopped and disabled (MediaStack installed it)"
+    else
+        sudo systemctl reload smbd >/dev/null 2>&1 || true
+        log_ok "MediaStack samba config removed (user samba config preserved and still running)"
+    fi
+    # An adopted config keeps its old hash, so a repeated OFF still sees it as the
+    # user's and never stops the daemons.
+    if ! $adopted && [[ "$(_ms_state_get SAMBA_CONFIGURED 2>/dev/null || true)" == "true" ]]; then
+        _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
+    fi
+}
+
 setup_samba() {
     if [[ "${SMB_ENABLED:-false}" != "true" ]]; then
-        # Cleanup path: undo a prior SMB_ENABLED=true install. Removing the
-        # include file silences the [Media] share. Samba tolerates the now-
-        # dangling `include = …` line in main smb.conf with just a warning,
-        # so we leave it there — re-enabling SMB later just rewrites the
-        # include file at the same path.
-        if [[ -f "$SAMBA_INCLUDE_FILE" ]]; then
-            log_info "SMB_ENABLED=false - removing MediaStack samba config..."
-            sudo rm -f "$SAMBA_INCLUDE_FILE"
-            sudo systemctl reload smbd >/dev/null 2>&1 || true
-            if [[ "$(_ms_state_get SAMBA_CONFIGURED 2>/dev/null || true)" == "true" ]]; then
-                _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
-            fi
-            log_ok "MediaStack samba config removed (user samba config preserved)"
-        fi
+        _setup_samba_disable
         return
     fi
 
@@ -74,8 +151,13 @@ setup_samba() {
                 # Resume below: user/group, service, firewall, and final ledger
                 # writes are idempotent and may not have completed before interruption.
             elif [[ "$(_ms_state_get SAMBA_OWNERSHIP_RECORDED 2>/dev/null || true)" == "true" ]]; then
-                _ms_state_set SAMBA_INCLUDE_SHA256 "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")"
-                _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
+                # Backfill only: re-recording an existing hash would adopt the
+                # user's later edits as MediaStack's, and SMB OFF and uninstall
+                # would then stop or remove their shares.
+                [[ "$(_ms_state_get SAMBA_INCLUDE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] \
+                    || _ms_state_set SAMBA_INCLUDE_SHA256 "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")"
+                [[ "$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] \
+                    || _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
                 _ms_state_set SAMBA_CONFIGURED true
                 log_skip "Samba already configured"
                 return 0
@@ -109,6 +191,12 @@ setup_samba() {
             sudo pdbedit -L -u "$admin_user" >/dev/null 2>&1 && passdb_preexisted=true
         fi
         id "$admin_user" &>/dev/null && user_preexisted=true
+        # The samba and winbind packages create these groups; uninstall removes only
+        # the ones that were absent now, so a group the host already had survives.
+        local grp groups_preexisted=""
+        for grp in sambashare winbindd_priv; do
+            ! getent group "$grp" >/dev/null 2>&1 || groups_preexisted+="${groups_preexisted:+ }$grp"
+        done
         gid_group=$(getent group "$pgid" | cut -d: -f1)
         group_preexisted=true
         if [[ -n "$gid_group" && "$user_preexisted" == "true" ]]; then
@@ -123,6 +211,7 @@ setup_samba() {
         _ms_state_set SAMBA_PASSDB_PREEXISTED "$passdb_preexisted"
         _ms_state_set SAMBA_GROUP "$gid_group"
         _ms_state_set SAMBA_GROUP_PREEXISTED "$group_preexisted"
+        _ms_state_set SAMBA_GROUPS_PREEXISTED "$groups_preexisted"
         _ms_state_set SAMBA_SETUP_PENDING true
         _ms_state_set SAMBA_PASSDB_CREATED_BY_MEDIASTACK false
         _ms_state_set SAMBA_GROUP_ADDED_BY_MEDIASTACK false
@@ -163,7 +252,15 @@ setup_samba() {
     fi
     if [[ "$passdb_preexisted" == "false" ]] \
         && ! sudo pdbedit -L -u "$admin_user" >/dev/null 2>&1; then
-        printf '%s\n%s\n' "$admin_pw" "$admin_pw" | sudo smbpasswd -a -s "$admin_user" >/dev/null 2>&1
+        # Error text goes to a file so the tool message survives without a subshell
+        local _smb_err_file
+        _smb_err_file=$(mktemp)
+        if ! printf '%s\n%s\n' "$admin_pw" "$admin_pw" | sudo smbpasswd -a -s "$admin_user" >/dev/null 2>"$_smb_err_file"; then
+            log_error "Could not create the Samba account for '$admin_user': $(head -c 300 "$_smb_err_file")"
+            rm -f "$_smb_err_file"
+            return 1
+        fi
+        rm -f "$_smb_err_file"
         _ms_state_set SAMBA_PASSDB_CREATED_BY_MEDIASTACK true
     elif [[ "$passdb_preexisted" == "true" ]]; then
         log_warn "Samba user '$admin_user' already exists; preserving its existing password"
@@ -201,13 +298,24 @@ EOF
             | sudo tee -a "$SAMBA_MAIN_CONF" >/dev/null
     fi
 
-    sudo systemctl enable --now smbd >/dev/null 2>&1
+    local _smbd_err_file
+    _smbd_err_file=$(mktemp)
+    if ! sudo systemctl enable --now smbd >/dev/null 2>"$_smbd_err_file"; then
+        log_error "Could not start smbd: $(head -c 300 "$_smbd_err_file"). Check: journalctl -u smbd"
+        rm -f "$_smbd_err_file"
+        return 1
+    fi
+    rm -f "$_smbd_err_file"
+    # SMB OFF stops nmbd with smbd when MediaStack installed Samba; bring it back.
+    if [[ "$(_ms_state_get SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK 2>/dev/null || true)" == "true" ]]; then
+        sudo systemctl enable --now nmbd >/dev/null 2>&1 || true
+    fi
     sudo systemctl reload smbd >/dev/null 2>&1 || true
 
     # LAN-only SMB access
     local cidr
     for cidr in "${LAN_CIDRS[@]}"; do
-        _ms_ufw_allow from "$cidr" to any port 445 proto tcp comment MediaStack:SMB-LAN >/dev/null 2>&1
+        _ms_ufw_allow from "$cidr" to any port 445 proto tcp comment "$MS_SMB_UFW_COMMENT" >/dev/null 2>&1
     done
     sudo ufw reload >/dev/null 2>&1
 
@@ -218,13 +326,68 @@ EOF
     log_ok "SMB share configured: \\\\<server-ip>\\${share_name} -> ${share_path}"
 }
 
+# Groups the samba package creates and its purge leaves behind. Removed only
+# when the ledger shows they were absent before MediaStack, and when empty, so a
+# group the host owned or a user has since populated survives. winbindd_priv
+# belongs to the winbind package, which a purge of samba leaves installed.
+# A ledger without SAMBA_GROUPS_PREEXISTED keeps both groups.
+_uninstall_samba_groups() {
+    local grp preexisted
+    preexisted=$(_ms_state_get SAMBA_GROUPS_PREEXISTED 2>/dev/null) || {
+        log_info "No record of which Samba groups existed before MediaStack; groups preserved"
+        return 0
+    }
+    for grp in sambashare winbindd_priv; do
+        [[ " $preexisted " != *" $grp "* ]] || continue
+        getent group "$grp" >/dev/null 2>&1 || continue
+        [[ -z "$(getent group "$grp" | cut -d: -f4)" ]] || continue
+        if [[ "$grp" == winbindd_priv && "$(dpkg-query -W -f='${db:Status-Abbrev}' winbind 2>/dev/null)" == ii* ]]; then
+            continue
+        fi
+        sudo groupdel "$grp" >/dev/null 2>&1 || log_warn "Could not remove group '$grp'"
+    done
+}
+
+# Removes the Linux account only when MediaStack created it (ledger) and nothing
+# outside MediaStack's own paths uses it; otherwise keeps it and says why.
+# userdel also drops the account's private group.
+_uninstall_samba_account() {
+    local user="$1" adopted="$2" stray
+    [[ "$(_ms_state_get SAMBA_USER_PREEXISTED)" == "false" ]] || {
+        log_info "Linux account '$user' existed before MediaStack; preserved"
+        return 0
+    }
+    id "$user" &>/dev/null || return 0
+    if [[ "$adopted" == "true" ]]; then
+        log_warn "Linux account '$user' preserved: Samba has non-MediaStack configuration"
+        return 0
+    fi
+    if sudo pgrep -u "$user" >/dev/null 2>&1; then
+        log_warn "Linux account '$user' preserved: it has running processes"
+        return 0
+    fi
+    # -xdev keeps the scan off network mounts; MediaStack's data and checkout are
+    # the paths the account legitimately owns.
+    stray=$(sudo find / -xdev \( -path /proc -o -path /sys -o -path "${DATA_DIR:-/data}" \
+        -o -path "${SCRIPT_DIR:-/nonexistent}" \) -prune -o -user "$user" -print -quit 2>/dev/null)
+    if [[ -n "$stray" ]]; then
+        log_warn "Linux account '$user' preserved: it owns files outside MediaStack paths (e.g. $stray)"
+        return 0
+    fi
+    sudo userdel "$user" >/dev/null 2>&1 || {
+        log_error "Could not remove Linux account '$user'"
+        return 1
+    }
+    log_ok "Linux account '$user' removed (MediaStack created it)"
+}
+
 _uninstall_samba() {
     [[ "$(_ms_state_get SAMBA_OWNERSHIP_RECORDED)" == "true" ]] || return 0
     if [[ "$(_ms_state_get SAMBA_SETUP_PENDING)" == "true" ]]; then
         log_error "Samba setup is incomplete; rerun setup to finish it before uninstalling"
         return 1
     fi
-    local expected current adopted=false user group
+    local expected adopted=false user group
     expected=$(_ms_state_get SAMBA_INCLUDE_SHA256 2>/dev/null || true)
     if sudo test -e "$SAMBA_INCLUDE_FILE"; then
         if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]] \
@@ -233,8 +396,11 @@ _uninstall_samba() {
             return 1
         fi
     fi
-    current=$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)
-    [[ "$current" == "$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)" ]] || adopted=true
+    # After a purge testparm is gone and the hash always differs, so a retry
+    # (e.g. userdel failed) must not read that as the user's own configuration.
+    if [[ "$(_ms_state_get SAMBA_PURGED 2>/dev/null || true)" != "true" ]]; then
+        ! _setup_samba_config_adopted || adopted=true
+    fi
 
     sudo rm -f "$SAMBA_INCLUDE_FILE" || return 1
     if sudo test -e "$SAMBA_MAIN_CONF"; then
@@ -257,7 +423,12 @@ _uninstall_samba() {
         if $adopted; then
             log_warn "Samba has non-MediaStack configuration; preserving the package"
         else
-            "${MS_APT_REMOVE[@]}" samba >/dev/null 2>&1 || return 1
+            # Purge, not remove: remove leaves the package in dpkg 'rc' state with
+            # its conffiles. No autoremove: it would also sweep unrelated orphaned
+            # packages the user left behind, and MediaStack records only 'samba'.
+            "${MS_APT_PURGE[@]}" samba >/dev/null 2>&1 || return 1
+            _ms_state_set SAMBA_PURGED true || return 1
+            _uninstall_samba_groups
         fi
     else
         if [[ "$(_ms_state_get SAMBA_SERVICE_WAS_ENABLED)" == "false" ]] \
@@ -271,5 +442,6 @@ _uninstall_samba() {
             sudo systemctl reload smbd >/dev/null 2>&1 || true
         fi
     fi
-    log_ok "MediaStack Samba configuration removed; Linux account preserved"
+    _uninstall_samba_account "$user" "$adopted" || return 1
+    log_ok "MediaStack Samba configuration removed"
 }
