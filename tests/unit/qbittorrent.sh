@@ -27,12 +27,14 @@ JELLYFIN_ADMIN_PASSWORD='abc&% =defghi'
 TORRENT_PORT=6881
 QBT_DL_LIMIT=1
 QBT_UL_LIMIT=1
+MEDIASTACK_NETWORK_PREFIX=172.29.5
 
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 log_ok() { LOG_OK_MESSAGES+=("$1"); }
 log_warn() { LOG_WARN_MESSAGES+=("$1"); }
 log_skip() { :; }
+log_drift() { :; }
 service_local_url() {
     [[ "$1" == "qbittorrent" ]] || return 1
     printf 'http://localhost:8080'
@@ -91,7 +93,7 @@ docker() {
 }
 
 curl() {
-    local arg prev="" endpoint="" is_login=false password="" category=""
+    local arg prev="" endpoint="" is_login=false password="" category="" is_prefs_get=false
     local stdin_field="" stdin_value=""
     # Secret-bearing form fields arrive urlencoded from stdin (see
     # curl_data_urlencode_stdin). Log them in the "field=value" shape the
@@ -116,6 +118,7 @@ curl() {
         if [[ "$arg" == *"/api/v2/auth/login" ]]; then
             is_login=true
         fi
+        [[ "$arg" == *"/api/v2/app/preferences" ]] && is_prefs_get=true
         if [[ "$arg" == *"/api/v2/torrents/createCategory" ]]; then
             endpoint="createCategory"
         fi
@@ -142,6 +145,10 @@ curl() {
         else
             printf '%s\n%s\n' "Fails." "200"
         fi
+        return 0
+    fi
+    if $is_prefs_get; then
+        printf '%s\n' '{"bypass_auth_subnet_whitelist":"","bypass_auth_subnet_whitelist_enabled":false}'
         return 0
     fi
     if [[ "$endpoint" == "createCategory" && "${QBT_FAIL_CREATE_CATEGORY:-}" == "$category" ]]; then
@@ -356,7 +363,7 @@ for arg in "$@"; do
             exit 0
             ;;
         */api/v2/app/preferences)
-            printf '%s\n' '{"max_ratio_act":0,"dl_limit":0,"up_limit":1048576,"max_seeding_time":1440,"max_seeding_time_enabled":true,"bypass_auth_subnet_whitelist":"172.16.0.0/12","bypass_auth_subnet_whitelist_enabled":true,"save_path":"/data/torrents","temp_path":"/data/torrents/incomplete","temp_path_enabled":true}'
+            printf '%s\n' '{"max_ratio_act":0,"dl_limit":0,"up_limit":1048576,"max_seeding_time":1440,"max_seeding_time_enabled":true,"bypass_auth_subnet_whitelist":"172.29.5.22/32\n172.29.5.23/32\n172.29.5.40/32","bypass_auth_subnet_whitelist_enabled":true,"save_path":"/data/torrents","temp_path":"/data/torrents/incomplete","temp_path_enabled":true}'
             exit 0
             ;;
         */api/v2/torrents/categories)
@@ -373,6 +380,7 @@ JELLYFIN_ADMIN_USER='mediaadmin'
 JELLYFIN_ADMIN_PASSWORD='abc&% =defghi'
 QBT_DL_LIMIT=0
 QBT_UL_LIMIT=1
+MEDIASTACK_NETWORK_PREFIX=172.29.5
 STORAGE_APP_WIRING=managed
 EOF
 cat >"$LIVE_CONFIG" <<'EOF'

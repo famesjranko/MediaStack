@@ -339,9 +339,9 @@ Notable entries:
 |---------|-----|
 | `Session\GlobalMaxRatio=1` | 100% share ratio. |
 | `Session\MaxRatioAction=0` | `0`=pause, `1`=remove torrent (keep files), `3`=remove everything. Pre-seed matches the API-applied value. Sonarr/Radarr's download-client validator rejects anything other than `0`. |
-| `WebUI\AuthSubnetWhitelist=172.16.0.0/12` + `AuthSubnetWhitelistEnabled=true` | Docker bridge IPs. `LocalHostAuth=false` alone only covers 127.0.0.1. |
+| `WebUI\AuthSubnetWhitelistEnabled=false` (no list seeded) | Fresh installs ship no whitelist. Configure sets it to the `/32` addresses of Sonarr, Radarr, and Homepage (`.22`, `.23`, `.40` of `MEDIASTACK_NETWORK_PREFIX`), which call qBittorrent without credentials. Never the gateway or the whole subnet: Docker's userland proxy relays host-local and IPv6 clients from the gateway address. |
 | CSRF + clickjacking protection headers | Hardened WebUI security defaults. |
-| `WebUI\LocalHostAuth=false` | Required for subnet whitelist to be the only auth bypass. |
+| `WebUI\LocalHostAuth=false` | Keeps the caller-container whitelist the only auth bypass besides 127.0.0.1. |
 | `WebUI\ServerDomains=*` | Allows access via NPM's reverse proxy. |
 
 ### `config/qbittorrent/qBittorrent/categories.json`
