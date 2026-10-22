@@ -1,4 +1,4 @@
-# Owns: UFW firewall policy and its teardown. The admin-port filter is not UFW's: see admin-filter.sh.
+# Owns: UFW firewall policy, the WireGuard-clients rule, and teardown. The admin-port filter is not UFW's: see admin-filter.sh.
 # Sources: hardening.sh globals and common.sh logging helpers.
 # Globals: MEDIASTACK_STATE_FILE and LAN_CIDRS.
 
@@ -66,6 +66,74 @@ setup_ufw() {
 
     # The admin-port filter is not UFW's: setup_admin_filter owns it, UFW on or off.
     log_ok "UFW firewall enabled"
+}
+
+# ---------------------------------------------------------------------------
+# WireGuard tier traffic
+# ---------------------------------------------------------------------------
+
+MEDIASTACK_WG_CLIENTS_TAG="MediaStack:WireGuard-clients"
+
+# The wireguard container masquerades every peer behind its own static address
+# (docker-compose.yml: ${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.11). Peer traffic
+# to host services and docker-proxy'd published ports therefore arrives on the
+# host's INPUT path from that one address, where UFW's default deny drops it.
+# Prints that address. The prefix is resolved as compose does: the process
+# environment first, then .env, then the 172.28.0 fallback.
+_wg_container_ip() {
+    local env_file="$1" prefix="${MEDIASTACK_NETWORK_PREFIX:-}"
+    if [[ -z "$prefix" && -f "$env_file" ]]; then
+        prefix=$(sed -n "s/^MEDIASTACK_NETWORK_PREFIX=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}\$/\1/p" "$env_file" | tail -n 1)
+    fi
+    if [[ -n "$prefix" ]] && ! [[ "$prefix" =~ ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){2}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]]; then
+        log_warn "Ignoring invalid MEDIASTACK_NETWORK_PREFIX '$prefix'; using 172.28.0 for the WireGuard firewall rule." >&2
+        prefix=""
+    fi
+    printf '%s.11\n' "${prefix:-172.28.0}"
+}
+
+# Converges the one rule that lets WireGuard tier traffic reach the host: allow
+# from exactly the wireguard container's /32, never the wider Docker range.
+# Which ports each peer reaches is still decided per peer by wg-easy's
+# firewallIps; this rule only stops UFW from dropping what wg-easy permits.
+#
+# Present only while the remote profile is enabled (WG_INIT_PASSWORD, as
+# profiles_build_args reads it) and MediaStack manages an active UFW; any
+# other state removes it. Rules are matched by their exact comment, so an
+# admin's own rule is never touched. Idempotent: a rule that is already right
+# causes no ufw write. Returns non-zero when a delete or the add fails.
+setup_ufw_wireguard_clients() {
+    ufw_installed || return 0
+    local listing env_file="${SCRIPT_DIR:-$PWD}/.env" profiles=() want=false src="" kept=false
+    listing=$(LC_ALL=C sudo ufw status numbered 2>/dev/null) || return 0
+    grep -q '^Status: active' <<<"$listing" || return 0
+
+    if [[ "${UFW_ENABLED:-true}" == "true" ]]; then
+        type profiles_build_args &>/dev/null || source "${SCRIPT_DIR:-$PWD}/scripts/lib/profiles.sh"
+        profiles_build_args profiles "$env_file"
+        [[ " ${profiles[*]} " == *" remote "* ]] && want=true
+    fi
+    [[ "$want" == "true" ]] && src=$(_wg_container_ip "$env_file")
+
+    local number source stale=()
+    # Highest number first: a delete renumbers the rules below it.
+    while read -r number source; do
+        if [[ "$want" == "true" && "$source" == "$src" && "$kept" == "false" ]]; then
+            kept=true
+        else
+            stale+=("$number")
+        fi
+    done < <(sed -n "s/^\[[[:space:]]*\([0-9][0-9]*\)\].*ALLOW IN[[:space:]][[:space:]]*\([^[:space:]][^[:space:]]*\)[[:space:]]*# ${MEDIASTACK_WG_CLIENTS_TAG}[[:space:]]*\$/\1 \2/p" <<<"$listing")
+    for number in $(printf '%s\n' "${stale[@]}" | sort -rn); do
+        sudo ufw --force delete "$number" >/dev/null || return 1
+    done
+
+    if [[ "$want" == "true" && "$kept" == "false" ]]; then
+        _ms_ufw_allow from "$src" to any comment "$MEDIASTACK_WG_CLIENTS_TAG" || return 1
+        log_ok "Firewall: WireGuard peers may reach this host (from $src; wg-easy enforces each peer's tier)"
+    elif [[ "$want" == "false" && ${#stale[@]} -gt 0 ]]; then
+        log_ok "Removed the UFW rule $MEDIASTACK_WG_CLIENTS_TAG"
+    fi
 }
 
 # ---------------------------------------------------------------------------

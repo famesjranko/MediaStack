@@ -221,6 +221,7 @@ EOF
 setup_samba(){ echo "SAMBA enabled=${SMB_ENABLED} scope=${SMB_SHARE_SCOPE:-}" >> "$CAPTURE"; }
 setup_ufw(){ echo "UFW_SETUP" >> "$CAPTURE"; }
 setup_ufw_service_ports(){ echo "UFW_PORTS" >> "$CAPTURE"; }
+setup_ufw_wireguard_clients(){ :; }
 setup_unattended_upgrades(){ echo "APT_HARDEN" >> "$CAPTURE"; }
 setup_sysctl_hardening(){ echo "SYSCTL_HARDEN" >> "$CAPTURE"; }
 _uninstall_ufw(){ echo "UFW_UNINSTALL ${1:-}" >> "$CAPTURE"; return 0; }

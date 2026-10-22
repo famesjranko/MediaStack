@@ -203,6 +203,24 @@ Both ON actions refuse (warn + skip) when no valid ownership ledger exists — r
 reset first. Toggling is add-only: turning a feature off never deletes user data or user-owned
 firewall/kernel settings.
 
+### WireGuard host rule
+
+With UFW on, the `wireguard` container masquerades every peer behind its own address
+(`${MEDIASTACK_NETWORK_PREFIX:-172.28.0}.11`). Peer traffic to host services and to published
+ports (docker-proxy) reaches the host's INPUT path from that one address, where UFW's default
+deny drops it. MediaStack therefore owns one rule, `ufw allow from <that /32> to any` with the
+comment `MediaStack:WireGuard-clients`. It exists only while the `remote` profile is enabled and
+UFW is active, and it is never widened to the Docker range. The rule does not grant peers
+access: wg-easy's per-peer `firewallIps` still decide which addresses and ports each tier reaches.
+
+| Event | Effect on the rule |
+|---|---|
+| Stage 2 / **Add remote access** with WireGuard accepted | Added |
+| Stage 2 / **Add remote access** with WireGuard declined | Removed |
+| Firewall (UFW) toggled ON | Added if WireGuard is enabled |
+| Firewall (UFW) toggled OFF, or uninstall | Removed with the other `MediaStack:*` rules |
+| **Apply changes from a MediaStack update** | Added, replaced or removed to match the state above |
+
 ## `./mediastack` → View storage & data mount
 
 Shown **only on NAS installs** (`STORAGE_MODE=nas`) as a top-level menu item — local
