@@ -21,6 +21,11 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="launcher-fail2ban"
 scenario_begin "$CURRENT_SCENARIO"
 
+# The file helpers fall back to `sudo -n` when a plain read fails; never the real sudo.
+# Exported so the `bash -c` scenarios below inherit it.
+sudo() { return 1; }
+export -f sudo
+
 # Canned `docker` stub: two jails (jellyfin, npm); 203.0.113.5 is banned in BOTH
 # (drives the hub one-row-per-IP collapse + the distinct-count aggregates),
 # 198.51.100.9 in jellyfin only. No backticks in the tree-prefix (double-quoted

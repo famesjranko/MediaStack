@@ -259,6 +259,22 @@ if ((${#unit_tests[@]} == 0)); then
     fail=1
 else
     echo "OK: host unit tests (${#unit_tests[@]} files)"
+    # Guard: no unit test may reach a real sudo. A runner with passwordless sudo would let
+    # one install files under /etc, restart Docker or run apt. Tests stub sudo with a shell
+    # function; a call that gets past those lands on this shim, which refuses it and
+    # records it so the file fails below.
+    sudo_guard_dir="$(mktemp -d)"
+    sudo_guard_log="$sudo_guard_dir/calls"
+    trap 'rm -f "$DISCOVER_OUT" "$DISCOVER_ERR"; rm -rf "$sudo_guard_dir"' EXIT
+    cat >"$sudo_guard_dir/sudo" <<'SHIM'
+#!/usr/bin/env bash
+echo "sudo $*" >>"$MS_UNIT_SUDO_GUARD_LOG"
+echo "unit tier: refused a real sudo call: sudo $*" >&2
+exit 1
+SHIM
+    chmod +x "$sudo_guard_dir/sudo"
+    export MS_UNIT_SUDO_GUARD_LOG="$sudo_guard_log"
+    export PATH="$sudo_guard_dir:$PATH"
     for f in "${unit_tests[@]}"; do
         name="$(basename "$f" .sh)"
         group "unit: $name"
@@ -269,6 +285,11 @@ else
         timeout 300 bash "$f" </dev/null
         rc=$?
         endgroup
+        if [[ -s "$sudo_guard_log" ]]; then
+            err "unit reached real sudo" "$name: $(head -n 3 "$sudo_guard_log" | tr '\n' ';') - stub sudo in the test"
+            : >"$sudo_guard_log"
+            fail=1
+        fi
         if ((rc != 0)); then
             if ((rc == 124)); then
                 err "unit timed out" "$name (exceeded 300s — likely a hang)"

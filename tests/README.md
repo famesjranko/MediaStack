@@ -552,6 +552,13 @@ Unlike the individual units, the complete direct tier needs the Docker CLI
 (compose render and the pinned ShellCheck image unless version 0.11.0 is
 installed natively or cached via `./tests/lint.sh install`) and `uv` for mypy.
 
+No host unit may touch real host state. The runner puts a `sudo` shim first on
+`PATH` that refuses every call and fails the file that made it, so a unit must
+stub `sudo` (a shell function, exported when it runs `bash -c` children) and
+point every `/etc`, `/usr/local` and systemd path variable at a temp root.
+CI runners have passwordless sudo; a developer machine usually does not, so
+only the shim shows the difference.
+
 ```bash
 ./tests/unit.sh        # static validation + every host unit
 ```

@@ -194,6 +194,9 @@ setup_hardening() { record setup_hardening; }
 setup_ufw_service_ports() { record setup_ufw_service_ports; }
 setup_samba() { record setup_samba; }
 storage_pause_watchdog_for_install() { record storage_pause_watchdog_for_install; }
+# Host-changing steps main() reaches on a fresh run: apt and the /etc/mediastack ledger.
+install_base_packages() { :; }
+record_pre_install_state() { :; }
 python3() {
     if [[ "${1:-}" == "-c" && "${2:-}" == "import yaml" ]]; then
         return 0
