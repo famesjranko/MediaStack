@@ -1,7 +1,10 @@
 # Secrets
+# Every .env variant at any depth (.env.bak, .env.local, tests/.env.gcp);
+# only the committed *.example templates stay trackable.
 .env
-.env.gcp
-.env.lan-host
+.env.*
+!.env.example
+!.env.*.example
 tests/gcp-mediastack-plan.md
 
 # NVIDIA patch repo + driver download scratch (cloned/used by setup.sh)
