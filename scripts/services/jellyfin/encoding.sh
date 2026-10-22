@@ -84,10 +84,8 @@ def as_bool(value):
 codecs = [
     item.strip()
     for item in os.environ.get('HW_DECODING_CODECS', 'h264').split(',')
-    if item.strip()
+    if item.strip() and item.strip() != 'none'
 ]
-if not codecs:
-    codecs = ['h264']
 desired = {
     'HardwareAccelerationType': accel,
     'EnableHardwareEncoding': True,

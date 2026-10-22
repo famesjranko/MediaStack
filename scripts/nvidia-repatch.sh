@@ -41,11 +41,16 @@ done
 # nvidia-patch is only meaningful in Unlock mode. Standard (Debian-managed) and
 # "existing" installs are not patched and are maintained by apt — repatching them
 # is wrong, so no-op with guidance unless --force is given. Mode is read from
-# .env (NVIDIA_DRIVER_MODE is unquoted there).
+# .env (the value is shell-quoted there, e.g. 'unlock').
 NVIDIA_DRIVER_MODE=""
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
     while IFS='=' read -r _k _v; do
         if [[ "$_k" == "NVIDIA_DRIVER_MODE" ]]; then
+            # env-write.sh quotes values; strip one matching quote pair.
+            _v="${_v%$'\r'}"
+            if [[ "$_v" =~ ^\'(.*)\'$ || "$_v" =~ ^\"(.*)\"$ ]]; then
+                _v="${BASH_REMATCH[1]}"
+            fi
             NVIDIA_DRIVER_MODE="$_v"
             break
         fi

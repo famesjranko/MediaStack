@@ -43,6 +43,8 @@ run_stage3() {
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
         local prior_gpu="${JELLYFIN_GPU:-none}"
         ui_log skip "Hardware transcoding skipped (no supported GPU detected)."
+        # shellcheck disable=SC2034 # read by stage3_set_gpu_env
+        STAGE3_FALLBACK_REASON=no_gpu
         if ! stage3_set_gpu_env "none" "skipped" "" ""; then
             ui_log warn "Could not persist skipped hardware-transcoding state; software fallback was not applied."
             return 3
@@ -71,6 +73,8 @@ run_stage3() {
                 ;;
             *"Skip for now")
                 local prior_gpu="${JELLYFIN_GPU:-none}"
+                # shellcheck disable=SC2034 # read by stage3_set_gpu_env
+                STAGE3_FALLBACK_REASON=user_choice
                 if ! stage3_set_gpu_env "none" "skipped" "" ""; then
                     ui_log warn "Could not persist skipped hardware-transcoding state; software fallback was not applied."
                     return 3
@@ -93,7 +97,7 @@ run_stage3() {
         intel)
             if ! install_intel_drivers; then
                 GPU_TYPE="none"
-                _stage3_fallback "intel" "qsv" || return $?
+                _stage3_fallback "intel" "qsv" driver_install_failed || return $?
                 return 0
             fi
             verify_gpu_usable || true
@@ -106,7 +110,7 @@ run_stage3() {
         amd)
             if ! install_amd_drivers; then
                 GPU_TYPE="none"
-                _stage3_fallback "amd" "vaapi" || return $?
+                _stage3_fallback "amd" "vaapi" driver_install_failed || return $?
                 return 0
             fi
             verify_gpu_usable || true

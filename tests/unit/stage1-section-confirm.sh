@@ -175,15 +175,15 @@ unset _WIZ_ADMIN_PORT_FILTER ADMIN_PORT_FILTER
 # Given the wizard recorded an opt-out
 # When .env is written
 # Then ADMIN_PORT_FILTER=false is persisted
-assert_eq "ADMIN_PORT_FILTER=false" "$(env_filter_value false -)" ".env: the wizard's opt-out is written"
+assert_eq "ADMIN_PORT_FILTER='false'" "$(env_filter_value false -)" ".env: the wizard's opt-out is written"
 # Given no wizard answer and no earlier value
 # When .env is written
 # Then the filter defaults on
-assert_eq "ADMIN_PORT_FILTER=true" "$(env_filter_value - -)" ".env: an absent key is written as true"
+assert_eq "ADMIN_PORT_FILTER='true'" "$(env_filter_value - -)" ".env: an absent key is written as true"
 # Given an earlier opt-out and a wizard path that never asks (demo, resume)
 # When .env is written
 # Then the opt-out survives
-assert_eq "ADMIN_PORT_FILTER=false" "$(env_filter_value - false)" ".env: an earlier opt-out survives a path that never asks"
+assert_eq "ADMIN_PORT_FILTER='false'" "$(env_filter_value - false)" ".env: an earlier opt-out survives a path that never asks"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

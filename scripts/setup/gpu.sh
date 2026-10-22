@@ -30,6 +30,8 @@ source "$_GPU_CONCERNS_DIR/detection.sh"
 source "$_GPU_CONCERNS_DIR/nvidia-driver.sh"
 # shellcheck source=gpu/nvidia-install.sh
 source "$_GPU_CONCERNS_DIR/nvidia-install.sh"
+# shellcheck source=gpu/nvidia-kernels.sh
+source "$_GPU_CONCERNS_DIR/nvidia-kernels.sh"
 # shellcheck source=gpu/nvidia-apt.sh
 source "$_GPU_CONCERNS_DIR/nvidia-apt.sh"
 # shellcheck source=gpu/nvidia-patch.sh

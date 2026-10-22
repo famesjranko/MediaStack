@@ -61,6 +61,7 @@ wanted = {
     "STAGE_3_GPU_HW_DECODING_CODECS", "STAGE_3_GPU_DECODE_HEVC_10BIT",
     "STAGE_3_GPU_DECODE_VP9_10BIT", "STAGE_3_GPU_ALLOW_HEVC_ENCODING",
     "STAGE_3_GPU_ALLOW_AV1_ENCODING", "STAGE_3_GPU_RENDER_DEVICE",
+    "STAGE_3_GPU_FALLBACK_REASON",
     "STORAGE_EXPECTED_SOURCE", "STORAGE_EXPECTED_FSTYPE",
         "UNPACKERR_TORRENT_PATHS", "MEDIASTACK_NETWORK_PREFIX",
         "MEDIASTACK_SUBNET", "MEDIASTACK_GATEWAY",
@@ -403,9 +404,16 @@ STAGE_3_GPU_DECODE_VP9_10BIT=${prev_stage3_decode_vp9_10bit}
 STAGE_3_GPU_ALLOW_HEVC_ENCODING=${prev_stage3_allow_hevc_encoding}
 STAGE_3_GPU_ALLOW_AV1_ENCODING=${prev_stage3_allow_av1_encoding}
 STAGE_3_GPU_RENDER_DEVICE=${prev_stage3_render_device}
+STAGE_3_GPU_FALLBACK_REASON=${STAGE_3_GPU_FALLBACK_REASON:-}
 EOF
         rm -f "$env_tmp" 2>/dev/null || true
         log_error "Failed to write temporary .env file."
+        return 1
+    fi
+
+    if ! _env_canonicalize_file "$env_tmp"; then
+        rm -f "$env_tmp" 2>/dev/null || true
+        log_error "Failed to normalise .env quoting."
         return 1
     fi
 

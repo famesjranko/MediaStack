@@ -2,6 +2,9 @@
 # Owns: Hardware-transcoding status, configuration, and NVIDIA maintenance menus.
 # Sources: launcher globals, .env, scripts/lib/ui.sh, recovery.sh, gpu/stage3 helpers, and setup.sh.
 
+# shellcheck source=../lib/gpu-fallback.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/gpu-fallback.sh"
+
 # Warn when .env says GPU HW transcoding is complete but Jellyfin is actually
 # running in software mode — catches silent runtime regressions (driver update,
 # kernel upgrade, GPU hardware failure) after a successful initial setup.
@@ -39,14 +42,23 @@ action_update_nvidia_driver() {
 
 _hw_transcoding_info() {
     local gpu="${JELLYFIN_GPU:-none}" mode="${NVIDIA_DRIVER_MODE:-}"
-    local state="${STAGE_3_GPU_STATE:-}" lines=()
+    local state="${STAGE_3_GPU_STATE:-}" lines=() gpu_down=0
     case "$gpu" in
         nvidia)
             local name drv
-            name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
-            drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
-            lines+=("$(ui_kv 'GPU' "${name:-NVIDIA}")")
-            lines+=("$(ui_kv 'Driver' "${drv:-unknown}${mode:+ (${mode} mode)}")")
+            # nvidia-smi prints its failure text with rc!=0; never show that
+            # as the GPU name or driver.
+            if name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null) \
+                && drv=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null); then
+                name=$(head -1 <<<"$name")
+                drv=$(head -1 <<<"$drv")
+                lines+=("$(ui_kv 'GPU' "${name:-NVIDIA}")")
+                lines+=("$(ui_kv 'Driver' "${drv:-unknown}${mode:+ (${mode} mode)}")")
+            else
+                gpu_down=1
+                lines+=("$(ui_kv 'GPU' 'NVIDIA')")
+                lines+=("$(ui_kv 'Driver' 'driver not loaded - reinstall or repair it from Configure, then reboot')")
+            fi
             lines+=("$(ui_kv 'Encoder' 'NVENC')")
             if [[ "$mode" == "unlock" ]]; then
                 if [[ -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched" ]]; then
@@ -68,7 +80,14 @@ _hw_transcoding_info() {
         skipped) state_label="skipped (software)" ;;
         *) state_label="${state:-not configured}" ;;
     esac
+    ((gpu_down)) && state_label="not active (NVIDIA driver not loaded)"
     lines+=("$(ui_kv 'State' "$state_label")")
+    local why="${STAGE_3_GPU_FALLBACK_REASON:-}" fix
+    if [[ "$state" == "fallback" || "$state" == "skipped" ]] && [[ -n "$why" ]]; then
+        lines+=("$(ui_kv 'Reason' "$(gpu_fallback_reason_text "$why" || echo "$why")")")
+        fix=$(gpu_fallback_remedy "$why")
+        [[ -z "$fix" ]] || lines+=("$(ui_kv 'Fix' "$fix")")
+    fi
     ui_box "MediaStack - Hardware Transcoding" "${lines[@]}"
 }
 

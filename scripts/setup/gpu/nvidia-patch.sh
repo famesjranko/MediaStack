@@ -71,3 +71,65 @@ _apply_nvidia_patch_impl() {
     rm -rf "$patch_run_dir"
     return 0
 }
+
+# Remove what the Unlock patch step left on the host once its driver is gone.
+# patch.sh rewrites libnvidia-encode.so.<ver> and libnvidia-fbc.so.<ver> in place
+# and keeps the originals under /opt/nvidia/libnvidia-{encode,fbc}-backup. A
+# driver removal can leave those patched files, the .so.1 links to them and the
+# backups behind, and the next (Debian) driver then meets a stale old version.
+# Only versions with a backup are touched: the backup proves MediaStack patched
+# that file. The originals are not restored because the driver they belong to is
+# being removed. Lists what it removes, then re-checks that none of it remains.
+# Seams for tests: MS_NVIDIA_LIB_DIRS, MS_NVIDIA_BACKUP_ROOT.
+apply_nvidia_patch_cleanup() {
+    local root="${MS_NVIDIA_BACKUP_ROOT:-/opt/nvidia}"
+    local lib_dirs="${MS_NVIDIA_LIB_DIRS:-/usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib/aarch64-linux-gnu /usr/lib}"
+    local lib backup_dir f v dir link target
+    local versions=() victims=() backups=()
+
+    for lib in encode fbc; do
+        backup_dir="$root/libnvidia-$lib-backup"
+        [[ -d "$backup_dir" ]] || continue
+        backups+=("$backup_dir")
+        # Backup files are named libnvidia-<lib>.so.<ver>, flat or in a <ver>/ subdirectory.
+        while IFS= read -r f; do
+            v="${f##*/libnvidia-"$lib".so.}"
+            [[ "$v" =~ ^[0-9]+(\.[0-9]+)+$ ]] && versions+=("$lib:$v")
+        done < <(sudo find "$backup_dir" -type f -name "libnvidia-$lib.so.*" 2>/dev/null)
+    done
+    if ((${#backups[@]} == 0)); then
+        rm -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched"
+        return 0
+    fi
+
+    for dir in $lib_dirs; do
+        for v in "${versions[@]}"; do
+            lib="${v%%:*}"
+            f="$dir/libnvidia-$lib.so.${v#*:}"
+            if [[ -e "$f" || -L "$f" ]]; then victims+=("$f"); fi
+            link="$dir/libnvidia-$lib.so.1"
+            if [[ -L "$link" ]]; then
+                target="$(readlink "$link")"
+                if [[ "${target##*/}" == "libnvidia-$lib.so.${v#*:}" ]]; then victims+=("$link"); fi
+            fi
+        done
+    done
+
+    if ((${#victims[@]} > 0)); then
+        log_info "Removing NVIDIA Unlock patch leftovers: ${victims[*]}"
+        sudo rm -f -- "${victims[@]}" || return 1
+    fi
+    sudo rm -rf -- "${backups[@]}" || return 1
+    sudo rmdir --ignore-fail-on-non-empty "$root" 2>/dev/null || true
+    rm -f "$SCRIPT_DIR/.nvidia-nvenc-unpatched"
+    # Refresh the linker cache so it stops resolving the removed libraries.
+    sudo ldconfig 2>/dev/null || true
+
+    for f in "${victims[@]}" "${backups[@]}"; do
+        if [[ -e "$f" || -L "$f" ]]; then
+            log_error "NVIDIA Unlock patch leftover was not removed: $f"
+            return 1
+        fi
+    done
+    return 0
+}

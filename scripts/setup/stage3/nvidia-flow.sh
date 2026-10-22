@@ -170,8 +170,25 @@ _stage3_choose_nvidia_action() {
 
 _stage3_nvidia_use_driver() {
     local mode="$1" message="$2"
+    # An installed driver older than Jellyfin's NVENC minimum can never encode
+    # (e.g. a 470 left by an earlier run); say so rather than fail the test transcode.
+    local installed
+    installed=$(nvidia_driver_version 2>/dev/null) || installed=""
+    if _nvidia_driver_below_nvenc_min "$installed"; then
+        _nvidia_driver_too_old "$(_nvidia_gpu_label)" "" "$installed"
+        _stage3_fallback "nvidia" "nvenc" driver_too_old || return $?
+        return 0
+    fi
+    # A healthy Debian driver reaches setup here, never install_nvidia_drivers_apt.
+    # A kernel installed since the driver (unattended-upgrades) boots with no
+    # module, so heal it now; a host with every module built is left untouched.
+    # The running kernel works, so a failure warns (the helper names the remedy)
+    # and keeps the GPU on. A user-managed driver ("existing") is not ours to heal.
+    if [[ "$mode" == standard ]] && ! _nvidia_ensure_dkms_all_kernels; then
+        ui_log warn "The running kernel keeps NVENC, but a newer installed kernel has no NVIDIA module. Run the command above, then reboot."
+    fi
     if ! _install_nvidia_container_toolkit; then
-        _stage3_fallback "nvidia" "nvenc" || return $?
+        _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
         return 0
     fi
     GPU_TYPE=nvidia
@@ -216,20 +233,27 @@ _stage3_run_nvidia() {
 
     case "$action" in
         software)
-            _stage3_fallback "nvidia" "nvenc" || return $?
+            _stage3_fallback "nvidia" "nvenc" user_choice || return $?
             return 0
             ;;
         reinstall)
             if ! command -v nvidia-uninstall &>/dev/null; then
                 log_error "nvidia-uninstall not found — cannot remove the existing driver"
                 log_info "Remove it manually (sudo nvidia-uninstall), then open Manage hardware transcoding (GPU) from the menu"
-                _stage3_fallback "nvidia" "nvenc" || return $?
+                _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
                 return 0
             fi
             if ! ui_spin "Removing existing NVIDIA driver..." sudo nvidia-uninstall -s; then
                 log_error "Failed to remove existing NVIDIA driver"
                 log_info "Try manually: sudo nvidia-uninstall"
-                _stage3_fallback "nvidia" "nvenc" || return $?
+                _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
+                return 0
+            fi
+            # The installer's own removal leaves the patched encode/fbc libraries,
+            # their .so.1 links and the patch backups of the old driver version.
+            if ! apply_nvidia_patch_cleanup; then
+                log_error "Could not remove the NVIDIA Unlock patch files of the old driver"
+                _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
                 return 0
             fi
             # nvidia-uninstall removes /usr/bin/nvidia-smi, but bash caches the
@@ -250,7 +274,7 @@ _stage3_run_nvidia() {
             ;;
         repair)
             if ! install_nvidia_drivers_apt repair; then
-                _stage3_fallback "nvidia" "nvenc" || return $?
+                _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
                 return 0
             fi
             GPU_TYPE=nvidia
@@ -268,7 +292,7 @@ _stage3_run_nvidia() {
         local rc=0
         install_nvidia_drivers_apt || rc=$?
         if [[ "$rc" -ne 0 || "${GPU_TYPE:-none}" == "none" ]]; then
-            _stage3_fallback "nvidia" "nvenc" || return $?
+            _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
             return 0
         fi
         if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
@@ -291,7 +315,7 @@ _stage3_run_nvidia() {
     # packages while preserving/repairing the NVIDIA container toolkit.
     if [[ "$source" == "debian" ]]; then
         if ! prepare_nvidia_debian_to_unlock; then
-            _stage3_fallback "nvidia" "nvenc" || return $?
+            _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
             return 0
         fi
         if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then
@@ -300,11 +324,11 @@ _stage3_run_nvidia() {
         fi
     fi
     if ! install_nvidia_drivers; then
-        _stage3_fallback "nvidia" "nvenc" || return $?
+        _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
         return 0
     fi
     if [[ "${GPU_TYPE:-none}" == "none" ]]; then
-        _stage3_fallback "nvidia" "nvenc" || return $?
+        _stage3_fallback "nvidia" "nvenc" driver_install_failed || return $?
         return 0
     fi
     if [[ "${NEEDS_REBOOT:-false}" == "true" ]]; then

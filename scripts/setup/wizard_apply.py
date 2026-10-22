@@ -269,7 +269,7 @@ def rebuild_section(header_title: str, header_comment: list[str], body: str) -> 
 INDEXERS_SECTION_TITLE = "Jackett Indexers"
 INDEXERS_SECTION_COMMENT = [
     "Public releases ship with no indexers enabled by default. Add only the",
-    "indexers you are legally allowed to use, then re-run ./scripts/configure.sh.",
+    "indexers you are legally allowed to use, then re-run ./mediastack -> Install MediaStack.",
     "The setup wizard can enable an example public-tracker preset, and the same",
     "example lives at config/examples/public-indexers.yml.",
     "",

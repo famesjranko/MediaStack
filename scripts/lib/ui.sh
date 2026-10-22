@@ -122,6 +122,24 @@ ui_section() { _render_section "$@"; }
 
 ui_log() { _render_log "$@"; }
 
+# On a failed ui_spin, show the failing command and the tail of its captured
+# output, so the caller's "Failed to..." line has the real error under it.
+# $1 exit code, $2 captured log, rest: the command. Output is bounded (last 15
+# lines, 200 columns) and stripped of terminal escapes so a progress-bar-heavy
+# tool cannot garble the screen. Everything goes to stderr.
+_ui_spin_report_failure() {
+    local rc="$1" log="$2"
+    shift 2
+    local cmd="$*"
+    ((${#cmd} > 300)) && cmd="${cmd:0:300}..."
+    printf '  Command failed (exit %s): %s\n' "$rc" "$cmd" >&2
+    [[ -s "$log" ]] || return 0
+    # CSI sequences and carriage-return repaints; then drop lines left empty.
+    tail -n 15 "$log" | sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\x1b[()][A-Za-z0-9]//g' -e 's/.*\r//' \
+        | grep -v '^[[:space:]]*$' | cut -c1-200 | sed 's/^/    /' >&2
+    return 0
+}
+
 ui_spin() {
     local label="$1"
     shift

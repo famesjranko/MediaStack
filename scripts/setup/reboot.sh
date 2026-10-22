@@ -58,7 +58,7 @@ EOF
     if ! sudo systemctl enable mediastack-setup.service >/dev/null 2>&1; then
         log_warn "Could not enable the post-reboot resume service; choose Install MediaStack from the menu after reboot to finish."
     fi
-    log_ok "Scheduled: setup.sh will resume automatically after reboot"
+    log_ok "Scheduled: MediaStack setup will resume automatically after reboot"
 }
 
 cleanup_post_reboot() {
@@ -198,7 +198,7 @@ write_setup_result() {
             printf '  %s+====================================================+%s\n' "$_c" "$_r"
             printf '\n'
             printf '  Check the log:  journalctl -u mediastack-setup --no-pager\n'
-            printf '  Then re-run:    cd %s && ./setup.sh\n' "$script_dir_q"
+            printf '  Then re-run:    cd %s && ./mediastack  (Install MediaStack)\n' "$script_dir_q"
             printf '\n'
         } >"$result_file"
     fi

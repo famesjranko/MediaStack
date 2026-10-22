@@ -150,7 +150,7 @@ demo_run() {
         "All services share the same credentials."
 
     ui_box "Management Commands" \
-        "Update all:     ./scripts/update.sh" \
+        "Update all:     ./mediastack -> Manage updates" \
         "Stop all:       docker compose down" \
         "View logs:      docker compose logs -f <service>"
     _demo_pause
@@ -160,7 +160,7 @@ demo_run() {
     ui_log warn "Quality profile 'HD-1080p' differs from config.yml"
     ui_log info "  Live: min=5GB, max=15GB"
     ui_log info "  Want: min=3GB, max=12GB"
-    ui_log info "  Fix: edit in Sonarr UI or rebuild (docker compose down -v && ./setup.sh --full)"
+    ui_log info "  Fix: edit in Sonarr UI or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)"
     echo ""
     ui_log warn "Root folder '/data/media/movies' has extra entry '/mnt/external/movies'"
     ui_log info "  Not in config.yml - added manually?"

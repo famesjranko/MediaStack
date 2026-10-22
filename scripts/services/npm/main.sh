@@ -122,7 +122,7 @@ print(json.dumps({
             fi
         fi
     else
-        log_error "NPM admin creation failed unexpectedly (HTTP $create_http) - re-run configure.sh"
+        log_error "NPM admin creation failed unexpectedly (HTTP $create_http) - re-run via ./mediastack -> Install MediaStack"
         return 1
     fi
 

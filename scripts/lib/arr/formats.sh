@@ -125,7 +125,7 @@ except Exception:
             fi
             ;;
         drift)
-            log_drift "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit scores in the $app_label UI (Settings -> Profiles -> $profile_name), or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_drift "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. MediaStack does not reconcile this on re-run. To change: edit scores in the $app_label UI (Settings -> Profiles -> $profile_name), or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
             ;;
         *)
             log_warn "Could not determine $app_label format score status"

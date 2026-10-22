@@ -26,7 +26,7 @@ else:             print("absent")
             log_skip "${app^} root folder $root_folder already matches config.yml"
             ;;
         drift)
-            log_drift "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Media Management -> Root Folders -> delete the stale entry, or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_drift "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). MediaStack does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Media Management -> Root Folders -> delete the stale entry, or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
             ;;
         *)
             local root_body
@@ -78,7 +78,7 @@ configure_arr_disk_threshold() {
     fi
 
     if [[ "$current_mb" != "100" ]]; then
-        log_drift "${app^} minimumFreeSpaceWhenImporting=${current_mb}MB differs from config.yml (${min_free_gb}GB=${min_free_mb}MB). configure.sh does not reconcile on re-run."
+        log_drift "${app^} minimumFreeSpaceWhenImporting=${current_mb}MB differs from config.yml (${min_free_gb}GB=${min_free_mb}MB). MediaStack does not reconcile on re-run."
         return 0
     fi
 
@@ -130,7 +130,7 @@ else:
             log_skip "${app^} qBittorrent category already matches config.yml ($dl_category)"
             ;;
         drift)
-            log_drift "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). configure.sh does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Download Clients -> qBittorrent -> update Category, or rebuild."
+            log_drift "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). MediaStack does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Download Clients -> qBittorrent -> update Category, or rebuild."
             ;;
         *)
             local dlclient_json

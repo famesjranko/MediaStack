@@ -1,8 +1,41 @@
 # Owns: generate_* — generated Compose output, resource limits, image policy, and GPU wiring.
 # Sources: override.sh memory/image helpers and gpu.sh vendor helpers.
+# Two setup runs, or a run killed half way, must never leave a half-written or
+# duplicated override: the file is built under a directory lock in a temp file
+# and renamed into place. The lock is taken on the directory itself so no lock
+# file is left in the repository. The temp file goes in the gitignored .tmp/,
+# on the same filesystem so the rename is atomic.
 generate_override() {
-    local gpu_type="${1:-none}"
-    local override_file="$SCRIPT_DIR/docker-compose.override.yml"
+    local gpu_type="${1:-none}" final="$SCRIPT_DIR/docker-compose.override.yml"
+    local tmp_dir="$SCRIPT_DIR/.tmp" tmp lock_fd rc=0
+    mkdir -p "$tmp_dir" || return 1
+    exec {lock_fd}<"$SCRIPT_DIR" || return 1
+    if ! flock -w 60 "$lock_fd"; then
+        log_error "Another MediaStack run holds the lock on $SCRIPT_DIR; gave up after 60s waiting to write docker-compose.override.yml. Wait for it to finish, then re-run ./mediastack."
+        exec {lock_fd}<&-
+        return 1
+    fi
+    # Holding the lock, any temp file here is left by a run that was killed.
+    rm -f "$tmp_dir"/docker-compose.override.yml.*
+    if tmp=$(mktemp "$tmp_dir/docker-compose.override.yml.XXXXXX"); then
+        if _generate_override_into "$gpu_type" "$tmp"; then
+            # mktemp creates 0600; the compose file is world-readable like before.
+            chmod 644 "$tmp" && mv -f "$tmp" "$final" || rc=1
+        else
+            rc=$?
+        fi
+        rm -f "$tmp"
+    else
+        rc=1
+    fi
+    exec {lock_fd}<&-
+    return "$rc"
+}
+
+# Writes the complete override for $1 to the file $2 (never the live file).
+_generate_override_into() {
+    local gpu_type="$1"
+    local override_file="$2"
     local image_channel
     image_channel="$(_image_channel)" || return 1
     # Validate the lock for every service whose *effective* channel is stable

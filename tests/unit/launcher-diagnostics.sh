@@ -58,5 +58,22 @@ fail_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 assert_contains "$fail_out" "Speed test unavailable" "diagnostics: warns gracefully when the test fails"
 
+# --- 4. Status counts an exited container ----------------------------------
+# Given compose lists two containers with -a but only one running
+# When the running summary is computed
+# Then it reports 1/2, not 1/1
+count_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  profiles_build_args(){ :; }
+  docker(){
+    # Real compose omits exited containers unless -a is passed.
+    local all=0 running=0 a
+    for a in "$@"; do [[ "$a" == "-a" ]] && all=1; [[ "$a" == "status=running" ]] && running=1; done
+    if ((running)) || ! ((all)); then printf "jellyfin-ok\n"; else printf "jellyfin-ok\njellyfin\n"; fi
+  }
+  _compose_running_summary
+' 2>&1)
+assert_eq "1/2" "$count_out" "diagnostics: running summary counts an exited container in the total"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

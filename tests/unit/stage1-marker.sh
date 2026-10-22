@@ -52,7 +52,7 @@ _WIZ_SMB_ENABLED="false"
 write_env
 
 marker_line=$(grep '^STAGE_1_COMPLETE=' "$TMP_DIR/.env")
-assert_eq "STAGE_1_COMPLETE=" "$marker_line" "stage1-marker: placeholder written empty"
+assert_eq "STAGE_1_COMPLETE=''" "$marker_line" "stage1-marker: placeholder written empty"
 
 # The flip goes through the one blessed .env writer, not a hand-rolled sed:
 # atomic temp+rename so an interrupt mid-write cannot truncate .env. The

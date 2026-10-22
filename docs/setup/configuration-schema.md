@@ -218,6 +218,7 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `STAGE_3_GPU_DECODE_HEVC_10BIT` / `STAGE_3_GPU_DECODE_VP9_10BIT` | Hardware codec probes | `true` or `false` |
 | `STAGE_3_GPU_ALLOW_HEVC_ENCODING` / `STAGE_3_GPU_ALLOW_AV1_ENCODING` | Hardware codec probes | `true` or `false` |
 | `STAGE_3_GPU_RENDER_DEVICE` | Intel/AMD render-node probe | `/dev/dri/renderD128` |
+| `STAGE_3_GPU_FALLBACK_REASON` | Why Jellyfin is on software: `no_gpu`, `user_choice`, `secure_boot`, `driver_install_failed`, `verify_failed`, `finalize_failed`; empty when the GPU is active | `secure_boot` |
 | `DOMAIN` | prompt, blank to skip remote | `example.com` |
 | `DDNS_PROVIDER` | Stage 2 DDNS picker, blank if DDNS skipped | `dynu`, `duckdns`, `desec`, `dynv6`, `cloudflare`, `porkbun` |
 | `WG_HOST` | `${DOMAIN}` | `example.com` |

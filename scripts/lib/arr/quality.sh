@@ -152,7 +152,7 @@ sys.exit(0 if ok else 1)
                 : # new name already present -> fall through to normal match/skip
                 ;;
             *)
-                log_warn "${app_label}: no quality profile named '$rename_from' to rename (renamed in the ${app_label} UI?). Not creating a duplicate '$profile_name' that would orphan your in-use profile. To change: rename it back to '$rename_from' in ${app_label} (Settings -> Profiles) and retry, or rebuild (docker compose down -v && ./setup.sh --full)."
+                log_warn "${app_label}: no quality profile named '$rename_from' to rename (renamed in the ${app_label} UI?). Not creating a duplicate '$profile_name' that would orphan your in-use profile. To change: rename it back to '$rename_from' in ${app_label} (Settings -> Profiles) and retry, or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
                 _qp_record_rename_failure "$app"
                 return 0
                 ;;
@@ -204,7 +204,7 @@ print("drift\t" + "; ".join(drift) if drift else "match")
             return 0
             ;;
         drift)
-            log_drift "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. configure.sh does not reconcile this on re-run. To change: edit the profile in the $app_label UI (Settings -> Profiles), or rebuild (docker compose down -v && ./setup.sh --full)."
+            log_drift "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. MediaStack does not reconcile this on re-run. To change: edit the profile in the $app_label UI (Settings -> Profiles), or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
             return 0
             ;;
     esac

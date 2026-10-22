@@ -207,7 +207,7 @@ print('missing\\t' + ' '.join(missing))
         if [[ -z "$waiting" ]]; then
             echo -ne "\r\033[K"
             if [[ -n "$restarting" ]]; then
-                log_ok "Services ready — ${restarting} still initializing (configure.sh will complete setup)"
+                log_ok "Services ready — ${restarting} still initializing (setup will complete them)"
             elif [[ -n "$no_health" ]]; then
                 log_ok "All services healthy/running (no healthcheck: ${no_health})"
             else

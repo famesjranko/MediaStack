@@ -45,7 +45,7 @@ _dry_run_repo_root() { (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd); }
 dry_run_require_docker() {
     if ! command -v docker >/dev/null 2>&1; then
         echo "  --dry-run needs Docker (it runs the UI inside a throwaway container)." >&2
-        echo "  Install Docker, or run the real ./mediastack / ./setup.sh." >&2
+        echo "  Install Docker, or run the real ./mediastack." >&2
         return 1
     fi
     if ! docker info >/dev/null 2>&1; then

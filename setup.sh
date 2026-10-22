@@ -79,7 +79,7 @@ _setup_on_interrupt() {
     else
         log_info "Nothing was destroyed — your existing media and downloads are untouched."
     fi
-    log_info "Re-run ./setup.sh to resume where you left off."
+    log_info "Re-run ./mediastack and choose Install MediaStack to resume where you left off."
     exit 130
 }
 
@@ -248,10 +248,10 @@ main() {
             case "$_install_choice" in
                 "Install Docker + Compose and continue")
                     FULL_MODE=true
-                    log_ok "Will install prerequisites - equivalent to ./setup.sh --full"
+                    log_ok "Will install prerequisites"
                     ;;
                 *)
-                    log_info "Exiting. Install Docker, then re-run ./setup.sh"
+                    log_info "Exiting. Install Docker, then re-run ./mediastack"
                     record_launcher_outcome aborted
                     exit 1
                     ;;

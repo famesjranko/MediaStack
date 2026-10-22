@@ -263,14 +263,23 @@ stage3_run_nvidia_decode_smoke_test() {
     esac
 
     local path="/tmp/mediastack-${codec}-decode-probe.${ext}"
-    docker exec jellyfin sh -c "
+    # NVDEC can wedge (seen on a GCP Tesla P4: ffmpeg never returns and ignores
+    # SIGTERM). Bound the probe twice: `timeout -k` inside the container kills
+    # the hung ffmpeg itself; the host-side timeout bounds the docker client in
+    # case the container is unresponsive. A timeout counts as "not supported".
+    local limit="${STAGE3_DECODE_PROBE_TIMEOUT:-20}" rc=0
+    timeout -k 5 $((limit + ${STAGE3_DECODE_PROBE_HOST_SLACK:-40})) docker exec jellyfin sh -c "
 set -eu
 ffmpeg=/usr/lib/jellyfin-ffmpeg/ffmpeg
 rm -f '$path'
 trap \"rm -f '$path'\" EXIT
 \$ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=320x180:rate=1 -t 1 -c:v '$source_encoder' $extra_source_opts '$path'
-\$ffmpeg -hide_banner -hwaccel cuda -c:v '$decoder' -i '$path' -f null -
-" >"$smoke_log" 2>&1
+timeout -k 5 $limit \$ffmpeg -hide_banner -hwaccel cuda -c:v '$decoder' -i '$path' -f null -
+" >"$smoke_log" 2>&1 || rc=$?
+    if ((rc == 124 || rc == 137)); then
+        ui_log warn "NVIDIA ${codec} decode probe timed out after ${limit}s; treating it as not supported."
+    fi
+    return "$rc"
 }
 
 stage3_probe_capabilities() {
@@ -312,8 +321,10 @@ stage3_probe_capabilities() {
             rm -f "$tmp_log"
             ;;
         nvenc)
-            local codec codec_available codecs=(h264)
-            for codec in hevc vp9 av1; do
+            local codec codec_available codecs=()
+            # h264 is probed like the rest: encode-only proof must not switch on
+            # hardware decode (a wedged NVDEC then stalls every transcode).
+            for codec in h264 hevc vp9 av1; do
                 codec_available=false
                 tmp_log=$(mktemp)
                 if stage3_run_nvidia_decode_smoke_test "$codec" "$tmp_log"; then
@@ -342,12 +353,18 @@ stage3_probe_capabilities() {
 
                 if [[ "$codec_available" == "true" ]]; then
                     codecs+=("$codec")
+                    ui_log info "NVIDIA hardware decode enabled for ${codec}: decode probe passed."
+                else
+                    ui_log info "NVIDIA hardware decode not enabled for ${codec}: decode probe failed or timed out."
                 fi
             done
             hw_decoding_codecs=$(
                 IFS=,
                 printf '%s' "${codecs[*]}"
             )
+            # "none" = probed, nothing passed. An empty value would read as
+            # "never probed" downstream and fall back to h264.
+            hw_decoding_codecs="${hw_decoding_codecs:-none}"
             ;;
     esac
 

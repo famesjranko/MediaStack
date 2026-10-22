@@ -207,6 +207,43 @@ unset api_fetch_post_body JELLYFIN_GPU STAGE_3_GPU_STATE STAGE_3_GPU_ENCODER
 unset STAGE_3_GPU_HW_DECODING_CODECS STAGE_3_GPU_DECODE_HEVC_10BIT STAGE_3_GPU_DECODE_VP9_10BIT
 unset STAGE_3_GPU_ALLOW_HEVC_ENCODING STAGE_3_GPU_ALLOW_AV1_ENCODING STAGE_3_GPU_RENDER_DEVICE
 
+# Given decode codecs were probed and none passed (stored as "none")
+# When Jellyfin encoding is configured
+# Then hardware decode codecs are an empty list, never h264
+api_fetch_post_body=""
+api_fetch() {
+    local is_post=false next_is_data=false arg
+    for arg in "$@"; do
+        if [[ "$next_is_data" == "true" ]]; then
+            api_fetch_post_body="$arg"
+            next_is_data=false
+            continue
+        fi
+        case "$arg" in
+            -X) is_post=true ;;
+            -d) next_is_data=true ;;
+        esac
+    done
+    [[ "$is_post" == "true" ]] && return 0
+    printf '%s\n' '{"HardwareAccelerationType":"none","EnableHardwareEncoding":false}'
+}
+JELLYFIN_GPU=nvidia
+STAGE_3_GPU_STATE=pending
+STAGE_3_GPU_ENCODER=nvenc
+STAGE_3_GPU_HW_DECODING_CODECS=none
+configure_jellyfin_encoding "http://localhost:8096" "test-token"
+assert_contains "$api_fetch_post_body" '"HardwareDecodingCodecs": []' "probed-empty decode list (none) configures no hardware decode"
+
+# Given decode codecs were never probed (variable unset)
+# When Jellyfin encoding is configured
+# Then the historic h264 default still applies
+api_fetch_post_body=""
+unset STAGE_3_GPU_HW_DECODING_CODECS
+configure_jellyfin_encoding "http://localhost:8096" "test-token"
+assert_contains "$api_fetch_post_body" '"HardwareDecodingCodecs": ["h264"]' "never-probed decode list keeps the h264 default"
+unset -f api_fetch
+unset api_fetch_post_body JELLYFIN_GPU STAGE_3_GPU_STATE STAGE_3_GPU_ENCODER
+
 api_fetch_post_body=""
 drift_warn=""
 api_fetch() {
