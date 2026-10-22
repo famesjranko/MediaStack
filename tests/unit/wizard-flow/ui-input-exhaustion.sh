@@ -2,7 +2,7 @@
 # tests/unit/wizard-flow/ui-input-exhaustion.sh
 #
 # ui_choose / ui_input_validated / ui_password_validated non-TTY EOF-exhaustion
-# guards: piped EOF must SIGTERM the process group (not hang, not a generic
+# guards: piped EOF must SIGTERM the top-level shell (not hang, not a generic
 # 143), and the exhaustion latch must be a real two-consecutive-rejections
 # detector, not a blunt off-TTY kill or a sticky one-shot.
 
@@ -19,7 +19,7 @@ assert_eq "Balanced" "$choice" "ui_choose: invalid input uses visible default"
 # Test 0b: ui_choose on a piped EOF (no default) is diagnosable.
 # =========================================================================
 # A non-interactive driver whose input runs dry hits ui_choose's EOF branch:
-# it SIGTERMs the process group to stop the looping parent. A parent that
+# it SIGTERMs the top-level shell to stop the looping parent. A parent that
 # installs the documented non-interactive TERM trap must exit with the distinct
 # UI_EXIT_INPUT_EXHAUSTED (3) — not a generic SIGTERM (143) — and must NOT hang.
 # This mirrors mediastack:main / setup.sh:main without depending on either.
@@ -29,7 +29,7 @@ eof_rc=$(
   "$_src" "'"$REPO_ROOT"'/scripts/lib/ui.sh"
   trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
   choice=$(ui_choose "Pick one:" "A" "B" "C" </dev/null)
-  echo "REACHED_PAST_CHOOSE=$choice"     # must NOT print — group-kill took us
+  echo "REACHED_PAST_CHOOSE=$choice"     # must NOT print — the TERM signal took us
 ' </dev/null >/dev/null 2>&1
     echo "$?"
 )
@@ -44,11 +44,11 @@ fi
 # The validated-input siblings of Test 0b. When the offered default fails its
 # validator and stdin is exhausted (non-TTY), the re-prompt loop must NOT spin
 # forever: it detects the exhausted stream (the default rejected twice) and
-# SIGTERMs the process group, exactly like ui_choose. A parent with the documented
+# SIGTERMs the top-level shell, exactly like ui_choose. A parent with the documented
 # TERM trap exits UI_EXIT_INPUT_EXHAUSTED (3) — never 124 (hang) or 143 (generic
 # kill). Real validators that reject empty (validate_admin_email,
 # validate_ddns_password) drive the genuine trigger end to end. (timeout runs
-# the probe in its own process group, so the group-kill cannot reach this runner.)
+# the probe in its own process group, so a stray group signal cannot reach this runner.)
 for _v93 in \
     "ui_input_validated|validate_admin_email" \
     "ui_password_validated|validate_ddns_password"; do
@@ -61,7 +61,7 @@ for _v93 in \
       "$_src" "'"$REPO_ROOT"'/scripts/lib/validators.sh"
       trap "exit ${UI_EXIT_INPUT_EXHAUSTED}" TERM
       out=$('"$_fn93"' "Required field" "" '"$_val93"' </dev/null)
-      echo "REACHED_PAST_PROMPT=$out"     # must NOT print — group-kill took us
+      echo "REACHED_PAST_PROMPT=$out"     # must NOT print — the TERM signal took us
     ' </dev/null >/dev/null 2>&1
         echo "$?"
     )
