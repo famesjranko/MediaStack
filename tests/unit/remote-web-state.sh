@@ -19,6 +19,10 @@ source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/setup/env-gen.sh"
 source "$REPO_ROOT/scripts/setup/stack.sh"
 
+# Host-independent: the default (1000) would force a sudo chown on any other uid.
+DDNS_UPDATER_UID="$(id -u)"
+DDNS_UPDATER_GID="$(id -g)"
+
 set +e
 set +u
 
