@@ -55,8 +55,10 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
   socket, deletes the unused `MediaStack:Beszel-agent` UFW rule, converges the
   WireGuard UFW rule and installs a missing NAS watchdog. Run it once after
   pulling new code onto an existing install.
-- NVIDIA GPU install runs apt non-interactively, builds the DKMS module for a
-  pending kernel, and detects Secure Boot with MOK enrolment guidance. Jellyfin
+- NVIDIA GPU install runs apt non-interactively, detects Secure Boot with MOK
+  enrolment guidance, and keeps the driver working across kernel upgrades: it
+  installs the kernel headers metapackage so DKMS builds the module for each
+  new kernel, and a re-run or Repair builds a module a kernel is missing. Jellyfin
   NVENC needs driver 520.56.06 or newer; an older GPU falls back to software
   transcoding with the reason shown in status and health. Hardware decode is
   enabled only for codecs the setup probe proved.
@@ -64,8 +66,8 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
   puts back the old image and that config.
 - NAS storage gets a watchdog that repairs a dropped mount; `STORAGE_WATCHDOG=false`
   opts out.
-- Turning the Samba share OFF stops Samba when MediaStack installed it and
-  closes its firewall rules. Uninstall removes MediaStack's Docker volumes and
+- Turning the Samba share OFF closes its firewall rules and stops Samba when
+  MediaStack installed it, unless you have added shares of your own. Uninstall removes MediaStack's Docker volumes and
   networks, and its Samba account when nothing else uses it.
 - DDNS credential prompts hint at a narrower credential for providers that
   send the secret in the request URL (it can appear in ddns-updater logs).
