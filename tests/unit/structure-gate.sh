@@ -133,10 +133,31 @@ assert_rc 2 "a sanctioned seam whose import disappeared is a stale entry"
 assert_contains "$OUT" "stale sanctioned seam" "the stale entry is named as such"
 reset_fixture
 
+# --- unit-file verdict ------------------------------------------------------
+
+# Without a closing `summary`, a failed assertion never changes the exit code.
+sed -i '${/^summary$/d}' "$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 1 "a unit file without a closing summary fails"
+assert_contains "$OUT" "tests/unit/arr.sh does not end with" "the failure names the unit file"
+reset_fixture
+
+# summary followed by more commands discards its exit status.
+printf 'echo done\n' >>"$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 1 "a unit file whose last command is not summary fails"
+reset_fixture
+
+# A fragment sourced by a parent owns no verdict.
+printf 'FRAGMENT_PROBE=1\n' >>"$FIXTURE/tests/unit/hardening/admin-filter.sh"
+run_gate
+assert_rc 0 "a unit fragment without summary stays clean"
+reset_fixture
+
 run_gate
 assert_rc 0 "the fixture is green again after every probe"
 
-expected=23
+expected=27
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

@@ -165,3 +165,5 @@ timeout_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 assert_contains "$timeout_out" "RESULT rc=1 label=Re-check NAS" \
     "launcher: a timed-out NAS re-check reports rc=1"
+
+summary
