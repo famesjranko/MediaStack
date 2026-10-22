@@ -85,6 +85,8 @@ and the upstream digest are manifest-list digests, so the comparison is multi-ar
   digest pin in `config/state/image-policy.tsv`. Lists only services you've updated (a manual override),
   excluding `Not installed`. If the installed image is no longer available upstream the recreate is
   rolled back onto the service's previous cached image rather than left down.
+- **Restore points and Revert checks.** Before **Update a service** or **Update all** moves a service off its installed image, MediaStack saves a restore point of `config/<service>` (up to 256 MiB), taken while the service is stopped for the update. **Revert a service to its installed image** puts that config back with the old image, then checks that the service is healthy and that MediaStack can still log in to qBittorrent, Sonarr, Radarr and Jellyfin. If the check fails, Revert says so and keeps the restore point. If there is no restore point, Revert warns that the config may be newer than the image and asks you to confirm.
+- **What the lists show.** The Revert list shows only services you have updated (a manual override) that are installed. **Update all** skips stopped services and lists them as skipped; update one with **Update a service** (the new image is staged until it starts).
 - **Re-check for updates now** — re-runs the registry scan.
 
 To change the global install channel after install, re-run the installer (`./mediastack` → Install)

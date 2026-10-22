@@ -82,7 +82,7 @@ assert_contains "$output" "GPU: NVIDIA transcoding enabled" "stage1-completion: 
 # stubbed services and curl, then the same "record completed" step setup.sh
 # performs next. Prints "rc|marker|outcome".
 run_install_case() {
-    local api_key="$1" curl_mode="$2"
+    local api_key="$1" curl_mode="$2" samba_rc="${3:-}"
     local dir result
     dir=$(mktemp -d)
     result="$dir/result"
@@ -102,7 +102,7 @@ run_install_case() {
         export MEDIASTACK_LAUNCHER_RESULT="$result"
         log_info() { :; }
         log_ok() { :; }
-        log_warn() { :; }
+        log_warn() { echo "warn:$*" >>"$dir/log"; }
         _wizard_apply_settings() { :; }
         _stage1_source_env() { :; }
         _stage1_final_nas_preflight() { :; }
@@ -116,8 +116,8 @@ run_install_case() {
         start_stack() { :; }
         wait_all_healthy() { :; }
         setup_hardening() { :; }
-        setup_samba() { :; }
-        print_access_info() { :; }
+        setup_samba() { return "${samba_rc:-0}"; }
+        print_access_info() { echo "access" >>"$dir/log"; }
         df() { printf "Filesystem 1G-blocks Used Available Use%% Mounted on\nfixture 1000G 1G 500G 1%% /\n"; }
         curl() {
             [[ "$curl_mode" == ok ]] && return 0
@@ -132,8 +132,13 @@ run_install_case() {
     local marker outcome=""
     marker=$(grep -c "^STAGE_1_COMPLETE='1'" "$dir/.env")
     [[ -s "$result" ]] && outcome=$(<"$result")
+    if [[ -n "$samba_rc" ]]; then
+        # Log lines the SMB failure path must produce: the warning and the access info.
+        echo "$rc|$marker|$outcome|$(grep -c 'warn:.*SMB share was not configured.*Features' "$dir/log")|$(grep -c '^access$' "$dir/log")"
+    else
+        echo "$rc|$marker|$outcome"
+    fi
     rm -rf "$dir"
-    echo "$rc|$marker|$outcome"
 }
 
 # Given a valid API key and a 200 from /Users, When Stage 1 install finishes, Then the marker is written, rc is 0 and the outcome is completed.
@@ -148,6 +153,10 @@ assert_eq "1|0|" "$(run_install_case "" health-only)" \
 # Given no API key and no Jellyfin response, When Stage 1 install finishes, Then it fails with no marker and no outcome.
 assert_eq "1|0|" "$(run_install_case "" fail)" \
     "stage1 outcome: no Jellyfin response is a failure"
+
+# Given Samba setup fails (SMB is optional), When Stage 1 install finishes, Then it still completes, warns how to retry, and prints the access info.
+assert_eq "0|1|completed|1|1" "$(run_install_case key ok 1)" \
+    "stage1 outcome: a Samba failure warns and does not abort Stage 1"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

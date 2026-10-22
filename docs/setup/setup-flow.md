@@ -181,7 +181,7 @@ On next boot:
 
 ## SMB file share
 
-`setup_samba` runs after the wizard and records package, service, OS-user, group-membership, passdb-principal, and effective-config ownership before changing Samba. It never overwrites an existing Samba principal's password. MediaStack-created Linux accounts are deliberately preserved on uninstall, while its passdb principal and supplemental group membership are removable ownership. The share layout and port-conflict behavior are otherwise unchanged.
+`setup_samba` runs after the wizard and records package, service, OS-user, group-membership, passdb-principal, and effective-config ownership before changing Samba. It never overwrites an existing Samba principal's password. On uninstall, a MediaStack-created Samba Linux account is removed when that is safe (`_uninstall_samba_account`), together with its passdb principal and supplemental group membership; the account is kept when it existed before MediaStack, when Samba has non-MediaStack configuration, when it has running processes, or when it owns files outside MediaStack paths. The share layout and port-conflict behavior are otherwise unchanged.
 
 ## Uninstall transaction
 

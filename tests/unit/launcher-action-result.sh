@@ -248,5 +248,31 @@ service_failure=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$service_failure" "error|Stop jellyfin exited with code 42." \
     "launcher: per-service Compose failures are reported honestly"
 
+# Given an image that declares VOLUME (each up attaches a new anonymous volume) and a user volume
+# When the stack is stopped and started twice and stopped again
+# Then no anonymous volume is left behind and the user's volume is kept
+stop_cycles=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  VOLS=(mydata); UP=0; N=0; ANON=""
+  docker() {
+    [[ "$1" == compose ]] || return 0
+    case " $* " in
+      *" ps -q "*) ((UP)) && echo c1 ;;
+      *" up "*) UP=1; N=$((N+1)); ANON="anon$N"; VOLS+=("$ANON") ;;
+      *" down "*)
+        UP=0
+        if [[ " $* " == *" --volumes "* || " $* " == *" -v "* ]]; then
+          local keep=() v; for v in "${VOLS[@]}"; do [[ "$v" == "$ANON" ]] || keep+=("$v"); done; VOLS=("${keep[@]}")
+        fi ;;
+    esac
+    return 0
+  }
+  profiles_build_args() { :; }; ui_confirm() { return 0; }; storage_guard_before_start() { return 0; }
+  launcher_pause_for_menu() { :; }; ui_log() { :; }; _show_action_result() { :; }
+  action_stack_start; action_stack_stop; action_stack_start; action_stack_stop
+  echo "VOLS=${VOLS[*]}"
+' 2>&1)
+assert_eq "VOLS=mydata" "$(grep '^VOLS=' <<<"$stop_cycles")" "launcher: two stop/start cycles leave only the user's volume"
+
 echo -e "${CYAN}◀ launcher-action-result done${NC}"
 summary

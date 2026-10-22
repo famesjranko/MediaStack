@@ -140,6 +140,23 @@ setup_ufw_wireguard_clients() {
 # Legacy rule cleanup
 # ---------------------------------------------------------------------------
 
+# Drops every ledger entry owned by one ufw comment tag and renumbers the rest.
+# Call it once MediaStack has removed the live rule (or found it gone): the
+# uninstall replays UFW_RULE_* verbatim, so a stale entry names a rule that no
+# longer exists.
+_ms_ufw_ledger_forget_tag() {
+    local tag="$1" count i rule kept=0
+    count=$(_ms_state_get UFW_RULE_COUNT 2>/dev/null || echo 0)
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
+    for ((i = 1; i <= count; i++)); do
+        rule=$(_ms_state_get "UFW_RULE_$i" 2>/dev/null || true)
+        [[ "$rule" == *" comment $tag" ]] && continue
+        kept=$((kept + 1))
+        ((kept == i)) || _ms_state_set "UFW_RULE_$kept" "$rule" || return 1
+    done
+    ((kept == count)) || _ms_state_set UFW_RULE_COUNT "$kept"
+}
+
 # Earlier releases opened the Beszel agent's TCP port to the Docker networks
 # with this comment. The agent now listens on a unix socket, so nothing uses
 # the rule. ufw rules are matched by comment: only a rule whose comment is
@@ -160,6 +177,7 @@ ufw_remove_legacy_beszel_rule() {
         sudo ufw --force delete "$number" >/dev/null || return 1
     done
     ((${#numbers[@]} == 0)) || log_ok "Removed the unused UFW rule MediaStack:Beszel-agent"
+    _ms_ufw_ledger_forget_tag MediaStack:Beszel-agent
 }
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,7 @@ PREVIEW
             printf '  * MediaStack unattended-upgrades drop-ins\n'
         fi
         printf '  * MediaStack systemd units and watchdog helper files\n'
+        printf '  * MediaStack Docker volumes and networks, .configure_issues and docker-compose.override.yml\n'
     fi
     if [[ "$_mode" == "uninstall" ]]; then
         cat <<'PREVIEW'
@@ -68,10 +69,72 @@ PREVIEW
 # inheriting stale service credentials (Jellyfin/Seerr/Uptime-Kuma embed their
 # admin password in config/, which would then reject a freshly generated .env).
 wipe_config_runtime() {
+    # Generated files that live beside config/, not in it: the configure-issues
+    # list (configure.sh) and the compose override (gpu/compose.sh). Left behind,
+    # the override pins image digests and limits for a stack that no longer exists.
+    rm -f "$SCRIPT_DIR/.configure_issues" "$SCRIPT_DIR/docker-compose.override.yml"
     [[ -d "$SCRIPT_DIR/config" ]] || return 0
     sudo find "$SCRIPT_DIR/config" -mindepth 1 -maxdepth 1 \
         -not -name 'examples' -exec rm -rf {} +
     log_ok "config/ wiped (examples/ preserved)."
+}
+
+_compose_project_name() {
+    docker compose --profile "*" config --format json 2>/dev/null \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name",""))' 2>/dev/null
+}
+
+# Names of the anonymous volumes mounted by this project's containers (running
+# or stopped). Docker labels an anonymous volume only with
+# com.docker.volume.anonymous, never with the project, so the container is the
+# only link to it: collect before the containers are removed. A volume the user
+# created is not anonymous and is never listed, even when mounted.
+project_anonymous_volumes() {
+    local project="$1" cid mounted anon
+    anon=$(docker volume ls -q --filter label=com.docker.volume.anonymous 2>/dev/null) || return 0
+    [[ -n "$anon" ]] || return 0
+    while IFS= read -r cid; do
+        [[ -n "$cid" ]] || continue
+        mounted=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$cid" 2>/dev/null) || continue
+        grep -Fxf <(printf '%s\n' "$anon") <<<"$mounted" || true
+    done < <(docker ps -aq --filter "label=com.docker.compose.project=${project}" 2>/dev/null)
+}
+
+# Remove every volume and network Compose created for this project. `down -v`
+# only knows the current compose file: it misses labelled volumes and networks
+# that are no longer declared (the old socket-proxy ones). Anonymous volumes of
+# containers that "Stop all" removed before this fix carry no project label and
+# no container links them, so they cannot be found. The project label scopes
+# this to MediaStack; a named
+# volume the user created outside the project carries no such label. Optional
+# arguments are anonymous volumes of removed project containers (collected by
+# project_anonymous_volumes before teardown); a volume already gone is fine.
+remove_project_docker_resources() {
+    local project kind name rc=0
+    project=$(_compose_project_name) || project=""
+    if [[ -z "$project" ]]; then
+        log_warn "Could not determine the Compose project name; leftover Docker volumes and networks were not removed."
+        return 1
+    fi
+    for name in "$@"; do
+        [[ -n "$name" ]] || continue
+        docker volume rm "$name" >/dev/null 2>&1 || {
+            if docker volume inspect "$name" >/dev/null 2>&1; then
+                log_warn "Could not remove Docker volume ${name}."
+                rc=1
+            fi
+        }
+    done
+    for kind in volume network; do
+        while IFS= read -r name; do
+            [[ -n "$name" ]] || continue
+            docker "$kind" rm "$name" >/dev/null 2>&1 || {
+                log_warn "Could not remove Docker ${kind} ${name}."
+                rc=1
+            }
+        done < <(docker "$kind" ls -q --filter "label=com.docker.compose.project=${project}" 2>/dev/null)
+    done
+    return "$rc"
 }
 
 nuke_existing_install() {
@@ -119,7 +182,12 @@ nuke_existing_install() {
     # isn't loaded yet (the canonical `--full` first-run case). Capture rc
     # and emit a warn before `rm -f .env` so the user knows if the destroy was
     # incomplete (user-observability — no more silent `|| true`).
-    local _down_rc=0
+    local _down_rc=0 _anon_volumes=()
+    if [[ "$_mode" == "uninstall" ]]; then
+        local _project
+        _project=$(_compose_project_name) || _project=""
+        [[ -z "$_project" ]] || mapfile -t _anon_volumes < <(project_anonymous_volumes "$_project")
+    fi
     docker compose --profile "*" down -v --remove-orphans || _down_rc=$?
     if ((_down_rc != 0)); then
         log_warn "Pre-flight: destroy did not complete cleanly (docker compose exit ${_down_rc}). Inspect: docker ps -a; docker volume ls"
@@ -149,6 +217,8 @@ nuke_existing_install() {
                 || sudo systemctl start mediastack-storage-watchdog.service >/dev/null 2>&1 || true
             return 1
         fi
+        # Leftovers do not block the uninstall: the stack itself is gone.
+        remove_project_docker_resources "${_anon_volumes[@]}" || true
     else
         rm -f "$SCRIPT_DIR/.env" "$SCRIPT_DIR/.nvidia-finalize-pending"
         # Wipe cleared .env from disk but sourced vars live on in bash memory.
