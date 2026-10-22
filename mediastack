@@ -297,9 +297,9 @@ main() {
     # Ctrl-C at the top level exits cleanly.
     trap 'echo; echo "  Goodbye."; exit 0' INT
 
-    # Non-interactive (piped) driver only: ui_choose SIGTERMs the process group
+    # Non-interactive (piped) driver only: ui_choose SIGTERMs the top-level shell
     # when its stdin runs dry (it loops menus forever, so a subshell exit alone
-    # can't stop it). Map that group-kill to a distinct, documented exit code so
+    # can't stop it). Map that signal to a distinct, documented exit code so
     # a wrapper can tell "input exhausted" apart from a generic kill (143) or a
     # real failure. Interactive runs never hit ui_choose EOF, so this trap is
     # installed only when MEDIASTACK_NONINTERACTIVE=1 and leaves the TTY default

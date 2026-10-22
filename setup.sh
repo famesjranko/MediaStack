@@ -102,8 +102,8 @@ main() {
     if [[ -t 0 ]]; then
         trap '_setup_on_interrupt' INT TERM
     else
-        # Non-TTY (piped) only: ui_choose SIGTERMs the process group when its
-        # stdin runs dry. Map that group-kill to a distinct, documented exit
+        # Non-TTY (piped) only: ui_choose SIGTERMs the top-level shell when its
+        # stdin runs dry. Map that signal to a distinct, documented exit
         # code so a piped driver can tell "input exhausted" apart from a generic
         # kill (143) or a real failure. ERR/post-reboot handling above is on a
         # different signal and is untouched.

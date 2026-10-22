@@ -331,8 +331,8 @@ assert_contains "$smb_persist_fail" "RESULT rc=1" \
 # toggle through the REAL ui_confirm against a closed stdin, under a timeout:
 # ui_confirm on EOF returns its default with NO re-prompt loop, so the handler
 # must TERMINATE (timeout rc 0, never 124) and take the deterministic default
-# path. (The SMB toggle's ui_choose intentionally `kill -TERM 0`s the process
-# group on EOF, so it is deliberately exercised only via stubs above, never
+# path. (The SMB toggle's ui_choose intentionally SIGTERMs the top-level
+# shell on EOF, so it is deliberately exercised only via stubs above, never
 # here.)
 run_real_confirm() {
     local out trc
