@@ -241,6 +241,10 @@ assert_eq "" "$(cmp "$DEDUP_TMP/crlf" "$MEDIASTACK_UFW_AFTER_INIT" 2>&1)" "after
 # Then it still installs, fails closed, and the warning names the value
 af_filter_probe() { # $1 = value; "-" means unset
     (
+        # Fake paths: the opt-out branch looks for files this filter owns and removes them.
+        export MEDIASTACK_ADMIN_FILTER_SCRIPT="$DEDUP_TMP/root/mediastack-admin-filter"
+        export MEDIASTACK_ADMIN_FILTER_UNIT="$DEDUP_TMP/root/mediastack-admin-filter.service"
+        export MEDIASTACK_ADMIN_FILTER_DROPIN="$DEDUP_TMP/root/docker.service.d/mediastack-admin-filter.conf"
         setup_admin_filter_unit() { echo INSTALL; }
         _admin_filter_migrate_legacy() { :; }
         log_warn() { echo "WARN $*"; }

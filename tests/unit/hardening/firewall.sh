@@ -303,7 +303,104 @@ assert_eq "true" "$found_ssh_10" "setup_ufw: fresh path — SSH allows 10.0.0.0/
 assert_eq "true" "$found_ssh_172" "setup_ufw: fresh path — SSH allows 172.16.0.0/12"
 assert_eq "true" "$found_ssh_192" "setup_ufw: fresh path — SSH allows 192.168.0.0/16"
 assert_eq "" "$DOCKER_RULES$DOCKER6_RULES" "setup_ufw: fresh path — no admin-port rules written to the after files"
-unset -f sudo
+
+# ===========================================================================
+# ufw_remove_legacy_beszel_rule — drop MediaStack's unused Beszel agent rule
+# ===========================================================================
+
+# Stub: UFW_STATUS_TEXT is what `ufw status numbered` prints; deletes are recorded.
+UFW_DELETES=()
+UFW_STATUS_TEXT=""
+UFW_STATUS_RC=0
+sudo() {
+    if [[ "${1:-}" == "ufw" && "${2:-}" == "status" ]]; then
+        printf '%s\n' "$UFW_STATUS_TEXT"
+        return "$UFW_STATUS_RC"
+    fi
+    if [[ "${1:-}" == "ufw" && "${2:-}" == "--force" && "${3:-}" == "delete" ]]; then
+        UFW_DELETES+=("$4")
+        return 0
+    fi
+    return 0
+}
+
+ufw() { :; }
+ACTIVE_HEAD=$'Status: active\n\n     To                         Action      From\n     --                         ------      ----'
+
+# Given UFW is active with the exact MediaStack:Beszel-agent rule among other rules
+# When the legacy rule cleanup runs
+# Then only that rule is deleted
+UFW_DELETES=()
+UFW_STATUS_TEXT="$ACTIVE_HEAD
+[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 45876/tcp                  ALLOW IN    172.16.0.0/12              # MediaStack:Beszel-agent
+[ 3] 443/tcp                    ALLOW IN    Anywhere                   # MediaStack:HTTPS"
+ufw_remove_legacy_beszel_rule
+assert_eq "2" "${UFW_DELETES[*]}" "legacy beszel rule: the exact MediaStack comment is deleted, nothing else"
+
+# Given another rule on port 45876 that lacks that comment, and one with a similar comment
+# When the legacy rule cleanup runs
+# Then neither rule is touched
+UFW_DELETES=()
+UFW_STATUS_TEXT="$ACTIVE_HEAD
+[ 1] 45876/tcp                  ALLOW IN    192.168.1.0/24
+[ 2] 45876/tcp                  ALLOW IN    10.0.0.0/8                 # my own beszel rule
+[ 3] 45876/tcp                  ALLOW IN    10.0.0.0/8                 # MediaStack:Beszel-agent-extra"
+ufw_remove_legacy_beszel_rule
+assert_eq "0" "${#UFW_DELETES[@]}" "legacy beszel rule: other rules on 45876 are untouched"
+
+# Given UFW is inactive
+# When the legacy rule cleanup runs
+# Then no delete call is made
+UFW_DELETES=()
+UFW_STATUS_TEXT="Status: inactive"
+ufw_remove_legacy_beszel_rule
+assert_eq "0" "${#UFW_DELETES[@]}" "legacy beszel rule: inactive UFW means no delete"
+
+# Given UFW is installed but `ufw status numbered` fails, for example when sudo is refused
+# When the legacy rule cleanup runs
+# Then it warns, makes no delete call and returns failure
+UFW_DELETES=()
+UFW_STATUS_TEXT=""
+UFW_STATUS_RC=1
+log_warn() { echo "WARN $*"; }
+_warn_out=$(ufw_remove_legacy_beszel_rule 2>&1)
+rc=$?
+log_warn() { :; }
+UFW_STATUS_RC=0
+assert_eq "1" "$rc" "legacy beszel rule: unreadable UFW rules return failure"
+assert_eq "0" "${#UFW_DELETES[@]}" "legacy beszel rule: unreadable UFW rules mean no delete"
+assert_contains "$_warn_out" "Could not read the UFW rules" "legacy beszel rule: unreadable UFW rules warn"
+
+# Given UFW is active and the rule is already gone
+# When the legacy rule cleanup runs twice
+# Then no delete call is made and it returns success
+UFW_DELETES=()
+UFW_STATUS_TEXT="$ACTIVE_HEAD
+[ 1] 22/tcp                     ALLOW IN    Anywhere"
+ufw_remove_legacy_beszel_rule
+rc=$?
+ufw_remove_legacy_beszel_rule
+assert_eq "0" "$rc" "legacy beszel rule: absent rule returns success"
+assert_eq "0" "${#UFW_DELETES[@]}" "legacy beszel rule: absent rule means no delete"
+
+# Given a Debian-like host: ufw exists only at the sbin path, not on PATH
+# When the legacy rule cleanup runs
+# Then the stale rule is still deleted
+UFW_DELETES=()
+UFW_STATUS_TEXT="$ACTIVE_HEAD
+[ 1] 45876/tcp                  ALLOW IN    172.16.0.0/12              # MediaStack:Beszel-agent"
+_sbin_dir=$(mktemp -d)
+printf '#!/bin/sh\n' >"$_sbin_dir/ufw"
+chmod +x "$_sbin_dir/ufw"
+unset -f ufw
+_saved_path=$PATH
+PATH=/usr/bin:/bin
+MS_UFW_SBIN_PATH="$_sbin_dir/ufw" ufw_remove_legacy_beszel_rule
+PATH=$_saved_path
+rm -rf "$_sbin_dir"
+assert_eq "1" "${UFW_DELETES[*]:-}" "legacy beszel rule: found when ufw is only in the sbin directory"
+unset -f sudo ufw
 unset SSH_CONNECTION
 
 # ===========================================================================

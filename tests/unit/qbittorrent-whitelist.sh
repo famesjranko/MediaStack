@@ -176,14 +176,25 @@ QBT_LIVE_WHITELIST=$'172.29.5.22/32\n172.29.5.23/32\n172.29.5.40/32' QBT_LIVE_EN
 assert_eq "absent" "$(_logged_whitelist)" "whitelist (already current): not rewritten"
 assert_eq "0" "${#LOG_DRIFT_MESSAGES[@]}" "whitelist (already current): no drift reported"
 
-# Given the network prefix is missing or malformed
+# Given the network prefix is malformed
 # When configure runs
-# Then the whitelist is untouched, a warning is logged, and the /12 is never written
-for bad_prefix in "" "172.29" "172.29.5.0" "172.29.999" "a.b.c"; do
+# Then the whitelist is untouched, a warning names the key and the fix, and the /12 is never written
+for bad_prefix in "172.29" "172.29.5.0" "172.29.999" "a.b.c" "١٧٢.28.0"; do
     QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true MEDIASTACK_NETWORK_PREFIX="$bad_prefix" _run_whitelist_case
     assert_eq "absent" "$(_logged_whitelist)" "whitelist (prefix '$bad_prefix'): fails closed, payload omits whitelist"
-    assert_contains "$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}")" "MEDIASTACK_NETWORK_PREFIX missing or invalid" "whitelist (prefix '$bad_prefix'): warns"
+    assert_contains "$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}")" "MEDIASTACK_NETWORK_PREFIX='$bad_prefix' is not a three-number prefix like 172.28.0 - fix or remove it in .env" "whitelist (prefix '$bad_prefix'): warns, naming the key and the fix"
 done
+
+# Given the network prefix is unset or empty, as docker-compose.yml allows (it defaults to 172.28.0)
+# When configure runs
+# Then the /32s use compose's default addresses, never a refusal
+_saved_prefix="$MEDIASTACK_NETWORK_PREFIX"
+unset MEDIASTACK_NETWORK_PREFIX
+QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true _run_whitelist_case
+assert_eq "172.28.0.22/32, 172.28.0.23/32, 172.28.0.40/32|True" "$(_logged_whitelist)" "whitelist (prefix unset): uses compose's 172.28.0 default"
+QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true MEDIASTACK_NETWORK_PREFIX="" _run_whitelist_case
+assert_eq "172.28.0.22/32, 172.28.0.23/32, 172.28.0.40/32|True" "$(_logged_whitelist)" "whitelist (prefix empty): uses compose's 172.28.0 default"
+MEDIASTACK_NETWORK_PREFIX="$_saved_prefix"
 
 # Given the live preferences cannot be read
 # When configure runs
@@ -198,6 +209,88 @@ assert_contains "$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}")" "Could not read qBi
 QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true QBT_FAIL_SETPREFS=1 _run_whitelist_case
 assert_contains "$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}")" "auth whitelist not narrowed" "whitelist (setPreferences fails): warns"
 assert_not_contains "$(printf '%s\n' "${LOG_OK_MESSAGES[@]}")" "narrowed" "whitelist (setPreferences fails): no narrowed log_ok"
+
+# --- Day-2 narrowing (qbt_narrow_legacy_whitelist) ---------------------------
+# Same live-qBittorrent fake as above. The action must change ONLY the exact
+# legacy /12 and must never send any other preference.
+
+# Prints the number of setPreferences calls in CURL_LOG.
+_set_prefs_calls() { grep -c '/api/v2/app/setPreferences' "$CURL_LOG" || true; }
+
+# Runs the narrowing with a clean slate; sets NARROW_RC.
+_run_narrow_case() {
+    : >"$CURL_LOG"
+    LOG_OK_MESSAGES=()
+    LOG_WARN_MESSAGES=()
+    LOG_DRIFT_MESSAGES=()
+    NARROW_RC=0
+    qbt_narrow_legacy_whitelist >/dev/null || NARROW_RC=$?
+}
+
+# Given MediaStack's legacy 172.16.0.0/12 enabled
+# When the day-2 narrowing runs
+# Then only the whitelist keys are sent, narrowed to the caller /32s, and it succeeds
+QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true _run_narrow_case
+assert_eq "0" "$NARROW_RC" "narrow (legacy /12): succeeds"
+assert_eq "$WANTED_WL|True" "$(_logged_whitelist)" "narrow (legacy /12): whitelist is the caller /32s"
+assert_contains "$(grep setPreferences "$CURL_LOG")" 'json={"bypass_auth_subnet_whitelist": "172.29.5.22/32, 172.29.5.23/32, 172.29.5.40/32", "bypass_auth_subnet_whitelist_enabled": true}' "narrow (legacy /12): payload holds nothing but the whitelist keys"
+assert_contains "$(printf '%s\n' "${LOG_OK_MESSAGES[@]}")" "narrowed from 172.16.0.0/12" "narrow (legacy /12): log_ok names the change"
+
+# Given a whitelist the user set
+# When the day-2 narrowing runs
+# Then nothing is sent, drift is logged, and it still succeeds
+QBT_LIVE_WHITELIST='10.0.0.0/8' QBT_LIVE_ENABLED=true _run_narrow_case
+assert_eq "0" "$NARROW_RC" "narrow (user value): succeeds"
+assert_eq "0" "$(_set_prefs_calls)" "narrow (user value): setPreferences is never called"
+assert_contains "$(printf '%s\n' "${LOG_DRIFT_MESSAGES[@]}")" "changed outside MediaStack" "narrow (user value): log_drift emitted"
+
+# Given a user list that merely contains the legacy /12 next to another entry
+# When the day-2 narrowing runs
+# Then it is user state and is left alone
+QBT_LIVE_WHITELIST='172.16.0.0/12, 10.0.0.0/8' QBT_LIVE_ENABLED=true _run_narrow_case
+assert_eq "0" "$(_set_prefs_calls)" "narrow (/12 plus another entry): not rewritten"
+assert_eq "1" "${#LOG_DRIFT_MESSAGES[@]}" "narrow (/12 plus another entry): drift reported"
+
+# Given the whitelist is already the caller list
+# When the day-2 narrowing runs
+# Then nothing is sent and nothing is reported
+QBT_LIVE_WHITELIST="$WANTED_WL" QBT_LIVE_ENABLED=true _run_narrow_case
+assert_eq "0" "$NARROW_RC" "narrow (already current): succeeds"
+assert_eq "0" "$(_set_prefs_calls)" "narrow (already current): setPreferences is never called"
+assert_eq "0" "${#LOG_DRIFT_MESSAGES[@]}" "narrow (already current): no drift"
+
+# Given setPreferences fails while the legacy /12 is live
+# When the day-2 narrowing runs
+# Then it returns non-zero and does not claim success
+QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true QBT_FAIL_SETPREFS=1 _run_narrow_case
+assert_eq "1" "$NARROW_RC" "narrow (setPreferences fails): returns non-zero"
+assert_not_contains "$(printf '%s\n' "${LOG_OK_MESSAGES[@]}")" "narrowed" "narrow (setPreferences fails): no narrowed log_ok"
+assert_contains "$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}")" "Failed to narrow" "narrow (setPreferences fails): warns"
+
+# Given the live preferences cannot be read
+# When the day-2 narrowing runs
+# Then it returns non-zero and sends nothing
+QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true QBT_LIVE_PREFS_FAIL=1 _run_narrow_case
+assert_eq "1" "$NARROW_RC" "narrow (unreadable prefs): returns non-zero"
+assert_eq "0" "$(_set_prefs_calls)" "narrow (unreadable prefs): setPreferences is never called"
+
+# Given the network prefix is malformed
+# When the day-2 narrowing runs
+# Then it fails closed: non-zero, no API call that could write
+QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true MEDIASTACK_NETWORK_PREFIX="172.29" _run_narrow_case
+assert_eq "1" "$NARROW_RC" "narrow (bad prefix): returns non-zero"
+assert_eq "0" "$(_set_prefs_calls)" "narrow (bad prefix): setPreferences is never called"
+assert_contains "$(printf '%s\n' "${LOG_WARN_MESSAGES[@]}")" "MEDIASTACK_NETWORK_PREFIX='172.29' is not a three-number prefix like 172.28.0 - fix or remove it in .env" "narrow (bad prefix): the warning names the key and the fix"
+
+# Given the network prefix is unset, as docker-compose.yml allows (it defaults to 172.28.0)
+# When the day-2 narrowing runs
+# Then the /32s are the containers' real default addresses and it succeeds
+_saved_prefix="$MEDIASTACK_NETWORK_PREFIX"
+unset MEDIASTACK_NETWORK_PREFIX
+QBT_LIVE_WHITELIST='172.16.0.0/12' QBT_LIVE_ENABLED=true _run_narrow_case
+MEDIASTACK_NETWORK_PREFIX="$_saved_prefix"
+assert_eq "0" "$NARROW_RC" "narrow (prefix unset): succeeds"
+assert_eq "172.28.0.22/32, 172.28.0.23/32, 172.28.0.40/32|True" "$(_logged_whitelist)" "narrow (prefix unset): the /32s use compose's 172.28.0 default"
 
 # Given the seeded qBittorrent.conf a fresh install starts from
 # When its WebUI auth settings are read

@@ -16,6 +16,17 @@ _qbt_login() {
     [[ "$body" == "Ok." || ("$http_code" == "204" && -z "$body") ]]
 }
 
+# Day-2 re-auth with the shared setup credentials: the configured admin user, then
+# the stock "admin" name. $1 cookie jar, $2 base URL. Fails when none is set or
+# neither login works. configure_qbittorrent keeps its own wider fallback chain
+# (temp password, pre-unification password) for first runs.
+_qbt_login_shared() {
+    local jar="$1" url="$2" user="${JELLYFIN_ADMIN_USER:-admin}" pw="${JELLYFIN_ADMIN_PASSWORD:-}"
+    [[ -n "$pw" ]] || return 1
+    _qbt_login "$jar" "$url" "$user" "$pw" && return 0
+    [[ "$user" != "admin" ]] && _qbt_login "$jar" "$url" "admin" "$pw"
+}
+
 # Containers that call the qBittorrent WebUI without credentials: sonarr (.22) and
 # radarr (.23) download clients, homepage (.40) widget. Their addresses are the
 # static ipv4_address values in docker-compose.yml. Only these /32s skip login:
@@ -24,15 +35,23 @@ _qbt_login() {
 # qBittorrent splits this setting on "," or newline and trims each entry
 # (src/webui/api/appcontroller.cpp, setPreferences).
 # Prints the list; fails closed (prints nothing, returns 1) when the prefix is
-# missing or malformed, so the caller never falls back to a wide range.
+# malformed, so the caller never falls back to a wide range. An unset or empty
+# prefix is docker-compose.yml's own default (${MEDIASTACK_NETWORK_PREFIX:-172.28.0},
+# lines 98, 132 and 367), so the /32s match the addresses compose really gives
+# the containers.
 _qbt_caller_whitelist() {
-    PREFIX="${MEDIASTACK_NETWORK_PREFIX:-}" python3 -c '
+    PREFIX="${MEDIASTACK_NETWORK_PREFIX:-172.28.0}" python3 -c '
 import os, re, sys
 p = os.environ["PREFIX"]
-m = re.fullmatch(r"(\d{1,3})\.(\d{1,3})\.(\d{1,3})", p)
+m = re.fullmatch(r"([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})", p)
 if not m or any(int(g) > 255 for g in m.groups()):
     sys.exit(1)
 print(", ".join(f"{p}.{n}/32" for n in (22, 23, 40)))'
+}
+
+# The refusal text for a malformed prefix: names the key and the fix.
+_qbt_prefix_hint() {
+    printf "MEDIASTACK_NETWORK_PREFIX='%s' is not a three-number prefix like 172.28.0 - fix or remove it in .env; the qBittorrent auth whitelist was left unchanged" "${MEDIASTACK_NETWORK_PREFIX:-}"
 }
 
 # Classify the live whitelist from GET /app/preferences (stdin) against the
@@ -165,7 +184,7 @@ print(password)
     # the live value alone rather than widening it.
     local wl_csv wl_state live_prefs wl_apply=""
     if ! wl_csv=$(_qbt_caller_whitelist); then
-        log_warn "MEDIASTACK_NETWORK_PREFIX missing or invalid - qBittorrent auth whitelist left unchanged (Sonarr/Radarr may not connect)"
+        log_warn "$(_qbt_prefix_hint) (Sonarr/Radarr may not connect)"
     elif ! live_prefs=$(curl -sf -b "$jar" "$qbt_url/api/v2/app/preferences" 2>/dev/null); then
         log_warn "Could not read qBittorrent preferences - auth whitelist left unchanged"
     else
@@ -352,22 +371,14 @@ qbt_set_speed_limits() {
     local dl_mb="$1" ul_mb="$2"
     local qbt_url
     qbt_url="$(service_local_url qbittorrent)"
-    local target_pw="${JELLYFIN_ADMIN_PASSWORD:-}" target_user="${JELLYFIN_ADMIN_USER:-admin}"
-
-    if [[ -z "$target_pw" ]]; then
+    if [[ -z "${JELLYFIN_ADMIN_PASSWORD:-}" ]]; then
         log_warn "Cannot adjust qBittorrent limits: shared admin password (JELLYFIN_ADMIN_PASSWORD) is not set."
         return 1
     fi
 
     local jar
     jar=$(mktemp)
-    local authed=""
-    if _qbt_login "$jar" "$qbt_url" "$target_user" "$target_pw"; then
-        authed=1
-    elif [[ "$target_user" != "admin" ]] && _qbt_login "$jar" "$qbt_url" "admin" "$target_pw"; then
-        authed=1
-    fi
-    if [[ -z "$authed" ]]; then
+    if ! _qbt_login_shared "$jar" "$qbt_url"; then
         log_warn "Could not authenticate with qBittorrent to adjust speed limits."
         rm -f "$jar"
         return 1
@@ -391,6 +402,70 @@ print(json.dumps({
         log_warn "Failed to apply qBittorrent speed limits."
         rc=1
     fi
+    rm -f "$jar"
+    return "$rc"
+}
+
+# =============================================================================
+# 3. qBittorrent — day-2 narrowing of MediaStack's legacy auth whitelist
+# =============================================================================
+#
+# Early installs seeded bypass_auth_subnet_whitelist with 172.16.0.0/12 (every
+# Docker bridge). configure_qbittorrent narrows it, but a completed install
+# never re-runs configure after a code update, and a failed setPreferences is
+# not retried. This is the focused, repeatable form: it changes the whitelist
+# ONLY when the live value is exactly MediaStack's legacy /12 (enabled). Any
+# other value is user state and is reported with log_drift, never touched. An
+# empty value is left alone too (nothing was widened; configure seeds it).
+#
+# Returns 0 when the whitelist is narrowed, already right, or user-owned; 1 when
+# it could not be read, parsed or written, so the caller reports a failure.
+qbt_narrow_legacy_whitelist() {
+    local qbt_url wl_csv jar live_prefs wl_state rc=0
+    qbt_url="$(service_local_url qbittorrent)"
+    if ! wl_csv=$(_qbt_caller_whitelist); then
+        log_warn "$(_qbt_prefix_hint)"
+        return 1
+    fi
+    if [[ -z "${JELLYFIN_ADMIN_PASSWORD:-}" ]]; then
+        log_warn "Cannot check the qBittorrent auth whitelist: shared admin password (JELLYFIN_ADMIN_PASSWORD) is not set."
+        return 1
+    fi
+    jar=$(mktemp)
+    if ! _qbt_login_shared "$jar" "$qbt_url"; then
+        log_warn "Could not authenticate with qBittorrent to check its auth whitelist."
+        rm -f "$jar"
+        return 1
+    fi
+    if ! live_prefs=$(curl -sf -b "$jar" "$qbt_url/api/v2/app/preferences" 2>/dev/null); then
+        log_warn "Could not read qBittorrent preferences - auth whitelist left unchanged"
+        rm -f "$jar"
+        return 1
+    fi
+    wl_state=$(_qbt_whitelist_state "$wl_csv" <<<"$live_prefs")
+    case "$wl_state" in
+        legacy)
+            local prefs_json
+            prefs_json=$(WL_CSV="$wl_csv" python3 -c '
+import os, json
+print(json.dumps({"bypass_auth_subnet_whitelist": os.environ["WL_CSV"],
+                  "bypass_auth_subnet_whitelist_enabled": True}))')
+            if curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
+                --data-urlencode "json=$prefs_json" >/dev/null 2>&1; then
+                log_ok "qBittorrent auth whitelist narrowed from 172.16.0.0/12 to $wl_csv"
+            else
+                log_warn "Failed to narrow the qBittorrent auth whitelist (preferences were not saved)"
+                rc=1
+            fi
+            ;;
+        current) log_skip "qBittorrent auth whitelist already limited to $wl_csv" ;;
+        empty) log_skip "qBittorrent auth whitelist is empty - nothing to narrow" ;;
+        other) log_drift "qBittorrent auth whitelist was changed outside MediaStack - left as is (Sonarr/Radarr need $wl_csv to connect)" ;;
+        *)
+            log_warn "Could not parse qBittorrent auth whitelist - left unchanged"
+            rc=1
+            ;;
+    esac
     rm -f "$jar"
     return "$rc"
 }

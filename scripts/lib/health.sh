@@ -403,11 +403,11 @@ health_docker_user_restrict() {
     fi
     local unit_name=mediastack-admin-filter.service
     [[ -f "${MEDIASTACK_ADMIN_FILTER_DROPIN:-/etc/systemd/system/docker.service.d/mediastack-admin-filter.conf}" ]] || {
-        echo "fail|Admin-port filter drop-in MISSING - Docker would start without the filter; re-run setup"
+        echo "fail|Admin-port filter drop-in MISSING - Docker would start without the filter; fix: ./mediastack > Health & security > Apply changes from a MediaStack update"
         return 0
     }
     [[ -f "${MEDIASTACK_ADMIN_FILTER_UNIT:-/etc/systemd/system/$unit_name}" ]] || {
-        echo "fail|Admin-port filter unit MISSING - Docker cannot start; re-run setup"
+        echo "fail|Admin-port filter unit MISSING - Docker cannot start; fix: ./mediastack > Health & security > Apply changes from a MediaStack update"
         return 0
     }
     if systemctl is-failed --quiet "$unit_name" 2>/dev/null || ! systemctl is-active --quiet "$unit_name" 2>/dev/null; then

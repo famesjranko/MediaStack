@@ -122,7 +122,6 @@ sudo() {
     case "${1:-}" in
         true) return $((1 - SUDO_OK)) ;;
         sh)
-            [[ "$*" == *ufw* ]] && return $((1 - UFW_INSTALLED))
             return 0
             ;;
         ufw) printf '%s\n' "$UFW_STATUS" ;;

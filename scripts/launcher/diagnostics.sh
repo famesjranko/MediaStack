@@ -315,6 +315,7 @@ submenu_health() {
             "DNS / public-IP drift" \
             "Disk space" \
             "Firewall (UFW + Docker port lock)" \
+            "Apply changes from a MediaStack update" \
             "Back")
 
         case "$choice" in
@@ -351,6 +352,9 @@ submenu_health() {
                 _health_present_spin "Checking UFW firewall..." health_ufw_active
                 _health_present_spin "Checking Docker port lock..." health_docker_user_restrict
                 launcher_pause_for_menu
+                ;;
+            "Apply changes from a MediaStack update"*)
+                action_converge_mediastack
                 ;;
             *) return 0 ;;
         esac

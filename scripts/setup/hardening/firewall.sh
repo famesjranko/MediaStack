@@ -137,6 +137,32 @@ setup_ufw_wireguard_clients() {
 }
 
 # ---------------------------------------------------------------------------
+# Legacy rule cleanup
+# ---------------------------------------------------------------------------
+
+# Earlier releases opened the Beszel agent's TCP port to the Docker networks
+# with this comment. The agent now listens on a unix socket, so nothing uses
+# the rule. ufw rules are matched by comment: only a rule whose comment is
+# exactly this one is MediaStack's to delete. Silent when UFW is not installed,
+# inactive, or the rule is absent. Returns non-zero, with a warning, when the
+# rules cannot be read or a delete fails.
+ufw_remove_legacy_beszel_rule() {
+    ufw_installed || return 0
+    local listing numbers=() number
+    listing=$(LC_ALL=C sudo ufw status numbered 2>/dev/null) || {
+        log_warn "Could not read the UFW rules to look for the unused MediaStack:Beszel-agent rule"
+        return 1
+    }
+    grep -q '^Status: active' <<<"$listing" || return 0
+    # Highest number first: a delete renumbers the rules below it.
+    mapfile -t numbers < <(sed -n 's/^\[[[:space:]]*\([0-9][0-9]*\)\].*# MediaStack:Beszel-agent[[:space:]]*$/\1/p' <<<"$listing" | sort -rn)
+    for number in "${numbers[@]}"; do
+        sudo ufw --force delete "$number" >/dev/null || return 1
+    done
+    ((${#numbers[@]} == 0)) || log_ok "Removed the unused UFW rule MediaStack:Beszel-agent"
+}
+
+# ---------------------------------------------------------------------------
 # Uninstall: reverse MediaStack UFW changes
 # ---------------------------------------------------------------------------
 
