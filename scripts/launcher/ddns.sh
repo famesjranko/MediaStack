@@ -148,10 +148,12 @@ action_change_ddns() {
     fields_spec=$(ddns_provider_fields "$new_provider") || fields_spec=""
     for attempt in 1 2 3; do
         local -A _ddns_new_fields=()
-        local spec name validator val
+        local spec name validator val hint
         for spec in $fields_spec; do
             name="${spec%%:*}"
             validator="${spec##*:}"
+            hint=$(ddns_field_hint "$new_provider" "$name")
+            [[ -n "$hint" ]] && ui_log info "$hint"
             val=$(ui_input_validated "Enter ${name//_/ }" "" "$validator")
             # The validators tolerate surrounding whitespace (a dashboard paste
             # often carries a trailing newline/space); ui_input_validated returns

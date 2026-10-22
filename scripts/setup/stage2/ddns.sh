@@ -213,6 +213,9 @@ _stage2_offer_ddns() {
         validator="${spec#*:}"
         def=""
         [[ "$carry" == "true" ]] && def="${_prev[$name]:-}"
+        local hint
+        hint=$(ddns_field_hint "$_WIZ_DDNS_PROVIDER" "$name")
+        [[ -n "$hint" ]] && ui_log info "$hint"
         val=$(_stage2_escapable_input "$(_stage2_ddns_field_prompt "$_WIZ_DDNS_PROVIDER" "$name")" "$def" "$validator" "Skip DDNS for now")
         rc=$?
         if ((rc == 130)); then

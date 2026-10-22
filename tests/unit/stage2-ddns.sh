@@ -323,5 +323,18 @@ else
     fail "recovery source exists"
 fi
 
+# Providers whose secret travels in the request URL get a scoped-credential hint
+# at the prompt (ddns-updater logs that URL on a network failure); header/body/
+# redacted-userinfo providers and non-secret fields get none.
+# Given each DDNS provider and credential field
+# When the field hint is requested
+# Then URL-secret providers name their safer credential and others print nothing
+assert_contains "$(ddns_field_hint dynu password)" "IP Update Password" "Dynu hint recommends the IP Update Password"
+assert_contains "$(ddns_field_hint dynv6 token)" "this zone" "dynv6 hint recommends a zone-limited HTTP token"
+assert_contains "$(ddns_field_hint duckdns token)" "no restricted token" "DuckDNS hint says no scoped token exists"
+assert_eq "" "$(ddns_field_hint cloudflare token)" "Cloudflare (bearer header) gets no hint"
+assert_eq "" "$(ddns_field_hint desec token)" "deSEC (redacted userinfo) gets no hint"
+assert_eq "" "$(ddns_field_hint porkbun api_key)" "Porkbun (JSON body) gets no hint"
+
 scenario_end "$CURRENT_SCENARIO"
 summary
