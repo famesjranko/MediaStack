@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Owns: Shared launcher state, banner, stack-management actions, and action results.
-# Sources: launcher globals, .env state, scripts/lib/ui.sh, network.sh, storage.sh, and compose helpers.
+# Sources: launcher globals, .env state, scripts/lib/ui.sh, network.sh, storage.sh, project-volumes.sh, and compose helpers.
+
+# shellcheck source=scripts/lib/project-volumes.sh
+source "$SCRIPT_DIR/scripts/lib/project-volumes.sh"
 
 _cached_public_ip() {
     if ((_MS_PUBLIC_IP_CHECKED == 0)); then
@@ -163,11 +166,13 @@ _stack_system_lines() {
     ui_kv "Data" "$_dataline"
 }
 
+# --all: plain `ps` hides stopped containers, so a stopped service would vanish
+# from the table while the header count and the Health menu still include it.
 _render_service_list() {
     local profiles=()
     profiles_build_args profiles
     local rows
-    rows=$(docker compose "${profiles[@]}" ps --format json 2>/dev/null | python3 -c '
+    rows=$(docker compose "${profiles[@]}" ps --all --format json 2>/dev/null | python3 -c '
 import sys, json, re
 def uptime(status):
     m = re.search(r"Up\s+(.*?)(?:\s+\(|$)", status or "")
@@ -221,7 +226,7 @@ for r in rows:
 ' 2>/dev/null)
 
     if [[ -z "$rows" ]]; then
-        docker compose "${profiles[@]}" ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' 2>&1 || true
+        docker compose "${profiles[@]}" ps --all --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' 2>&1 || true
         return 0
     fi
 
@@ -400,10 +405,20 @@ action_stack_stop() {
     # every `up`, and `down` without it leaves the old one behind, unlabelled
     # and invisible to uninstall. docker-compose.yml declares no named volume
     # and config/ and data/ are bind mounts, so this removes no user data.
+    # `down --volumes` still skips a volume that a recreated container
+    # re-mounted by name, so collect the anonymous volumes first and remove
+    # them after; Docker refuses to remove one that a kept container uses.
     local profiles=()
     profiles_build_args profiles
-    local rc=0
+    local rc=0 project anon_volumes=() vol
+    project=$(_compose_project_name) || project=""
+    [[ -z "$project" ]] || mapfile -t anon_volumes < <(project_anonymous_volumes "$project")
     docker compose "${profiles[@]}" down --volumes 2>&1 || rc=$?
+    if ((rc == 0)); then
+        for vol in "${anon_volumes[@]}"; do
+            docker volume rm "$vol" >/dev/null 2>&1 || true
+        done
+    fi
     _show_action_result "$rc" "Stop stack"
     launcher_pause_for_menu
 }

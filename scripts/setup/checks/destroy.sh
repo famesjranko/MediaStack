@@ -3,7 +3,11 @@
 # Sources: $SCRIPT_DIR and scripts/lib/common.sh, loaded by the caller
 # (scripts/setup/checks.sh, sourced from setup.sh). Calls
 # storage_pause_watchdog_for_install (scripts/setup/storage.sh) and
-# record_launcher_outcome (scripts/setup/checks.sh).
+# record_launcher_outcome (scripts/setup/checks.sh). Project and volume lookup
+# comes from scripts/lib/project-volumes.sh.
+
+# shellcheck source=scripts/lib/project-volumes.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../lib/project-volumes.sh"
 
 _print_destroy_preview() {
     # nuke_existing_install helper. DELETE/PRESERVE text reflects the actual destroy commands
@@ -79,27 +83,6 @@ wipe_config_runtime() {
     sudo find "$SCRIPT_DIR/config" -mindepth 1 -maxdepth 1 \
         -not -name 'examples' -exec rm -rf {} +
     log_ok "config/ wiped (examples/ preserved)."
-}
-
-_compose_project_name() {
-    docker compose --profile "*" config --format json 2>/dev/null \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name",""))' 2>/dev/null
-}
-
-# Names of the anonymous volumes mounted by this project's containers (running
-# or stopped). Docker labels an anonymous volume only with
-# com.docker.volume.anonymous, never with the project, so the container is the
-# only link to it: collect before the containers are removed. A volume the user
-# created is not anonymous and is never listed, even when mounted.
-project_anonymous_volumes() {
-    local project="$1" cid mounted anon
-    anon=$(docker volume ls -q --filter label=com.docker.volume.anonymous 2>/dev/null) || return 0
-    [[ -n "$anon" ]] || return 0
-    while IFS= read -r cid; do
-        [[ -n "$cid" ]] || continue
-        mounted=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$cid" 2>/dev/null) || continue
-        grep -Fxf <(printf '%s\n' "$anon") <<<"$mounted" || true
-    done < <(docker ps -aq --filter "label=com.docker.compose.project=${project}" 2>/dev/null)
 }
 
 # Remove every volume and network Compose created for this project. `down -v`
