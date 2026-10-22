@@ -35,6 +35,7 @@ source "$REPO_ROOT/scripts/services/wireguard/main.sh"
 source "$REPO_ROOT/scripts/services/beszel/main.sh"
 source "$REPO_ROOT/scripts/services/npm/main.sh"
 source "$REPO_ROOT/scripts/services/jackett/main.sh"
+source "$REPO_ROOT/scripts/lib/arr/indexers.sh"
 source "$REPO_ROOT/scripts/setup/stage3/jellyfin.sh"
 
 set +e
@@ -284,9 +285,45 @@ SCRIPT_DIR="$WORK" configure_jackett >/dev/null 2>&1
 assert_file_not_contains "$ARGV_LOG" "$SENTINEL" "configure_jackett: password absent from argv"
 assert_file_contains "$STDIN_LOG" "$SENTINEL" "configure_jackett: password delivered on stdin"
 # The set-password body is a bare JSON string, which the urlencoded login body
-# is not: quoting pins the case to the path this fix converted.
-assert_file_contains "$STDIN_LOG" "\"$SENTINEL\"" \
+# is not: quoting pins the case to the path this fix converted. The body now
+# rides in a curl config value, so its quotes arrive backslash-escaped.
+assert_file_contains "$STDIN_LOG" "data-raw = \"\\\"$SENTINEL\\\"\"" \
     "configure_jackett: set-password body reached curl on stdin"
+
+# --- Jackett API key ---------------------------------------------------------
+# Jackett reads its key only from the ?apikey= query string, so the URL itself
+# is the secret: it must reach curl through the stdin config, never argv.
+JACKETT_KEY='sentinel-jackett-key'
+api_get_jackett_key() { printf '%s' "$JACKETT_KEY"; }
+sleep() { :; }
+post_restart_wait() { :; }
+cfg_indexers() { echo "testindexer:general"; }
+api_get() { echo "[]"; }
+api_post() { return 0; }
+# A non-empty object: the server config round-trips and the indexer config is
+# a usable (non-empty, non-"[]") document. Jackett's real server config carries
+# api_key, so the round-tripped POST body must stay off argv too.
+JACKETT_BODY='{"flaresolverrurl":"","id":"x","api_key":"'"$JACKETT_KEY"'"}'
+_ARR_LIB_DIR="$REPO_ROOT/scripts/lib/arr"
+
+# Unset FlareSolverr URL and no stored admin hash reach every call site:
+# probe, server config GET/POST, configured list, indexer config GET/POST and
+# the admin password.
+printf '%s' '{"APIKey":"x","AdminPassword":""}' \
+    >"$WORK/config/jackett/Jackett/ServerConfig.json"
+reset_logs
+MOCK_BODY="$JACKETT_BODY"
+JELLYFIN_ADMIN_PASSWORD="$SENTINEL" SCRIPT_DIR="$WORK" configure_jackett >/dev/null 2>&1
+assert_file_not_contains "$ARGV_LOG" "$JACKETT_KEY" "configure_jackett: API key absent from argv"
+assert_eq "7" "$(grep -c "^url = \".*apikey=$JACKETT_KEY" "$STDIN_LOG")" \
+    "configure_jackett: all 7 key-bearing requests carried the URL on stdin"
+
+reset_logs
+MOCK_BODY=""
+configure_arr_indexers sonarr http://sonarr:8989 sonarr-key "5030" >/dev/null 2>&1
+assert_file_not_contains "$ARGV_LOG" "$JACKETT_KEY" "configure_arr_indexers: API key absent from argv"
+assert_file_contains "$STDIN_LOG" "url = \"http://127.0.0.1:1/api/v2.0/indexers/testindexer/results/torznab/?apikey=$JACKETT_KEY&t=caps\"" \
+    "configure_arr_indexers: caps URL reached curl on stdin"
 
 # --- A credential curl's config format cannot carry --------------------------
 # Line-oriented parsing would truncate at the newline rather than fail.

@@ -327,6 +327,16 @@ curl_header_data_stdin() {
     _curl_stdin_payload "$cfg" -K - "$@"
 }
 
+# Print a curl config carrying <url> (and an optional literal body), for a
+# secret in the query string: Jackett reads its key only from ?apikey= (Jackett
+# ResultsController.cs RequiresApiKey), so no header can carry it.
+# Usage: curl <args> -K - < <(curl_url_config <url> [body])
+curl_url_config() {
+    [[ "$1" == *[$'\n\r']* ]] && return 2
+    printf 'url = "%s"\n' "$(_curl_config_quote "$1")"
+    [[ -z "${2:-}" ]] || printf 'data-raw = "%s"\n' "$(_curl_config_quote_multiline "$2")"
+}
+
 # curl with a secret-bearing request body read from stdin.
 # Usage: curl_data_stdin <body> <curl args...>
 curl_data_stdin() {
