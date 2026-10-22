@@ -73,6 +73,9 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
   groups. Otherwise uninstall removes the Samba account it created when
   nothing else uses it. Uninstall also removes MediaStack's Docker volumes
   and networks.
+- Manage stack -> Stop all also removes the anonymous Docker volume of a
+  container that setup recreated (the Beszel agent), so no stray volume is left
+  after uninstall. The Manage stack status table lists stopped services too.
 - DDNS credential prompts hint at a narrower credential for providers that
   send the secret in the request URL (it can appear in ddns-updater logs).
 - qBittorrent keeps WebUI login on for the Docker network; only Sonarr, Radarr

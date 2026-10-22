@@ -274,5 +274,81 @@ stop_cycles=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 assert_eq "VOLS=mydata" "$(grep '^VOLS=' <<<"$stop_cycles")" "launcher: two stop/start cycles leave only the user's volume"
 
+# Given a stack whose agent container was recreated, so Compose re-mounted its old anonymous
+#   volume by name and `down --volumes` skips it, beside a user volume mounted by a project container
+# When the stack is stopped
+# Then the anonymous volume is removed and the user's volume is kept
+recreated_stop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  VOLS=(mydata anon1); UP=1
+  docker() {
+    if [[ "$1" == volume ]]; then
+      [[ "$2" == ls ]] && { printf "%s\n" anon1; return 0; }
+      [[ "$2" == rm ]] && { local keep=() v; for v in "${VOLS[@]}"; do [[ "$v" == "$3" ]] || keep+=("$v"); done; VOLS=("${keep[@]}"); return 0; }
+    fi
+    [[ "$1" == inspect ]] && { printf "%s\n" mydata anon1; return 0; }
+    [[ "$1" == ps ]] && { echo c1; return 0; }
+    [[ "$1" == compose ]] || return 0
+    case " $* " in
+      *" config "*) echo "{\"name\":\"mediastack\"}" ;;
+      *" ps -q "*) ((UP)) && echo c1 ;;
+      *" down "*) UP=0 ;;
+    esac
+    return 0
+  }
+  profiles_build_args() { :; }; ui_confirm() { return 0; }
+  launcher_pause_for_menu() { :; }; ui_log() { :; }; _show_action_result() { :; }
+  action_stack_stop
+  echo "VOLS=${VOLS[*]}"
+' 2>&1)
+assert_eq "VOLS=mydata" "$(grep '^VOLS=' <<<"$recreated_stop")" \
+    "launcher: Stop all removes a recreated container's anonymous volume and keeps the user's volume"
+
+# Given a recreated container's anonymous volume that Docker refuses to remove
+# When the stack is stopped
+# Then Stop all warns and names the volume it left behind
+failed_rm_stop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  UP=1
+  docker() {
+    if [[ "$1" == volume ]]; then
+      [[ "$2" == ls ]] && { printf "%s\n" anon1; return 0; }
+      [[ "$2" == rm ]] && return 1
+      [[ "$2" == inspect ]] && return 0
+    fi
+    [[ "$1" == inspect ]] && { printf "%s\n" anon1; return 0; }
+    [[ "$1" == ps ]] && { echo c1; return 0; }
+    [[ "$1" == compose ]] || return 0
+    case " $* " in
+      *" config "*) echo "{\"name\":\"mediastack\"}" ;;
+      *" ps -q "*) ((UP)) && echo c1 ;;
+      *" down "*) UP=0 ;;
+    esac
+    return 0
+  }
+  profiles_build_args() { :; }; ui_confirm() { return 0; }
+  launcher_pause_for_menu() { :; }; ui_log() { echo "LOG $*"; }; _show_action_result() { :; }
+  action_stack_stop
+' 2>&1)
+assert_contains "$failed_rm_stop" "LOG warn" "launcher: Stop all warns when an anonymous volume cannot be removed"
+assert_contains "$failed_rm_stop" "anon1" "launcher: the warning names the volume left behind"
+
+# Given a stack with one running and one stopped service
+# When the Manage stack status table is drawn
+# Then both services are listed, as the header count and the Health menu already do
+status_table=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  docker() {
+    local all=0 a; for a in "$@"; do [[ "$a" == --all || "$a" == -a ]] && all=1; done
+    printf "%s\n" "{\"Service\":\"sonarr\",\"State\":\"running\",\"Status\":\"Up 2 hours\"}"
+    ((all)) && printf "%s\n" "{\"Service\":\"radarr\",\"State\":\"exited\",\"Status\":\"Exited (0) 1 hour ago\"}"
+    return 0
+  }
+  profiles_build_args() { :; }
+  _render_service_list
+' 2>&1)
+assert_contains "$status_table" "sonarr" "launcher: status table lists the running service"
+assert_contains "$status_table" "radarr" "launcher: status table also lists the stopped service"
+
 echo -e "${CYAN}◀ launcher-action-result done${NC}"
 summary
