@@ -25,7 +25,7 @@ re-pulled every default-profile image; see `scripts/setup/stack.sh:pull_images`.
 | 7 | Restore remote inputs + DDNS push   | real domain, `NPM_LE_SERVER`, and DDNS provider publish the VM IP |
 | 8 | `./setup.sh --remote`               | real Stage 2 route, WireGuard/NPM/DDNS setup, HTTP-01 readiness |
 | 9 | Whitelist tester IP in fail2ban     | probes don't self-ban                                      |
-| 10 | Containers healthy (≥16, WG, DDNS) | profiles auto-activate when `DOMAIN` + WG hash present     |
+| 10 | Containers healthy (all compose services of the active profiles, WG, DDNS) | profiles auto-activate when `DOMAIN` + WG hash present     |
 | 11 | Fail2ban: 3 jails                  | NPM/Jellyfin/Seerr jails active (ratelimit disabled by default) |
 | 12 | `tests/assertions/npm.sh`          | NPM proxy hosts have rendered `.conf` + cert files on disk |
 | 13 | External HTTPS + cert issuer       | DDNS push → real public DNS → public HTTPS reaches the proxy |
@@ -203,7 +203,7 @@ the harness is ready to run.
   a clean install. To run setup twice on the same VM (test idempotency),
   delete only `step "0"` and re-run; setup.sh's `--full` is graceful.
 - **Self-ban from probes.** Step 9 whitelists the tester's public IP in
-  every fail2ban jail. If you skip step 7 (manual debugging), curl loops
+  every fail2ban jail. If you skip step 9 (manual debugging), curl loops
   can ban you out of the VM. Recover with
   `ssh $SSH_HOST 'docker exec fail2ban fail2ban-client unban --all'`.
 - **First-run vs re-run.** Many configurators detect existing state and
