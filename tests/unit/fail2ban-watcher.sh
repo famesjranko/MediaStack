@@ -17,7 +17,7 @@ CURRENT_SCENARIO="fail2ban-watcher"
 scenario_begin "$CURRENT_SCENARIO"
 
 export SCRIPT_DIR="$REPO_ROOT"
-# shellcheck source=../../scripts/setup/fail2ban.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/fail2ban.sh"
 
 # --- watcher daemon unit: must be un-killable-by-systemd (issue: silent death) --

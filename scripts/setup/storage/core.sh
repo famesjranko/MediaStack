@@ -3,7 +3,7 @@
 # DEFAULT_NFS_OPTS/MEDIASTACK_STORAGE_* being defined by the parent.
 
 # Root-tool lookup (host_tool_installed); mount.sh and watchdog.sh use it.
-# shellcheck source=../../lib/host-tools.sh
+# shellcheck source=/dev/null
 declare -F host_tool_installed >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 
 storage_mode() {

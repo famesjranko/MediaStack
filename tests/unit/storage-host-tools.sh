@@ -15,14 +15,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 export REPO_ROOT
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="storage-host-tools"
 scenario_begin "$CURRENT_SCENARIO"
 
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
-# shellcheck source=../../scripts/setup/storage.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/storage.sh"
 
 mkdir -p "$TMP_DIR/user-bin" "$TMP_DIR/fake-sbin" "$TMP_DIR/empty-sbin"

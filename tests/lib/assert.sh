@@ -171,5 +171,8 @@ summary() {
         done
     fi
     echo -e "${BOLD}──────────────────────────────────────────${NC}"
+    # tests/unit.sh fails a file that exits 0 without reaching this point (an
+    # early `exit 0` in sourced code would otherwise pass with checks unrun).
+    [[ -z "${MS_UNIT_VERDICT_FILE:-}" ]] || echo "$total" >"$MS_UNIT_VERDICT_FILE"
     return $((FAIL_COUNT > 0))
 }

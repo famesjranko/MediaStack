@@ -13,7 +13,7 @@ set -uo pipefail
 UNIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$UNIT_DIR/../.." && pwd)"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 # shellcheck disable=SC2034 # read by tests/lib/assert.sh for failure labels
 CURRENT_SCENARIO="os-guard-order"
@@ -43,7 +43,7 @@ run_main() {
     (
         cd "$REPO_ROOT" || exit 97
         export "${envs[@]}"
-        # shellcheck source=../../setup.sh
+        # shellcheck source=/dev/null
         source ./setup.sh
         set +e
         set +u

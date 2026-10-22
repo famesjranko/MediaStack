@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 export REPO_ROOT
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="launcher-converge"
 scenario_begin "$CURRENT_SCENARIO"
@@ -83,15 +83,15 @@ assert_not_contains "$missing_out" "re-run setup" "health: no 're-run setup' rem
 # ---------------------------------------------------------------------------
 # 3-6. converge_mediastack_state against a fake root.
 # ---------------------------------------------------------------------------
-# shellcheck source=../../scripts/lib/common.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/lib/common.sh"
-# shellcheck source=../../scripts/setup/hardening.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/hardening.sh"
-# shellcheck source=../../scripts/setup/storage.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/storage.sh"
 # converge.sh loads its helpers from $SCRIPT_DIR, which is the repo root in production.
 SCRIPT_DIR="$REPO_ROOT"
-# shellcheck source=../../scripts/launcher/converge.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/launcher/converge.sh"
 set +e
 

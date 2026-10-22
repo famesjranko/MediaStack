@@ -121,7 +121,7 @@ assert_not_contains_local "$log" "compose" "update.sh unknown option exits befor
 # and Docker reports nothing running (an exited service must still be recreated)
 # When update.sh runs
 # Then it pulls and recreates with the canonical flags for exactly those profiles
-# shellcheck source=../../scripts/lib/profiles.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/lib/profiles.sh"
 
 setup_update_sandbox

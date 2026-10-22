@@ -35,6 +35,9 @@ log_ok() { :; }
 log_skip() { :; }
 log_error() { :; }
 
+# The proxy-conf probe falls back to `sudo -n` when a plain read fails; never the real sudo.
+sudo() { return 1; }
+
 DOCKER_INSPECT_ARGS_FILE="$TMP_ROOT/docker-inspect-args"
 DOCKER_INSPECT_RESULT=true
 docker() {

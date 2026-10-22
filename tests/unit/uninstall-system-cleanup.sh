@@ -449,7 +449,7 @@ stage3_marker_exists() {
     return 0
 }
 record_launcher_outcome() { :; }
-main --uninstall >/dev/null 2>&1
+main --uninstall >/dev/null 2>&1 </dev/null
 assert_eq "1" "$?" "routing: invalid-ledger uninstall fails closed"
 assert_eq "0" "$STAGE3_CALLS" "routing: Stage 3 marker cannot intercept uninstall"
 
@@ -488,12 +488,12 @@ sudo() {
     [[ "$1" == test ]] && return 1
     return 0
 }
-main --uninstall >/dev/null 2>&1
+main --uninstall >/dev/null 2>&1 </dev/null
 assert_eq "1" "$?" "best-effort: invalid-ledger uninstall still reports failure"
 assert_contains "${BEST_EFFORT_CALLS[*]}" "ufw apt gpu sysctl:true samba watchdog fail2ban" "best-effort: accepted offer runs every teardown, flagged as ledger-less"
 ui_confirm() { return 1; }
 BEST_EFFORT_CALLS=()
-main --uninstall >/dev/null 2>&1
+main --uninstall >/dev/null 2>&1 </dev/null
 assert_eq "" "${BEST_EFFORT_CALLS[*]}" "best-effort: declined offer changes nothing"
 
 scenario_end "$CURRENT_SCENARIO"

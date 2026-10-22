@@ -101,7 +101,7 @@ assert_eq "1" "$MOUNT_REPAIR_CONFIRM_PROMPTS" "storage_mount_nfs: declined repai
 : >"$MOUNT_REPAIR_CALLS"
 (
     unset -f ui_confirm
-    # shellcheck source=../../../scripts/lib/ui.sh
+    # shellcheck source=/dev/null
     source "$REPO_ROOT/scripts/lib/ui.sh"
     # ui_confirm consults UI_DEMO; exported so shellcheck sees the cross-file use.
     export UI_DEMO=1

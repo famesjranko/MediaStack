@@ -1,12 +1,12 @@
 # Owns: nvidia_* — NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
 # Sources: gpu.sh globals, common.sh logging, and nvidia-patch.sh helpers.
 # shellcheck disable=SC2154 # _nvidia_tmp is a documented caller-owned workspace.
-# shellcheck source=../../lib/host-tools.sh
+# shellcheck source=/dev/null
 declare -F host_tool_path >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 # Every apt install runs through MS_APT_INSTALL (scripts/lib/apt.sh).
-# shellcheck source=../../lib/apt.sh
+# shellcheck source=/dev/null
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
-# shellcheck source=../../lib/gpu-fallback.sh
+# shellcheck source=/dev/null
 declare -F gpu_fallback_secure_boot_lines >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/gpu-fallback.sh"
 
 nvidia_driver_check_secure_boot() {

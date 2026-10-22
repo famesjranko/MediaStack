@@ -12,7 +12,7 @@
 #   3. python bytecode — py_compile over every tracked *.py
 #   4. python types    — pinned mypy (recorded in tools.toml) over every tracked *.py
 #   5. compose render  — docker compose config across the profile combinations
-#   6. host unit tests — every tests/unit/*.sh, each under a 300s timeout
+#   6. host unit tests — every tests/unit/*.sh, each under a 300s timeout, stdin from /dev/null
 #
 # Tiers 2 and 4 duplicate a stage a caller may already have run as its own gate
 # (e.g. CI's lint-shellcheck / type-mypy jobs). Set MS_UNIT_SKIP_SHELLCHECK=1 /
@@ -259,14 +259,45 @@ if ((${#unit_tests[@]} == 0)); then
     fail=1
 else
     echo "OK: host unit tests (${#unit_tests[@]} files)"
+    # Guard: no unit test may reach a real sudo. A runner with passwordless sudo would let
+    # one install files under /etc, restart Docker or run apt. Tests stub sudo with a shell
+    # function; a call that gets past those lands on this shim, which refuses it and
+    # records it so the file fails below.
+    sudo_guard_dir="$(mktemp -d)"
+    sudo_guard_log="$sudo_guard_dir/calls"
+    trap 'rm -f "$DISCOVER_OUT" "$DISCOVER_ERR"; rm -rf "$sudo_guard_dir"' EXIT
+    cat >"$sudo_guard_dir/sudo" <<'SHIM'
+#!/usr/bin/env bash
+echo "sudo $*" >>"$MS_UNIT_SUDO_GUARD_LOG"
+echo "unit tier: refused a real sudo call: sudo $*" >&2
+exit 1
+SHIM
+    chmod +x "$sudo_guard_dir/sudo"
+    export MS_UNIT_SUDO_GUARD_LOG="$sudo_guard_log"
+    verdict_file="$sudo_guard_dir/verdict"
+    export PATH="$sudo_guard_dir:$PATH"
     for f in "${unit_tests[@]}"; do
         name="$(basename "$f" .sh)"
         group "unit: $name"
         # Per-test timeout so a stuck test (e.g. a non-TTY re-prompt loop that never
         # reaches EOF) fails fast instead of hanging the run.
-        timeout 300 bash "$f"
+        # stdin from /dev/null: a test must never depend on the caller's stdin
+        # (an open pipe or terminal makes a stdin-reading product path hang).
+        rm -f "$verdict_file"
+        MS_UNIT_VERDICT_FILE="$verdict_file" timeout 300 bash "$f" </dev/null
         rc=$?
         endgroup
+        # Exit 0 is a pass only if summary ran: sourced code that calls `exit 0`
+        # part-way through would otherwise pass with the remaining checks unrun.
+        if ((rc == 0)) && [[ ! -s "$verdict_file" ]]; then
+            err "unit ended without a verdict" "$name exited 0 before summary ran - an early exit skipped its remaining checks"
+            fail=1
+        fi
+        if [[ -s "$sudo_guard_log" ]]; then
+            err "unit reached real sudo" "$name: $(head -n 3 "$sudo_guard_log" | tr '\n' ';') - stub sudo in the test"
+            : >"$sudo_guard_log"
+            fail=1
+        fi
         if ((rc != 0)); then
             if ((rc == 124)); then
                 err "unit timed out" "$name (exceeded 300s — likely a hang)"

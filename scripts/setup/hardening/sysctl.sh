@@ -1,7 +1,7 @@
 # Owns: setup_* uninstall_* — kernel sysctl hardening configuration and owned-value teardown.
 # Sources: hardening.sh ledger paths and common.sh state/hash helpers.
 # Globals: MEDIASTACK_SYSCTL_CONF, MEDIASTACK_UFW_SYSCTL_CONF.
-# shellcheck source=../../lib/host-tools.sh
+# shellcheck source=/dev/null
 declare -F host_tool_path >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 
 # The exact file setup renders. Kept as a renderer so the teardown can

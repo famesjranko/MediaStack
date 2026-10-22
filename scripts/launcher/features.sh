@@ -6,7 +6,7 @@
 # rule lives in admin-filter.sh so setup, health and the menu cannot disagree.
 # Loaded from this file's own location because the toggles source hardening.sh
 # only when they run, after the menu has already rendered.
-# shellcheck source=../setup/hardening/admin-filter.sh
+# shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../setup/hardening/admin-filter.sh"
 
 _feature_admin_filter_state() {

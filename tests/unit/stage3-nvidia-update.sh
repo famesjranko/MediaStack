@@ -139,6 +139,7 @@ _env_write_kv() {
 _env_write_kv_warn() { :; }
 _stage3_nvidia_finalize_failure() { UPDATE_FINALIZE_FAILURES=$((UPDATE_FINALIZE_FAILURES + 1)); }
 ui_log() { :; }
+sudo() { return 0; } # finalize restarts Docker; never the real one
 UPDATE_FINALIZE_INSTALLS=0
 UPDATE_FINALIZE_PATCHES=0
 UPDATE_FINALIZE_FAILURES=0
@@ -155,7 +156,7 @@ stage3_finalize_nvidia
 assert_eq "1" "$UPDATE_FINALIZE_PATCHES" "matching update attempts the Unlock patch once"
 assert_eq "2" "$UPDATE_FINALIZE_FAILURES" "failed Unlock patch uses finalization failure path"
 unset -f command nvidia-smi nvidia_driver_version install_nvidia_drivers apply_nvidia_patch \
-    _env_write_kv _env_write_kv_warn _stage3_nvidia_finalize_failure ui_log
+    _env_write_kv _env_write_kv_warn _stage3_nvidia_finalize_failure ui_log sudo
 unset UPDATE_FINALIZE_INSTALLS UPDATE_FINALIZE_PATCHES UPDATE_FINALIZE_FAILURES
 rm -rf "$nvidia_update_dir"
 unset nvidia_update_dir
@@ -221,7 +222,7 @@ ln -s libnvidia-encode.so.580.142 "$SWITCH_LIB/libnvidia-encode.so.1"
 ln -s libnvidia-fbc.so.580.142 "$SWITCH_LIB/libnvidia-fbc.so.1"
 printf 'ORIG' >"$SWITCH_OPT/libnvidia-encode-backup/libnvidia-encode.so.580.142"
 printf 'ORIG' >"$SWITCH_OPT/libnvidia-fbc-backup/libnvidia-fbc.so.580.142"
-# shellcheck source=../../scripts/setup/gpu/nvidia-patch.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/gpu/nvidia-patch.sh"
 prev_script_dir="${SCRIPT_DIR:-}"
 SCRIPT_DIR="$SWITCH_DIR/root"

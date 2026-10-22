@@ -40,6 +40,59 @@ for file in "${service_mains[@]}"; do
     fi
 done
 
+# -----------------------------------------------------------------------------
+# Unit-file verdict gate: tests/unit.sh gates each tests/unit/*.sh on its exit
+# code alone, and only `summary` (tests/lib/assert.sh) turns a failed assertion
+# into a nonzero exit. A top-level unit file whose last command is not
+# `summary` reports failures it can never fail CI on. Fragments under
+# tests/unit/<dir>/ are sourced by a parent that owns the verdict, so only
+# top-level files are checked. Fails closed on an empty population.
+# -----------------------------------------------------------------------------
+unit_files_list=$(mktemp) || die "cannot create unit-file list"
+trap 'rm -f "$service_mains_list" "$unit_files_list"' EXIT
+git -C "$REPO_ROOT" ls-files -z 'tests/unit/*.sh' >"$unit_files_list" \
+    || die "unit-file discovery failed"
+
+unit_files=()
+mapfile -d '' -t unit_files <"$unit_files_list"
+unit_count=0
+verdict_fail=0
+for file in "${unit_files[@]}"; do
+    [[ "${file#tests/unit/}" != */* ]] || continue
+    unit_count=$((unit_count + 1))
+    last=$(grep -v '^[[:space:]]*$' "$REPO_ROOT/$file" | tail -n 1)
+    if [[ "$last" != summary ]]; then
+        printf 'structure: %s does not end with `summary` — without it a failed assertion cannot fail tests/unit.sh; see tests/README.md "Unit files must end with summary"\n' \
+            "$file" >&2
+        verdict_fail=1
+    fi
+done
+((unit_count > 0)) || die "no top-level tests/unit/*.sh found — empty population"
+
+# -----------------------------------------------------------------------------
+# ShellCheck source-directive gate: `# shellcheck source=<path>` resolves
+# against the working directory, which is the repo root in CI and in
+# tests/lint.sh. A path that climbs out of the repo resolves to nothing there,
+# but from a .wt/ worktree it reaches the main checkout, so local lint silently
+# analyses other files than CI does. Such a directive must say /dev/null.
+# -----------------------------------------------------------------------------
+directive_count=0
+directive_fail=0
+while IFS= read -r hit; do
+    file=${hit%%:*}
+    path=${hit#*source=}
+    path=${path%%[[:space:]]*}
+    [[ "$path" == /dev/null ]] && continue
+    directive_count=$((directive_count + 1))
+    resolved=$(realpath -m "$REPO_ROOT/$path")
+    if [[ "$resolved" != "$REPO_ROOT"/* ]]; then
+        printf 'structure: %s: `# shellcheck source=%s` escapes the repo root, so CI never follows it while a .wt/ worktree follows it into the main checkout; use source=/dev/null or a repo-root-relative path\n' \
+            "$file" "$path" >&2
+        directive_fail=1
+    fi
+done < <(cd "$REPO_ROOT" && git ls-files -z '*.sh' 'mediastack' | xargs -0 grep -HoE '^[[:space:]]*#[[:space:]]*shellcheck[[:space:]]+([^[:space:]]+[[:space:]]+)*source=[^[:space:]]+' || true)
+((directive_count > 0)) || die "no shellcheck source directive found — empty population"
+
 # deferred: import violations still get reported in the same run
 
 # -----------------------------------------------------------------------------
@@ -156,7 +209,7 @@ for seam in "${SANCTIONED_SEAMS[@]}"; do
         || die "stale sanctioned seam (that import no longer exists): $seam"
 done
 
-((shape_fail == 0 && import_fail == 0)) || exit 1
+((shape_fail == 0 && import_fail == 0 && verdict_fail == 0 && directive_fail == 0)) || exit 1
 
-printf 'structure: %s service modules checked for their configurator; %s import edges checked\n' \
-    "${#service_mains[@]}" "$edge_count"
+printf 'structure: %s service modules checked for their configurator; %s import edges checked; %s unit files checked for a closing summary; %s shellcheck source directives checked\n' \
+    "${#service_mains[@]}" "$edge_count" "$unit_count" "$directive_count"

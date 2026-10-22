@@ -302,7 +302,7 @@ assert_eq "3" "$NVIDIA_CALLER_RC" "Stage 3 NVIDIA caller propagates durable-stat
 # The wizard must stop after a Stage 3 persistence failure. In particular it
 # must not enter Stage 2 or print the final completion summary.
 SCRIPT_DIR="$REPO_ROOT"
-# shellcheck source=../../scripts/setup/wizard.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/wizard.sh"
 SCRIPT_DIR="$TMP_ROOT/wizard-caller"
 mkdir -p "$SCRIPT_DIR"

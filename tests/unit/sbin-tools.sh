@@ -16,7 +16,7 @@ UNIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$UNIT_DIR/../.." && pwd)"
 SCAN_ROOT="${MS_SBIN_GUARD_ROOT:-$REPO_ROOT}"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 # shellcheck disable=SC2034 # read by tests/lib/assert.sh for failure labels
 CURRENT_SCENARIO="sbin-tools"

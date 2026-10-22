@@ -9,12 +9,12 @@ set -uo pipefail
 UNIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$UNIT_DIR/../.." && pwd)"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="nvidia-patch"
 scenario_begin "$CURRENT_SCENARIO"
 
-# shellcheck source=../../scripts/lib/nvidia-patch.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/lib/nvidia-patch.sh"
 
 set +e

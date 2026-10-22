@@ -13,14 +13,14 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 # Read by tests/lib/assert.sh for failure labels.
 # shellcheck disable=SC2034
 CURRENT_SCENARIO="resource-limits"
 echo -e "${CYAN}${BOLD}▶ scenario: resource-limits${NC}"
 
-# shellcheck source=../../setup.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/setup.sh"
 
 set +e

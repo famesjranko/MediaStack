@@ -133,10 +133,46 @@ assert_rc 2 "a sanctioned seam whose import disappeared is a stale entry"
 assert_contains "$OUT" "stale sanctioned seam" "the stale entry is named as such"
 reset_fixture
 
+# --- unit-file verdict ------------------------------------------------------
+
+# Without a closing `summary`, a failed assertion never changes the exit code.
+sed -i '${/^summary$/d}' "$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 1 "a unit file without a closing summary fails"
+assert_contains "$OUT" "tests/unit/arr.sh does not end with" "the failure names the unit file"
+reset_fixture
+
+# summary followed by more commands discards its exit status.
+printf 'echo done\n' >>"$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 1 "a unit file whose last command is not summary fails"
+reset_fixture
+
+# A fragment sourced by a parent owns no verdict.
+printf 'FRAGMENT_PROBE=1\n' >>"$FIXTURE/tests/unit/hardening/admin-filter.sh"
+run_gate
+assert_rc 0 "a unit fragment without summary stays clean"
+reset_fixture
+
+# --- shellcheck source directives -------------------------------------------
+
+# A source path that climbs out of the repo resolves differently in a worktree.
+printf '# shellcheck source=../../setup.sh\n' >>"$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 1 "a source directive that escapes the repo root fails"
+assert_contains "$OUT" "tests/unit/arr.sh: \`# shellcheck source=../../setup.sh\` escapes the repo root" "the failure names the file and the directive"
+reset_fixture
+
+# A repo-root-relative path resolves the same everywhere.
+sed -i '1a # shellcheck source=setup.sh' "$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 0 "a repo-root-relative source directive stays clean"
+reset_fixture
+
 run_gate
 assert_rc 0 "the fixture is green again after every probe"
 
-expected=23
+expected=30
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

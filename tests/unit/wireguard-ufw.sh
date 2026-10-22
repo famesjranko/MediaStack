@@ -282,3 +282,5 @@ print_access_info() { :; }
 _WIZ_WG_ENABLED=true _WIZ_ADMIN_PW=pw _WIZ_JELLYFIN_BITRATE="" UI_DEMO=1 \
     _stage2_install >/dev/null 2>&1 </dev/null
 assert_contains "$STAGE2_ORDER" "write_env wg_rule" "stage 2: converges the WireGuard rule after writing .env"
+
+summary
