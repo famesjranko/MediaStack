@@ -1,6 +1,8 @@
 # Owns: setup_* uninstall_* — kernel sysctl hardening configuration and owned-value teardown.
 # Sources: hardening.sh ledger paths and common.sh state/hash helpers.
 # Globals: MEDIASTACK_SYSCTL_CONF.
+# shellcheck source=../../lib/host-tools.sh
+declare -F host_tool_path >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 
 # The exact file setup renders. Kept as a renderer so the teardown can
 # recognise an unmodified MediaStack sysctl file by content when the
@@ -127,7 +129,8 @@ _uninstall_sysctl() {
         state_key="${state_key//./_}"
         local before
         before=$(_ms_state_get "$state_key" 2>/dev/null || true)
-        current=$(sysctl -n "$key" 2>/dev/null) # reading sysctl needs no root
+        # Reading needs no root, but sysctl lives in /usr/sbin, off a user PATH.
+        current=$("$(host_tool_path sysctl)" -n "$key" 2>/dev/null)
         if [[ "$current" == "$applied" ]]; then
             if [[ -n "$before" ]]; then
                 sudo sysctl -w "$key=$before" >/dev/null || return 1

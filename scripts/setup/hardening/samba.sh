@@ -2,6 +2,10 @@
 # Sources: hardening.sh Samba paths, ledger helpers, and firewall helpers.
 # Globals: SAMBA_* paths, SMB_ENABLED, SMB_SHARE_SCOPE, DATA_DIR, PGID, and admin .env values.
 
+# smbd lives in /usr/sbin, which a normal user's PATH omits.
+# shellcheck source=../../lib/host-tools.sh
+declare -F host_tool_installed >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
+
 # shellcheck source=../../lib/apt.sh
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
 
@@ -98,7 +102,7 @@ setup_samba() {
     if [[ "$ownership_recorded" == "false" ]]; then
         local samba_was_present=false service_was_enabled=false service_was_active=false user_preexisted=false
         passdb_preexisted=false
-        command -v smbd &>/dev/null && samba_was_present=true
+        host_tool_installed smbd && samba_was_present=true
         if $samba_was_present; then
             sudo systemctl is-enabled smbd >/dev/null 2>&1 && service_was_enabled=true
             sudo systemctl is-active smbd >/dev/null 2>&1 && service_was_active=true
@@ -132,7 +136,7 @@ setup_samba() {
             log_warn "Samba owner changed after setup; leaving existing Samba configuration unchanged"
             return 0
         fi
-        if ! command -v smbd &>/dev/null; then
+        if ! host_tool_installed smbd; then
             if [[ "$(_ms_state_get SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK)" != "true" ]]; then
                 log_warn "Recorded Samba package is missing; leaving state unchanged"
                 return 0
@@ -249,7 +253,7 @@ _uninstall_samba() {
     fi
 
     if [[ "$(_ms_state_get SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK)" == "true" ]] \
-        && command -v smbd >/dev/null 2>&1; then
+        && host_tool_installed smbd; then
         if $adopted; then
             log_warn "Samba has non-MediaStack configuration; preserving the package"
         else

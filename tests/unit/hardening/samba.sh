@@ -418,5 +418,61 @@ else
 fi
 unset SMB_SHARE_SCOPE
 
-unset -f sudo smbpasswd id getent
+unset -f sudo smbpasswd smbd id getent
+# ===========================================================================
+# setup_samba — smbd only in an sbin dir that is not on PATH (normal Debian user)
+# Regression: a bare `command -v smbd` missed /usr/sbin, so a pre-existing Samba
+# was recorded as MediaStack's own and apt-get install ran again.
+# ===========================================================================
+# Given smbd exists only in a fake sbin dir and the include file is absent
+SBIN_TMP=$(mktemp -d)
+printf '#!/bin/sh\n' >"$SBIN_TMP/smbd"
+chmod +x "$SBIN_TMP/smbd"
+rm -f "$SAMBA_INCLUDE_FILE"
+printf '[global]\n   workgroup = WORKGROUP\n' >"$SAMBA_MAIN_CONF"
+SBIN_STATE=()
+SBIN_CALLS=()
+_ms_state_get() { echo false; }
+_ms_state_set() { SBIN_STATE+=("$1=$2"); }
+sudo() {
+    case "${1:-}" in
+        grep | install | tee | sha256sum) command "$@" ;;
+        testparm) echo effective ;;
+        *) SBIN_CALLS+=("$*") ;;
+    esac
+    return 0
+}
+ui_spin() {
+    shift
+    "$@"
+}
+# shellcheck disable=SC2034 # fixture read by the sourced code
+SMB_ENABLED="true"
+# shellcheck disable=SC2034 # fixture read by the sourced code
+SMB_SHARE_SCOPE="data"
+# shellcheck disable=SC2034 # fixture read by the sourced code
+JELLYFIN_ADMIN_USER="testadmin"
+JELLYFIN_ADMIN_PASSWORD="testpass"
+# shellcheck disable=SC2034 # fixture read by the sourced code
+DATA_DIR="/data"
+# shellcheck disable=SC2034 # fixture read by the sourced code
+PGID="1000"
+
+# When setup_samba runs with PATH lacking sbin and MS_SBIN_DIRS pointing at that dir
+(
+    PATH="/usr/bin:/bin"
+    # shellcheck disable=SC2034 # read by host_tool_path
+    MS_SBIN_DIRS="$SBIN_TMP"
+    setup_samba >/dev/null 2>&1
+    printf '%s\n' "${SBIN_STATE[@]}" >"$SBIN_TMP/state"
+    printf '%s\n' "${SBIN_CALLS[@]}" >"$SBIN_TMP/calls"
+)
+
+# Then the ledger does not claim the package and apt-get install is not run
+assert_not_contains "$(cat "$SBIN_TMP/state")" "SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK=true" \
+    "setup_samba: smbd in sbin is a pre-existing Samba, not recorded as MediaStack's"
+assert_not_contains "$(cat "$SBIN_TMP/calls")" "apt-get install" \
+    "setup_samba: smbd in sbin skips the samba install"
+unset -f sudo ui_spin
+rm -rf "$SBIN_TMP"
 rm -rf "$SAMBA_TMP"

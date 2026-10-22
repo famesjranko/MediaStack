@@ -141,7 +141,7 @@ record_pre_install_state() {
 
     local defaults="deny allow" incoming outgoing rules_hash tmp
     rules_hash=$(printf '' | _ms_stream_sha256)
-    if command -v ufw >/dev/null 2>&1 || [[ -x /usr/sbin/ufw ]]; then
+    if ufw_installed; then
         # Only read live state when UFW is active — inactive UFW has no Default line
         # in `ufw status verbose`, so _ufw_defaults returns empty. Keep the "deny allow"
         # sentinel (nothing to restore on uninstall) when UFW is inactive.

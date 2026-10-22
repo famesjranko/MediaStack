@@ -235,8 +235,21 @@ command() {
     [[ "$1" == -v && "$2" == visudo ]] && return 1
     builtin command "$@"
 }
-storage_install_watchdog >/dev/null 2>&1
+MS_SBIN_DIRS="$TMP_DIR/no-sbin" storage_install_watchdog >/dev/null 2>&1
 assert_contains "$(cat "$WATCHDOG_WARNINGS")" "visudo is unavailable" "storage_install_watchdog: a dotted login name passes the sudoers-token guard"
+
+# Given a normal user's PATH without sbin and visudo only under a fake sbin dir
+# When the watchdog is installed
+# Then it validates the sudoers rule with that visudo instead of skipping the install
+# And it logs no "visudo is unavailable" warning
+: >"$WATCHDOG_WARNINGS"
+: >"$WATCHDOG_SUDO_LOG"
+mkdir -p "$TMP_DIR/fake-sbin"
+printf '#!/bin/sh\nexit 0\n' >"$TMP_DIR/fake-sbin/visudo"
+chmod +x "$TMP_DIR/fake-sbin/visudo"
+MS_SBIN_DIRS="$TMP_DIR/fake-sbin" storage_install_watchdog >/dev/null 2>&1
+assert_eq "" "$(cat "$WATCHDOG_WARNINGS")" "storage_install_watchdog: visudo found under sbin is not reported unavailable"
+assert_contains "$(cat "$WATCHDOG_SUDO_LOG")" "visudo -cf" "storage_install_watchdog: sudoers rule is validated with the sbin visudo"
 unset -f command
 SCRIPT_DIR="$WATCHDOG_ORIGINAL_SCRIPT_DIR"
 unset -f id sudo storage_log_warn storage_log_info storage_log_ok

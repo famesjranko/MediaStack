@@ -1,6 +1,8 @@
 # Owns: nvidia_* — NVIDIA Secure Boot, nouveau handling, and driver resolution prerequisites.
 # Sources: gpu.sh globals, common.sh logging, and nvidia-patch.sh helpers.
 # shellcheck disable=SC2154 # _nvidia_tmp is a documented caller-owned workspace.
+# shellcheck source=../../lib/host-tools.sh
+declare -F host_tool_path >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 # Every apt install runs through MS_APT_INSTALL (scripts/lib/apt.sh).
 # shellcheck source=../../lib/apt.sh
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
@@ -23,7 +25,8 @@ nvidia_driver_check_secure_boot() {
 # Check whether nouveau is bound to any NVIDIA GPU via sysfs PCI driver
 # binding. lsmod alone is insufficient — the installer checks sysfs.
 nvidia_driver_nouveau_is_active() {
-    lsmod 2>/dev/null | grep -q '^nouveau ' && return 0
+    # lsmod lives in /usr/sbin, off a normal user's PATH; a bare call reads as "not loaded".
+    "$(host_tool_path lsmod || echo lsmod)" 2>/dev/null | grep -q '^nouveau ' && return 0
     # `ls -l` is intentional: we match the driver symlink TARGET (-> .../nouveau),
     # which a filename glob cannot inspect.
     # shellcheck disable=SC2010
