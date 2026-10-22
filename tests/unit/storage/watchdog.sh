@@ -333,7 +333,17 @@ STORAGE_SENTINEL="$TMP_DIR/.mediastack-storage-ready"
 # shellcheck disable=SC2034 # consumed by storage_data_services in storage/core.sh, sourced below
 BAZARR_ENABLED=false
 PATH="$WATCHDOG_FAKEBIN:$PATH"
+# Given another watchdog run holds the instance lock
+# When the script is sourced for its functions only
+# Then sourcing returns instead of exiting the test as "already running"
+mkdir -p "$REPO_ROOT/config/state"
+exec 201>"$REPO_ROOT/config/state/storage-watchdog.lock"
+flock -n 201
+WATCHDOG_SOURCED=no
 source "$REPO_ROOT/scripts/storage-watchdog.sh"
+WATCHDOG_SOURCED=yes
+exec 201>&-
+assert_eq "yes" "$WATCHDOG_SOURCED" "watchdog: a source-only load ignores the instance lock"
 
 findmnt() {
     case "$*" in

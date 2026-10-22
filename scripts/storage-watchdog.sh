@@ -36,12 +36,16 @@ MOUNT_HELPER="${MEDIASTACK_STORAGE_MOUNT_HELPER:-/usr/local/libexec/mediastack/s
 
 mkdir -p "$STATE_DIR"
 
-exec 200>"$LOCKFILE" 2>/dev/null || true
-if command -v flock >/dev/null 2>&1; then
-    flock -n 200 || {
-        echo "$(date '+%F %T') [storage-watchdog] another instance is already running"
-        exit 0
-    }
+# A source-only load (tests) is not a running instance, so it takes no lock:
+# with a real run holding it, the exit below would end the sourcing shell.
+if [[ "${MEDIASTACK_WATCHDOG_SOURCE_ONLY:-0}" != "1" ]]; then
+    exec 200>"$LOCKFILE" 2>/dev/null || true
+    if command -v flock >/dev/null 2>&1; then
+        flock -n 200 || {
+            echo "$(date '+%F %T') [storage-watchdog] another instance is already running"
+            exit 0
+        }
+    fi
 fi
 
 log() {
