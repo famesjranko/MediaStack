@@ -136,6 +136,13 @@ assert_eq "rt-amd64" "$(_nvidia_headers_flavor '6.1.0-18-rt-amd64')" \
     "_nvidia_headers_flavor: rt-amd64"
 assert_eq "arm64" "$(_nvidia_headers_flavor '6.1.0-18-arm64')" \
     "_nvidia_headers_flavor: arm64"
+# Debian 13 drops the ABI number for "+debNN", and backports use "+bpo".
+assert_eq "cloud-amd64" "$(_nvidia_headers_flavor '6.12.111+deb13-cloud-amd64')" \
+    "_nvidia_headers_flavor: Debian 13 cloud-amd64"
+assert_eq "amd64" "$(_nvidia_headers_flavor '6.12.38+deb13-amd64')" \
+    "_nvidia_headers_flavor: Debian 13 amd64"
+assert_eq "amd64" "$(_nvidia_headers_flavor '6.12.12+bpo-amd64')" \
+    "_nvidia_headers_flavor: backports amd64"
 if _nvidia_headers_flavor '6.5.0-custom' >/dev/null 2>&1; then
     fail "_nvidia_headers_flavor: custom kernel with no ABI segment has no derivable flavor"
 else
