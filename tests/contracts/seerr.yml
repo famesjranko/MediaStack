@@ -7,7 +7,8 @@ endpoints:
   - {id: local-auth-probe, method: POST, path: /auth/local, sends: [email, password], reads: [], callers: [scripts/lib/health.sh]}
   - {id: current-user, method: GET, path: /auth/me, sends: [], reads: [id, email], callers: [scripts/services/seerr/main.sh]}
   - {id: jellyfin-settings, method: GET, path: /settings/jellyfin, sends: [], reads: [apiKey], callers: [scripts/services/seerr/main.sh]}
-  - {id: jellyfin-library, method: GET, path: /settings/jellyfin/library, sends: [sync, enable], reads: [id], callers: [scripts/services/seerr/main.sh]}
+  - {id: jellyfin-library-sync, method: POST, path: /settings/jellyfin/library/sync, sends: [], reads: [id], callers: [scripts/services/seerr/main.sh]}
+  - {id: jellyfin-library-enable, method: PUT, path: "/settings/jellyfin/library/{id}", sends: [enabled], reads: [], callers: [scripts/services/seerr/main.sh]}
   - {id: initialization, method: POST, path: /settings/initialize, sends: [], reads: [], callers: [scripts/services/seerr/main.sh]}
   # `defaultQuotas.{movie,tv}.quotaLimit` dropped from `reads` 2026-08-05 by
   # replay.py live mode: scripts/services/seerr/main.sh reads both via

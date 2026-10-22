@@ -204,11 +204,14 @@ except Exception:
     # Sync libraries. Capture HTTP code + body so real failures surface
     # (Seerr returns 404 SYNC_ERROR_NO_LIBRARIES, 501
     # SYNC_ERROR_GROUPED_FOLDERS, etc — the old `|| echo "[]"` masked these).
+    # Seerr 3.5 moved this off GET ?sync=true/?enable=... (now a 400) to
+    # POST .../library/sync and PUT .../library/{id}
+    # (seerr-team/seerr#3321); older images no longer work here.
     local libs lib_ids sync_resp sync_code
     sync_resp=$(mktemp)
-    sync_code=$(curl -sS -o "$sync_resp" -w "%{http_code}" \
+    sync_code=$(curl -sS -o "$sync_resp" -w "%{http_code}" -X POST \
         -c "$cookiejar" -b "$cookiejar" \
-        "$seerr_url/api/v1/settings/jellyfin/library?sync=true" 2>/dev/null || echo "000")
+        "$seerr_url/api/v1/settings/jellyfin/library/sync" 2>/dev/null || echo "000")
     if [[ "$sync_code" == "200" ]]; then
         libs=$(cat "$sync_resp")
     else
@@ -232,9 +235,15 @@ except Exception:
     pass' 2>/dev/null)
 
     if [[ -n "$lib_ids" ]]; then
-        if curl -fsS \
-            -c "$cookiejar" -b "$cookiejar" \
-            "$seerr_url/api/v1/settings/jellyfin/library?enable=$lib_ids" >/dev/null 2>&1; then
+        # Sync keeps each library's enabled flag; enable them one by one.
+        local lib_id enable_failed=""
+        for lib_id in ${lib_ids//,/ }; do
+            curl -fsS -X PUT "$seerr_url/api/v1/settings/jellyfin/library/$lib_id" \
+                -H "Content-Type: application/json" \
+                -c "$cookiejar" -b "$cookiejar" \
+                -d "$(http_json_obj enabled bool true)" >/dev/null 2>&1 || enable_failed=1
+        done
+        if [[ -z "$enable_failed" ]]; then
             log_ok "Jellyfin libraries synced and enabled"
         else
             log_warn "Jellyfin libraries synced but could not enable them automatically"
