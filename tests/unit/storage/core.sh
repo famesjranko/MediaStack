@@ -3,7 +3,11 @@
 # preamble (TMP_DIR, source of storage.sh/stack.sh/stage1.sh/env-gen.sh, assert lib).
 
 TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TMP_DIR"' EXIT
+# Only the shell that owns TMP_DIR may remove it. storage_bounded forks a
+# watcher subshell and kills it right after; bash can run an inherited EXIT trap
+# in a child that is killed before it resets its traps, which deleted TMP_DIR
+# mid-file. $$ is the top-level shell's PID in every subshell, $BASHPID is not.
+trap '[[ $BASHPID == "$$" ]] && rm -rf "$TMP_DIR"' EXIT
 
 assert_eq "empty" "$(storage_classify_data_root "$TMP_DIR")" "storage classify: empty root"
 
