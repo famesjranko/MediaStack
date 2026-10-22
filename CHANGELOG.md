@@ -27,6 +27,8 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-23
+
 - Initial public release: guided single-box installer for the full media stack
   (Jellyfin, Sonarr, Radarr, Jackett, qBittorrent, Seerr, and 14 supporting
   services) on Debian 12 or 13, driven entirely by `./mediastack`. Setup
