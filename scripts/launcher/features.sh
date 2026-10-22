@@ -2,6 +2,17 @@
 # Owns: Feature/settings menu routing and day-2 feature toggles.
 # Sources: launcher globals, .env, scripts/lib/ui.sh, storage.sh, recovery.sh, and service helpers.
 
+# The admin-port filter is ON unless ADMIN_PORT_FILTER is exactly "false"; the
+# rule lives in admin-filter.sh so setup, health and the menu cannot disagree.
+# Loaded from this file's own location because the toggles source hardening.sh
+# only when they run, after the menu has already rendered.
+# shellcheck source=../setup/hardening/admin-filter.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../setup/hardening/admin-filter.sh"
+
+_feature_admin_filter_state() {
+    admin_filter_opted_out && echo "OFF" || echo "ON"
+}
+
 _feature_state() { [[ "${1:-false}" == "true" ]] && echo "ON" || echo "OFF"; }
 
 # Persist a toggle's KEY VALUE pairs before the action applies them, so a failed
@@ -46,6 +57,7 @@ submenu_features() {
         options+=("File sharing (SMB): $(_feature_state "${SMB_ENABLED:-false}")")
         options+=("Search indexers: $(_feature_state "${PUBLIC_INDEXERS_ENABLED:-false}")")
         options+=("Firewall (UFW): $(_feature_state "${UFW_ENABLED:-true}")")
+        options+=("Admin-port filter: $(_feature_admin_filter_state)")
         options+=("System hardening: $(_feature_state "${HARDENING_ENABLED:-true}")")
         if storage_is_nas; then
             options+=("NAS storage watchdog: $(_feature_state "${STORAGE_WATCHDOG:-true}")")
@@ -70,6 +82,7 @@ submenu_features() {
             "File sharing (SMB):"*) action_toggle_smb ;;
             "Search indexers:"*) action_toggle_indexers ;;
             "Firewall (UFW):"*) action_toggle_ufw ;;
+            "Admin-port filter:"*) action_toggle_admin_filter ;;
             "System hardening:"*) action_toggle_hardening ;;
             "NAS storage watchdog:"*) action_toggle_watchdog ;;
             "Change quality profile"*) action_change_quality ;;
@@ -204,7 +217,13 @@ action_toggle_ufw() {
         }
         _feature_persist_or_report "Disable UFW firewall" UFW_ENABLED false || return 0
         ui_log info "Removing MediaStack firewall rules (uses sudo)..."
-        if _uninstall_ufw; then
+        # The admin-port filter is not UFW's. Converging it first also moves a
+        # legacy after.rules block out before UFW is touched; the UFW teardown
+        # itself never touches the chain.
+        if ! admin_filter_opted_out; then
+            setup_admin_filter || rc=1
+        fi
+        if ((rc == 0)) && _uninstall_ufw; then
             # Reset the ownership latches so a later re-enable reconfigures
             # cleanly — setup_ufw early-returns if UFW_DEFAULTS_APPLIED is still
             # true with non-'deny allow' defaults after we restored the baseline.
@@ -222,11 +241,6 @@ action_toggle_ufw() {
         fi
         _show_action_result "$rc" "Disable UFW firewall"
     else
-        if ! _docker_reachable; then
-            ui_log warn "Docker isn't reachable - start the stack first (the firewall restricts Docker's published ports)."
-            launcher_pause_for_menu
-            return 0
-        fi
         if ! validate_install_state; then
             ui_log warn "No valid install ledger found - run a full install/repair before enabling the firewall."
             launcher_pause_for_menu
@@ -239,13 +253,54 @@ action_toggle_ufw() {
         }
         _feature_persist_or_report "Enable UFW firewall" UFW_ENABLED true || return 0
         ui_log info "Configuring the UFW firewall (uses sudo)..."
-        setup_ufw || rc=$?
+        # Converge the admin-port filter first (the UFW toggles never touch the
+        # chain): a legacy after.rules block must be gone before UFW loads it.
+        if ! admin_filter_opted_out; then
+            setup_admin_filter || rc=$?
+        fi
+        ((rc == 0)) && { setup_ufw || rc=$?; }
         # Reopen the configurable service ports only when remote access is set up
         # (a real domain); LAN-only installs never opened them.
         if ((rc == 0)) && [[ "${DOMAIN:-example.com}" != "example.com" ]]; then
             setup_ufw_service_ports || rc=$?
         fi
         _show_action_result "$rc" "Enable UFW firewall"
+    fi
+    launcher_pause_for_menu
+}
+
+action_toggle_admin_filter() {
+    echo ""
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/scripts/setup/hardening.sh"
+    local rc=0
+    if ! admin_filter_opted_out; then
+        ui_log warn "Turning this OFF makes ports 81, 51821, 8000, 3001, 9000, the *arr and"
+        ui_log warn "download UIs and 7359/udp reachable from ANY source your router forwards."
+        ui_confirm "Turn OFF the admin-port filter?" no || {
+            ui_log info "No change."
+            launcher_pause_for_menu
+            return 0
+        }
+        _feature_persist_or_report "Disable admin-port filter" ADMIN_PORT_FILTER false || return 0
+        ui_log info "Removing the admin-port filter (uses sudo; Docker keeps running)..."
+        admin_filter_disable || rc=1
+        _show_action_result "$rc" "Disable admin-port filter"
+    else
+        if ! validate_install_state; then
+            ui_log warn "No valid install ledger found - run a full install/repair before enabling the filter."
+            launcher_pause_for_menu
+            return 0
+        fi
+        ui_confirm "Turn ON the admin-port filter (admin UIs reachable from the LAN, this machine and Tailscale only)?" yes || {
+            ui_log info "No change."
+            launcher_pause_for_menu
+            return 0
+        }
+        _feature_persist_or_report "Enable admin-port filter" ADMIN_PORT_FILTER true || return 0
+        ui_log info "Installing the admin-port filter (uses sudo)..."
+        setup_admin_filter || rc=$?
+        _show_action_result "$rc" "Enable admin-port filter"
     fi
     launcher_pause_for_menu
 }

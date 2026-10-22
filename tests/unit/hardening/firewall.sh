@@ -57,7 +57,7 @@ for c in "${UFW_CALLS[@]}"; do
     [[ "$c" == *"delete allow 2222/tcp"* ]] && found_ssh_broad_delete=true
 done
 assert_eq "false" "$found_reset" "setup_ufw: skip path — no reset when active + service/Docker markers"
-assert_eq "false" "$found_tee" "setup_ufw: skip path — no Docker rule rewrite when persisted and live"
+assert_eq "false" "$found_tee" "setup_ufw: skip path — no after.rules write"
 assert_eq "true" "$found_ssh_10" "setup_ufw: skip path — repairs active SSH port allow for 10.0.0.0/8"
 assert_eq "true" "$found_ssh_172" "setup_ufw: skip path — repairs active SSH port allow for 172.16.0.0/12"
 assert_eq "true" "$found_ssh_192" "setup_ufw: skip path — repairs active SSH port allow for 192.168.0.0/16"
@@ -67,7 +67,8 @@ unset -f sudo ufw
 unset SSH_CONNECTION
 
 # ===========================================================================
-# setup_ufw — active service marker repairs missing Docker after.rules block
+# setup_ufw — never writes the admin-port filter into after.rules/after6.rules
+# (the filter is admin-filter.sh's, UFW on or off)
 # ===========================================================================
 
 UFW_CALLS=()
@@ -90,7 +91,7 @@ sudo() {
         UFW_CALLS+=("$*")
         if [[ "$*" == *after6.rules* ]]; then
             DOCKER6_RULES="$(cat)"
-        else
+        elif [[ "$*" == *after.rules* ]]; then
             DOCKER_RULES="$(cat)"
         fi
         return 0
@@ -116,186 +117,43 @@ for c in "${UFW_CALLS[@]}"; do
 done
 assert_eq "false" "$found_reset" "setup_ufw: active marker repair — no firewall reset"
 assert_eq "false" "$found_ssh_broad_delete" "setup_ufw: active marker repair — preserves broad SSH allow"
-assert_contains "$DOCKER_RULES" "# MEDIASTACK-DOCKER-RULES" "setup_ufw: active marker repair — writes missing Docker rules block"
-assert_contains "$DOCKER_RULES" "-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT" "setup_ufw: active marker repair — writes DOCKER-USER jump"
-assert_contains "$DOCKER_RULES" "-p udp -m multiport --dports 7359 -j DROP" \
-    "setup_ufw: IPv4 block DROPs the published UDP admin port (Jellyfin discovery)"
-
-# The IPv6 mirror. after6.rules is loaded by ip6tables-restore from its own
-# file, so an absent mirror means every admin port is unfiltered the moment
-# Docker gains an IPv6 bridge.
-assert_contains "$DOCKER6_RULES" "# MEDIASTACK-DOCKER-RULES" \
-    "setup_ufw: writes the Docker rules block to after6.rules"
-assert_contains "$DOCKER6_RULES" ":MEDIASTACK-DOCKER-RESTRICT - [0:0]" \
-    "setup_ufw: IPv6 block declares the same chain name"
-assert_contains "$DOCKER6_RULES" ":DOCKER-USER - [0:0]" \
-    "setup_ufw: IPv6 block declares DOCKER-USER (ip6tables-restore aborts on a missing chain)"
-assert_contains "$DOCKER6_RULES" "-A DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT" \
-    "setup_ufw: IPv6 block writes the DOCKER-USER jump"
-assert_contains "$DOCKER6_RULES" "-A MEDIASTACK-DOCKER-RESTRICT -s ::1/128 -j RETURN" \
-    "setup_ufw: IPv6 block RETURNs loopback"
-assert_contains "$DOCKER6_RULES" "-A MEDIASTACK-DOCKER-RESTRICT -s fc00::/7 -j RETURN" \
-    "setup_ufw: IPv6 block RETURNs unique-local"
-assert_contains "$DOCKER6_RULES" "-A MEDIASTACK-DOCKER-RESTRICT -s fe80::/10 -j RETURN" \
-    "setup_ufw: IPv6 block RETURNs link-local"
-assert_contains "$DOCKER6_RULES" "-p tcp -m multiport --dports 8989,7878,9117,8080,5055,9000,81,51821 -j DROP" \
-    "setup_ufw: IPv6 block DROPs the first TCP admin-port group"
-assert_contains "$DOCKER6_RULES" "-p tcp -m multiport --dports 8000,8090,3001,45876,8191,6767,8096,3000 -j DROP" \
-    "setup_ufw: IPv6 block DROPs the second TCP admin-port group"
-assert_contains "$DOCKER6_RULES" "-p udp -m multiport --dports 7359 -j DROP" \
-    "setup_ufw: IPv6 block DROPs the published UDP admin port"
-assert_contains "$DOCKER6_RULES" "# END MEDIASTACK-DOCKER-RULES" \
-    "setup_ufw: IPv6 block carries the teardown end marker"
-# The DROP list is the thing that must not drift between families.
-assert_eq "$(grep -c -- '-j DROP' <<<"$DOCKER_RULES")" "$(grep -c -- '-j DROP' <<<"$DOCKER6_RULES")" \
-    "setup_ufw: IPv4 and IPv6 blocks DROP the same number of port groups"
+# Given UFW is active and neither after file carries a MediaStack block
+# When setup_ufw runs
+# Then it writes neither file: the admin-port filter is not UFW's
+assert_eq "" "$DOCKER_RULES" "setup_ufw: writes no admin-port block to after.rules"
+assert_eq "" "$DOCKER6_RULES" "setup_ufw: writes no admin-port block to after6.rules"
 unset -f sudo ufw
 
 # ===========================================================================
-# setup_ufw — active service marker reloads persisted rules when live jump is missing
+# setup_ufw — does not reload UFW or look at DOCKER-USER
 # ===========================================================================
 
+# Given UFW is configured and Docker's chain has no MediaStack jump
+# When setup_ufw runs
+# Then it neither reloads UFW (a reload appends jumps behind Docker's RETURN) nor touches iptables
 UFW_TRACE=$(mktemp)
-UFW_RELOADED="$UFW_TRACE.reloaded"
 sudo() {
     printf '%s\n' "$*" >>"$UFW_TRACE"
     if [[ "${1:-}" == "ufw" ]]; then
         if [[ "${2:-}" == "status" ]]; then
             echo "Status: active"
             echo "45876/tcp                  ALLOW       172.16.0.0/12"
-        elif [[ "${2:-}" == "reload" ]]; then
-            touch "$UFW_RELOADED"
         fi
         return 0
     fi
-    if [[ "${1:-}" == "grep" ]]; then
-        return 0
-    fi
-    if [[ "${1:-}" == "iptables" ]]; then
-        if [[ "${2:-}" == "-L" ]]; then
-            return 0
-        fi
-        if [[ "${2:-}" == "-C" ]]; then
-            [[ -f "$UFW_RELOADED" ]]
-            return $?
-        fi
-    fi
-    if [[ "${1:-}" == "tee" ]]; then
-        cat >/dev/null
-        return 0
-    fi
+    [[ "${1:-}" == "grep" ]] && return 1
+    [[ "${1:-}" == "iptables" && "${2:-}" == "-C" ]] && return 1
+    [[ "${1:-}" == "tee" ]] && cat >/dev/null
     return 0
 }
 ufw() { :; }
-
-setup_ufw
+setup_ufw >/dev/null 2>&1
 ufw_trace_text=$(cat "$UFW_TRACE")
-
-if echo "$ufw_trace_text" | grep -Fq "ufw --force reset"; then
-    fail "setup_ufw: live jump repair — no firewall reset" "$ufw_trace_text"
-else
-    pass "setup_ufw: live jump repair — no firewall reset"
-fi
-if echo "$ufw_trace_text" | grep -Fq "tee -a /etc/ufw/after.rules"; then
-    fail "setup_ufw: live jump repair — reuses persisted Docker rules" "$ufw_trace_text"
-else
-    pass "setup_ufw: live jump repair — reuses persisted Docker rules"
-fi
-if echo "$ufw_trace_text" | grep -Fq "ufw reload"; then
-    pass "setup_ufw: live jump repair — reloads UFW to restore DOCKER-USER jump"
-else
-    fail "setup_ufw: live jump repair — reloads UFW to restore DOCKER-USER jump" "$ufw_trace_text"
-fi
-rm -f "$UFW_TRACE" "$UFW_RELOADED"
-unset -f sudo ufw
-
-# ===========================================================================
-# setup_ufw — active service marker surfaces UFW reload errors
-# ===========================================================================
-
-UFW_TRACE=$(mktemp)
-sudo() {
-    printf '%s\n' "$*" >>"$UFW_TRACE"
-    if [[ "${1:-}" == "ufw" ]]; then
-        if [[ "${2:-}" == "status" ]]; then
-            echo "Status: active"
-            echo "45876/tcp                  ALLOW       172.16.0.0/12"
-        elif [[ "${2:-}" == "reload" ]]; then
-            echo "ERROR: problem running ufw-init" >&2
-        fi
-        return 0
-    fi
-    if [[ "${1:-}" == "grep" ]]; then
-        return 1
-    fi
-    if [[ "${1:-}" == "tee" ]]; then
-        cat >/dev/null
-        return 0
-    fi
-    if [[ "${1:-}" == "iptables" ]]; then
-        return 0
-    fi
-    return 0
-}
-ufw() { :; }
-
-ufw_output=$(setup_ufw 2>&1)
-ufw_rc=$?
-assert_eq "1" "$ufw_rc" "setup_ufw: reload error repair — surfaces failure"
-assert_contains "$ufw_output" "ERROR: problem running ufw-init" "setup_ufw: reload error repair — reports ufw-init failure"
-if grep -Fq "ufw --force reset" "$UFW_TRACE"; then
-    fail "setup_ufw: reload error repair — no firewall reset" "$(cat "$UFW_TRACE")"
-else
-    pass "setup_ufw: reload error repair — no firewall reset"
-fi
+assert_not_contains "$ufw_trace_text" "ufw reload" "setup_ufw: never reloads UFW for the admin-port filter"
+assert_not_contains "$ufw_trace_text" "iptables" "setup_ufw: never reads or edits DOCKER-USER"
+assert_not_contains "$ufw_trace_text" "after.rules" "setup_ufw: never writes after.rules"
+assert_not_contains "$ufw_trace_text" "after6.rules" "setup_ufw: never writes after6.rules"
 rm -f "$UFW_TRACE"
-unset -f sudo ufw
-
-# ===========================================================================
-# setup_ufw — active service marker surfaces a missing live jump after reload
-# ===========================================================================
-
-UFW_TRACE=$(mktemp)
-sudo() {
-    printf '%s\n' "$*" >>"$UFW_TRACE"
-    if [[ "${1:-}" == "ufw" ]]; then
-        if [[ "${2:-}" == "status" ]]; then
-            echo "Status: active"
-            echo "45876/tcp                  ALLOW       172.16.0.0/12"
-        fi
-        return 0
-    fi
-    if [[ "${1:-}" == "grep" ]]; then
-        return 0
-    fi
-    if [[ "${1:-}" == "iptables" ]]; then
-        if [[ "${2:-}" == "-L" ]]; then
-            return 0
-        fi
-        if [[ "${2:-}" == "-C" ]]; then
-            return 1
-        fi
-    fi
-    if [[ "${1:-}" == "tee" ]]; then
-        cat >/dev/null
-        return 0
-    fi
-    return 0
-}
-ufw() { :; }
-log_warn() { echo "$*"; }
-
-ufw_output=$(setup_ufw 2>&1)
-ufw_rc=$?
-assert_eq "1" "$ufw_rc" "setup_ufw: missing jump after reload — surfaces failure"
-assert_contains "$ufw_output" "Docker LAN-only restriction jump is still missing" "setup_ufw: missing jump after reload — reports missing jump"
-if grep -Fq "ufw reload" "$UFW_TRACE"; then
-    pass "setup_ufw: missing jump after reload — attempted UFW reload"
-else
-    fail "setup_ufw: missing jump after reload — attempted UFW reload" "$(cat "$UFW_TRACE")"
-fi
-rm -f "$UFW_TRACE"
-log_warn() { :; }
 unset -f sudo ufw
 
 # ===========================================================================
@@ -374,7 +232,7 @@ sudo() {
     if [[ "${1:-}" == "tee" ]]; then
         if [[ "$*" == *after6.rules* ]]; then
             DOCKER6_RULES="$(cat)"
-        else
+        elif [[ "$*" == *after.rules* ]]; then
             DOCKER_RULES="$(cat)"
         fi
         return 0
@@ -414,8 +272,11 @@ assert_eq "false" "$found_ssh_broad" "setup_ufw: fresh path — SSH is not open 
 assert_eq "true" "$found_ssh_10" "setup_ufw: fresh path — SSH allows 10.0.0.0/8"
 assert_eq "true" "$found_ssh_172" "setup_ufw: fresh path — SSH allows 172.16.0.0/12"
 assert_eq "true" "$found_ssh_192" "setup_ufw: fresh path — SSH allows 192.168.0.0/16"
-assert_contains "$DOCKER_RULES" "8096,3000 -j DROP" "setup_ufw: Docker rules block Jellyfin and Homepage from WAN"
+assert_eq "" "$DOCKER_RULES$DOCKER6_RULES" "setup_ufw: fresh path — no admin-port rules written to the after files"
 unset -f sudo
 unset SSH_CONNECTION
 
 # ===========================================================================
+
+# The admin-port filter (rule source, systemd path, apply script, handover).
+source "$HARDENING_TEST_DIR/hardening/admin-filter.sh"

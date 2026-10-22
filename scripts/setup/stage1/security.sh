@@ -17,6 +17,8 @@ _stage1_collect_security() {
         _WIZ_UFW_ENABLED="false"
     fi
 
+    _stage1_collect_admin_filter
+
     local hardening_default="yes"
     [[ "${_WIZ_HARDENING_ENABLED:-${_WIZ_PREV_HARDENING:-true}}" == "true" ]] || hardening_default="no"
     ui_log info "System hardening enables automatic security updates and applies"
@@ -29,5 +31,31 @@ _stage1_collect_security() {
     fi
 
     ui_kv "Firewall" "$([[ "${_WIZ_UFW_ENABLED:-true}" == "true" ]] && echo enabled || echo disabled)"
+    ui_kv "Admin-port filter" "$([[ "${_WIZ_ADMIN_PORT_FILTER:-true}" != "false" ]] && echo enabled || echo disabled)"
     ui_kv "System hardening" "$([[ "${_WIZ_HARDENING_ENABLED:-true}" == "true" ]] && echo enabled || echo disabled)"
+}
+
+# The admin-port filter works without UFW, so it is a separate choice. Ask only
+# where the answer matters: when the firewall is declined, or when an earlier
+# run opted out (so the user can opt back in). Otherwise keep it on and ask
+# nothing. Non-interactive runs take the default (yes) without blocking.
+# Only the exact value false is an opt-out, matching admin_filter_opted_out.
+_stage1_collect_admin_filter() {
+    local prev="${_WIZ_ADMIN_PORT_FILTER:-${ADMIN_PORT_FILTER:-true}}"
+    if [[ "$_WIZ_UFW_ENABLED" == "true" && "$prev" != "false" ]]; then
+        _WIZ_ADMIN_PORT_FILTER="true"
+        return 0
+    fi
+    local default="yes"
+    [[ "$prev" != "false" ]] || default="no"
+    ui_log info "The admin-port filter keeps your admin web UIs reachable only from your"
+    ui_log info "LAN, this machine and Tailscale. It does not need the firewall and cannot"
+    ui_log info "lock you out of SSH. Recommended."
+    ui_log warn "If you turn it off, ports 81, 51821, 8000, 3001, 9000, the *arr and download"
+    ui_log warn "UIs and 7359/udp become reachable from any source your router forwards."
+    if ui_confirm "Keep the admin-port filter?" "$default"; then
+        _WIZ_ADMIN_PORT_FILTER="true"
+    else
+        _WIZ_ADMIN_PORT_FILTER="false"
+    fi
 }
