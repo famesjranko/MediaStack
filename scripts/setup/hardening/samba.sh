@@ -12,11 +12,30 @@ declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOU
 # Rules MediaStack opened for SMB carry this exact ufw comment.
 MS_SMB_UFW_COMMENT="MediaStack:SMB-LAN"
 
-# True when the live Samba config differs from what MediaStack recorded after its
-# own setup: the user has added shares or settings, so Samba is no longer only
-# MediaStack's. A missing hash counts as differing, which keeps Samba running.
+# Records, once and for good, that the live Samba config left what MediaStack
+# recorded. The flag is sticky and MediaStack never clears it: re-enabling SMB
+# re-baselines nothing, so a later uninstall or SMB OFF cannot mistake the
+# user's shares for its own. A missing or malformed hash is not a divergence.
+# Returns 0 when the config has diverged (now or before), 1 when it has not, so a
+# caller can act on a divergence even when the ledger write failed.
+_setup_samba_note_divergence() {
+    local recorded
+    [[ "$(_ms_state_get SAMBA_CONFIG_ADOPTED 2>/dev/null || true)" == "true" ]] && return 0
+    recorded=$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)
+    [[ "$recorded" =~ ^[0-9a-f]{64}$ ]] || return 1
+    [[ "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)" != "$recorded" ]] || return 1
+    _ms_state_set SAMBA_CONFIG_ADOPTED true \
+        || log_warn "Could not record that Samba has non-MediaStack configuration"
+    return 0
+}
+
+# True when Samba is no longer only MediaStack's: the ledger flag is set, or the
+# live config differs from what MediaStack recorded after its own setup (the user
+# added shares or settings). A missing hash counts as differing, which keeps
+# Samba running.
 _setup_samba_config_adopted() {
     local current
+    _setup_samba_note_divergence && return 0
     current=$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)
     [[ "$current" != "$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)" ]]
 }
@@ -153,7 +172,8 @@ setup_samba() {
             elif [[ "$(_ms_state_get SAMBA_OWNERSHIP_RECORDED 2>/dev/null || true)" == "true" ]]; then
                 # Backfill only: re-recording an existing hash would adopt the
                 # user's later edits as MediaStack's, and SMB OFF and uninstall
-                # would then stop or remove their shares.
+                # would then stop or remove their shares. Only the flag matters here.
+                _setup_samba_note_divergence || true
                 [[ "$(_ms_state_get SAMBA_INCLUDE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] \
                     || _ms_state_set SAMBA_INCLUDE_SHA256 "$(_ms_root_sha256 "$SAMBA_INCLUDE_FILE")"
                 [[ "$(_ms_state_get SAMBA_EFFECTIVE_SHA256 2>/dev/null || true)" =~ ^[0-9a-f]{64}$ ]] \
@@ -270,6 +290,9 @@ setup_samba() {
     # block: that would silently override the user's main-conf [global] on
     # samba reload and break existing shares. The user's [global] owns
     # workgroup, server-role, security-mode, etc.
+    # Judge divergence before this run changes the effective config.
+    local diverged=false
+    _setup_samba_note_divergence && diverged=true
     sudo install -d -m 0755 "$(dirname "$SAMBA_INCLUDE_FILE")"
     sudo tee "$SAMBA_INCLUDE_FILE" >/dev/null <<EOF
 # Managed by MediaStack setup.sh — DO NOT EDIT
@@ -319,7 +342,10 @@ EOF
     done
     sudo ufw reload >/dev/null 2>&1
 
-    _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
+    # Once the config has diverged the recorded hash stays: re-recording it would
+    # adopt the user's shares as MediaStack's. `diverged` covers a failed flag write.
+    [[ "$diverged" == true || "$(_ms_state_get SAMBA_CONFIG_ADOPTED 2>/dev/null || true)" == "true" ]] \
+        || _ms_state_set SAMBA_EFFECTIVE_SHA256 "$(sudo testparm -s 2>/dev/null | _ms_stream_sha256)"
     _ms_state_set SAMBA_CONFIGURED true
     _ms_state_set SAMBA_SETUP_PENDING false
 

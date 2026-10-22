@@ -52,6 +52,7 @@ _ms_state_get() {
         SAMBA_SETUP_PENDING | SAMBA_PASSDB_PREEXISTED | SAMBA_PASSDB_CREATED_BY_MEDIASTACK | SAMBA_GROUP_ADDED_BY_MEDIASTACK | SAMBA_GROUP_PREEXISTED) echo false ;;
         SAMBA_INCLUDE_SHA256) echo "$samba_hash" ;;
         SAMBA_EFFECTIVE_SHA256) echo "$effective_hash" ;;
+        SAMBA_CONFIG_ADOPTED) echo "${SAMBA_ADOPTED_STATE:-}" ;;
         SAMBA_USER) echo mediaadmin ;;
         SAMBA_SERVICE_WAS_ENABLED | SAMBA_SERVICE_WAS_ACTIVE) echo true ;;
     esac
@@ -159,6 +160,21 @@ unset -f smbd
 _uninstall_samba
 assert_contains "${SAMBA_CALLS[*]}" "userdel mediaadmin" "Samba retry: purged package does not read as adopted"
 assert_not_contains "${SAMBA_CALLS[*]}" "apt-get" "Samba retry: package is not purged twice"
+
+# Given the ledger remembers that the user's config was adopted, though the live hash matches again
+# When Samba is uninstalled
+# Then the package, the account and the groups are kept
+samba_fixture false true
+SAMBA_ADOPTED_STATE=true SAMBA_GROUPS_PRE=""
+smbd() { :; }
+_uninstall_samba
+assert_eq "0" "$?" "Samba adopted flag: uninstall succeeds"
+assert_not_contains "${SAMBA_CALLS[*]}" "apt-get" "Samba adopted flag: package kept although the hash matches"
+assert_not_contains "${SAMBA_CALLS[*]}" "userdel" "Samba adopted flag: account kept"
+assert_not_contains "${SAMBA_CALLS[*]}" "groupdel" "Samba adopted flag: groups kept"
+unset -f smbd
+unset SAMBA_ADOPTED_STATE
+
 unset -f id getent samba_fixture dpkg-query
 unset SAMBA_GROUPS_PRE SAMBA_PURGED_STATE SAMBA_WINBIND_STATUS SAMBA_TESTPARM_GONE
 SAMBA_PGREP_RC=1 SAMBA_STRAY=""
