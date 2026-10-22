@@ -1,13 +1,14 @@
 # Owns: kernel headers and DKMS module coverage for the Debian NVIDIA driver.
 # Sources: gpu.sh globals, nvidia-driver.sh apt helpers, host-tools.sh, and common.sh logging.
 # Derive the Debian kernel-flavor suffix from `uname -r` (e.g. "6.1.0-51-cloud-amd64"
-# → "cloud-amd64", "6.1.0-18-amd64" → "amd64"). Debian kernel releases are
-# "<upstream-version>-<abi>-<flavor>"; a release with no ABI segment (custom kernel,
-# not a Debian package build) has no derivable flavor and fails.
+# → "cloud-amd64", "6.12.111+deb13-amd64" → "amd64"). Debian kernel releases are
+# "<upstream-version>-<abi>-<flavor>" up to Debian 12, "<upstream-version>+debNN-<flavor>"
+# from Debian 13, and "<upstream-version>+bpo-<flavor>" in backports. A release with
+# neither (custom kernel, not a Debian package build) has no derivable flavor and fails.
 _nvidia_headers_flavor() {
     local _rel="$1"
-    [[ "$_rel" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(.+)$ ]] || return 1
-    printf '%s' "${BASH_REMATCH[1]}"
+    [[ "$_rel" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+|\+deb[0-9]+|\+bpo)-(.+)$ ]] || return 1
+    printf '%s' "${BASH_REMATCH[2]}"
 }
 
 # Resolve an installable linux-headers package for the given `uname -r` value.
