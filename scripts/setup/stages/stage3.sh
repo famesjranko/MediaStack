@@ -10,7 +10,7 @@ if [[ -z "${SCRIPT_DIR:-}" ]]; then
 fi
 
 _STAGE3_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../../lib/render-device.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_HELPER_DIR/../lib/render-device.sh"
 unset _STAGE3_HELPER_DIR
 
@@ -19,19 +19,19 @@ if ! type ui_log >/dev/null 2>&1; then
 fi
 
 _STAGE3_CONCERNS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../stage3" && pwd)"
-# shellcheck source=../stage3/copy.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_CONCERNS_DIR/copy.sh"
-# shellcheck source=../stage3/marker.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_CONCERNS_DIR/marker.sh"
-# shellcheck source=../stage3/state.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_CONCERNS_DIR/state.sh"
-# shellcheck source=../stage3/transcode.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_CONCERNS_DIR/transcode.sh"
-# shellcheck source=../stage3/jellyfin.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_CONCERNS_DIR/jellyfin.sh"
-# shellcheck source=../stage3/nvidia-finalize.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_CONCERNS_DIR/nvidia-finalize.sh"
-# shellcheck source=../stage3/nvidia-flow.sh
+# shellcheck source=/dev/null
 source "$_STAGE3_CONCERNS_DIR/nvidia-flow.sh"
 unset _STAGE3_CONCERNS_DIR
 

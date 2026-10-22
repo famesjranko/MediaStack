@@ -10,9 +10,9 @@
 # GPU_TYPE ("nvidia"|"amd"|"intel"|"none"), NEEDS_REBOOT (bool).
 
 _GPU_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../lib/render-device.sh
+# shellcheck source=/dev/null
 source "$_GPU_HELPER_DIR/lib/render-device.sh"
-# shellcheck source=../lib/nvidia-patch.sh
+# shellcheck source=/dev/null
 source "$_GPU_HELPER_DIR/lib/nvidia-patch.sh"
 unset _GPU_HELPER_DIR
 

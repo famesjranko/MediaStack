@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARDENING_TEST_DIR="$SCRIPT_DIR"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 # Read by tests/lib/assert.sh for failure labels.
 # shellcheck disable=SC2034
@@ -20,7 +20,7 @@ CURRENT_SCENARIO="hardening"
 echo -e "${CYAN}${BOLD}▶ scenario: hardening${NC}"
 
 # Source setup.sh for the helper functions (guard prevents main() from running).
-# shellcheck source=../../setup.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/setup.sh"
 
 # Relax strict mode for test assertions.

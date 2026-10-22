@@ -15,7 +15,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="speedtest"
 scenario_begin "$CURRENT_SCENARIO"
 
-# shellcheck source=../../scripts/lib/network.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/lib/network.sh"
 
 set +e

@@ -1,6 +1,6 @@
 # Owns: stage3_* — Stage 3 static wizard copy: offer/tell-me-more/skip-summary/retry choice text and the guarded final-summary call.
 # Sources: print_final_summary (stack.sh, when defined); scripts/lib/gpu-fallback.sh for reason text.
-# shellcheck source=../../lib/gpu-fallback.sh
+# shellcheck source=/dev/null
 declare -F gpu_fallback_reason_text >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/gpu-fallback.sh"
 
 _stage3_print_final_summary() {

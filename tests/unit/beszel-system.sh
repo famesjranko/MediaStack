@@ -159,9 +159,9 @@ DOCKER_RESTART_RC=0
 SCRIPT_DIR="$REPO_ROOT"
 # converge_mediastack_state sources hardening.sh unless it is already loaded, and that would
 # replace the stubs below with the real functions, which install files and run sudo. Load it first.
-# shellcheck source=../../scripts/setup/hardening.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/hardening.sh"
-# shellcheck source=../../scripts/launcher/converge.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/launcher/converge.sh"
 setup_admin_filter() { return 0; }
 ufw_remove_legacy_beszel_rule() { return 0; }

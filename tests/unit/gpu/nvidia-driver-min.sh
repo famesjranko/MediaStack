@@ -340,5 +340,5 @@ log_error() { :; }
 unset APT_MADISON COMPAT_BY_VERSION GPU_LSPCI SUDO_LOG BACKPORTS_ENABLED _LOGF
 unset GPU_GTX1060 GPU_P4 GPU_GT750M _resolve_rc _resolve_out _install_rc STAGE3_FALLBACK_REASON
 # The stubs above replaced real gpu.sh helpers (mock + real share one function slot).
-# shellcheck source=../../scripts/setup/gpu.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/gpu.sh"

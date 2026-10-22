@@ -6,33 +6,33 @@
 # Sourced by scripts/setup/wizard.sh.
 
 _STAGE1_CONCERNS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../stage1" && pwd)"
-# shellcheck source=../stage1/system.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/system.sh"
-# shellcheck source=../stage1/admin.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/admin.sh"
-# shellcheck source=../stage1/storage.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/storage.sh"
-# shellcheck source=../stage1/nas.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/nas.sh"
-# shellcheck source=../stage1/subtitles.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/subtitles.sh"
-# shellcheck source=../stage1/smb.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/smb.sh"
-# shellcheck source=../stage1/quality.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/quality.sh"
-# shellcheck source=../stage1/indexers.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/indexers.sh"
-# shellcheck source=../stage1/image-channel.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/image-channel.sh"
-# shellcheck source=../stage1/qbit.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/qbit.sh"
-# shellcheck source=../stage1/security.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/security.sh"
-# shellcheck source=../stage1/confirm.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/confirm.sh"
-# shellcheck source=../stage1/install.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/install.sh"
-# shellcheck source=../stage1/demo.sh
+# shellcheck source=/dev/null
 source "$_STAGE1_CONCERNS_DIR/demo.sh"
 unset _STAGE1_CONCERNS_DIR
 

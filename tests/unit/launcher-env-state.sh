@@ -25,7 +25,7 @@ CONFIG_FILE="$TMP_DIR/config.yml"
 touch "$CONFIG_FILE"
 
 source "$REPO_ROOT/scripts/lib/common.sh"
-# shellcheck source=../../scripts/launcher/env-state.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/launcher/env-state.sh"
 
 WARNS=()

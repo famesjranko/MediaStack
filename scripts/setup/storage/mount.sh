@@ -2,7 +2,7 @@
 # Sourced by scripts/setup/storage.sh; depends on storage/core.sh helpers
 # (storage_mountpoint, storage_mount_matches, storage_log_*, etc.).
 
-# shellcheck source=../../lib/apt.sh
+# shellcheck source=/dev/null
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
 
 storage_repair_mismatched_mount() {

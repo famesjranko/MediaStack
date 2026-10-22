@@ -9,7 +9,7 @@
 # var definitions — the unit suite relies on re-sourcing to restore stubs);
 # common.sh guards itself, so the source below is a no-op after the first.
 _STORAGE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=../lib/common.sh
+# shellcheck source=/dev/null
 source "$_STORAGE_LIB_DIR/../lib/common.sh"
 
 # Canonical NFS mount options — the recommended default seeded when the user

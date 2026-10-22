@@ -221,7 +221,7 @@ ln -s libnvidia-encode.so.580.142 "$SWITCH_LIB/libnvidia-encode.so.1"
 ln -s libnvidia-fbc.so.580.142 "$SWITCH_LIB/libnvidia-fbc.so.1"
 printf 'ORIG' >"$SWITCH_OPT/libnvidia-encode-backup/libnvidia-encode.so.580.142"
 printf 'ORIG' >"$SWITCH_OPT/libnvidia-fbc-backup/libnvidia-fbc.so.580.142"
-# shellcheck source=../../scripts/setup/gpu/nvidia-patch.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/gpu/nvidia-patch.sh"
 prev_script_dir="${SCRIPT_DIR:-}"
 SCRIPT_DIR="$SWITCH_DIR/root"

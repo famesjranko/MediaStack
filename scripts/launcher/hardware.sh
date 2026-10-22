@@ -2,7 +2,7 @@
 # Owns: Hardware-transcoding status, configuration, and NVIDIA maintenance menus.
 # Sources: launcher globals, .env, scripts/lib/ui.sh, recovery.sh, gpu/stage3 helpers, and setup.sh.
 
-# shellcheck source=../lib/gpu-fallback.sh
+# shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/gpu-fallback.sh"
 
 # Warn when .env says GPU HW transcoding is complete but Jellyfin is actually

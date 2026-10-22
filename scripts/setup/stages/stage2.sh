@@ -27,11 +27,11 @@ readonly STAGE2_PORT_PROBE_MAX_ATTEMPTS STAGE2_PORT_PROBE_RETRY_SLEEP_SECONDS
 declare -gA _WIZ_DDNS_FIELDS
 
 _STAGE2_CONCERNS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../stage2" && pwd)"
-# shellcheck source=../stage2/common.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/common.sh"
-# shellcheck source=../stage2/input.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/input.sh"
-# shellcheck source=../stage2/le.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/le.sh"
 # shellcheck disable=SC2034 # Stage 2 LE modules read and update these globals.
 STAGE2_LE_CLASSIFICATION="unknown"
@@ -39,21 +39,21 @@ STAGE2_LE_CLASSIFICATION="unknown"
 STAGE2_LE_READY_HOSTS=""
 # shellcheck disable=SC2034
 STAGE2_LE_FAILED_HOSTS=""
-# shellcheck source=../stage2/ddns.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/ddns.sh"
-# shellcheck source=../stage2/domain.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/domain.sh"
-# shellcheck source=../stage2/ports.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/ports.sh"
-# shellcheck source=../stage2/wireguard.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/wireguard.sh"
-# shellcheck source=../stage2/bitrate.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/bitrate.sh"
-# shellcheck source=../stage2/confirm.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/confirm.sh"
-# shellcheck source=../stage2/skip.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/skip.sh"
-# shellcheck source=../stage2/install.sh
+# shellcheck source=/dev/null
 source "$_STAGE2_CONCERNS_DIR/install.sh"
 unset _STAGE2_CONCERNS_DIR
 

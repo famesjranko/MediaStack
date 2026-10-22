@@ -12,7 +12,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="ui-input-exhaustion-signal"
 scenario_begin "$CURRENT_SCENARIO"

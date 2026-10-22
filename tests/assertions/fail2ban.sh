@@ -1,7 +1,7 @@
 # The fail2ban-regex "N matched" parser is shared with the runtime day-2 health
 # check (scripts/lib/health.sh:_fail2ban_matched_count) so the two can't drift.
 # health.sh is source-safe (no side effects, own include guard).
-# shellcheck source=../../scripts/lib/health.sh
+# shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib/health.sh"
 
 assert_fail2ban_filter_matches() {

@@ -3,10 +3,10 @@
 # Globals: MEDIASTACK_STATE_FILE and LAN_CIDRS.
 
 # Root-tool lookup (ufw_installed, host_tool_installed); callers source this file directly, not only via common.sh.
-# shellcheck source=../../lib/host-tools.sh
+# shellcheck source=/dev/null
 declare -F host_tool_installed >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 
-# shellcheck source=../../lib/apt.sh
+# shellcheck source=/dev/null
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
 
 _ms_ufw_allow() {

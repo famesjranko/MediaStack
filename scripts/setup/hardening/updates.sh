@@ -2,7 +2,7 @@
 # Sources: hardening.sh ledger paths and common.sh state/hash helpers.
 # Globals: MEDIASTACK_APT_AUTO_CONF and MEDIASTACK_APT_POLICY_CONF.
 
-# shellcheck source=../../lib/apt.sh
+# shellcheck source=/dev/null
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
 
 setup_unattended_upgrades() {

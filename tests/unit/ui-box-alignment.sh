@@ -18,7 +18,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 # Read by tests/lib/assert.sh for failure labels.
 # shellcheck disable=SC2034
@@ -33,7 +33,7 @@ echo -e "${CYAN}${BOLD}▶ scenario: ui-box-alignment${NC}"
 # the palette and glyph vocabulary are frozen at source time.
 export UI_FORCE_COLOR=1
 export UI_FORCE_GLYPHS=1
-# shellcheck source=../../scripts/lib/ui-render-fallback.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/lib/ui-render-fallback.sh"
 
 # Independent visible-width oracle (perl), not the function under test.

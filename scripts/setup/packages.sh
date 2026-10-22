@@ -4,7 +4,7 @@
 # Sourced by setup.sh. Depends on $SCRIPT_DIR and scripts/lib/common.sh
 # being loaded by the caller.
 
-# shellcheck source=../lib/apt.sh
+# shellcheck source=/dev/null
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/apt.sh"
 
 install_base_packages() {

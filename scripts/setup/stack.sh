@@ -10,7 +10,7 @@
 # every sourcer (setup.sh and the unit/scenario tests) finds it regardless of CWD.
 _STACK_MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _STACK_HELPER_DIR="$(cd "$_STACK_MODULE_DIR/.." && pwd)"
-# shellcheck source=../lib/profiles.sh
+# shellcheck source=/dev/null
 source "$_STACK_HELPER_DIR/lib/profiles.sh"
 unset _STACK_HELPER_DIR
 

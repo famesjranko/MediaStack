@@ -69,6 +69,30 @@ for file in "${unit_files[@]}"; do
 done
 ((unit_count > 0)) || die "no top-level tests/unit/*.sh found — empty population"
 
+# -----------------------------------------------------------------------------
+# ShellCheck source-directive gate: `# shellcheck source=<path>` resolves
+# against the working directory, which is the repo root in CI and in
+# tests/lint.sh. A path that climbs out of the repo resolves to nothing there,
+# but from a .wt/ worktree it reaches the main checkout, so local lint silently
+# analyses other files than CI does. Such a directive must say /dev/null.
+# -----------------------------------------------------------------------------
+directive_count=0
+directive_fail=0
+while IFS= read -r hit; do
+    file=${hit%%:*}
+    path=${hit#*source=}
+    path=${path%%[[:space:]]*}
+    [[ "$path" == /dev/null ]] && continue
+    directive_count=$((directive_count + 1))
+    resolved=$(realpath -m "$REPO_ROOT/$path")
+    if [[ "$resolved" != "$REPO_ROOT"/* ]]; then
+        printf 'structure: %s: `# shellcheck source=%s` escapes the repo root, so CI never follows it while a .wt/ worktree follows it into the main checkout; use source=/dev/null or a repo-root-relative path\n' \
+            "$file" "$path" >&2
+        directive_fail=1
+    fi
+done < <(cd "$REPO_ROOT" && git ls-files -z '*.sh' 'mediastack' | xargs -0 grep -HoE '^[[:space:]]*#[[:space:]]*shellcheck[[:space:]]+([^[:space:]]+[[:space:]]+)*source=[^[:space:]]+' || true)
+((directive_count > 0)) || die "no shellcheck source directive found — empty population"
+
 # deferred: import violations still get reported in the same run
 
 # -----------------------------------------------------------------------------
@@ -185,7 +209,7 @@ for seam in "${SANCTIONED_SEAMS[@]}"; do
         || die "stale sanctioned seam (that import no longer exists): $seam"
 done
 
-((shape_fail == 0 && import_fail == 0 && verdict_fail == 0)) || exit 1
+((shape_fail == 0 && import_fail == 0 && verdict_fail == 0 && directive_fail == 0)) || exit 1
 
-printf 'structure: %s service modules checked for their configurator; %s import edges checked; %s unit files checked for a closing summary\n' \
-    "${#service_mains[@]}" "$edge_count" "$unit_count"
+printf 'structure: %s service modules checked for their configurator; %s import edges checked; %s unit files checked for a closing summary; %s shellcheck source directives checked\n' \
+    "${#service_mains[@]}" "$edge_count" "$unit_count" "$directive_count"

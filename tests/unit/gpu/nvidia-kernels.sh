@@ -345,5 +345,5 @@ unset _calls
 
 # The mocked install tests above unset the real gpu.sh helpers (mock + real share
 # one function slot). Re-source gpu.sh to restore nvidia_driver_ensure_debian_nonfree et al.
-# shellcheck source=../../scripts/setup/gpu.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/scripts/setup/gpu.sh"

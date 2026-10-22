@@ -154,10 +154,25 @@ run_gate
 assert_rc 0 "a unit fragment without summary stays clean"
 reset_fixture
 
+# --- shellcheck source directives -------------------------------------------
+
+# A source path that climbs out of the repo resolves differently in a worktree.
+printf '# shellcheck source=../../setup.sh\n' >>"$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 1 "a source directive that escapes the repo root fails"
+assert_contains "$OUT" "tests/unit/arr.sh: \`# shellcheck source=../../setup.sh\` escapes the repo root" "the failure names the file and the directive"
+reset_fixture
+
+# A repo-root-relative path resolves the same everywhere.
+sed -i '1a # shellcheck source=setup.sh' "$FIXTURE/tests/unit/arr.sh"
+run_gate
+assert_rc 0 "a repo-root-relative source directive stays clean"
+reset_fixture
+
 run_gate
 assert_rc 0 "the fixture is green again after every probe"
 
-expected=27
+expected=30
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

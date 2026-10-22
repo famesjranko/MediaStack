@@ -1,7 +1,7 @@
 # Owns: Debian NVIDIA driver ownership, repair, and apt installation routes.
 # Sources: gpu.sh globals, NVIDIA preparation helpers, and common.sh logging.
 # shellcheck disable=SC2034 # GPU_TYPE is a published global consumed by callers.
-# shellcheck source=../../lib/host-tools.sh
+# shellcheck source=/dev/null
 declare -F host_tool_path >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 nvidia_driver_source() {
     local _st

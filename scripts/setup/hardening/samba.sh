@@ -3,10 +3,10 @@
 # Globals: SAMBA_* paths, SMB_ENABLED, SMB_SHARE_SCOPE, DATA_DIR, PGID, and admin .env values.
 
 # smbd lives in /usr/sbin, which a normal user's PATH omits.
-# shellcheck source=../../lib/host-tools.sh
+# shellcheck source=/dev/null
 declare -F host_tool_installed >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 
-# shellcheck source=../../lib/apt.sh
+# shellcheck source=/dev/null
 declare -p MS_APT_INSTALL >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/apt.sh"
 
 # Rules MediaStack opened for SMB carry this exact ufw comment.

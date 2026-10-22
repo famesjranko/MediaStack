@@ -19,7 +19,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# shellcheck source=../lib/assert.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/tests/lib/assert.sh"
 # Read by tests/lib/assert.sh for failure labels.
 # shellcheck disable=SC2034
@@ -28,7 +28,7 @@ echo -e "${CYAN}${BOLD}▶ scenario: gpu-branching${NC}"
 
 # Source setup.sh for the helper functions. The guard added to setup.sh's
 # bottom ensures main() does not run under `source`.
-# shellcheck source=../../setup.sh
+# shellcheck source=/dev/null
 source "$REPO_ROOT/setup.sh"
 
 # setup.sh sets -euo pipefail; relax so asserts can run a full pass/fail.

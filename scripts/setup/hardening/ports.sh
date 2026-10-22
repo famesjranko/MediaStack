@@ -3,7 +3,7 @@
 # Globals: TORRENT_PORT, DOMAIN, and WG_PORT (optional .env inputs).
 
 # Root-tool lookup (ufw_installed, host_tool_installed); callers source this file directly, not only via common.sh.
-# shellcheck source=../../lib/host-tools.sh
+# shellcheck source=/dev/null
 declare -F host_tool_installed >/dev/null 2>&1 || source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/host-tools.sh"
 
 # These ports are user-configurable, so a re-run after a change would otherwise
