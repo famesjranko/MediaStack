@@ -23,7 +23,11 @@ set +u
 
 UI_LINES=()
 ui_log() { UI_LINES+=("$1: $2"); }
-stage3_set_gpu_env() { return 0; }
+# Like the real writer, clear the shared reason once the state is persisted.
+stage3_set_gpu_env() {
+    STAGE3_FALLBACK_REASON=""
+    return 0
+}
 stage3_remove_nvidia_marker() { return 0; }
 _stage3_configure_jellyfin() { return 0; }
 _stage3_disable_jellyfin_hardware() { return 0; }
@@ -50,6 +54,15 @@ STAGE3_FALLBACK_REASON=""
 UI_LINES=()
 _stage3_fallback nvidia nvenc verify_failed
 assert_contains "${UI_LINES[*]}" "the GPU did not pass the transcode test" "fallback closing line: gives the caller's default reason"
+
+# Given the installer recorded secure_boot and the writer clears the shared reason,
+# When the software fallback runs,
+# Then the closing line still names Secure Boot rather than "could not be verified".
+STAGE3_FALLBACK_REASON=secure_boot
+UI_LINES=()
+_stage3_fallback nvidia nvenc
+assert_contains "${UI_LINES[*]}" "Secure Boot blocks the NVIDIA driver" "fallback closing line: names the recorded reason after the writer clears it"
+assert_not_contains "${UI_LINES[*]}" "could not be verified" "fallback closing line: no generic wording when a reason is recorded"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

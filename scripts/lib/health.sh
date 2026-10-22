@@ -21,33 +21,27 @@ _MS_HEALTH_SH=1
 _HEALTH_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _HEALTH_REPO_ROOT="$(cd "$_HEALTH_LIB_DIR/../.." && pwd)"
 
-# Source our own lib deps: update.sh/tests source only common.sh, so a check
-# calling net_dns_classify/net_detect_public_ip would otherwise be undefined.
-# common.sh (log_*) is assumed already sourced by every consumer.
+# Source our own lib deps (update.sh/tests source only common.sh); common.sh is
+# assumed already sourced.
 if ! declare -F net_dns_classify >/dev/null 2>&1; then
     # shellcheck source=/dev/null
     source "$_HEALTH_LIB_DIR/network.sh"
 fi
 # shellcheck source=/dev/null
 declare -F host_tool_installed >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/host-tools.sh"
+# shellcheck source=/dev/null
+declare -F _health_f2b_down_reason >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/health-fail2ban.sh"
 # The admin-port filter's one opt-out rule (admin_filter_opted_out).
 # shellcheck source=/dev/null
 declare -F admin_filter_opted_out >/dev/null 2>&1 || source "$_HEALTH_REPO_ROOT/scripts/setup/hardening/admin-filter.sh"
 
 # shellcheck source=/dev/null
 declare -F gpu_fallback_health >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/gpu-fallback.sh"
+# shellcheck source=/dev/null
+declare -F health_containers >/dev/null 2>&1 || source "$_HEALTH_LIB_DIR/health-containers.sh"
 # =============================================================================
 # internals
 # =============================================================================
-
-# fail2ban container present + running. Works in every consumer (no reliance on
-# mediastack's _service_is_running). Capture-then-grep: piping docker into grep
-# would SIGPIPE under pipefail.
-_health_f2b_running() {
-    local names
-    names=$(docker ps --format '{{.Names}}' 2>/dev/null) || return 1
-    grep -qx fail2ban <<<"$names"
-}
 
 # A named container is running AND (has no healthcheck OR is healthy). Guards the
 # probe against a stopped or still-starting service: right after an update the
@@ -123,7 +117,7 @@ health_fail2ban_regex() {
         return 0
     }
     _health_f2b_running || {
-        echo "skip|fail2ban ${svc}: fail2ban not running (LAN-only install)"
+        echo "skip|fail2ban ${svc}: $(_health_f2b_down_reason)"
         return 0
     }
     _health_svc_healthy "$svc" || {
@@ -174,7 +168,7 @@ health_fail2ban_regex() {
 # can flip on → 4; a stripped service → fewer).
 health_fail2ban_jails() {
     _health_f2b_running || {
-        echo "skip|fail2ban jails: fail2ban not running (LAN-only install)"
+        echo "skip|fail2ban jails: $(_health_f2b_down_reason)"
         return 0
     }
     local status missing=() j
@@ -232,7 +226,7 @@ health_fail2ban_watching() {
         return 0
     }
     _health_f2b_running || {
-        echo "skip|fail2ban ${svc} watching: fail2ban not running (LAN-only install)"
+        echo "skip|fail2ban ${svc} watching: $(_health_f2b_down_reason)"
         return 0
     }
     _health_svc_healthy "$svc" || {
@@ -443,10 +437,17 @@ health_docker_user_restrict() {
     # IPv6 only matters once Docker actually filters there — it creates a v6
     # DOCKER-USER chain when it gains an IPv6 bridge. Until then there is nothing
     # to report.
-    if sudo -n ip6tables -S DOCKER-USER >/dev/null 2>&1 \
-        && ! sudo -n ip6tables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT 2>/dev/null; then
-        echo "fail|LAN-only port protection MISSING from IPv6 DOCKER-USER — admin ports exposed over IPv6"
-        return 0
+    # A flushed v6 chain keeps its jump but drops nothing, so check its rules too.
+    if sudo -n ip6tables -S DOCKER-USER >/dev/null 2>&1; then
+        local rules6
+        rules6=$(sudo -n ip6tables -S MEDIASTACK-DOCKER-RESTRICT 2>/dev/null) || true
+        if ! sudo -n ip6tables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT 2>/dev/null; then
+            echo "fail|LAN-only port protection MISSING from IPv6 DOCKER-USER — admin ports exposed over IPv6"
+            return 0
+        elif ! grep -q 'multiport.*DROP' <<<"$rules6"; then
+            echo "fail|IPv6 port-restriction chain is EMPTY — LAN-only ports exposed over IPv6"
+            return 0
+        fi
     fi
     echo "ok|LAN-only port protection active (${ndrop} DROP rules in DOCKER-USER)"
     return 0
@@ -468,10 +469,9 @@ health_present() {
     esac
 }
 
-# Batch helper for the update paths: present the fail2ban regex verdict for each
-# jellyfin/seerr in the arg list (their log format may have shifted with the new
-# image). Silent no-op when fail2ban isn't running. No confirm — batch callers
-# ("Update all", update.sh) already gathered consent upfront.
+# Update-path batch helper: present the fail2ban regex verdict for each
+# jellyfin/seerr in the arg list (their log format may have shifted). Silent
+# no-op when fail2ban isn't running. No confirm: batch callers already asked.
 health_present_fail2ban_updates() {
     _health_f2b_running || return 0
     local svc
@@ -482,11 +482,11 @@ health_present_fail2ban_updates() {
     done
 }
 
-# The ordered run-all checks, one per line: "label<TAB>function<TAB>arg" (arg may
-# be empty). Single source of the set + order for the menu's per-check spinner
-# runner (mediastack:_health_run_all_spin), so the set can't drift.
+# The ordered run-all checks, "label<TAB>function<TAB>arg" per line (arg may be
+# empty). Single source of the set + order for _health_run_all_spin.
 _health_each() {
     printf '%s\t%s\t%s\n' \
+        "containers" health_containers "" \
         "fail2ban jails" health_fail2ban_jails "" \
         "fail2ban jellyfin filter" health_fail2ban_regex jellyfin \
         "fail2ban seerr filter" health_fail2ban_regex seerr \

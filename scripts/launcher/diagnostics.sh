@@ -279,7 +279,11 @@ _health_present_spin() {
     _hc_spin_run() { "$@" >"$_hc_vf" 2>/dev/null; }
     ui_spin "$label" _hc_spin_run "$@"
     unset -f _hc_spin_run
-    health_present "$(cat "$_hc_vf")"
+    # A check may print several verdict lines (one per container).
+    local _hc_line
+    while IFS= read -r _hc_line || [[ -n "$_hc_line" ]]; do
+        health_present "$_hc_line"
+    done <"$_hc_vf"
     rm -f "$_hc_vf"
 }
 

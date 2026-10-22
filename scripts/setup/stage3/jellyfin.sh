@@ -245,6 +245,9 @@ _stage3_fallback() {
     local encoder="${2:-}"
     # An installer-set reason (secure_boot) beats the caller's default.
     STAGE3_FALLBACK_REASON="${STAGE3_FALLBACK_REASON:-${3:-verify_failed}}"
+    # stage3_set_gpu_env clears STAGE3_FALLBACK_REASON once it is persisted, so
+    # keep the reason for the closing line.
+    local reason="$STAGE3_FALLBACK_REASON"
     if ! stage3_set_gpu_env "none" "fallback" "$vendor" "$encoder"; then
         ui_log warn "Could not persist software fallback state; hardware fallback was not applied."
         return 3
@@ -258,7 +261,7 @@ _stage3_fallback() {
         ui_log warn "Jellyfin hardware transcoding disable could not be verified. Check Jellyfin settings before relying on software fallback."
     fi
     _stage3_apply_runtime_override "none"
-    ui_log warn "$(stage3_fallback_copy "$STAGE3_FALLBACK_REASON")"
+    ui_log warn "$(stage3_fallback_copy "$reason")"
     _stage3_print_final_summary
     # Only the durable write above is a meaningful status here: callers treat a
     # non-zero return as "state could not be persisted", so the summary's own

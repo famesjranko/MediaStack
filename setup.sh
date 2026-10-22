@@ -196,7 +196,7 @@ main() {
             if $_is_post_reboot; then
                 write_setup_result "ok"
             fi
-            record_launcher_outcome completed
+            record_transcoding_outcome
             return 0
         fi
         log_info "NVIDIA hardware transcoding is prepared; finalization will run after reboot."
@@ -208,7 +208,7 @@ main() {
     fi
 
     if [[ "${1:-}" == "--transcoding" ]]; then
-        run_transcoding_recovery
+        run_transcoding_recovery && record_transcoding_outcome
         return $?
     fi
 
@@ -387,7 +387,7 @@ main() {
         if $_is_post_reboot; then
             write_setup_result "ok"
         fi
-        record_launcher_outcome completed
+        record_install_outcome
         return 0
     fi
 
@@ -402,7 +402,7 @@ main() {
         if $_is_post_reboot; then
             write_setup_result "ok"
         fi
-        record_launcher_outcome completed
+        record_install_outcome
         return 0
     fi
 
@@ -438,7 +438,7 @@ main() {
     if $_is_post_reboot; then
         write_setup_result "ok"
     fi
-    record_launcher_outcome completed
+    record_install_outcome
 }
 
 # --- Dry-run UI explorer: in-container dispatch (host path handled near the top) ---

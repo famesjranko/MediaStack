@@ -82,6 +82,7 @@ lan_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   _docker_reachable(){ return 0; }
   _health_f2b_running(){ return 1; }
+  _health_f2b_installed(){ return 1; }
   ui_log(){ shift; echo "$*"; }
   launcher_pause_for_menu(){ :; }
   submenu_fail2ban

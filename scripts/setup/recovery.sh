@@ -131,7 +131,7 @@ show_existing_install_menu() {
             ;;
         "Add hardware transcoding"*)
             RECOVERY_MENU_ACTION=completed
-            run_transcoding_recovery && record_launcher_outcome completed
+            run_transcoding_recovery && record_transcoding_outcome
             ;;
         "Continue without changes"*)
             RECOVERY_MENU_ACTION="continue"
@@ -209,6 +209,28 @@ run_remote_ready_recovery() {
         print_final_summary
         stage3_prompt_pending_nvidia_reboot
     fi
+}
+
+# A transcoding run that ends on software must not be reported as a plain
+# success. The reason rides in the token because the launcher is a separate
+# process and cannot see this shell's STAGE_3_GPU_FALLBACK_REASON.
+record_transcoding_outcome() {
+    case "${STAGE_3_GPU_STATE:-}" in
+        fallback) record_launcher_outcome "software-fallback:${STAGE_3_GPU_FALLBACK_REASON:-}" ;;
+        # The driver is installed but only a reboot makes it work; "completed" would be false.
+        pending) record_launcher_outcome transcoding-reboot-pending ;;
+        *) record_launcher_outcome completed ;;
+    esac
+}
+
+# The closing token for a whole install or repair. A GPU fallback with a
+# reason worth acting on must not read as a plain success.
+record_install_outcome() {
+    case "${STAGE_3_GPU_STATE:-}:${STAGE_3_GPU_FALLBACK_REASON:-}" in
+        fallback: | fallback:no_gpu | fallback:user_choice) record_launcher_outcome completed ;;
+        fallback:*) record_launcher_outcome "completed-software:${STAGE_3_GPU_FALLBACK_REASON}" ;;
+        *) record_launcher_outcome completed ;;
+    esac
 }
 
 run_transcoding_recovery() {

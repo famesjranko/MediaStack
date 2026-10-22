@@ -109,6 +109,11 @@ _stage1_install() {
         log_warn "Jellyfin didn't respond at http://${_ENV_HOST_ADDRESS}:8096/health within 5s. View logs from the menu: Manage stack -> Tail logs (live)"
     fi
 
+    # Fail closed: only an authenticated /Users 200 followed by a persisted marker
+    # counts as success. Everything else is returned as non-zero after the rest
+    # of Stage 1 has printed its guidance, so setup.sh's errexit ends the run
+    # and the launcher never reports "completed" for a half-configured install.
+    local stage1_ok=false
     if $probe_ok; then
         # One blessed .env writer (common.sh) — atomic, mode-preserving, quoted.
         # A hand-rolled `sed -i` truncates in place, so an interrupt mid-write
@@ -116,6 +121,7 @@ _stage1_install() {
         local writer_status
         if writer_status=$(_env_write_kv "$SCRIPT_DIR/.env" STAGE_1_COMPLETE 1); then
             export STAGE_1_COMPLETE=1
+            stage1_ok=true
             log_ok "Core media server ready (STAGE_1_COMPLETE=1)"
         else
             _env_write_kv_warn STAGE_1_COMPLETE "$writer_status"
@@ -148,4 +154,5 @@ _stage1_install() {
         echo "    Re-run MediaStack setup to retry (already-configured services are skipped)."
         echo ""
     fi
+    $stage1_ok
 }

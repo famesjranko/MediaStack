@@ -305,6 +305,8 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
 
   Two things to know: a ban blocks **all** services, not just the jail that fired it; and one unban clears the address from **every** jail at once.
 
+  The menu and the health checks tell two cases apart. With no real `DOMAIN` in `.env` they say fail2ban is *not installed (LAN-only install)*. With a domain set they say it is *installed but not running* and point to **Manage stack → Start a service**, because a stopped fail2ban on a remote-access host leaves the logins unprotected.
+
   Daily log rotation needs no action. Jellyfin and Seerr write a new dated log file each day; the `mediastack-fail2ban-reload.service` watcher reloads fail2ban whenever a new file appears, so the jails keep following the current log without a manual restart. If that watcher ever stops, the Health & security menu's *fail2ban jellyfin watch* check reports a jail left on a stale file.
 - GPU override file regeneration (new GPU hardware):
   ```bash

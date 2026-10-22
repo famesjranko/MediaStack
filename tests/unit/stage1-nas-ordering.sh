@@ -10,6 +10,8 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO="stage1-nas-ordering"
 scenario_begin "$CURRENT_SCENARIO"
 
+# The success path persists STAGE_1_COMPLETE through the real env writer.
+source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/setup/stages/stage1.sh"
 
 set +e
@@ -94,6 +96,19 @@ case "$order_text" in
         pass "stage1 NAS ordering: final preflight/stack stop do not run before watchdog pause"
         ;;
 esac
+
+# Given a Jellyfin /Users probe that fails and a cleared marker
+sed -i 's/^STAGE_1_COMPLETE=.*/STAGE_1_COMPLETE=/' "$SCRIPT_DIR/.env"
+curl() { return 22; }
+
+# When install runs
+_stage1_install >/dev/null 2>&1
+rc=$?
+
+# Then it returns non-zero and leaves the marker unset
+assert_eq "1" "$rc" "stage1 NAS ordering: failed Jellyfin probe makes install exit non-zero"
+assert_not_contains "$(grep '^STAGE_1_COMPLETE=' "$SCRIPT_DIR/.env")" "=1" "stage1 NAS ordering: failed probe leaves the marker unset"
+curl() { return 0; }
 
 ORDER=()
 storage_pause_watchdog_for_install() {
