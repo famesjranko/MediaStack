@@ -229,7 +229,7 @@ setup_admin_filter(){ echo "ADMIN_FILTER_SETUP" >> "$CAPTURE"; return "${FAIL_AD
 admin_filter_disable(){ echo "ADMIN_FILTER_DISABLE" >> "$CAPTURE"; return "${FAIL_ADMIN:-0}"; }
 _uninstall_sysctl(){ echo "SYSCTL_UNINSTALL" >> "$CAPTURE"; return 0; }
 _uninstall_apt(){ echo "APT_UNINSTALL" >> "$CAPTURE"; return 0; }
-_ms_state_set(){ echo "STATE_SET $*" >> "$CAPTURE"; }
+_ms_state_set(){ echo "STATE_SET $*" >> "$CAPTURE"; }; _ms_state_get(){ [[ "$1" == UFW_RULE_COUNT ]] && echo 3; }; _ms_ufw_ledger_truncate(){ echo "LEDGER_TRUNCATE $*" >> "$CAPTURE"; }
 validate_install_state(){ return 0; }
 EOF
     # UFW OFF path probes `sudo ufw status`; stub sudo so it never really runs.
@@ -309,7 +309,7 @@ assert_contains "$u_on" "UFW_ENABLED='true'" "ufw ON: .env flag set true (single
 u_off=$(run_toggle action_toggle_ufw "UFW_ENABLED=true")
 assert_contains "$u_off" "UFW_UNINSTALL" "ufw OFF: runs _uninstall_ufw (ledger-aware revert)"
 assert_contains "$u_off" "STATE_SET UFW_DEFAULTS_APPLIED false" "ufw OFF: resets latch so re-enable reconfigures"
-assert_contains "$u_off" "STATE_SET UFW_RULE_COUNT 0" "ufw OFF: resets recorded rule count"
+assert_contains "$u_off" "LEDGER_TRUNCATE 0 3" "ufw OFF: empties the rule ledger, stale UFW_RULE_<n> keys included"
 assert_contains "$u_off" "UFW_ENABLED='false'" "ufw OFF: .env flag set false (single-quoted)"
 
 # --- Admin-port filter ON / OFF: install via setup_admin_filter; opt-out removes both paths

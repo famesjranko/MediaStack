@@ -230,7 +230,7 @@ action_toggle_ufw() {
             # true with non-'deny allow' defaults after we restored the baseline.
             _ms_state_set UFW_DEFAULTS_APPLIED false
             _ms_state_set UFW_ENABLED_BY_MEDIASTACK false
-            _ms_state_set UFW_RULE_COUNT 0
+            _ms_ufw_ledger_truncate 0 "$(_ms_state_get UFW_RULE_COUNT 2>/dev/null || echo 0)"
             if sudo ufw status 2>/dev/null | grep -q "Status: active"; then
                 ui_log info "MediaStack's firewall rules were removed."
                 ui_log warn "UFW itself is left ENABLED because it carries rules/defaults you"
