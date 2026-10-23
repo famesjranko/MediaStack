@@ -14,6 +14,9 @@
 #   ./tests/lint.sh --severity=error         # passthrough: only fail on errors
 #   ./tests/lint.sh --severity=warning scripts/setup/stack.sh
 #
+# An explicit argument that starts with `-` remains a ShellCheck flag. Discovered
+# file names always go after `--`, so a tracked dash-prefixed name is a file.
+#
 # The pin exists so developers, agents, and CI all analyse with the EXACT same
 # engine — different shellcheck versions disagree on which warnings fire, which
 # would make the gate non-reproducible (e.g. the GitHub runner's native 0.9.0
@@ -166,7 +169,7 @@ fi
 # Keep checking after findings (1), but stop on an engine or invocation error.
 result=0
 for file in "${files[@]}"; do
-    "${sc_command[@]}" "${sc_flags[@]}" "$file"
+    "${sc_command[@]}" "${sc_flags[@]}" -- "$file"
     status=$?
     ((status == 0)) && continue
     ((status == 1)) || exit "$status"
