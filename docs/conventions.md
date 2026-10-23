@@ -173,7 +173,7 @@ adding the next gate.
 | No secret in reachable history | `./tests/check.sh secrets-history` — run before a push that publishes new history, not in any tier | — |
 | Shell parses, Python byte-compiles, compose renders across profiles | `./tests/check.sh unit` → `tests/unit.sh` tiers 1, 3, 5 | `unit-host` |
 | Every `tests/unit/*.sh` suite passes | `tests/unit.sh` tier 6 | `unit-host` |
-| `tests/lint.sh` sweeps shellcheck exactly once over the whole file list | `tests/unit/lint-sweep.sh` | `unit-host` |
+| `tests/lint.sh` checks every tracked shell file in a separate ShellCheck process, continues after findings, and bounds dispatcher imports | `tests/unit/lint-sweep.sh` | `unit-host` |
 | Wizard PTY behaviour | `./tests/check.sh wizard` → `tests/ci-scenarios.sh` + `tests/run.sh` | `wizard-ui` |
 | No private, host, or credential artifact is tracked | `tests/unit/repository-safety.sh` over `tests/lib/repo_guard.py` | `unit-host` |
 | Control files exist and their relative links resolve | `tests/unit/docs.sh` | `unit-host` |

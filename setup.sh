@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# ShellCheck must not expand the whole setup graph; lint checks each module.
+# shellcheck external-sources=false
 # =============================================================================
 # MediaStack Setup Script
 # =============================================================================

@@ -44,7 +44,6 @@ detect_existing_install() { record detect_existing_install; }
 cleanup_post_reboot() { record cleanup_post_reboot; }
 detect_host_memory() {
     record detect_host_memory
-    HOST_MEMORY_MB=4096
 }
 record_pre_install_state() { :; }
 # Silent no-op: base-package install is unrelated to the watchdog-pause ordering

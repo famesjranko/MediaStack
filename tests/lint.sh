@@ -5,7 +5,7 @@
 # Single source of truth for "is the shell clean", invoked identically by
 # developers, agents, and CI. The repo-specific flags live in .shellcheckrc
 # (repo root) which shellcheck reads automatically — so this runner only has to
-# pick a shellcheck and hand it the file set.
+# pick a shellcheck and analyse one root at a time.
 #
 # Usage:
 #   ./tests/lint.sh install                  # fetch + verify the pinned engine
@@ -150,20 +150,26 @@ if command -v shellcheck >/dev/null 2>&1; then
     native_version="$(shellcheck --version 2>/dev/null | awk '/^version:/{print $2}')"
 fi
 if [[ "$native_version" == "$SC_VERSION" ]]; then
-    exec shellcheck "${sc_flags[@]}" "${files[@]}"
+    sc_command=(shellcheck)
+elif [ -x "$SC_CACHED" ] && [ "$(sha256_of "$SC_CACHED")" = "$SC_BINARY_SHA256" ]; then
+    # Rung 2: re-hash the cached pin; a stale or tampered cache falls through.
+    sc_command=("$SC_CACHED")
+elif command -v docker >/dev/null 2>&1; then
+    # Rung 3: the same engine in Docker, with the same bounded root set.
+    sc_command=(docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt "$SC_IMAGE")
+else
+    die "need shellcheck $SC_VERSION natively, the cached pin (run: ./tests/lint.sh install), or docker on PATH"
 fi
 
-# Rung 2: the cached pin from `./tests/lint.sh install`, re-hashed on every
-# run — a stale or tampered cache falls through rather than analysing.
-if [ -x "$SC_CACHED" ] && [ "$(sha256_of "$SC_CACHED")" = "$SC_BINARY_SHA256" ]; then
-    exec "$SC_CACHED" "${sc_flags[@]}" "${files[@]}"
-fi
-
-# Rung 3: the pinned docker image — byte-for-byte the same engine, slower start.
-if command -v docker >/dev/null 2>&1; then
-    exec docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt "$SC_IMAGE" "${sc_flags[@]}" "${files[@]}"
-fi
-
-echo "lint: need shellcheck $SC_VERSION natively, the cached pin" \
-    "(run: ./tests/lint.sh install), or docker on PATH" >&2
-exit 2
+# Release each root's source-analysis heap before starting the next one. The
+# dispatchers bound their imports too: even one expanded launcher exceeds 1 GiB.
+# Keep checking after findings (1), but stop on an engine or invocation error.
+result=0
+for file in "${files[@]}"; do
+    "${sc_command[@]}" "${sc_flags[@]}" "$file"
+    status=$?
+    ((status == 0)) && continue
+    ((status == 1)) || exit "$status"
+    result=1
+done
+exit "$result"
