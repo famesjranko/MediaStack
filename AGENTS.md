@@ -16,9 +16,10 @@ and low maintenance.
   says how services run; `.env` (generated) holds secrets and host values.
 - Setup must stay safe to re-run: skip what is already configured, warn on
   drift, never auto-reconcile.
-- `./mediastack` is the only user-facing entry point, for install and day-2
-  alike; it drives `setup.sh` and the other scripts. Users never run those
-  directly.
+- `./mediastack` is the entry point a normal install needs, for install and
+  day-2 alike; it drives `setup.sh` and the other scripts. Those scripts stay
+  supported for power users and automation, and some repairs have no menu
+  equivalent. See [Direct CLI Usage](README.md#direct-cli-usage).
 - Never commit `.env`, live service config under `config/<service>/`, or
   generated host artifacts. A publication guard enforces this — see the
   enforcement table in [docs/conventions.md](docs/conventions.md).
@@ -60,7 +61,7 @@ documented in the usage header of [tests/check.sh](tests/check.sh).
 ## Build
 
 There is no build step. The deliverables are the scripts and compose files
-themselves. `./mediastack` is the user-facing entry point for install and
-day-2 management; it drives `setup.sh` and the other scripts — users never
-run those directly. Both are exercised by the test tiers above, not run
-during development.
+themselves. `./mediastack` is the entry point a normal install needs; it
+drives `setup.sh` and the other scripts, which power users and automation can
+also run (see [Direct CLI Usage](README.md#direct-cli-usage)). Both are
+exercised by the test tiers above, not run during development.

@@ -7,7 +7,7 @@
 # MediaStack:SMB-LAN firewall rules open.
 # ===========================================================================
 
-OFF_SAVED_FUNCS=$(declare -f ufw_installed _ms_state_get _ms_state_set _ms_stream_sha256)
+OFF_SAVED_FUNCS=$(declare -f ufw_installed _ms_state_get _ms_state_set _ms_state_unset _ms_stream_sha256)
 off_fixture() { # <package-installed-by-mediastack> [recorded-effective-hash]
     OFF_PKG_OURS="$1"
     OFF_EFFECTIVE="${2:-deadbeef}"
@@ -33,6 +33,7 @@ _ms_state_get() {
     esac
 }
 _ms_state_set() { OFF_STATE+=("$1=$2"); }
+_ms_state_unset() { OFF_STATE+=("unset:$1"); }
 _ms_stream_sha256() {
     cat >/dev/null
     echo deadbeef
@@ -75,6 +76,7 @@ SMB_ENABLED="false"
 # Then smbd and nmbd are stopped and disabled
 # And only the exact MediaStack:SMB-LAN firewall rules are deleted, highest number first
 # And the ledger drops the SMB rules and keeps the others
+# And the ledger keys above the new count are deleted, not left as stale rules
 off_fixture true
 [[ -f "$SAMBA_INCLUDE_FILE" ]] || fail "SMB OFF fixture: include exists before the call" "fixture did not create $SAMBA_INCLUDE_FILE"
 setup_samba
@@ -88,6 +90,9 @@ assert_not_contains "${OFF_CALLS[*]}" "delete 4" "SMB OFF: a user's own port-445
 assert_not_contains "${OFF_CALLS[*]}" "delete 1 " "SMB OFF: other MediaStack rules are kept"
 assert_contains "${OFF_STATE[*]}" "UFW_RULE_2=allow 80/tcp comment MediaStack:HTTP" "SMB OFF: ledger compacted around kept rules"
 assert_contains "${OFF_STATE[*]}" "UFW_RULE_COUNT=2" "SMB OFF: ledger rule count reduced"
+assert_contains "${OFF_STATE[*]}" "unset:UFW_RULE_3 unset:UFW_RULE_4" "SMB OFF: stale ledger keys above the new count deleted"
+assert_not_contains "${OFF_STATE[*]}" "unset:UFW_RULE_1" "SMB OFF: ledger keys within the new count are kept"
+assert_not_contains "${OFF_STATE[*]}" "unset:UFW_RULE_2" "SMB OFF: the last kept ledger key is not deleted"
 
 # Given a Samba that was installed before MediaStack
 # When SMB is turned off
@@ -140,6 +145,7 @@ assert_contains "${OFF_STATE[*]}" "UFW_RULE_COUNT=2" "SMB OFF (inactive ufw): le
 # When SMB is turned off
 # Then the command fails
 # And the ledger still lists the rule that could not be deleted
+# And only the one stale key above the new count is deleted
 off_fixture true
 OFF_UFW_INACTIVE=true
 OFF_UFW_FAIL="from 10.0.0.0/8"
@@ -148,9 +154,42 @@ assert_eq "1" "$?" "SMB OFF (inactive ufw, failed delete): reports failure"
 assert_contains "${OFF_STATE[*]}" "UFW_RULE_COUNT=3" "SMB OFF (inactive ufw, failed delete): undeleted rule stays in the ledger"
 assert_contains "${OFF_STATE[*]}" "UFW_RULE_3=allow 80/tcp comment MediaStack:HTTP" \
     "SMB OFF (inactive ufw, failed delete): ledger compacts around the deleted rule only"
+assert_contains "${OFF_STATE[*]}" "unset:UFW_RULE_4" "SMB OFF (inactive ufw, failed delete): stale key above the new count deleted"
+assert_not_contains "${OFF_STATE[*]}" "unset:UFW_RULE_3" "SMB OFF (inactive ufw, failed delete): the kept rule's key is not deleted"
 unset -f sudo off_fixture
 unset OFF_UFW_INACTIVE OFF_UFW_FAIL OFF_EFFECTIVE
 eval "$OFF_SAVED_FUNCS"
+
+# ===========================================================================
+# _ms_state_unset — deletes one ledger key and nothing else
+# Bug: SMB OFF lowered UFW_RULE_COUNT but left UFW_RULE_11..13 in the file.
+# The real function runs against a temp state file; only sudo is passed through.
+# ===========================================================================
+UNSET_TMP=$(mktemp -d)
+UNSET_SAVED_FUNCS=$(declare -f _ms_state_unset sudo)
+UNSET_SAVED_STATE_FILE=${MEDIASTACK_STATE_FILE-}
+eval "$(sed -n '/^_ms_state_unset() {/,/^}/p' "$REPO_ROOT/scripts/setup/hardening.sh")"
+sudo() { command "$@"; }
+MEDIASTACK_STATE_FILE="$UNSET_TMP/state"
+
+# Given a ledger with a count of 2 and a stale third rule key
+# When the stale key is unset
+# Then only that key is gone and the other keys are untouched
+printf 'UFW_RULE_COUNT=2\nUFW_RULE_1=allow 80/tcp comment MediaStack:HTTP\nUFW_RULE_2=allow 22/tcp comment MediaStack:SSH\nUFW_RULE_3=allow 445/tcp comment MediaStack:SMB-LAN\n' \
+    >"$MEDIASTACK_STATE_FILE"
+_ms_state_unset UFW_RULE_3
+assert_eq "0" "$?" "_ms_state_unset: succeeds on a present key"
+assert_eq "UFW_RULE_COUNT=2|UFW_RULE_1=allow 80/tcp comment MediaStack:HTTP|UFW_RULE_2=allow 22/tcp comment MediaStack:SSH" \
+    "$(paste -sd'|' "$MEDIASTACK_STATE_FILE")" "_ms_state_unset: only the named key is removed"
+_ms_state_unset UFW_RULE_9
+assert_eq "0" "$?" "_ms_state_unset: an absent key is not an error"
+_ms_state_unset 'bad key'
+assert_eq "1" "$?" "_ms_state_unset: an invalid key name is refused"
+
+unset -f sudo
+eval "$UNSET_SAVED_FUNCS"
+MEDIASTACK_STATE_FILE=$UNSET_SAVED_STATE_FILE
+rm -rf "$UNSET_TMP"
 
 # ===========================================================================
 # setup_samba — a re-run on an owned install keeps the recorded hashes
