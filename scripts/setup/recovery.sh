@@ -211,14 +211,15 @@ run_remote_ready_recovery() {
     fi
 }
 
-# A transcoding run that ends on software must not be reported as a plain
-# success. The reason rides in the token because the launcher is a separate
-# process and cannot see this shell's STAGE_3_GPU_FALLBACK_REASON.
+# A software fallback is successful when no GPU is available or the user chooses it.
+# Other fallbacks carry their actionable reason in the token because the launcher
+# is a separate process and cannot see this shell's STAGE_3_GPU_FALLBACK_REASON.
 record_transcoding_outcome() {
-    case "${STAGE_3_GPU_STATE:-}" in
-        fallback) record_launcher_outcome "software-fallback:${STAGE_3_GPU_FALLBACK_REASON:-}" ;;
+    case "${STAGE_3_GPU_STATE:-}:${STAGE_3_GPU_FALLBACK_REASON:-}" in
+        fallback: | fallback:no_gpu | fallback:user_choice) record_launcher_outcome completed ;;
+        fallback:*) record_launcher_outcome "software-fallback:${STAGE_3_GPU_FALLBACK_REASON}" ;;
         # The driver is installed but only a reboot makes it work; "completed" would be false.
-        pending) record_launcher_outcome transcoding-reboot-pending ;;
+        pending:*) record_launcher_outcome transcoding-reboot-pending ;;
         *) record_launcher_outcome completed ;;
     esac
 }
