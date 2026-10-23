@@ -133,29 +133,23 @@ Repo-wide suppressions live in `.shellcheckrc`, with a reason beside each one.
 Keep shared architectural suppressions there instead of scattering inline
 directives through individual files.
 
-### Fast tier for the two expensive roots
+### Bounded analysis
 
-`tests/unit/wizard-flow.sh` (1m45s) and `mediastack` (47s) are pathological
-ShellCheck roots — the rest of the tree lints in under two seconds each. While
-iterating on either file, pass `--extended-analysis=false` to cut them to 22s
-and 18s respectively:
+The runner starts a separate ShellCheck process for each tracked shell file,
+so the previous root's analysis heap is released before the next file starts.
+Findings do not skip later files; an engine or invocation error stops the run
+with its original exit status. The same loop serves the native, cached and
+Docker engines; the Docker fallback starts one container per file.
 
-```bash
-./tests/lint.sh --extended-analysis=false tests/unit/wizard-flow.sh
-./tests/lint.sh --extended-analysis=false mediastack
-```
+Source following remains enabled for modules. `mediastack` and `setup.sh`
+disable it locally because expanding either dispatcher's whole-project tree
+is expensive, including when a test sources that dispatcher. Their modules
+still receive their own analysis through tracked-file discovery. Analysis
+across a dispatcher and its imports is therefore limited; module checks and
+runtime tests cover those boundaries.
 
-This is a speed convenience for the edit loop on those two files, not a
-weaker gate:
-
-```
-fast touched-file check  → quick feedback
-full touched-root check  → pre-handoff confidence
-full whole-tree check    → CI authority
-```
-
-Never add `--extended-analysis=false` to `.shellcheckrc` or a CI job — it
-must stay an explicit, opt-in flag on those two files, never a default.
+Info severity and extended dataflow analysis remain enabled. Do not disable
+extended analysis in the shared configuration or CI to reduce memory use.
 
 ## Shell formatting
 
@@ -604,7 +598,7 @@ Current units:
 - **launcher-hardware / nvidia-maintenance** — cover the day-2 hardware surface, Unlock-only visibility/dispatch guards, default-No cancellation, resolve-before-stop ordering, unload failure cleanup, one installer/toolkit execution, and expected-version marker persistence. Pure bash; no Docker/network.
 - **launcher-uninstall / uninstall-system-cleanup** — cover launcher routing/result reporting, root-only ledger reads, selective UFW/APT/sysctl/Samba cleanup, teardown failure rollback, and Stage 3 routing precedence.
 - **test-runner** — checks that `tests/run.sh` rejects empty or truncated scenario files instead of reusing a stale `run_scenario`.
-- **lint-sweep** — checks the `tests/lint.sh` single-sweep contract against a fixture repo with a stub shellcheck: the sweep is invoked exactly once over the whole discovered file list, covers every file in it, and still propagates a non-zero result. Pure bash + git, no Docker and no network; run directly with `./tests/unit/lint-sweep.sh`.
+- **lint-sweep** — proves bounded ShellCheck roots, complete tracked-file coverage after findings, filenames with spaces, caller flags, and engine-error propagation. Real-engine fixtures prove the two dispatchers do not expand their imports while defects in tracked helpers still fail the gate. Uses the same pinned-engine resolution as lint; run directly with `./tests/unit/lint-sweep.sh`.
 - **structure-gate** — proves `tests/structure.sh` fails on a fabricated violation: a `scripts/services/<svc>/main.sh` missing its `configure_<svc>()` (including the hyphen→underscore mapping a literal comparison would get wrong), a service module sourcing another service, a `scripts/setup/` module sourcing a peer top-level module, a service module sourcing a top-level `scripts/setup/*.sh` module (including behind an if-guarded directory-variable assignment), a sanctioned seam whose import has gone, the closing-`summary` rule for top-level `tests/unit/*.sh` files (a missing `summary`, a `summary` that is not the last command, and an exempt fragment), and the shellcheck source-directive rule (a path that escapes the repo root fails; a repo-root-relative path stays clean). The fixture is a throwaway git repo built from `git archive HEAD` with the working-tree gate copied in; the real tree is never written to. Pure bash + git, no Docker and no network; run directly with `./tests/unit/structure-gate.sh`.
 - **contracts-gate** — proves the failure paths of `tests/contracts/check.py` route to a remedy: a fabricated API call no contract covers must report `missing contract`, say the call needs an entry (or is malformed) and name `tests/contracts/`; a fabricated endpoint nothing calls must report `dead contract entry` and steer to deleting it. The fixture is a throwaway copy of `git archive HEAD` with the working-tree checker copied in. Pure bash + python3 + git, no Docker and no network; run directly with `./tests/unit/contracts-gate.sh`.
 - **line-cap-gate** — proves the two ratchet refusals in `tests/shell-line-cap.sh` (`new allowlist entry is not permitted`, `allowlist count increased`) carry the same routing as the main violation: shrink-only grandfather list, split the file, see `docs/conventions.md` "Shell structure". The tree's allowlist was emptied and deleted, so neither refusal is reproducible here; both are probed against a fabricated allowlist in a throwaway repository, and nothing recreates one in the tree. Pure bash + git, no Docker and no network; run directly with `./tests/unit/line-cap-gate.sh`.

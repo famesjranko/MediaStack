@@ -42,7 +42,7 @@ ui_confirm() {
 nvidia_driver_resolve_driver() {
     printf '%s\n' resolve >>"$TRACE"
     _driver_ver=550.90
-    _run_file="$_nvidia_tmp/NVIDIA.run"
+    _run_file="${_nvidia_tmp:?caller workspace is required}/NVIDIA.run"
     : >"$_run_file"
 }
 docker() {

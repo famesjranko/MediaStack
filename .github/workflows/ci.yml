@@ -23,12 +23,9 @@ permissions:
   contents: read
 
 jobs:
-  # Standalone job so an OOM or a timeout is attributable to the ShellCheck
-  # sweep specifically, not folded into a generic "unit tier failed". This
-  # sweep alone was measured locally at ~6.2 GB peak / ~290s, dominated by
-  # tests/unit/wizard-flow.sh sourcing setup.sh. Assumed: the older-documented
-  # 2-core/7 GB ubuntu-latest figure (current specs unconfirmable offline
-  # here); this isolated job is insurance if that figure still holds.
+  # Keep engine failures attributable to lint. The runner analyses one root
+  # per process, and the dispatchers bound their imports, rather than relying
+  # on a larger runner to absorb a whole-project source-analysis heap.
   lint-shellcheck:
     name: lint-shellcheck
     runs-on: ubuntu-latest

@@ -9,7 +9,8 @@
 shell=bash
 
 # Follow `# shellcheck source=...` directives so sourced helpers are analysed
-# in the context of their caller (replaces the old `-x` flag).
+# in their module's context. The two dispatchers disable following locally:
+# expanding the entire project there exceeds the lint memory budget.
 external-sources=true
 
 # Curated false-positive suppressions. Each is architectural noise, not a bug:
