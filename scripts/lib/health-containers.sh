@@ -12,6 +12,9 @@ declare -F profiles_build_args >/dev/null 2>&1 || source "$_HC_LIB_DIR/profiles.
 health_containers() {
     local -a profiles=()
     profiles_build_args profiles
+    if [[ "${STORAGE_MODE:-}" == "nas" && -s "$SCRIPT_DIR/config/state/storage-watchdog-stopped" ]]; then
+        echo "fail|NAS storage unreachable - NAS-dependent services stopped by the watchdog"
+    fi
     local services rows
     services=$(docker compose "${profiles[@]}" config --services 2>/dev/null) || {
         echo "skip|Containers: cannot list the compose services"
