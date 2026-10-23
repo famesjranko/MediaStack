@@ -81,6 +81,19 @@ _ms_state_set() {
     return "$rc"
 }
 
+_ms_state_unset() {
+    local key="$1" tmp rc
+    [[ "$key" =~ ^[A-Z0-9_]+$ ]] || return 1
+    sudo test -f "$MEDIASTACK_STATE_FILE" || return 0
+    tmp=$(mktemp)
+    # shellcheck disable=SC2024 # output intentionally goes to the user-owned temp file
+    sudo awk -F= -v key="$key" '$1 != key' "$MEDIASTACK_STATE_FILE" >"$tmp" \
+        && sudo install -m 0600 "$tmp" "$MEDIASTACK_STATE_FILE"
+    rc=$?
+    rm -f "$tmp"
+    return "$rc"
+}
+
 _ms_root_sha256() {
     sudo sha256sum "$1" 2>/dev/null | awk '{print $1}'
 }

@@ -77,7 +77,7 @@ _setup_samba_ufw_rules_remove() {
         kept=$((kept + 1))
         ((kept == i)) || _ms_state_set "UFW_RULE_$kept" "$rule" || return 1
     done
-    ((kept == count)) || _ms_state_set UFW_RULE_COUNT "$kept" || return 1
+    ((kept == count)) || _ms_ufw_ledger_truncate "$kept" "$count" || return 1
     return "$failed"
 }
 

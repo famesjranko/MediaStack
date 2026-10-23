@@ -34,6 +34,7 @@ log_warn() { :; }
 log_error() { :; }
 log_skip() { :; }
 _ms_state_set() { :; }
+_ms_state_unset() { :; }
 _ms_state_get() { echo false; }
 
 # Characterization: the end-to-end UFW fixtures below do not reach the helper

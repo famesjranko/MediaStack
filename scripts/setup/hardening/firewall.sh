@@ -140,6 +140,17 @@ setup_ufw_wireguard_clients() {
 # Legacy rule cleanup
 # ---------------------------------------------------------------------------
 
+# Shrinks the ledger to its first <kept> rules. The count goes first so a
+# failure part-way leaves harmless extra keys, never a count above the rules.
+# Deleting the keys above <kept> stops a stale UFW_RULE_<n> outliving its rule.
+_ms_ufw_ledger_truncate() {
+    local kept="$1" count="$2" i
+    _ms_state_set UFW_RULE_COUNT "$kept" || return 1
+    for ((i = kept + 1; i <= count; i++)); do
+        _ms_state_unset "UFW_RULE_$i" || return 1
+    done
+}
+
 # Drops every ledger entry owned by one ufw comment tag and renumbers the rest.
 # Call it once MediaStack has removed the live rule (or found it gone): the
 # uninstall replays UFW_RULE_* verbatim, so a stale entry names a rule that no
@@ -154,7 +165,7 @@ _ms_ufw_ledger_forget_tag() {
         kept=$((kept + 1))
         ((kept == i)) || _ms_state_set "UFW_RULE_$kept" "$rule" || return 1
     done
-    ((kept == count)) || _ms_state_set UFW_RULE_COUNT "$kept"
+    ((kept == count)) || _ms_ufw_ledger_truncate "$kept" "$count"
 }
 
 # Earlier releases opened the Beszel agent's TCP port to the Docker networks

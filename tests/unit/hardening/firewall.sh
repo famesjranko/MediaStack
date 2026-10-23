@@ -387,6 +387,7 @@ assert_eq "0" "${#UFW_DELETES[@]}" "legacy beszel rule: absent rule means no del
 # Given a ledger holding a Beszel-agent rule between two other MediaStack rules
 # When the legacy rule cleanup runs on a host where that rule is already gone
 # Then the stale entry is dropped and the others are renumbered
+# And the ledger key above the new count is deleted
 LEDGER=("allow 80/tcp comment MediaStack:HTTP" "allow 45876/tcp comment MediaStack:Beszel-agent" "allow 443/tcp comment MediaStack:HTTPS")
 LEDGER_COUNT=3
 _ms_state_get() {
@@ -401,10 +402,13 @@ _ms_state_set() {
         UFW_RULE_[0-9]*) LEDGER[${1#UFW_RULE_} - 1]="$2" ;;
     esac
 }
+LEDGER_UNSET=()
+_ms_state_unset() { LEDGER_UNSET+=("$1"); }
 UFW_DELETES=()
 UFW_STATUS_TEXT="$ACTIVE_HEAD
 [ 1] 22/tcp                     ALLOW IN    Anywhere"
 ufw_remove_legacy_beszel_rule
+assert_eq "UFW_RULE_3" "${LEDGER_UNSET[*]}" "legacy beszel rule: ledger key above the new count is deleted"
 assert_eq "2" "$LEDGER_COUNT" "legacy beszel rule: ledger count drops by the stale entry"
 assert_eq "allow 80/tcp comment MediaStack:HTTP|allow 443/tcp comment MediaStack:HTTPS" "$(IFS='|' && echo "${LEDGER[*]:0:2}")" "legacy beszel rule: other ledger entries kept in order"
 _ms_state_set() { :; }
