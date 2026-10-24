@@ -79,6 +79,22 @@ else:
     print("other")'
 }
 
+# Reports whether qBittorrent.conf has a non-empty AuthSubnetWhitelist in its
+# [WebUI] section. i66b also uses this to diagnose an unreadable newer layout.
+_qbt_config_has_webui_whitelist() {
+    local config_path="$1"
+    [[ -r "$config_path" ]] || return 1
+    awk '
+        /^\[/ { section = $0; next }
+        section == "[WebUI]" && /^AuthSubnetWhitelist=/ {
+            value = $0
+            sub(/^[^=]*=/, "", value)
+            if (value ~ /[^[:space:]]/) found = 1
+        }
+        END { exit !found }
+    ' "$config_path"
+}
+
 # MB/s (megabytes) -> bytes/s for the qBittorrent API. Shared so the 1048576
 # conversion lives in exactly one place (configure_qbittorrent + qbt_set_speed_limits).
 _qbt_mb_to_bytes() {
@@ -421,7 +437,7 @@ print(json.dumps({
 # Returns 0 when the whitelist is narrowed, already right, or user-owned; 1 when
 # it could not be read, parsed or written, so the caller reports a failure.
 qbt_narrow_legacy_whitelist() {
-    local qbt_url wl_csv jar live_prefs wl_state rc=0
+    local qbt_url wl_csv jar live_prefs wl_state qbt_conf rc=0
     qbt_url="$(service_local_url qbittorrent)"
     if ! wl_csv=$(_qbt_caller_whitelist); then
         log_warn "$(_qbt_prefix_hint)"
@@ -459,7 +475,14 @@ print(json.dumps({"bypass_auth_subnet_whitelist": os.environ["WL_CSV"],
             fi
             ;;
         current) log_skip "qBittorrent auth whitelist already limited to $wl_csv" ;;
-        empty) log_skip "qBittorrent auth whitelist is empty - nothing to narrow" ;;
+        empty)
+            qbt_conf="$SCRIPT_DIR/config/qbittorrent/qBittorrent/qBittorrent.conf"
+            if _qbt_config_has_webui_whitelist "$qbt_conf"; then
+                log_drift "qBittorrent.conf [WebUI] AuthSubnetWhitelist is non-empty, but the running qBittorrent image cannot read this layout; Sonarr and Radarr get 403"
+            else
+                log_skip "qBittorrent auth whitelist is empty - nothing to narrow"
+            fi
+            ;;
         other) log_drift "qBittorrent auth whitelist was changed outside MediaStack - left as is (Sonarr/Radarr need $wl_csv to connect)" ;;
         *)
             log_warn "Could not parse qBittorrent auth whitelist - left unchanged"
