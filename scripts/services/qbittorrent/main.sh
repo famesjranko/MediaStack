@@ -80,8 +80,8 @@ else:
 }
 
 # Reports whether qBittorrent.conf has a non-empty AuthSubnetWhitelist in its
-# [WebUI] section. This is shared by qBittorrent configuration and Revert's
-# archived-layout compatibility warning.
+# [WebUI] section. This is shared by Revert's archived-layout compatibility
+# warning and qBittorrent's unreadable newer-layout drift check.
 qbt_config_has_webui_whitelist() {
     local config_path="$1"
     [[ -r "$config_path" ]] || return 1

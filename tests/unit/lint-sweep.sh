@@ -30,11 +30,17 @@ if [[ "${1:-}" == "--version" ]]; then
 fi
 printf 'CALL\n' >>"$SWEEP_LOG"
 files=()
+end_of_options=false
 for arg in "$@"; do
-    case "$arg" in
-        -*) printf 'FLAG:%s\n' "$arg" >>"$SWEEP_LOG" ;;
-        *) files+=("$arg"); printf 'FILE:%s\n' "$arg" >>"$SWEEP_LOG" ;;
-    esac
+    if [[ "$end_of_options" == "false" && "$arg" == "--" ]]; then
+        end_of_options=true
+        printf 'END-OF-OPTIONS\n' >>"$SWEEP_LOG"
+    elif [[ "$end_of_options" == "false" && "$arg" == -* ]]; then
+        printf 'FLAG:%s\n' "$arg" >>"$SWEEP_LOG"
+    else
+        files+=("$arg")
+        printf 'FILE:%s\n' "$arg" >>"$SWEEP_LOG"
+    fi
 done
 # Multiple roots must not share an engine's growing source-analysis heap.
 if ((${#files[@]} != 1)); then
@@ -43,6 +49,7 @@ if ((${#files[@]} != 1)); then
 fi
 case "${files[0]}" in
     bad1.sh) echo 'finding in bad1.sh'; exit 1 ;;
+    -bad.sh) echo 'finding in -bad.sh'; exit 1 ;;
     engine-error.sh) echo 'engine failed'; exit 2 ;;
 esac
 STUB
@@ -70,6 +77,41 @@ assert_eq 3 "$(grep -c '^CALL$' "$SWEEP_LOG")" "each file gets its own analysis"
 expected=$(printf 'FILE:%s\n' bad1.sh 'ok 3.sh' ok2.sh)
 assert_eq "$expected" "$(grep '^FILE:' "$SWEEP_LOG")" "every tracked file is checked once with its name intact"
 assert_eq 3 "$(grep -c '^FLAG:--severity=info$' "$SWEEP_LOG")" "every analysis retains info severity"
+
+# Given tracked dash-prefixed shell files, including a name that resembles a flag.
+for file in -bad.sh -clean.sh --severity=error.sh; do
+    printf '#!/usr/bin/env bash\ntrue\n' >"$FIXTURE_ROOT/$file"
+done
+git -C "$FIXTURE_ROOT" add -- -bad.sh -clean.sh --severity=error.sh
+
+# When discovery supplies those files to the engine.
+run_fixture
+
+# Then each dash-prefixed name is passed after an end-of-options marker.
+assert_rc 1 "a dash-prefixed finding fails the complete sweep"
+assert_contains "$OUT" 'finding in -bad.sh' "dash-prefixed finding output is preserved"
+assert_eq 6 "$(grep -c '^END-OF-OPTIONS$' "$SWEEP_LOG")" "each discovered file follows end-of-options"
+assert_contains "$(cat "$SWEEP_LOG")" 'FILE:-clean.sh' "a dash-prefixed clean file is linted"
+assert_contains "$(cat "$SWEEP_LOG")" 'FILE:--severity=error.sh' "a flag-like filename is linted"
+
+# Given a separate fixture with dash-prefixed files for the real pinned engine.
+DASH_FIXTURE="$TMP_DIR/dash-fixture"
+mkdir -p "$DASH_FIXTURE/tests"
+git init -q "$DASH_FIXTURE"
+cp "$REPO_ROOT/tests/lint.sh" "$DASH_FIXTURE/tests/lint.sh"
+cp "$REPO_ROOT/tools.toml" "$REPO_ROOT/.shellcheckrc" "$DASH_FIXTURE/"
+printf 'if\n' >"$DASH_FIXTURE/-bad.sh"
+printf '#!/usr/bin/env bash\ntrue\n' >"$DASH_FIXTURE/-clean.sh"
+printf '#!/usr/bin/env bash\ntrue\n' >"$DASH_FIXTURE/--severity=error.sh"
+git -C "$DASH_FIXTURE" add -- -bad.sh -clean.sh --severity=error.sh
+
+# When the complete fixture is linted by the real engine.
+OUT=$(cd "$DASH_FIXTURE" && bash tests/lint.sh 2>&1)
+RC=$?
+
+# Then the finding reports its dash-prefixed filename rather than an option error.
+assert_rc 1 "real engine reports a dash-prefixed finding"
+assert_contains "$OUT" '-bad.sh' "real engine finding names the dash-prefixed file"
 
 # Given the same repository contains both clean and failing files.
 # When a caller selects only the spaced name and overrides severity.
