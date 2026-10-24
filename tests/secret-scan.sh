@@ -21,7 +21,8 @@
 #
 # A tree scan covers what a checkout contains right now. It says nothing about
 # a secret that was committed and later deleted; only history mode reaches
-# those blobs. Run both.
+# those blobs. Run both. At a repository root, it skips only registered child
+# worktrees below .wt/; direct scans of a child worktree still scan it fully.
 #
 # Exit codes match the guards: 0 clean, 1 findings, 2 scanner or usage error.
 # Findings print rule, path, line and commit - never the matched value.
@@ -143,15 +144,19 @@ assert_no_ignore_in_history() {
 }
 
 scan() {
-    local report="$1" log="$2"
+    local report="$1" log="$2" config="$CONFIG"
     shift 2
+    if [ "${1:-}" = --scan-config ]; then
+        config="$2"
+        shift 2
+    fi
     "$GITLEAKS" "$@" \
         --no-banner --no-color --redact=100 \
         --exit-code "$FINDING_RC" \
         --ignore-gitleaks-allow \
         --max-archive-depth "$ARCHIVE_DEPTH" \
         -i "$SCRATCH/no-ignore" \
-        --config "$CONFIG" \
+        --config "$config" \
         --report-format json --report-path "$report" 2>"$log"
 }
 
@@ -223,8 +228,54 @@ PYEOF
     [ "$count" -gt 0 ] || die "$mode scan exited $FINDING_RC with an empty report"
 }
 
+# Gitleaks has no directory-exclusion flag. Build a per-run config only after
+# Git confirms both the repository root and each child worktree. If either
+# discovery step fails, return no config so the full target is scanned. Gitleaks
+# does not follow a .wt symlink without its --follow-symlinks option.
+tree_worktree_config() {
+    local target="$1" top listing line path config
+    local -a worktrees=()
+    top=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null) || return 0
+    top=$(realpath -e "$top" 2>/dev/null) || return 0
+    [ "$top" = "$target" ] || return 0
+
+    listing="$SCRATCH/worktrees.list"
+    git -C "$target" worktree list --porcelain >"$listing" 2>/dev/null || return 0
+    while IFS= read -r line; do
+        case "$line" in
+            'worktree '*)
+                path=$(realpath -e "${line#worktree }" 2>/dev/null) || continue
+                case "$path/" in
+                    "$target/.wt/"*) worktrees+=("$path") ;;
+                esac
+                ;;
+        esac
+    done <"$listing"
+    ((${#worktrees[@]} > 0)) || return 0
+
+    config="$SCRATCH/tree-worktrees.toml"
+    python3 - "$CONFIG" "$config" "${worktrees[@]}" <<'PYEOF' || return 0
+import json
+import re
+import sys
+
+base, output, *worktrees = sys.argv[1:]
+with open(output, "w", encoding="utf-8") as handle:
+    handle.write('title = "MediaStack tree scan exclusions"\n\n[extend]\n')
+    handle.write("path = " + json.dumps(base) + "\n\n[[allowlists]]\n")
+    handle.write('description = "registered nested worktrees"\npaths = [\n')
+    for worktree in worktrees:
+        handle.write("    " + json.dumps("^" + re.escape(worktree) + r"(?:/|$)") + ",\n")
+    handle.write("]\n")
+PYEOF
+    for path in "${worktrees[@]}"; do
+        printf 'SKIP\tregistered git worktree\t%s\n' "$path" >&2
+    done
+    printf '%s\n' "$config"
+}
+
 scan_tree() {
-    local target rc work report log
+    local target rc work report log config
     target="$(realpath -e "${1:-$REPO_ROOT}" 2>/dev/null)" \
         || die "no such path: ${1:-$REPO_ROOT}"
     require_scanner
@@ -236,8 +287,10 @@ scan_tree() {
     log="$SCRATCH/tree.log"
     LAST_REPORT="$report"
     TARGET_ABS="$target"
+    config="$(tree_worktree_config "$target")"
+    config="${config:-$CONFIG}"
 
-    scan "$report" "$log" dir "$target"
+    scan "$report" "$log" --scan-config "$config" dir "$target"
     rc=$?
     cat "$log" >&2
     assert_scanned "$log" tree

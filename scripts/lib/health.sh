@@ -55,10 +55,9 @@ _health_svc_healthy() {
     [[ -z "$health" || "$health" == "healthy" ]]
 }
 
-# Passwordless sudo available? Checks that read root-owned state (cert / ufw /
-# iptables) call this first and skip cleanly when it fails — the diag_readiness
-# `sudo -n true` precedent (mediastack).
 _health_sudo_ok() { sudo -n true 2>/dev/null; }
+
+_health_jump_before_return() { [[ "$1" != *$'-A DOCKER-USER -j RETURN\n'*"-A DOCKER-USER -j $2"* ]]; }
 
 # Parse the "N matched" count out of fail2ban-regex output. THE shared core with
 # tests/assertions/fail2ban.sh (keep the sed in exactly one place).
@@ -424,7 +423,7 @@ health_docker_user_restrict() {
     fi
     local rules ndrop du
     du=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || true
-    if [[ "$du" == *$'-A DOCKER-USER -j RETURN\n'*'-j MEDIASTACK-DOCKER-RESTRICT'* ]]; then
+    if ! _health_jump_before_return "$du" MEDIASTACK-DOCKER-RESTRICT; then
         echo "fail|LAN-only port protection sits BEHIND a RETURN rule in DOCKER-USER, so it never runs — admin ports exposed"
         return 0
     fi
@@ -434,15 +433,15 @@ health_docker_user_restrict() {
         echo "fail|Port-restriction chain is EMPTY — LAN-only ports exposed"
         return 0
     fi
-    # IPv6 only matters once Docker actually filters there — it creates a v6
-    # DOCKER-USER chain when it gains an IPv6 bridge. Until then there is nothing
-    # to report.
-    # A flushed v6 chain keeps its jump but drops nothing, so check its rules too.
     if sudo -n ip6tables -S DOCKER-USER >/dev/null 2>&1; then
-        local rules6
+        local du6 rules6
+        du6=$(sudo -n ip6tables -S DOCKER-USER 2>/dev/null) || true
         rules6=$(sudo -n ip6tables -S MEDIASTACK-DOCKER-RESTRICT 2>/dev/null) || true
         if ! sudo -n ip6tables -C DOCKER-USER -j MEDIASTACK-DOCKER-RESTRICT 2>/dev/null; then
             echo "fail|LAN-only port protection MISSING from IPv6 DOCKER-USER — admin ports exposed over IPv6"
+            return 0
+        elif ! _health_jump_before_return "$du6" MEDIASTACK-DOCKER-RESTRICT; then
+            echo "fail|IPv6 LAN-only port protection sits BEHIND a RETURN rule in DOCKER-USER, so it never runs — admin ports exposed"
             return 0
         elif ! grep -q 'multiport.*DROP' <<<"$rules6"; then
             echo "fail|IPv6 port-restriction chain is EMPTY — LAN-only ports exposed over IPv6"

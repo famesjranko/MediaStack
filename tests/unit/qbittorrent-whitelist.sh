@@ -15,6 +15,7 @@ scenario_begin "$CURRENT_SCENARIO"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 CURL_LOG="$TMP_DIR/curl.log"
+SCRIPT_DIR="$TMP_DIR"
 
 CONFIG_FILE=/dev/null
 source "$REPO_ROOT/scripts/lib/common.sh"
@@ -32,10 +33,11 @@ MEDIASTACK_NETWORK_PREFIX=172.29.5
 LOG_OK_MESSAGES=()
 LOG_WARN_MESSAGES=()
 LOG_DRIFT_MESSAGES=()
+LOG_SKIP_MESSAGES=()
 log_ok() { LOG_OK_MESSAGES+=("$1"); }
 log_warn() { LOG_WARN_MESSAGES+=("$1"); }
 log_drift() { LOG_DRIFT_MESSAGES+=("$1"); }
-log_skip() { :; }
+log_skip() { LOG_SKIP_MESSAGES+=("$1"); }
 service_local_url() { printf 'http://localhost:8080'; }
 cfg_field() {
     case "$1" in
@@ -223,8 +225,14 @@ _run_narrow_case() {
     LOG_OK_MESSAGES=()
     LOG_WARN_MESSAGES=()
     LOG_DRIFT_MESSAGES=()
+    LOG_SKIP_MESSAGES=()
     NARROW_RC=0
     qbt_narrow_legacy_whitelist >/dev/null || NARROW_RC=$?
+}
+
+_write_qbt_conf() {
+    mkdir -p "$SCRIPT_DIR/config/qbittorrent/qBittorrent"
+    printf '%s\n' "$@" >"$SCRIPT_DIR/config/qbittorrent/qBittorrent/qBittorrent.conf"
 }
 
 # Given MediaStack's legacy 172.16.0.0/12 enabled
@@ -258,6 +266,43 @@ QBT_LIVE_WHITELIST="$WANTED_WL" QBT_LIVE_ENABLED=true _run_narrow_case
 assert_eq "0" "$NARROW_RC" "narrow (already current): succeeds"
 assert_eq "0" "$(_set_prefs_calls)" "narrow (already current): setPreferences is never called"
 assert_eq "0" "${#LOG_DRIFT_MESSAGES[@]}" "narrow (already current): no drift"
+
+# Given an empty API whitelist and a non-empty v5.3 [WebUI] config whitelist
+# When the day-2 narrowing runs on a v5.2.4 image
+# Then it reports drift because Sonarr and Radarr receive 403, without a write
+_write_qbt_conf '[WebUI]' 'AuthSubnetWhitelist=172.29.5.22/32,172.29.5.23/32'
+QBT_LIVE_WHITELIST='' QBT_LIVE_ENABLED=false _run_narrow_case
+assert_eq "0" "$NARROW_RC" "narrow (unreadable [WebUI] whitelist): succeeds"
+assert_eq "0" "$(_set_prefs_calls)" "narrow (unreadable [WebUI] whitelist): setPreferences is never called"
+assert_contains "$(printf '%s\n' "${LOG_DRIFT_MESSAGES[@]}")" "qBittorrent.conf [WebUI] AuthSubnetWhitelist is non-empty, but the running qBittorrent image cannot read this layout; Sonarr and Radarr get 403" "narrow (unreadable [WebUI] whitelist): drift names the cause and effect"
+
+# Given an empty API whitelist and an old [Preferences] config whitelist
+# When the day-2 narrowing runs
+# Then it keeps the normal empty-whitelist skip
+_write_qbt_conf '[Preferences]' 'WebUI\AuthSubnetWhitelist=172.29.5.22/32,172.29.5.23/32'
+QBT_LIVE_WHITELIST='' QBT_LIVE_ENABLED=false _run_narrow_case
+assert_contains "$(printf '%s\n' "${LOG_SKIP_MESSAGES[@]}")" "qBittorrent auth whitelist is empty - nothing to narrow" "narrow (old [Preferences] whitelist): skips normally"
+
+# Given an empty API whitelist and an empty [WebUI] config whitelist
+# When the day-2 narrowing runs
+# Then it keeps the normal empty-whitelist skip
+_write_qbt_conf '[WebUI]' 'AuthSubnetWhitelist='
+QBT_LIVE_WHITELIST='' QBT_LIVE_ENABLED=false _run_narrow_case
+assert_contains "$(printf '%s\n' "${LOG_SKIP_MESSAGES[@]}")" "qBittorrent auth whitelist is empty - nothing to narrow" "narrow (empty [WebUI] whitelist): skips normally"
+
+# Given an empty API whitelist and AuthSubnetWhitelist in another section
+# When the day-2 narrowing runs
+# Then it keeps the normal empty-whitelist skip
+_write_qbt_conf '[Preferences]' 'AuthSubnetWhitelist=172.29.5.22/32,172.29.5.23/32'
+QBT_LIVE_WHITELIST='' QBT_LIVE_ENABLED=false _run_narrow_case
+assert_contains "$(printf '%s\n' "${LOG_SKIP_MESSAGES[@]}")" "qBittorrent auth whitelist is empty - nothing to narrow" "narrow (wrong section): skips normally"
+
+# Given an empty API whitelist and no qBittorrent.conf
+# When the day-2 narrowing runs
+# Then it keeps the normal empty-whitelist skip
+rm -rf "$SCRIPT_DIR/config"
+QBT_LIVE_WHITELIST='' QBT_LIVE_ENABLED=false _run_narrow_case
+assert_contains "$(printf '%s\n' "${LOG_SKIP_MESSAGES[@]}")" "qBittorrent auth whitelist is empty - nothing to narrow" "narrow (no qBittorrent.conf): skips normally"
 
 # Given setPreferences fails while the legacy /12 is live
 # When the day-2 narrowing runs
