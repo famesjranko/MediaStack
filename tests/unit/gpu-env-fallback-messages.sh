@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/unit/gpu-env-fallback-messages.sh
 #
-# GPU contracts: .env writer parity (E1), recorded software-fallback
-# reason (E2), and user-facing messages that name ./mediastack, not scripts (E3).
+# GPU contracts: .env writer parity (E1), recorded transcoding outcomes (E2),
+# and user-facing messages that name ./mediastack, not scripts (E3).
 
 set -uo pipefail
 
@@ -125,6 +125,67 @@ view=$(_hw_transcoding_info)
 # Then it shows the reason and the fix
 assert_contains "$view" "Reason=Secure Boot blocks the NVIDIA driver" "fallback: status view shows the reason"
 assert_contains "$view" "Fix=disable Secure Boot" "fallback: status view shows the Secure Boot fix"
+
+# Given a transcoding run that found no supported GPU
+# When its outcome is recorded and rendered by the launcher
+# Then it completes normally without the GPU-inactive warning
+no_gpu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  source "$REPO_ROOT/scripts/setup/checks.sh"
+  result=$(mktemp); export MEDIASTACK_LAUNCHER_RESULT="$result"
+  STAGE_3_GPU_STATE=fallback STAGE_3_GPU_FALLBACK_REASON=no_gpu record_transcoding_outcome
+  token=$(<"$result"); printf "token=%s\\n" "$token"
+  ui_log(){ printf "%s|%s\\n" "$1" "$2"; }
+  _show_action_result 0 "Hardware transcoding" "$token" 0
+  unlink "$result"
+' 2>&1)
+assert_contains "$no_gpu_out" "token=completed" "transcoding: no_gpu records completed"
+assert_not_contains "$no_gpu_out" "the GPU is not active" "transcoding: no_gpu does not warn that the GPU is inactive"
+
+# Given a transcoding run the user chose to skip
+# When its outcome is recorded and rendered by the launcher
+# Then it completes normally without the GPU-inactive warning
+user_choice_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  source "$REPO_ROOT/scripts/setup/checks.sh"
+  result=$(mktemp); export MEDIASTACK_LAUNCHER_RESULT="$result"
+  STAGE_3_GPU_STATE=fallback STAGE_3_GPU_FALLBACK_REASON=user_choice record_transcoding_outcome
+  token=$(<"$result"); printf "token=%s\\n" "$token"
+  ui_log(){ printf "%s|%s\\n" "$1" "$2"; }
+  _show_action_result 0 "Hardware transcoding" "$token" 0
+  unlink "$result"
+' 2>&1)
+assert_contains "$user_choice_out" "token=completed" "transcoding: user_choice records completed"
+assert_not_contains "$user_choice_out" "the GPU is not active" "transcoding: user_choice does not warn that the GPU is inactive"
+
+# Given a transcoding fallback without a recorded reason
+# When its outcome is recorded
+# Then it completes normally
+empty_reason_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  source "$REPO_ROOT/scripts/setup/checks.sh"
+  result=$(mktemp); export MEDIASTACK_LAUNCHER_RESULT="$result"
+  STAGE_3_GPU_STATE=fallback STAGE_3_GPU_FALLBACK_REASON= record_transcoding_outcome
+  cat "$result"
+  unlink "$result"
+' 2>&1)
+assert_eq "completed" "$empty_reason_out" "transcoding: empty fallback reason records completed"
+
+# Given a transcoding run whose hardware verification failed
+# When its outcome is recorded and rendered by the launcher
+# Then it keeps the software-fallback warning
+verify_failed_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  source "$REPO_ROOT/scripts/setup/checks.sh"
+  result=$(mktemp); export MEDIASTACK_LAUNCHER_RESULT="$result"
+  STAGE_3_GPU_STATE=fallback STAGE_3_GPU_FALLBACK_REASON=verify_failed record_transcoding_outcome
+  token=$(<"$result"); printf "token=%s\\n" "$token"
+  ui_log(){ printf "%s|%s\\n" "$1" "$2"; }
+  _show_action_result 0 "Hardware transcoding" "$token" 0
+  unlink "$result"
+' 2>&1)
+assert_contains "$verify_failed_out" "token=software-fallback:verify_failed" "transcoding: verify_failed keeps its software-fallback token"
+assert_contains "$verify_failed_out" "the GPU is not active" "transcoding: verify_failed still warns that the GPU is inactive"
 
 # --- E3: user-facing text never sends the user to a script -----------------
 # Given every log/ui/echo/printf string in the shell sources

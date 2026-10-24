@@ -151,6 +151,46 @@ assert_rc 2 "a .gitleaksignore in the target aborts the scan"
 assert_contains "$OUT" "suppression file in the scan target" "the abort names the suppression file"
 rm -f "$FIXTURE_ROOT/canary/.gitleaksignore"
 
+# --- nested worktrees ------------------------------------------------------
+
+# Given a registered child worktree under a repository's .wt directory.
+worktree_parent=$(new_repo worktree-parent)
+printf 'clean\n' >"$worktree_parent/readme"
+git -C "$worktree_parent" add readme && git -C "$worktree_parent" commit -qm "initial"
+git -C "$worktree_parent" worktree add -q -b child "$worktree_parent/.wt/child" HEAD
+write_aws_canary "$worktree_parent/.wt/child/creds"
+# When the repository root is scanned.
+run_scan "$SCANNER" tree "$worktree_parent"
+# Then the registered child is skipped and named.
+assert_rc 0 "a root scan skips a registered nested worktree"
+assert_contains "$OUT" "registered git worktree" "the root scan names each skipped worktree"
+
+# Given the same worktree as an explicit scan target.
+# When that target is scanned.
+run_scan "$SCANNER" tree "$worktree_parent/.wt/child"
+# Then its canary is found.
+assert_rc 1 "an explicit nested worktree scan finds its canary"
+assert_contains "$OUT" "aws-access-token" "the explicit worktree scan names the canary rule"
+
+# Given a non-worktree directory named .wt with a canary.
+plain_worktree_dir=$(new_repo plain-worktree-dir)
+printf 'clean\n' >"$plain_worktree_dir/readme"
+git -C "$plain_worktree_dir" add readme && git -C "$plain_worktree_dir" commit -qm "initial"
+mkdir -p "$plain_worktree_dir/.wt/plain"
+write_aws_canary "$plain_worktree_dir/.wt/plain/creds"
+# When its repository root is scanned.
+run_scan "$SCANNER" tree "$plain_worktree_dir"
+# Then the ordinary directory is not skipped.
+assert_rc 1 "an ordinary .wt directory is scanned"
+assert_contains "$OUT" "aws-access-token" "the ordinary .wt finding names its rule"
+
+# Given worktree discovery cannot read the repository metadata.
+# When a root with a registered child worktree is scanned.
+GIT_DIR="$FIXTURE_ROOT/not-a-git" run_scan "$SCANNER" tree "$worktree_parent"
+# Then no child content is skipped.
+assert_rc 1 "a worktree discovery failure scans the registered child"
+assert_contains "$OUT" "aws-access-token" "the discovery failure finding names its rule"
+
 # --- tampered pin / ruleset ------------------------------------------------
 
 # A standalone copy of the scanner: it resolves its pin manifest, its config
@@ -348,7 +388,7 @@ sed -i '$d' "$DECL"
 run_scan "$SCANNER" gate-history "$DECL" "$gate_repo"
 assert_rc 0 "the history gate reconciles the history-only declaration"
 
-expected=62
+expected=70
 total=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 ((total == expected)) || fail "check count is stable" "expected $expected, got $total"
 

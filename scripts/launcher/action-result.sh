@@ -377,20 +377,21 @@ action_service_start() {
 
 action_stack_stop() {
     echo ""
-    # Precondition check: if no containers exist for this project, calling
-    # `down` would either be a no-op or fail with a confusing rc=1 +
-    # invalid-spec error if .env is incomplete. Bail early. Capture-then-test
-    # avoids the SIGPIPE+pipefail race that motivated C1: piping into
-    # `grep -q .` reads false when grep's early exit SIGPIPEs compose.
-    local ids
-    ids=$(docker compose ps -q 2>/dev/null || true)
+    # Check all project containers before down; it can fail on an incomplete .env.
+    local profiles=() ids
+    profiles_build_args profiles
+    if ! ids=$(docker compose "${profiles[@]}" ps -aq 2>/dev/null); then
+        ui_log error "Could not list MediaStack containers; Stop all failed."
+        launcher_pause_for_menu
+        return 1
+    fi
     if [[ -z "$ids" ]]; then
-        ui_log info "No MediaStack services are running - nothing to stop."
+        ui_log info "No MediaStack containers exist - nothing to stop."
         launcher_pause_for_menu
         return 0
     fi
     if ! ui_confirm "Stop all MediaStack services now?" no; then
-        ui_log info "Left services running."
+        ui_log info "Left MediaStack containers unchanged."
         launcher_pause_for_menu
         return 0
     fi
@@ -405,10 +406,7 @@ action_stack_stop() {
     # every `up`, and `down` without it leaves the old one behind, unlabelled
     # and invisible to uninstall. docker-compose.yml declares no named volume
     # and config/ and data/ are bind mounts, so this removes no user data.
-    # `down --volumes` skips a volume a recreated container re-mounted by name,
-    # so collect the anonymous volumes first and remove them after.
-    local profiles=()
-    profiles_build_args profiles
+    # Collect anonymous volumes first: down skips a recreated named mount.
     local rc=0 project anon_volumes=() kept_volumes=() vol
     project=$(_compose_project_name) || project=""
     if [[ -n "$project" ]]; then
