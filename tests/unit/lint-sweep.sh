@@ -21,20 +21,27 @@ sc_version=$(awk -F' *= *' '
     /^\[/ { in_section = ($0 == "[shellcheck]"); next }
     in_section && $1 == "version" { gsub(/"/, "", $2); print $2; exit }
 ' "$REPO_ROOT/tools.toml")
-export SWEEP_LOG="$TMP_DIR/sweep.log" SC_FIXTURE_VERSION="$sc_version"
+export SWEEP_LOG="$TMP_DIR/sweep.log" DOCKER_LOG="$TMP_DIR/docker.log" SC_FIXTURE_VERSION="$sc_version"
 cat >"$FIXTURE_ROOT/bin/shellcheck" <<'STUB'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "--version" ]]; then
+    [[ "${SWEEP_ENGINE:-native}" == "docker" ]] && { printf 'version: 0.0.0\n'; exit 0; }
     printf 'version: %s\n' "$SC_FIXTURE_VERSION"
     exit 0
 fi
 printf 'CALL\n' >>"$SWEEP_LOG"
 files=()
+end_of_options=false
 for arg in "$@"; do
-    case "$arg" in
-        -*) printf 'FLAG:%s\n' "$arg" >>"$SWEEP_LOG" ;;
-        *) files+=("$arg"); printf 'FILE:%s\n' "$arg" >>"$SWEEP_LOG" ;;
-    esac
+    if [[ "$end_of_options" == "false" && "$arg" == "--" ]]; then
+        end_of_options=true
+        printf 'END-OF-OPTIONS\n' >>"$SWEEP_LOG"
+    elif [[ "$end_of_options" == "false" && "$arg" == -* ]]; then
+        printf 'FLAG:%s\n' "$arg" >>"$SWEEP_LOG"
+    else
+        files+=("$arg")
+        printf 'FILE:%s\n' "$arg" >>"$SWEEP_LOG"
+    fi
 done
 # Multiple roots must not share an engine's growing source-analysis heap.
 if ((${#files[@]} != 1)); then
@@ -43,14 +50,40 @@ if ((${#files[@]} != 1)); then
 fi
 case "${files[0]}" in
     bad1.sh) echo 'finding in bad1.sh'; exit 1 ;;
+    -bad.sh) echo 'finding in -bad.sh'; exit 1 ;;
     engine-error.sh) echo 'engine failed'; exit 2 ;;
 esac
 STUB
 chmod +x "$FIXTURE_ROOT/bin/shellcheck"
+cat >"$FIXTURE_ROOT/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+printf 'RUN\n' >>"$DOCKER_LOG"
+args=("$@")
+index=0
+[[ "${args[index]}" == "run" ]] || exit 2
+((index += 1))
+while [[ "${args[index]}" != koalaman/shellcheck:v* ]]; do
+    case "${args[index]}" in
+        --rm) ((index += 1)) ;;
+        -v | -w) ((index += 2)) ;;
+        *) exit 2 ;;
+    esac
+done
+((index += 1))
+shellcheck "${args[@]:index}"
+STUB
+chmod +x "$FIXTURE_ROOT/bin/docker"
 
 run_fixture() {
     : >"$SWEEP_LOG"
     OUT=$(cd "$FIXTURE_ROOT" && PATH="$FIXTURE_ROOT/bin:$PATH" MS_TOOL_CACHE="$TMP_DIR/empty-cache" bash tests/lint.sh "$@" 2>&1)
+    RC=$?
+}
+
+run_docker_fixture() {
+    : >"$SWEEP_LOG"
+    : >"$DOCKER_LOG"
+    OUT=$(cd "$FIXTURE_ROOT" && PATH="$FIXTURE_ROOT/bin:$PATH" MS_TOOL_CACHE="$TMP_DIR/empty-cache" SWEEP_ENGINE=docker bash tests/lint.sh "$@" 2>&1)
     RC=$?
 }
 
@@ -70,6 +103,59 @@ assert_eq 3 "$(grep -c '^CALL$' "$SWEEP_LOG")" "each file gets its own analysis"
 expected=$(printf 'FILE:%s\n' bad1.sh 'ok 3.sh' ok2.sh)
 assert_eq "$expected" "$(grep '^FILE:' "$SWEEP_LOG")" "every tracked file is checked once with its name intact"
 assert_eq 3 "$(grep -c '^FLAG:--severity=info$' "$SWEEP_LOG")" "every analysis retains info severity"
+
+# Given Docker is the only available pinned-engine delivery.
+# When the runner discovers the tracked population through the Docker rung.
+run_docker_fixture
+
+# Then its container-per-root fallback is explicit and still runs every inner command.
+assert_rc 1 "Docker findings fail the complete sweep"
+assert_contains "$OUT" 'Docker fallback starts one container per file' "Docker fallback explains its startup cost"
+assert_eq 3 "$(grep -c '^RUN$' "$DOCKER_LOG")" "Docker starts one container for each bounded root"
+assert_eq 3 "$(grep -c '^CALL$' "$SWEEP_LOG")" "Docker invokes ShellCheck once for each root"
+assert_eq "$expected" "$(grep '^FILE:' "$SWEEP_LOG")" "Docker checks every tracked file once with its name intact"
+
+# Given the native engine is available again.
+# When the runner takes the native rung.
+run_fixture
+
+# Then the Docker-only notice is not printed on the native rung.
+assert_not_contains "$OUT" 'Docker fallback starts one container per file' "native lint does not print the Docker notice"
+
+# Given tracked dash-prefixed shell files, including a name that resembles a flag.
+for file in -bad.sh -clean.sh --severity=error.sh; do
+    printf '#!/usr/bin/env bash\ntrue\n' >"$FIXTURE_ROOT/$file"
+done
+git -C "$FIXTURE_ROOT" add -- -bad.sh -clean.sh --severity=error.sh
+
+# When discovery supplies those files to the engine.
+run_fixture
+
+# Then each dash-prefixed name is passed after an end-of-options marker.
+assert_rc 1 "a dash-prefixed finding fails the complete sweep"
+assert_contains "$OUT" 'finding in -bad.sh' "dash-prefixed finding output is preserved"
+assert_eq 6 "$(grep -c '^END-OF-OPTIONS$' "$SWEEP_LOG")" "each discovered file follows end-of-options"
+assert_contains "$(cat "$SWEEP_LOG")" 'FILE:-clean.sh' "a dash-prefixed clean file is linted"
+assert_contains "$(cat "$SWEEP_LOG")" 'FILE:--severity=error.sh' "a flag-like filename is linted"
+
+# Given a separate fixture with dash-prefixed files for the real pinned engine.
+DASH_FIXTURE="$TMP_DIR/dash-fixture"
+mkdir -p "$DASH_FIXTURE/tests"
+git init -q "$DASH_FIXTURE"
+cp "$REPO_ROOT/tests/lint.sh" "$DASH_FIXTURE/tests/lint.sh"
+cp "$REPO_ROOT/tools.toml" "$REPO_ROOT/.shellcheckrc" "$DASH_FIXTURE/"
+printf 'if\n' >"$DASH_FIXTURE/-bad.sh"
+printf '#!/usr/bin/env bash\ntrue\n' >"$DASH_FIXTURE/-clean.sh"
+printf '#!/usr/bin/env bash\ntrue\n' >"$DASH_FIXTURE/--severity=error.sh"
+git -C "$DASH_FIXTURE" add -- -bad.sh -clean.sh --severity=error.sh
+
+# When the complete fixture is linted by the real engine.
+OUT=$(cd "$DASH_FIXTURE" && bash tests/lint.sh 2>&1)
+RC=$?
+
+# Then the finding reports its dash-prefixed filename rather than an option error.
+assert_rc 1 "real engine reports a dash-prefixed finding"
+assert_contains "$OUT" '-bad.sh' "real engine finding names the dash-prefixed file"
 
 # Given the same repository contains both clean and failing files.
 # When a caller selects only the spaced name and overrides severity.
@@ -91,6 +177,15 @@ run_fixture engine-error.sh 'ok 3.sh'
 assert_rc 2 "engine errors retain their exit status"
 assert_contains "$OUT" 'engine failed' "engine error output is preserved"
 assert_eq 1 "$(grep -c '^CALL$' "$SWEEP_LOG")" "an engine error stops the sweep"
+
+# Given a Docker engine error precedes a clean selected file.
+# When the Docker fallback runs the selected files.
+run_docker_fixture engine-error.sh 'ok 3.sh'
+
+# Then the container error is preserved and stops later containers.
+assert_rc 2 "Docker engine errors retain their exit status"
+assert_contains "$OUT" 'engine failed' "Docker engine error output is preserved"
+assert_eq 1 "$(grep -c '^RUN$' "$DOCKER_LOG")" "a Docker engine error stops the sweep"
 
 for root in mediastack setup.sh; do
     # Given a real dispatcher imports a tracked helper with a syntax error.

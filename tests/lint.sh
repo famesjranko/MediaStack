@@ -14,6 +14,9 @@
 #   ./tests/lint.sh --severity=error         # passthrough: only fail on errors
 #   ./tests/lint.sh --severity=warning scripts/setup/stack.sh
 #
+# An explicit argument that starts with `-` remains a ShellCheck flag. Discovered
+# file names always go after `--`, so a tracked dash-prefixed name is a file.
+#
 # The pin exists so developers, agents, and CI all analyse with the EXACT same
 # engine — different shellcheck versions disagree on which warnings fire, which
 # would make the gate non-reproducible (e.g. the GitHub runner's native 0.9.0
@@ -155,7 +158,10 @@ elif [ -x "$SC_CACHED" ] && [ "$(sha256_of "$SC_CACHED")" = "$SC_BINARY_SHA256" 
     # Rung 2: re-hash the cached pin; a stale or tampered cache falls through.
     sc_command=("$SC_CACHED")
 elif command -v docker >/dev/null 2>&1; then
-    # Rung 3: the same engine in Docker, with the same bounded root set.
+    # Rung 3: the image contains ShellCheck but no command shell, so each
+    # bounded root still needs its own container. Install the cached pin to
+    # avoid this startup cost for whole-tree runs.
+    echo "lint: Docker fallback starts one container per file; install the cached pin to avoid startup cost" >&2
     sc_command=(docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt "$SC_IMAGE")
 else
     die "need shellcheck $SC_VERSION natively, the cached pin (run: ./tests/lint.sh install), or docker on PATH"
@@ -166,7 +172,7 @@ fi
 # Keep checking after findings (1), but stop on an engine or invocation error.
 result=0
 for file in "${files[@]}"; do
-    "${sc_command[@]}" "${sc_flags[@]}" "$file"
+    "${sc_command[@]}" "${sc_flags[@]}" -- "$file"
     status=$?
     ((status == 0)) && continue
     ((status == 1)) || exit "$status"

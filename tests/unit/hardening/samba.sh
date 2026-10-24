@@ -300,6 +300,7 @@ sudo() {
 smbd() { :; }
 smbpasswd() {
     SAMBA_CALLS+=("smbpasswd")
+    cat >/dev/null
     return 0
 }
 id() {
