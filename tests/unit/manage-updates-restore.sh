@@ -348,6 +348,46 @@ assert_contains "$out" 'NOW=[WebUI\Password_PBKDF2=OLDHASH]' "restore: the old c
 assert_contains "$out" "WAL=gone" "restore: a file the newer version created does not survive"
 assert_eq "qbittorrent|state" "$(sed -n 's/^LEFT=//p' <<<"$out")" "restore: no staging or aside directory is left in config"
 
+# Given a stopped container has an inaccessible directory in its current config
+out=$(run_case '
+  _apply_service_update qbittorrent 1 >/dev/null
+  mkdir -p "$tmp/config/qbittorrent/locked"; echo locked > "$tmp/config/qbittorrent/locked/file"
+  chmod -R a-w "$tmp/config/qbittorrent/locked"
+  sudo(){
+    [[ "$1:$2:$3" == "rm:-rf:$tmp/config/qbittorrent.restore."* ]] || return 1
+    chmod -R u+w "$3"; command "$@"
+  }
+  : > "$tmp/stopped"
+
+  # When the restore swap removes the old config
+  _restore_config qbittorrent; echo "RC=$?"
+
+  # Then the old config is restored and the staging directory is gone
+  echo "NOW=[$(conf)]"
+  echo "LEFT=$(ls "$tmp/config" | paste -sd"|")"
+')
+assert_contains "$out" "RC=0" "restore-permissions: cleans the inaccessible old config"
+assert_contains "$out" 'NOW=[WebUI\Password_PBKDF2=OLDHASH]' "restore-permissions: keeps the restored config live"
+assert_eq "qbittorrent|state" "$(sed -n 's/^LEFT=//p' <<<"$out")" "restore-permissions: removes the old staging tree"
+
+# Given a stopped container has an inaccessible directory in its current config
+out=$(run_case '
+  _apply_service_update qbittorrent 1 >/dev/null
+  mkdir -p "$tmp/config/qbittorrent/locked"; echo locked > "$tmp/config/qbittorrent/locked/file"
+  chmod -R a-w "$tmp/config/qbittorrent/locked"
+  sudo(){
+    [[ "$1:$2:$3" == "rm:-rf:$tmp/config/qbittorrent.restore."* ]] || return 1
+    return 1
+  }
+  : > "$tmp/stopped"
+
+  # When privileged staging cleanup is denied
+  _restore_config qbittorrent; echo "SUDO_FAILURE_RC=$?"
+
+  # Then the restore reports the cleanup failure
+')
+assert_contains "$out" "SUDO_FAILURE_RC=1" "restore-permissions: reports a failed privileged cleanup"
+
 # --- no restore point: warn and confirm -------------------------------------
 # Given a floated service with no restore point (updated before restore points existed)
 # When the user declines the confirmation

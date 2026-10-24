@@ -133,7 +133,9 @@ _restore_config() {
         rm -rf "$stage"
         return 1
     fi
-    rm -rf "$stage"
+    # A stopped container can have made its old config root-owned. It is now only
+    # inside our mktemp staging directory, so retry that cleanup with sudo.
+    rm -rf "$stage" || sudo rm -rf "$stage"
 }
 
 # Pre-start hooks for _recreate_service. It runs them with the old container
