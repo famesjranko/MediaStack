@@ -140,6 +140,39 @@ _restore_config() {
 # stopped and the new one not yet started, so config copies are consistent.
 # Update: take the restore point (a failure only warns; the update goes on).
 _restore_hook_snapshot() { _take_restore_point "$1"; }
+
+# qBittorrent 5.3 stores its whitelist in [WebUI], which 5.2 does not read.
+# The target image has already been pulled when this hook runs, while the point
+# still holds the old config, so inspect its actual metadata before the swap.
+_warn_qbt_restore_layout_incompatible() {
+    local svc="$1" arc layout target_ref version
+    [[ "$svc" == qbittorrent ]] || return 0
+    arc="$(_restore_archive "$svc")"
+    declare -F qbt_config_has_webui_whitelist >/dev/null || source "$(dirname "${BASH_SOURCE[0]}")/../services/qbittorrent/main.sh"
+    layout=$(mktemp) || return 0
+    if ! tar -xzOf "$arc" qbittorrent/qBittorrent/qBittorrent.conf >"$layout" 2>/dev/null \
+        || ! qbt_config_has_webui_whitelist "$layout"; then
+        rm -f "$layout"
+        return 0
+    fi
+    rm -f "$layout"
+    target_ref="$(_install_image_ref "$svc")"
+    if ! version=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$target_ref" 2>/dev/null); then
+        ui_log warn "${svc}: the restore point has the newer [WebUI] whitelist layout, but it could not be checked against the target image."
+        return 0
+    fi
+    case "$version" in
+        5.2.*)
+            ui_log warn "${svc}: the restore point has the newer [WebUI] whitelist layout, but qBittorrent 5.2.x cannot read it."
+            ui_log warn "Its auth whitelist will not take effect, so Sonarr and Radarr get 403. Update qBittorrent again to recover."
+            ;;
+        5.[3-9].* | 5.[1-9][0-9].* | [6-9].* | [1-9][0-9].*) ;;
+        *)
+            ui_log warn "${svc}: the restore point has the newer [WebUI] whitelist layout, but it could not be checked against the target image."
+            ;;
+    esac
+}
+
 # Revert: keep a safety copy of the newer config, then put the old config back.
 _restore_hook_point() {
     rm -f "$(_restore_archive "$1" pre-revert)"
@@ -148,6 +181,7 @@ _restore_hook_point() {
         ui_log error "${1}: could not save a safety copy of the current config; its config was not changed."
         return 1
     fi
+    _warn_qbt_restore_layout_incompatible "$1"
     ui_log info "${1}: restoring its config from the restore point..."
     _restore_config "$1" point
 }

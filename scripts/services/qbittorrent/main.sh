@@ -80,8 +80,9 @@ else:
 }
 
 # Reports whether qBittorrent.conf has a non-empty AuthSubnetWhitelist in its
-# [WebUI] section. i66b also uses this to diagnose an unreadable newer layout.
-_qbt_config_has_webui_whitelist() {
+# [WebUI] section. This is shared by Revert's archived-layout compatibility
+# warning and qBittorrent's unreadable newer-layout drift check.
+qbt_config_has_webui_whitelist() {
     local config_path="$1"
     [[ -r "$config_path" ]] || return 1
     awk '
@@ -477,7 +478,7 @@ print(json.dumps({"bypass_auth_subnet_whitelist": os.environ["WL_CSV"],
         current) log_skip "qBittorrent auth whitelist already limited to $wl_csv" ;;
         empty)
             qbt_conf="$SCRIPT_DIR/config/qbittorrent/qBittorrent/qBittorrent.conf"
-            if _qbt_config_has_webui_whitelist "$qbt_conf"; then
+            if qbt_config_has_webui_whitelist "$qbt_conf"; then
                 log_drift "qBittorrent.conf [WebUI] AuthSubnetWhitelist is non-empty, but the running qBittorrent image cannot read this layout; Sonarr and Radarr get 403"
             else
                 log_skip "qBittorrent auth whitelist is empty - nothing to narrow"
