@@ -331,16 +331,33 @@ EOF
     rm -f "$_smbd_err_file"
     # SMB OFF stops nmbd with smbd when MediaStack installed Samba; bring it back.
     if [[ "$(_ms_state_get SAMBA_PACKAGE_INSTALLED_BY_MEDIASTACK 2>/dev/null || true)" == "true" ]]; then
-        sudo systemctl enable --now nmbd >/dev/null 2>&1 || true
+        _smbd_err_file=$(mktemp)
+        if ! sudo systemctl enable --now nmbd >/dev/null 2>"$_smbd_err_file"; then
+            log_warn "Could not start nmbd: $(head -c 300 "$_smbd_err_file"). Check: journalctl -u nmbd"
+        fi
+        rm -f "$_smbd_err_file"
     fi
     sudo systemctl reload smbd >/dev/null 2>&1 || true
 
     # LAN-only SMB access
     local cidr
+    _smbd_err_file=$(mktemp)
     for cidr in "${LAN_CIDRS[@]}"; do
-        _ms_ufw_allow from "$cidr" to any port 445 proto tcp comment "$MS_SMB_UFW_COMMENT" >/dev/null 2>&1
+        if ! _ms_ufw_allow from "$cidr" to any port 445 proto tcp comment "$MS_SMB_UFW_COMMENT" >/dev/null 2>"$_smbd_err_file"; then
+            ufw_installed || continue
+            log_error "Could not add SMB firewall rule for '$cidr' with 'ufw allow': $(head -c 300 "$_smbd_err_file")"
+            rm -f "$_smbd_err_file"
+            return 1
+        fi
     done
-    sudo ufw reload >/dev/null 2>&1
+    if ! sudo ufw reload >/dev/null 2>"$_smbd_err_file"; then
+        if ufw_installed; then
+            log_error "Could not run 'ufw reload': $(head -c 300 "$_smbd_err_file")"
+            rm -f "$_smbd_err_file"
+            return 1
+        fi
+    fi
+    rm -f "$_smbd_err_file"
 
     # Once the config has diverged the recorded hash stays: re-recording it would
     # adopt the user's shares as MediaStack's. `diverged` covers a failed flag write.

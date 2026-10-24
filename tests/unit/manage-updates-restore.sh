@@ -26,10 +26,13 @@ source "$REPO_ROOT/mediastack" </dev/null
 tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; mkdir -p "$tmp/config/state" "$tmp/config/qbittorrent"
 source "$REPO_ROOT/scripts/setup/override.sh"
 source "$REPO_ROOT/scripts/lib/json.sh"
+source "$REPO_ROOT/scripts/services/qbittorrent/main.sh"
 IMAGE_CHANNEL=stable
 JELLYFIN_ADMIN_PASSWORD=pw
 OLD_CONF="WebUI\\Password_PBKDF2=OLDHASH"
 NEW_CONF="WebUI\\Password_PBKDF2=NEWER-FORMAT"
+IMAGE_VERSION=5.3.0
+IMAGE_INSPECT_RC=0
 printf "%s\n" "$OLD_CONF" > "$tmp/config/qbittorrent/qBittorrent.conf"
 D="sha256:$(printf "a%.0s" {1..64})"
 printf "qbittorrent\tlscr.io/linuxserver/qbittorrent:latest\t%s\n" "$D" > "$tmp/config/state/image-install.tsv"
@@ -43,12 +46,17 @@ _wait_service_running(){ return 0; }
 _service_is_running(){ [[ ! -f "$tmp/stopped" ]]; }   # `docker compose stop` stops it, `up`/`start` runs it
 tar(){ echo "tar $*" >> "$tmp/docker.log"; command tar "$@"; }
 sleep(){ :; }
-ui_log(){ printf "UI_%s:%s\n" "$1" "$2"; }
+ui_log(){ printf "UI_%s:%s\n" "$1" "$2"; echo "ui $1 $2" >> "$tmp/docker.log"; }
 ui_confirm(){ echo "CONFIRM:$1" >&2; return "${CONFIRM_RC:-0}"; }
 _verify_service_up(){ return 0; }
 _qbt_login_shared(){ echo "LOGIN_CALLED" >> "$tmp/docker.log"; return "${LOGIN_RC:-0}"; }
 docker(){
   echo "docker $*" >> "$tmp/docker.log"
+  if [[ "$1 $2 $3" == "image inspect --format" ]]; then
+    ((IMAGE_INSPECT_RC == 0)) || return "$IMAGE_INSPECT_RC"
+    printf "%s\n" "${IMAGE_VERSION:-}"
+    return 0
+  fi
   case "$1 $2" in "compose stop") : > "$tmp/stopped" ;; "compose start") rm -f "$tmp/stopped" ;; esac
   if [[ "$1 $2" == "compose up" ]]; then
     # A failed `up -d` aborts before it touches the container: a stopped one stays stopped.
@@ -164,6 +172,91 @@ assert_contains "$out" "UI_ok:qbittorrent: back up and MediaStack can still log 
 assert_contains "$out" "POINT_LEFT=0" "revert: the used restore point (and safety copy) are discarded"
 assert_eq "stop|save-newer-config|restore-old-config|up" "$(sed -n 's/^ORDER=//p' <<<"$out")" \
     "revert: the service is stopped, the newer config saved, the old config restored, then started"
+
+# Given a qBittorrent restore point with the newer [WebUI] whitelist layout
+# When Revert targets a 5.2.4 image
+# Then it warns before restoring the archived config and continues
+out=$(run_case '
+  mkdir -p "$tmp/config/qbittorrent/qBittorrent"
+  printf "[WebUI]\\nAuthSubnetWhitelist=172.28.0.22/32\\n" > "$tmp/config/qbittorrent/qBittorrent/qBittorrent.conf"
+  : > "$tmp/stopped"; _take_restore_point qbittorrent; rm -f "$tmp/stopped"
+  IMAGE_VERSION=5.2.4; NEWIMG=0; : > "$tmp/docker.log"
+  _reset_service_to_default qbittorrent; echo "RC=$?"
+  echo "INSPECT_REF=$(awk "/^docker image inspect --format / { print \$NF }" "$tmp/docker.log")"
+  grep -E "ui warn.*newer \[WebUI\].*layout|tar -xzf" "$tmp/docker.log" | sed -e "s/^ui warn.*/warn/;s/^tar -xzf.*/restore/" | paste -sd"|"
+')
+assert_contains "$out" "qBittorrent 5.2.x cannot read it" "revert-layout: explains the incompatible target image"
+assert_contains "$out" "Sonarr and Radarr get 403" "revert-layout: names the affected callers"
+assert_contains "$out" "RC=0" "revert-layout: continues after the warning"
+assert_contains "$out" "INSPECT_REF=lscr.io/linuxserver/qbittorrent:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    "revert-layout: inspects the target image reference"
+assert_eq "warn|restore" "$(tail -1 <<<"$out")" "revert-layout: warning is printed before the config restore"
+
+# Given a qBittorrent restore point with the old config layout
+# When Revert targets a 5.2.4 image
+# Then it does not print the newer-layout warning
+out=$(run_case '
+  mkdir -p "$tmp/config/qbittorrent/qBittorrent"
+  printf "[Preferences]\\nWebUI\\\\AuthSubnetWhitelist=172.28.0.22/32\\n" > "$tmp/config/qbittorrent/qBittorrent/qBittorrent.conf"
+  : > "$tmp/stopped"; _take_restore_point qbittorrent; rm -f "$tmp/stopped"
+  IMAGE_VERSION=5.2.4; NEWIMG=0
+  _reset_service_to_default qbittorrent
+')
+assert_not_contains "$out" "qBittorrent 5.2.x cannot read it" "revert-layout: old layout does not warn"
+
+# Given a qBittorrent restore point with the newer [WebUI] whitelist layout
+# When Revert targets a 5.3.0 image
+# Then it does not print the 5.2.x compatibility warning
+out=$(run_case '
+  mkdir -p "$tmp/config/qbittorrent/qBittorrent"
+  printf "[WebUI]\\nAuthSubnetWhitelist=172.28.0.22/32\\n" > "$tmp/config/qbittorrent/qBittorrent/qBittorrent.conf"
+  : > "$tmp/stopped"; _take_restore_point qbittorrent; rm -f "$tmp/stopped"
+  IMAGE_VERSION=5.3.0; NEWIMG=0
+  _reset_service_to_default qbittorrent
+')
+assert_not_contains "$out" "qBittorrent 5.2.x cannot read it" "revert-layout: 5.3.0 does not warn"
+
+# Given a qBittorrent restore point with the newer [WebUI] whitelist layout
+# When the target image has no version label
+# Then it warns that the layout could not be checked and continues
+out=$(run_case '
+  mkdir -p "$tmp/config/qbittorrent/qBittorrent"
+  printf "[WebUI]\\nAuthSubnetWhitelist=172.28.0.22/32\\n" > "$tmp/config/qbittorrent/qBittorrent/qBittorrent.conf"
+  : > "$tmp/stopped"; _take_restore_point qbittorrent; rm -f "$tmp/stopped"
+  IMAGE_VERSION=""; NEWIMG=0
+  _reset_service_to_default qbittorrent; echo "RC=$?"
+')
+assert_contains "$out" "could not be checked against the target image" "revert-layout: unknown target version warns clearly"
+assert_contains "$out" "RC=0" "revert-layout: unknown target version does not block the revert"
+
+# Given a qBittorrent restore point with the newer [WebUI] whitelist layout
+# When the target image label is not a qBittorrent version
+# Then it warns that the layout could not be checked and continues
+out=$(run_case '
+  mkdir -p "$tmp/config/qbittorrent/qBittorrent"
+  printf "[WebUI]\\nAuthSubnetWhitelist=172.28.0.22/32\\n" > "$tmp/config/qbittorrent/qBittorrent/qBittorrent.conf"
+  : > "$tmp/stopped"; _take_restore_point qbittorrent; rm -f "$tmp/stopped"
+  IMAGE_VERSION="metadata unavailable"; NEWIMG=0
+  _reset_service_to_default qbittorrent; echo "RC=$?"
+')
+assert_contains "$out" "could not be checked against the target image" "revert-layout: non-version metadata warns clearly"
+assert_contains "$out" "RC=0" "revert-layout: non-version metadata does not block the revert"
+
+# Given a qBittorrent restore point with the newer [WebUI] whitelist layout
+# When image inspection of the exact Revert target fails
+# Then it warns that the layout could not be checked and continues
+out=$(run_case '
+  mkdir -p "$tmp/config/qbittorrent/qBittorrent"
+  printf "[WebUI]\\nAuthSubnetWhitelist=172.28.0.22/32\\n" > "$tmp/config/qbittorrent/qBittorrent/qBittorrent.conf"
+  : > "$tmp/stopped"; _take_restore_point qbittorrent; rm -f "$tmp/stopped"
+  IMAGE_INSPECT_RC=17; NEWIMG=0
+  _reset_service_to_default qbittorrent; echo "RC=$?"
+  echo "INSPECT_REF=$(awk "/^docker image inspect --format / { print \$NF }" "$tmp/docker.log")"
+')
+assert_contains "$out" "could not be checked against the target image" "revert-layout: failed inspection warns clearly"
+assert_contains "$out" "RC=0" "revert-layout: failed inspection does not block the revert"
+assert_contains "$out" "INSPECT_REF=lscr.io/linuxserver/qbittorrent:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    "revert-layout: failed inspection uses the target image reference"
 
 # Given a reverted qBittorrent whose login still fails (the F2 symptom)
 # When the revert finishes

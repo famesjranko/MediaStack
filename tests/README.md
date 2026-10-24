@@ -139,7 +139,9 @@ The runner starts a separate ShellCheck process for each tracked shell file,
 so the previous root's analysis heap is released before the next file starts.
 Findings do not skip later files; an engine or invocation error stops the run
 with its original exit status. The same loop serves the native, cached and
-Docker engines; the Docker fallback starts one container per file.
+Docker engines. The Docker fallback starts one container per file because the
+pinned image contains ShellCheck but no command shell for a process loop.
+Install the cached pin (`./tests/lint.sh install`) to avoid that startup cost.
 
 Source following remains enabled for modules. `mediastack` and `setup.sh`
 disable it locally because expanding either dispatcher's whole-project tree
@@ -689,7 +691,8 @@ unrelated edit turns the tier red. It guards publication rather than the edit lo
 `./tests/check.sh secrets-history` before any push that makes new history public. Its
 guards are covered by
 `tests/unit/secret-scan.sh`, which is in `./tests/unit.sh` and needs network on a cold tool
-cache.
+cache. Tree mode excludes and announces registered child Git worktrees under the root `.wt/`
+directory; direct child scans and ordinary `.wt` directories are still scanned.
 
 ```bash
 ./tests/secret-scan.sh install                  # fetch + verify the pinned binary
