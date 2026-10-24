@@ -46,7 +46,10 @@ size-bounded (256 MiB) archive of `config/<service>` (never the media or downloa
 floated keeps its first point, because Revert returns to the install image. Revert stops the
 service, puts the old config back with the old image, then checks that the service is healthy
 and, for qBittorrent, Sonarr, Radarr and Jellyfin, that MediaStack can still log in. A failed
-check is reported as a failure and the restore point is kept. With no restore point (config over
+check is reported as a failure and the restore point is kept. Before qBittorrent restores a point
+with the newer `[WebUI]` whitelist layout onto a 5.2.x image, it warns that the whitelist will not
+take effect and Sonarr and Radarr will get 403; update qBittorrent again to recover. It also warns
+when the target image metadata cannot be inspected or is not a usable version. With no restore point (config over
 the size limit, or an update from before this feature), Revert warns that the config may be newer
 than the image and asks for confirmation. The Revert list shows only services that differ from
 their install image. "Update all" skips stopped services and names them; "Update a service" can

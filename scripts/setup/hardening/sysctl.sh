@@ -125,8 +125,22 @@ _setup_sysctl_drifted_keys() {
     done < <(_setup_sysctl_owned_pairs)
 }
 
+_setup_sysctl_finish_apply() {
+    local bin="$1" conf="$MEDIASTACK_SYSCTL_CONF"
+    _setup_sysctl_apply_own_file "$bin" || {
+        log_error "Kernel hardening was NOT applied cleanly; $conf stays so uninstall can remove it"
+        return 1
+    }
+    _ms_state_set SYSCTL_APPLY_PENDING false || {
+        log_error "Could not record that kernel hardening finished cleanly"
+        return 1
+    }
+    _setup_sysctl_warn_ufw_overrides
+    log_ok "Kernel hardening applied"
+}
+
 setup_sysctl_hardening() {
-    local conf="$MEDIASTACK_SYSCTL_CONF" bin
+    local conf="$MEDIASTACK_SYSCTL_CONF" bin apply_pending
     # Read-only checks below need no root, but sysctl lives in /usr/sbin.
     if ! bin=$(host_tool_path sysctl); then
         log_error "sysctl is not installed; kernel hardening was not applied"
@@ -136,14 +150,27 @@ setup_sysctl_hardening() {
     if [[ -f "$conf" ]]; then
         if [[ "$(_ms_state_get SYSCTL_FILE_CREATED 2>/dev/null || true)" == "true" ]] \
             && [[ "$(_ms_root_sha256 "$conf")" == "$(_ms_state_get SYSCTL_FILE_SHA256 2>/dev/null || true)" ]]; then
-            log_skip "Sysctl hardening already applied"
-            # Warn on drift, never reconcile: another sysctl.d file or UFW may have won since.
-            local drift
-            drift=$(_setup_sysctl_drifted_keys "$bin")
-            if [[ -n "$drift" ]]; then
-                log_warn "Live kernel values differ from $conf: $(tr '\n' ' ' <<<"$drift")"
-                _setup_sysctl_warn_ufw_overrides
-            fi
+            apply_pending=$(_ms_state_get SYSCTL_APPLY_PENDING 2>/dev/null || true)
+            case "$apply_pending" in
+                true)
+                    log_info "Retrying incomplete kernel hardening apply..."
+                    _setup_sysctl_finish_apply "$bin" || return 1
+                    ;;
+                false | "")
+                    log_skip "Sysctl hardening already applied"
+                    # Warn on drift, never reconcile: another sysctl.d file or UFW may have won since.
+                    local drift
+                    drift=$(_setup_sysctl_drifted_keys "$bin")
+                    if [[ -n "$drift" ]]; then
+                        log_warn "Live kernel values differ from $conf: $(tr '\n' ' ' <<<"$drift")"
+                        _setup_sysctl_warn_ufw_overrides
+                    fi
+                    ;;
+                *)
+                    log_error "Invalid SYSCTL_APPLY_PENDING state; cannot verify kernel hardening"
+                    return 1
+                    ;;
+            esac
         else
             log_warn "Existing $conf is not owned by MediaStack; leaving it unchanged"
         fi
@@ -159,17 +186,15 @@ setup_sysctl_hardening() {
         _ms_state_set "$state_key" "$("$bin" -n "$key")"
     done < <(_setup_sysctl_owned_pairs)
 
+    _ms_state_set SYSCTL_APPLY_PENDING true || {
+        log_error "Could not record kernel hardening apply pending"
+        return 1
+    }
     _ms_state_set SYSCTL_FILE_CREATED true
     _setup_sysctl_conf_content | sudo tee "$conf" >/dev/null
 
     _ms_state_set SYSCTL_FILE_SHA256 "$(_ms_root_sha256 "$conf")"
-    _setup_sysctl_apply_own_file "$bin" || {
-        log_error "Kernel hardening was NOT applied cleanly; $conf stays so uninstall can remove it"
-        return 1
-    }
-    _setup_sysctl_warn_ufw_overrides
-
-    log_ok "Kernel hardening applied"
+    _setup_sysctl_finish_apply "$bin"
 }
 
 # Ledger-less teardown: the recorded pre-install values are gone, so the only
@@ -229,5 +254,6 @@ _uninstall_sysctl() {
         fi
     done < <(_setup_sysctl_owned_pairs)
     sudo rm -f "$conf" || return 1
+    _ms_state_set SYSCTL_APPLY_PENDING false || return 1
     log_ok "MediaStack kernel hardening removed"
 }
