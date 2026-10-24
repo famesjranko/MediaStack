@@ -158,7 +158,10 @@ elif [ -x "$SC_CACHED" ] && [ "$(sha256_of "$SC_CACHED")" = "$SC_BINARY_SHA256" 
     # Rung 2: re-hash the cached pin; a stale or tampered cache falls through.
     sc_command=("$SC_CACHED")
 elif command -v docker >/dev/null 2>&1; then
-    # Rung 3: the same engine in Docker, with the same bounded root set.
+    # Rung 3: the image contains ShellCheck but no command shell, so each
+    # bounded root still needs its own container. Install the cached pin to
+    # avoid this startup cost for whole-tree runs.
+    echo "lint: Docker fallback starts one container per file; install the cached pin to avoid startup cost" >&2
     sc_command=(docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt "$SC_IMAGE")
 else
     die "need shellcheck $SC_VERSION natively, the cached pin (run: ./tests/lint.sh install), or docker on PATH"
