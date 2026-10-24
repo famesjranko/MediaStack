@@ -307,13 +307,13 @@ NPM ships with an empty user table on first boot. The famous `admin@example.com 
 
 **Primary path:** `POST /api/users` unauthenticated. Succeeds (201) only while the table is empty, creating the admin with the shared `JELLYFIN_ADMIN_PASSWORD` directly.
 
-**Fallback path (HTTP != 201):** Someone already used the UI first-run. Try to rotate the default creds:
+**Fallback path (HTTP 403, 404, 409, or 422):** Someone already completed first-user setup. NPM 2.16 can return 403 when unauthenticated first-user creation closes. Try to rotate the default creds:
 
 1. `POST /api/tokens` with `admin@example.com / changeme`.
 2. If that works, `PUT /api/users/me` + `PUT /api/users/me/auth` to rotate.
 3. If that *also* fails, declare the user has non-default creds already and `log_skip`.
 
-**Verify:** `POST /api/tokens` with the shared admin creds; warn if they don't authenticate.
+**Verify:** `POST /api/tokens` with the shared admin creds; configuration stops if they do not authenticate. This verification is required before default-site hardening or proxy publication.
 
 **Proxy hosts (requires `REMOTE_WEB_STATE=ready`, or a scoped Stage 2 attempt):** After authentication, public proxy publication normally runs only when `REMOTE_WEB_STATE=ready` and `DOMAIN` is real. During Stage 2, `MEDIASTACK_NPM_ATTEMPT_REMOTE=1` permits one pre-ready certificate/proxy attempt so the wizard can classify the LE result before promoting ready. It creates proxy hosts for user-facing services only:
 

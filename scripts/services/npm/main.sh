@@ -88,11 +88,11 @@ print(json.dumps({
 
     if [[ "$create_http" == "201" ]]; then
         log_ok "NPM admin created: $npm_email (password from .env)"
-    elif [[ "$create_http" == "404" || "$create_http" == "409" || "$create_http" == "422" ]]; then
-        # User exists — NPM returns 404 (endpoint closed after first user),
-        # 409 (conflict), or 422 (validation) depending on version. Try to
-        # rotate from the well-known defaults. If those are also rejected, we
-        # assume the admin already has non-default credentials and skip.
+    elif [[ "$create_http" == "403" || "$create_http" == "404" || "$create_http" == "409" || "$create_http" == "422" ]]; then
+        # User exists — NPM closes unauthenticated first-user creation with 403
+        # after setup, or returns 404, 409, or 422 depending on version. Try to
+        # rotate from the well-known defaults. Saved credentials are still
+        # required below before hardening or publication can continue.
         log_info "NPM admin already exists (HTTP $create_http). Checking rotation..."
         local default_token
         default_token=$(curl -sf -X POST "$npm_api/tokens" \
