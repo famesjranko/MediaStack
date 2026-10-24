@@ -256,15 +256,15 @@ stop_cycles=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   VOLS=(mydata); UP=0; N=0; ANON=""
   docker() {
     [[ "$1" == compose ]] || return 0
-    case " $* " in
-      *" ps -q "*) ((UP)) && echo c1 ;;
-      *" up "*) UP=1; N=$((N+1)); ANON="anon$N"; VOLS+=("$ANON") ;;
-      *" down "*)
-        UP=0
-        if [[ " $* " == *" --volumes "* || " $* " == *" -v "* ]]; then
-          local keep=() v; for v in "${VOLS[@]}"; do [[ "$v" == "$ANON" ]] || keep+=("$v"); done; VOLS=("${keep[@]}")
-        fi ;;
-    esac
+    if (($# == 3)) && [[ "$2" == ps && "$3" == -aq ]]; then
+      ((UP)) && echo c1
+    elif (($# == 3)) && [[ "$2" == up && "$3" == -d ]]; then
+      UP=1; N=$((N+1)); ANON="anon$N"; VOLS+=("$ANON")
+    elif (($# == 3)) && [[ "$2" == down && "$3" == --volumes ]]; then
+      UP=0; local keep=() v; for v in "${VOLS[@]}"; do [[ "$v" == "$ANON" ]] || keep+=("$v"); done; VOLS=("${keep[@]}")
+    else
+      printf "unexpected docker argv: %s\\n" "$*" >&2; return 99
+    fi
     return 0
   }
   profiles_build_args() { :; }; ui_confirm() { return 0; }; storage_guard_before_start() { return 0; }
@@ -289,11 +289,15 @@ recreated_stop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
     [[ "$1" == inspect ]] && { printf "%s\n" mydata anon1; return 0; }
     [[ "$1" == ps ]] && { echo c1; return 0; }
     [[ "$1" == compose ]] || return 0
-    case " $* " in
-      *" config "*) echo "{\"name\":\"mediastack\"}" ;;
-      *" ps -q "*) ((UP)) && echo c1 ;;
-      *" down "*) UP=0 ;;
-    esac
+    if [[ "$2" == --profile && "$3" == "*" && "$4" == config ]]; then
+      echo "{\"name\":\"mediastack\"}"
+    elif (($# == 3)) && [[ "$2" == ps && "$3" == -aq ]]; then
+      ((UP)) && echo c1
+    elif (($# == 3)) && [[ "$2" == down && "$3" == --volumes ]]; then
+      UP=0
+    else
+      printf "unexpected docker argv: %s\\n" "$*" >&2; return 99
+    fi
     return 0
   }
   profiles_build_args() { :; }; ui_confirm() { return 0; }
@@ -319,11 +323,15 @@ failed_rm_stop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
     [[ "$1" == inspect ]] && { printf "%s\n" anon1; return 0; }
     [[ "$1" == ps ]] && { echo c1; return 0; }
     [[ "$1" == compose ]] || return 0
-    case " $* " in
-      *" config "*) echo "{\"name\":\"mediastack\"}" ;;
-      *" ps -q "*) ((UP)) && echo c1 ;;
-      *" down "*) UP=0 ;;
-    esac
+    if [[ "$2" == --profile && "$3" == "*" && "$4" == config ]]; then
+      echo "{\"name\":\"mediastack\"}"
+    elif (($# == 3)) && [[ "$2" == ps && "$3" == -aq ]]; then
+      ((UP)) && echo c1
+    elif (($# == 3)) && [[ "$2" == down && "$3" == --volumes ]]; then
+      UP=0
+    else
+      printf "unexpected docker argv: %s\\n" "$*" >&2; return 99
+    fi
     return 0
   }
   profiles_build_args() { :; }; ui_confirm() { return 0; }
@@ -332,6 +340,99 @@ failed_rm_stop=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 ' 2>&1)
 assert_contains "$failed_rm_stop" "LOG warn" "launcher: Stop all warns when an anonymous volume cannot be removed"
 assert_contains "$failed_rm_stop" "anon1" "launcher: the warning names the volume left behind"
+
+# Given a stopped optional-profile container and an anonymous volume
+# When Stop all runs
+# Then it lists all profiled containers, removes the stack, and checks the volume
+volume_marker=$(mktemp)
+call_marker=$(mktemp)
+stopped_stop=$(MARKER="$volume_marker" CALL_MARKER="$call_marker" MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  docker() {
+    [[ "$1" == compose ]] || { [[ "$1" == volume && "$2" == ls ]] && printf checked >"$MARKER"; return 0; }
+    if (($# == 5)) && [[ "$2" == --profile && "$3" == proxy && "$4" == ps && "$5" == -aq ]]; then
+      printf "ps " >>"$CALL_MARKER"; echo stopped-npm
+    elif [[ "$2" == --profile && "$3" == "*" && "$4" == config ]]; then
+      echo "{\"name\":\"mediastack\"}"
+    elif (($# == 5)) && [[ "$2" == --profile && "$3" == proxy && "$4" == down && "$5" == --volumes ]]; then
+      printf "down " >>"$CALL_MARKER"; echo "DOWN $*"
+    else
+      printf "unexpected docker argv: %s\\n" "$*" >&2; return 99
+    fi
+    return 0
+  }
+  profiles_build_args() { local -n out="$1"; out=(--profile proxy); }; ui_confirm() { return 0; }
+  launcher_pause_for_menu() { :; }; ui_log() { printf "%s|%s\n" "$1" "$2"; }; _show_action_result() { :; }
+  action_stack_stop
+' 2>&1)
+assert_contains "$stopped_stop" "DOWN compose --profile proxy down --volumes" \
+    "launcher: Stop all removes a stopped optional-profile container"
+assert_eq "checked" "$(<"$volume_marker")" \
+    "launcher: Stop all checks anonymous volumes for a stopped container"
+assert_eq "ps down " "$(<"$call_marker")" \
+    "launcher: Stop all uses the optional profile when it lists and stops containers"
+rm -f "$volume_marker"
+rm -f "$call_marker"
+
+# Given Compose cannot list MediaStack containers
+# When Stop all runs
+# Then it reports the listing failure and does not run down
+list_failure=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  docker() {
+    [[ "$1" == compose ]] || { printf "unexpected docker argv: %s\\n" "$*" >&2; return 99; }
+    if (($# == 3)) && [[ "$2" == ps && "$3" == -aq ]]; then
+      return 1
+    elif (($# == 3)) && [[ "$2" == down && "$3" == --volumes ]]; then
+      echo DOWN_RAN
+    else
+      printf "unexpected docker argv: %s\\n" "$*" >&2; return 99
+    fi
+  }
+  profiles_build_args() { :; }; launcher_pause_for_menu() { :; }; ui_log() { printf "%s|%s\n" "$1" "$2"; }
+  action_stack_stop; printf "RC=%s\n" "$?"
+' 2>&1)
+assert_contains "$list_failure" "error|Could not list MediaStack containers; Stop all failed." \
+    "launcher: Stop all reports a failed container listing"
+assert_contains "$list_failure" "RC=1" "launcher: Stop all returns failure when container listing fails"
+if [[ "$list_failure" == *DOWN_RAN* || "$list_failure" == *"nothing to stop"* ]]; then
+    fail "launcher: a failed container listing must fail closed" "$list_failure"
+else
+    pass "launcher: a failed container listing must fail closed"
+fi
+
+# Given Stop all has removed the project's only container
+# When it runs a second time
+# Then it exits successfully because no MediaStack containers exist
+stop_marker=$(mktemp)
+stop_twice=$(CALL_MARKER="$stop_marker" MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  present=1; no_container_logs=0
+  docker() {
+    [[ "$1" == compose ]] || { printf "unexpected docker argv: %s\\n" "$*" >&2; return 99; }
+    if (($# == 3)) && [[ "$2" == ps && "$3" == -aq ]]; then
+      printf "ps " >>"$CALL_MARKER"; ((present)) && echo c1
+    elif [[ "$2" == --profile && "$3" == "*" && "$4" == config ]]; then
+      echo "{\"name\":\"mediastack\"}"
+    elif (($# == 3)) && [[ "$2" == down && "$3" == --volumes ]]; then
+      printf "down " >>"$CALL_MARKER"; present=0
+    else
+      printf "unexpected docker argv: %s\\n" "$*" >&2; return 99
+    fi
+    return 0
+  }
+  profiles_build_args() { :; }; ui_confirm() { printf "confirm " >>"$CALL_MARKER"; return 0; }; launcher_pause_for_menu() { :; }
+  ui_log() { [[ "$2" == "No MediaStack containers exist - nothing to stop." ]] && no_container_logs=$((no_container_logs+1)); printf "%s|%s\n" "$1" "$2"; }; _show_action_result() { :; }
+  action_stack_stop; first_rc=$?; action_stack_stop; second_rc=$?
+  printf "RESULT first=%s second=%s no-containers=%s\\n" "$first_rc" "$second_rc" "$no_container_logs"
+' 2>&1)
+assert_contains "$stop_twice" "info|No MediaStack containers exist - nothing to stop." \
+    "launcher: a second Stop all reports no containers"
+assert_contains "$stop_twice" "RESULT first=0 second=0 no-containers=1" \
+    "launcher: first Stop all removes the stack and only the second call is a no-op"
+assert_eq "ps confirm down ps " "$(<"$stop_marker")" \
+    "launcher: Stop all lists twice, confirms once, and runs down once"
+rm -f "$stop_marker"
 
 # Given a stack with one running and one stopped service
 # When the Manage stack status table is drawn

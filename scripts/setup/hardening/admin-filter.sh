@@ -124,10 +124,28 @@ apply_family() { # $1 iptables, $2 iptables-restore, $3 payload function
 }
 
 verify_family() { # $1 iptables, $2 payload function
+    local actual expected_file actual_file mismatch
     jump_ok "$1" || die "$1: DOCKER-USER does not jump to $CHAIN exactly once ahead of RETURN"
-    "$2" | sed -n 's/^-A //p' | while IFS= read -r spec; do
-        "$1" -w -C $spec 2>/dev/null || { echo "mediastack-admin-filter: $1: rule missing: $spec" >&2; exit 1; }
-    done || die "$1: the $CHAIN rules are incomplete"
+    expected_file=$(mktemp) || die "$1: cannot prepare $CHAIN rule verification"
+    actual_file=$(mktemp) || { rm -f "$expected_file"; die "$1: cannot prepare $CHAIN rule verification"; }
+    "$2" | sed -n "s/^-A $CHAIN //p" >"$expected_file"
+    actual=$("$1" -w -S "$CHAIN" 2>/dev/null) || {
+        rm -f "$expected_file" "$actual_file"
+        die "$1: cannot read $CHAIN rules"
+    }
+    printf '%s\n' "$actual" | sed -n "s/^-A $CHAIN //p" >"$actual_file"
+    if ! mismatch=$(awk 'NR == FNR { expected[FNR] = $0; en = FNR; next }
+        { actual[FNR] = $0; an = FNR }
+        END { for (n = 1; n <= (en > an ? en : an); n++)
+            if (expected[n] != actual[n]) {
+                printf "expected %s, found %s", expected[n] ? expected[n] : "no further rule", actual[n] ? actual[n] : "no rule"
+                exit
+            } }' "$expected_file" "$actual_file"); then
+        rm -f "$expected_file" "$actual_file"
+        die "$1: cannot compare $CHAIN rules"
+    fi
+    rm -f "$expected_file" "$actual_file"
+    [ -z "$mismatch" ] || die "$1: first $CHAIN rule out of place: $mismatch"
 }
 
 command -v iptables >/dev/null 2>&1 || die "iptables not found"
