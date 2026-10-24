@@ -491,6 +491,8 @@ services:
     environment:
       - TZ=${TZ}
       - PERIOD=5m
+      # Dynu has taken up to 36s to respond; 45s leaves margin within the 5m period.
+      - HTTP_TIMEOUT=45s
     restart: unless-stopped
     security_opt: *default-security-opt
     # Smaller rotation than the shared default. When a provider call fails at
