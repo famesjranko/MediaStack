@@ -27,6 +27,8 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+- Refresh the Stable container image baseline after per-service preflights.
+
 ## [0.1.0] - 2026-10-23
 
 - Initial public release: guided single-box installer for the full media stack
