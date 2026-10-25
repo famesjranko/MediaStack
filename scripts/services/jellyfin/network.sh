@@ -1,6 +1,69 @@
 # Owns: configure_* — configure_jellyfin_networking — PublishedServerUrl and KnownProxies via the System/Configuration/network API.
 # Sources: main.sh (auth/session context), api helpers and log_* from scripts/lib/common.sh.
 
+configure_jellyfin_network_now() {
+    python3 -c 'import time; print(int(time.monotonic() * 1000))'
+}
+
+configure_jellyfin_network_ready() {
+    local jf_url="$1" jf_token="$2" budget="${3:-30}"
+    local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
+    local start deadline now remaining request_ms sleep_ms request_seconds sleep_seconds code rc body
+    start=$(configure_jellyfin_network_now) || return 1
+    deadline=$((start + budget * 1000))
+    body=$(mktemp) || return 1
+
+    while :; do
+        now=$(configure_jellyfin_network_now) || break
+        remaining=$((deadline - now))
+        ((remaining > 0)) || break
+        request_ms=$((remaining < 3000 ? remaining : 3000))
+        printf -v request_seconds '%d.%03d' "$((request_ms / 1000))" "$((request_ms % 1000))"
+        code=$(curl_header_stdin "Authorization" "$auth" -sS --max-time "$request_seconds" --max-filesize 65536 \
+            -o "$body" -w '%{http_code}' "$jf_url/System/Configuration/network" 2>/dev/null)
+        rc=$?
+        if [[ "$rc" == "0" && "$code" == "200" ]] \
+            && (($(wc -c <"$body") <= 65536)) \
+            && python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(open(sys.argv[1]))
+except (OSError, json.JSONDecodeError):
+    sys.exit(1)
+
+if not isinstance(value, dict):
+    sys.exit(1)
+for key in ("KnownProxies", "PublishedServerUriBySubnet"):
+    items = value.get(key)
+    if not isinstance(items, list) or not all(isinstance(item, str) for item in items):
+        sys.exit(1)
+' "$body" 2>/dev/null; then
+            now=$(configure_jellyfin_network_now) || break
+            if ((now < deadline)); then
+                rm -f "$body"
+                return 0
+            fi
+        fi
+        case "$rc:$code" in
+            0:503 | 7:* | 28:* | 56:*) ;;
+            *)
+                rm -f "$body"
+                return 1
+                ;;
+        esac
+        now=$(configure_jellyfin_network_now) || break
+        remaining=$((deadline - now))
+        ((remaining > 0)) || break
+        sleep_ms=$((remaining < 1000 ? remaining : 1000))
+        printf -v sleep_seconds '%d.%03d' "$((sleep_ms / 1000))" "$((sleep_ms % 1000))"
+        sleep "$sleep_seconds"
+    done
+    rm -f "$body"
+    return 1
+}
+
 configure_jellyfin_networking() {
     local jf_url="$1" jf_token="$2"
     local auth="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\", Token=\"$jf_token\""
@@ -46,8 +109,8 @@ configure_jellyfin_networking() {
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
                     log_warn "Failed to recreate Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
                 fi
-                if ! post_restart_wait "$jf_url/health"; then
-                    log_warn "Jellyfin did not become healthy within 60s after recreate - check 'docker logs jellyfin'"
+                if ! configure_jellyfin_network_ready "$jf_url" "$jf_token"; then
+                    log_warn "Jellyfin network API did not become ready within 30s after recreate - check 'docker logs jellyfin'"
                 fi
             fi
             return 0
@@ -62,8 +125,8 @@ configure_jellyfin_networking() {
                 if ! docker compose up -d --no-deps --force-recreate jellyfin >/dev/null 2>&1; then
                     log_warn "Failed to recreate Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
                 fi
-                if ! post_restart_wait "$jf_url/health"; then
-                    log_warn "Jellyfin did not become healthy within 60s after recreate - check 'docker logs jellyfin'"
+                if ! configure_jellyfin_network_ready "$jf_url" "$jf_token"; then
+                    log_warn "Jellyfin network API did not become ready within 30s after recreate - check 'docker logs jellyfin'"
                 fi
             fi
             return 0
@@ -112,8 +175,8 @@ configure_jellyfin_networking() {
                 log_warn "Failed to restart Jellyfin - view logs from the menu: Manage stack -> Tail logs (live)"
             fi
         fi
-        if ! post_restart_wait "$jf_url/health"; then
-            log_warn "Jellyfin did not become healthy within 60s after restart - check 'docker logs jellyfin'"
+        if ! configure_jellyfin_network_ready "$jf_url" "$jf_token"; then
+            log_warn "Jellyfin network API did not become ready within 30s after restart - check 'docker logs jellyfin'"
         fi
     else
         log_warn "Failed to set Jellyfin networking config - configure manually in Dashboard -> Networking"
