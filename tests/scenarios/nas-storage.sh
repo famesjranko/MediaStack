@@ -244,9 +244,9 @@ set -euo pipefail
 # Given the same wrong live mount and explicit operator consent.
 sudo() { \"\$@\"; }
 ui_confirm() {
-    test \"\$1\" = \"Detach the existing mount and mount the selected NAS here?\"
-    test \"\$2\" = no
-    test \"\${NAS_STORAGE_OPERATOR_CONFIRMATION:-}\" = yes
+    test \"\$1\" = \"Detach the existing mount and mount the selected NAS here?\" &&
+        test \"\$2\" = no &&
+        test \"\${NAS_STORAGE_OPERATOR_CONFIRMATION:-}\" = yes
 }
 set -a
 source .env
