@@ -27,7 +27,22 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
+- Allow slow DDNS provider responses with a 45-second timeout (#65).
+- Report unreadable newer qBittorrent whitelist layouts as drift without writing to them (#66).
+- Show the NAS watchdog cause in Health when relevant (#67).
+- Stop all removes stopped containers in active profiles (#68).
+- Report Samba startup and firewall failures, and keep firewall work pending after a failure (#69).
+- Treat normal no-GPU and user-choice transcoding fallbacks as completed (#69).
+- Retry incomplete sysctl hardening on a later setup run (#69).
+- Fail closed when admin-filter rule ordering is wrong or cannot be verified (#69).
+- Warn before qBittorrent Revert restores a whitelist layout that may not work with the target image (#66).
+- Complete Revert cleanup when restore displaces container-owned config.
+- Recognize NPM's existing-user HTTP 403 during setup reruns and verify saved credentials.
+- Wait for authenticated Jellyfin network configuration after a MediaStack-owned restart.
 - Refresh the Stable container image baseline after per-service preflights.
+- Keep LAN access and retry guidance clear when HTTPS setup is skipped or fails, without claiming VPN access is configured.
 
 ## [0.1.0] - 2026-10-23
 
