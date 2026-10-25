@@ -216,23 +216,56 @@ storage_guard_before_start
 
     if dind_exec "timeout 30 bash -lc '
 set -euo pipefail
+
+# Given a different live tmpfs mount with an owned dummy file.
 sudo() { \"\$@\"; }
 set -a
 source .env
 set +a
 source scripts/setup/storage.sh
-storage_mount_nfs
-storage_guard_before_start
+
+# When no confirmation function is available.
+if storage_mount_nfs; then
+    exit 1
+fi
+
+# Then the mount identity and dummy file remain unchanged.
+findmnt -rn -M $mountpoint -o SOURCE,FSTYPE | grep -Eq \"^tmpfs +tmpfs$\"
+test -e $mountpoint/wrong-live-mount
 '"; then
-        pass "NAS: storage repairs wrong live mount and passes guard"
+        pass "NAS: missing confirmation refuses and preserves wrong live mount"
     else
-        fail "NAS: storage repairs wrong live mount and passes guard"
+        fail "NAS: missing confirmation refuses and preserves wrong live mount"
     fi
 
-    if dind_exec "findmnt -rn -M $mountpoint -o SOURCE,FSTYPE | grep -Eq '^127\\.0\\.0\\.1:$export_path +(nfs|nfs4)$' && test ! -e $mountpoint/wrong-live-mount"; then
-        pass "NAS: repaired mountpoint is selected NFS export"
+    if dind_exec "timeout 30 bash -lc '
+set -euo pipefail
+
+# Given the same wrong live mount and explicit operator consent.
+sudo() { \"\$@\"; }
+ui_confirm() {
+    test \"\$1\" = \"Detach the existing mount and mount the selected NAS here?\" &&
+        test \"\$2\" = no &&
+        test \"\${NAS_STORAGE_OPERATOR_CONFIRMATION:-}\" = yes
+}
+set -a
+source .env
+set +a
+source scripts/setup/storage.sh
+NAS_STORAGE_OPERATOR_CONFIRMATION=yes
+
+# When the real storage function repairs the mount.
+storage_mount_nfs
+
+# Then the NFS identity and sentinel pass the start guard, and the dummy is absent.
+storage_guard_before_start
+findmnt -rn -M $mountpoint -o SOURCE,FSTYPE | grep -Eq \"^127\\.0\\.0\\.1:$export_path +(nfs|nfs4)$\"
+test -e $mountpoint/.mediastack-storage-ready
+test ! -e $mountpoint/wrong-live-mount
+'"; then
+        pass "NAS: explicit confirmation repairs mount and passes guard"
     else
-        fail "NAS: repaired mountpoint is selected NFS export" "$(dind_exec "findmnt -rn -M $mountpoint -o SOURCE,FSTYPE || true; ls -la $mountpoint 2>/dev/null || true")"
+        fail "NAS: explicit confirmation repairs mount and passes guard" "$(dind_exec "findmnt -rn -M $mountpoint -o SOURCE,FSTYPE || true; ls -la $mountpoint 2>/dev/null || true")"
     fi
 
     nas_storage_assert_watchdog_recovers_pending_state || return 1
