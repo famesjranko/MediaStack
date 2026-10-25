@@ -173,7 +173,7 @@ assert_contains "$ready_output" "https://seerr.gate.test" "remote state: ready p
 unset REMOTE_WEB_STATE
 write_access_env "skipped" "gate.test"
 skipped_output=$(print_access_info)
-assert_contains "$skipped_output" "HTTPS skipped. LAN + VPN work. Choose Features & settings -> Add remote access from the menu to try again." "remote state: skipped access copy"
+assert_contains "$skipped_output" "HTTPS skipped. LAN access remains available. Choose Features & settings -> Add remote access from the menu to try again." "remote state: skipped access copy"
 if [[ "$skipped_output" == *"https://jellyfin.gate.test"* || "$skipped_output" == *"https://seerr.gate.test"* ]]; then
     fail "remote state: skipped access does not advertise HTTPS URLs"
 else
@@ -183,7 +183,7 @@ fi
 unset REMOTE_WEB_STATE
 write_access_env "failed" "gate.test"
 failed_output=$(print_access_info)
-assert_contains "$failed_output" "HTTPS setup failed. LAN + VPN work. Choose Features & settings -> Add remote access from the menu after fixing the issue." "remote state: failed access copy"
+assert_contains "$failed_output" "HTTPS setup failed. LAN access remains available. Choose Features & settings -> Add remote access from the menu after fixing the issue." "remote state: failed access copy"
 if [[ "$failed_output" == *"https://jellyfin.gate.test"* || "$failed_output" == *"https://seerr.gate.test"* ]]; then
     fail "remote state: failed access does not advertise HTTPS URLs"
 else
