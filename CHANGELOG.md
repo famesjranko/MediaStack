@@ -42,6 +42,7 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 - Recognize NPM's existing-user HTTP 403 during setup reruns and verify saved credentials.
 - Wait for authenticated Jellyfin network configuration after a MediaStack-owned restart.
 - Refresh the Stable container image baseline after per-service preflights.
+- Keep LAN access and retry guidance clear when HTTPS setup is skipped or fails, without claiming VPN access is configured.
 
 ## [0.1.0] - 2026-10-23
 
