@@ -80,9 +80,12 @@ assert_contains "$confirm_choices" "Install" "confirm includes Install"
 assert_contains "$confirm_choices" "Back" "confirm includes Back"
 assert_contains "$confirm_choices" "Skip remote access" "confirm includes Skip remote access"
 
-# Skip copy is the user-facing fallback when ready postconditions fail.
+# Given a skipped remote setup with no configured WireGuard password.
+# When the real Stage 2 skip summary renders.
+# Then it promises only the remaining LAN access and the retry path.
 skip_copy="$(stage2_skip_summary_copy)"
-assert_contains "$skip_copy" "HTTPS skipped. LAN + VPN work. Choose Features & settings -> Add remote access from the menu to try again." "skip summary matches the expected copy verbatim"
+assert_eq "HTTPS skipped. LAN access remains available. Choose Features & settings -> Add remote access from the menu to try again." "$skip_copy" "skip summary gives LAN-only retry guidance"
+assert_not_contains "$skip_copy" "LAN + VPN work" "skip summary does not claim VPN access works"
 
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT

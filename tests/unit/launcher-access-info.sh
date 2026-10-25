@@ -91,6 +91,41 @@ case "$nowg_out" in
     *) pass "access summary: no WireGuard admin URL when WG is not configured" ;;
 esac
 
+# Given skipped and failed HTTPS states with no WireGuard password in private fixtures.
+# When the real access summary renders each state.
+# Then each keeps LAN and menu guidance without claiming that VPN access works.
+skipped_dir=$(mktemp -d)
+printf "%s\n" "DOMAIN=fixture.example" "REMOTE_WEB_STATE=skipped" "WG_INIT_PASSWORD=''" >"$skipped_dir/.env"
+skipped_out=$(render_access_info "$skipped_dir")
+rm -rf "$skipped_dir"
+assert_contains "$skipped_out" "HTTPS skipped. LAN access remains available. Choose Features & settings -> Add remote access from the menu to try again." \
+    "access summary: skipped HTTPS gives LAN-only retry guidance"
+assert_not_contains "$skipped_out" "LAN + VPN work" \
+    "access summary: skipped HTTPS does not claim VPN access works"
+
+failed_dir=$(mktemp -d)
+printf "%s\n" "DOMAIN=fixture.example" "REMOTE_WEB_STATE=failed" "WG_INIT_PASSWORD=''" >"$failed_dir/.env"
+failed_out=$(render_access_info "$failed_dir")
+rm -rf "$failed_dir"
+assert_contains "$failed_out" "HTTPS setup failed. LAN access remains available. Choose Features & settings -> Add remote access from the menu after fixing the issue." \
+    "access summary: failed HTTPS keeps the LAN-only fix-and-retry guidance"
+assert_not_contains "$failed_out" "LAN + VPN work" \
+    "access summary: failed HTTPS does not claim VPN access works"
+
+# Given a ready HTTPS state and configured WireGuard in a private fixture.
+# When the real access summary renders.
+# Then ready HTTPS URLs and WireGuard admin/config guidance remain available.
+ready_dir=$(mktemp -d)
+printf "%s\n" "DOMAIN=fixture.example" "REMOTE_WEB_STATE=ready" "WG_INIT_PASSWORD='configured-for-test'" >"$ready_dir/.env"
+ready_out=$(render_access_info "$ready_dir")
+rm -rf "$ready_dir"
+assert_contains "$ready_out" "https://jellyfin.fixture.example" \
+    "access summary: ready HTTPS still shows the Jellyfin URL"
+assert_contains "$ready_out" "https://seerr.fixture.example" \
+    "access summary: ready HTTPS still shows the Seerr URL"
+assert_contains "$ready_out" "get VPN client configs / QR here" \
+    "access summary: configured WireGuard retains admin/config guidance"
+
 # --- (d) admin password: shown once at install, masked in the re-openable day-2 view ---
 # Hermetic fixture with a known password. The install summary (no arg) must show the
 # value so the user can save it; the day-2 view (mask) must NOT print it.
