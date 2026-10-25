@@ -27,12 +27,14 @@ MOCK_CURL_RC=0
 MOCK_EXISTING_LIBS="[]"
 MOCK_NETWORK_JSON=""
 MOCK_POST_BODY=""
+MOCK_READY_BODY='{"KnownProxies":[],"PublishedServerUriBySubnet":[]}'
+MOCK_READY_STATE_FILE="$TMP_DIR/ready-calls"
+MOCK_READY_CODES=()
 
 log_ok() { OK_MESSAGES+=("$1"); }
 log_info() { :; }
 log_warn() { WARN_MESSAGES+=("$1"); }
 log_skip() { :; }
-post_restart_wait() { return 0; }
 
 api_fetch() {
     if [[ "$*" == *"/System/Configuration/network"* ]]; then
@@ -77,6 +79,22 @@ curl() {
     return 0
 }
 
+curl_header_stdin() {
+    local out_file="" arg next=false call
+    for arg in "$@"; do
+        if [[ "$next" == "true" ]]; then
+            out_file="$arg"
+            next=false
+        elif [[ "$arg" == "-o" ]]; then
+            next=true
+        fi
+    done
+    printf '%s' "$MOCK_READY_BODY" >"$out_file"
+    call=$(<"$MOCK_READY_STATE_FILE")
+    printf '%s' "${MOCK_READY_CODES[$call]:-200}"
+    printf '%s' "$((call + 1))" >"$MOCK_READY_STATE_FILE"
+}
+
 docker() { return 0; }
 
 env_save_api_key() { :; }
@@ -85,6 +103,9 @@ reset_logs() {
     OK_MESSAGES=()
     WARN_MESSAGES=()
     MOCK_POST_BODY=""
+    MOCK_READY_BODY='{"KnownProxies":[],"PublishedServerUriBySubnet":[]}'
+    printf '0' >"$MOCK_READY_STATE_FILE"
+    MOCK_READY_CODES=()
 }
 
 if bash -euo pipefail -c "SCRIPT_DIR=/tmp; CONFIG_FILE=/dev/null; source '$REPO_ROOT/scripts/services/jellyfin/main.sh'; source '$REPO_ROOT/scripts/services/jellyfin/main.sh'; [[ -x /usr/bin/python3 || -x \$(command -v python3) ]]"; then
@@ -183,6 +204,77 @@ esac
 
 SCRIPT_DIR="$TMP_DIR"
 printf 'JELLYFIN_PUBLISHED_URL=http://192.168.1.50:8096\n' >"$TMP_DIR/.env"
+
+# Given an already-published policy, no restart occurs.
+reset_logs
+MOCK_NETWORK_JSON='{"AutoDiscovery":true,"KnownProxies":[],"PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096"]}'
+
+# When networking compares the unchanged policy.
+REMOTE_WEB_STATE=skipped DOMAIN=fresh.test HOST_ADDRESS=192.168.1.50 \
+    configure_jellyfin_networking "http://localhost:8096" "token"
+
+# Then the no-restart path makes no readiness request.
+assert_eq "0" "$(<"$MOCK_READY_STATE_FILE")" "Jellyfin networking unchanged policy does not poll the API"
+
+# Given a skipped policy whose published URL needs a recreate, the API is loading first.
+reset_logs
+printf 'JELLYFIN_PUBLISHED_URL=https://jellyfin.fresh.test\n' >"$TMP_DIR/.env"
+MOCK_NETWORK_JSON='{"AutoDiscovery":true,"KnownProxies":[],"PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096"]}'
+MOCK_READY_CODES=(503 200)
+
+# When the skipped policy recreates Jellyfin.
+REMOTE_WEB_STATE=skipped DOMAIN=fresh.test HOST_ADDRESS=192.168.1.50 \
+    configure_jellyfin_networking "http://localhost:8096" "token"
+
+# Then the actual skipped-policy caller waits for the typed API instead of /health.
+assert_eq "2" "$(<"$MOCK_READY_STATE_FILE")" "Jellyfin networking skipped recreate waits for typed API readiness"
+
+# Given a drift-protected policy whose published URL needs a recreate.
+reset_logs
+MOCK_NETWORK_JSON='{"AutoDiscovery":false,"KnownProxies":[],"PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096"]}'
+
+# When the drift-protected policy recreates Jellyfin.
+REMOTE_WEB_STATE=skipped DOMAIN=fresh.test HOST_ADDRESS=192.168.1.50 \
+    configure_jellyfin_networking "http://localhost:8096" "token"
+
+# Then drift still warns and its owned recreate waits for the API.
+assert_eq "1" "$(<"$MOCK_READY_STATE_FILE")" "Jellyfin networking drift recreate waits for typed API readiness"
+
+# Given a network policy update that owns a restart.
+reset_logs
+printf 'JELLYFIN_PUBLISHED_URL=http://192.168.1.50:8096\n' >"$TMP_DIR/.env"
+MOCK_NETWORK_JSON='{"AutoDiscovery":true,"KnownProxies":["npm"],"PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096"]}'
+
+# When networking applies the policy and restarts Jellyfin.
+REMOTE_WEB_STATE=skipped DOMAIN=fresh.test HOST_ADDRESS=192.168.1.50 \
+    configure_jellyfin_networking "http://localhost:8096" "token"
+
+# Then the apply path waits for the typed API before it returns.
+assert_eq "1" "$(<"$MOCK_READY_STATE_FILE")" "Jellyfin networking apply restart waits for typed API readiness"
+
+# Given permanent API failures or invalid typed data.
+reset_logs
+MOCK_READY_CODES=(401)
+
+# When readiness receives an unauthorized response.
+configure_jellyfin_network_ready "http://localhost:8096" "token" 1
+rc=$?
+
+# Then it rejects the response without a retry.
+assert_eq "1" "$rc" "Jellyfin network readiness rejects unauthorized API access immediately"
+assert_eq "1" "$(<"$MOCK_READY_STATE_FILE")" "Jellyfin network readiness does not retry unauthorized API access"
+
+# Given an incomplete typed network policy.
+reset_logs
+MOCK_READY_BODY='{"KnownProxies":[]}'
+
+# When readiness receives an incomplete policy.
+configure_jellyfin_network_ready "http://localhost:8096" "token" 1
+rc=$?
+
+# Then it rejects the response without a retry.
+assert_eq "1" "$rc" "Jellyfin network readiness rejects an incomplete policy immediately"
+assert_eq "1" "$(<"$MOCK_READY_STATE_FILE")" "Jellyfin network readiness does not retry an incomplete policy"
 
 reset_logs
 MOCK_NETWORK_JSON='{"AutoDiscovery":true,"KnownProxies":["npm","192.168.1.10"],"PublishedServerUriBySubnet":["internal=http://192.168.1.50:8096"]}'

@@ -68,16 +68,56 @@ PY
 " | tr -d '\r\n')"
     fi
     if [[ -z "$api_key" ]]; then
-        echo "{}"
-        return
+        echo "remote gating: Jellyfin network API key is unavailable" >&2
+        return 1
     fi
-    dind_exec "curl -sf -H 'X-Emby-Token: $api_key' http://localhost:8096/System/Configuration/network" 2>/dev/null || echo "{}"
+
+    # Jellyfin 12 accepts permanent keys through its MediaBrowser Authorization
+    # header. Send the key over docker exec stdin so it never appears in argv.
+    printf '%s\n' "$api_key" | docker exec -i -w /root/MediaStack "$DIND_NAME" sh -c '
+        IFS= read -r JELLYFIN_API_KEY || exit 1
+        export JELLYFIN_API_KEY
+        python3 -c '\''
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+request = urllib.request.Request(
+    "http://localhost:8096/System/Configuration/network",
+    headers={"Authorization": "MediaBrowser Token=\"" + os.environ["JELLYFIN_API_KEY"] + "\""},
+)
+try:
+    with urllib.request.urlopen(request, timeout=15) as response:
+        data = json.load(response)
+except urllib.error.HTTPError as error:
+    print(f"remote gating: Jellyfin network request returned HTTP {error.code}", file=sys.stderr)
+    raise SystemExit(1)
+except Exception as error:
+    print(f"remote gating: Jellyfin network request failed: {error}", file=sys.stderr)
+    raise SystemExit(1)
+
+if not isinstance(data, dict):
+    print("remote gating: Jellyfin network response is not an object", file=sys.stderr)
+    raise SystemExit(1)
+for field in ("KnownProxies", "PublishedServerUriBySubnet"):
+    value = data.get(field)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        print(f"remote gating: Jellyfin network response has invalid {field}", file=sys.stderr)
+        raise SystemExit(1)
+json.dump(data, sys.stdout)
+'\''
+    '
 }
 
 remote_gating_assert_jellyfin_lan_only() {
     local state="$1"
     local network_json host_addr known_proxies published published_env published_container managed_npm_ip
-    network_json="$(remote_gating_fetch_jellyfin_network)"
+    if ! network_json="$(remote_gating_fetch_jellyfin_network)"; then
+        fail "remote gating: $state Jellyfin network configuration is readable"
+        return 1
+    fi
     host_addr="$(remote_gating_env HOST_ADDRESS)"
     managed_npm_ip="$(remote_gating_env MEDIASTACK_NPM_IP)"
     managed_npm_ip="${managed_npm_ip:-172.28.0.10}"
@@ -124,7 +164,10 @@ print("|".join(data.get("PublishedServerUriBySubnet") or []))
     if [[ "$published" != *"internal=http://127.0.0.1:8096"* && "$published" != *"internal=http://${host_addr}:8096"* ]]; then
         for _ in $(seq 1 15); do
             sleep 2
-            network_json="$(remote_gating_fetch_jellyfin_network)"
+            if ! network_json="$(remote_gating_fetch_jellyfin_network)"; then
+                fail "remote gating: $state Jellyfin network configuration remains readable"
+                return 1
+            fi
             published="$(echo "$network_json" | python3 -c '
 import json, sys
 try:

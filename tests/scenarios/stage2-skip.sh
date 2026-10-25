@@ -8,6 +8,11 @@ source tests/assertions/remote-gating.sh
 stage2_skip_assert_test03_postconditions() {
     local state homepage_check network_json known_proxies published
 
+    if ! network_json="$(remote_gating_fetch_jellyfin_network)"; then
+        fail "TEST-03 skipped-state LAN-only: Jellyfin network configuration is readable"
+        return 1
+    fi
+
     state="$(env_get REMOTE_WEB_STATE)"
     assert_eq "skipped" "$state" "TEST-03 skipped-state LAN-only: REMOTE_WEB_STATE remains skipped after configure"
 
@@ -50,7 +55,6 @@ PY
         fail "TEST-03 skipped-state LAN-only: Homepage keeps Jellyfin/Seerr LAN hrefs" "$homepage_check"
     fi
 
-    network_json="$(remote_gating_fetch_jellyfin_network)"
     local managed_npm_ip
     managed_npm_ip="$(env_get MEDIASTACK_NPM_IP)"
     managed_npm_ip="${managed_npm_ip:-172.28.0.10}"
