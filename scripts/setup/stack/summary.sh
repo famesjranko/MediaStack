@@ -287,9 +287,9 @@ print_access_info() {
             echo -e "  ${BOLD}Jellyfin${NC}         https://jellyfin.${domain}"
             echo -e "  ${BOLD}Seerr${NC}            https://seerr.${domain}"
         elif [[ "$remote_state" == "skipped" ]]; then
-            echo "  HTTPS skipped. LAN + VPN work. Choose Features & settings -> Add remote access from the menu to try again."
+            echo "  HTTPS skipped. LAN access remains available. Choose Features & settings -> Add remote access from the menu to try again."
         elif [[ "$remote_state" == "failed" ]]; then
-            echo "  HTTPS setup failed. LAN + VPN work. Choose Features & settings -> Add remote access from the menu after fixing the issue."
+            echo "  HTTPS setup failed. LAN access remains available. Choose Features & settings -> Add remote access from the menu after fixing the issue."
         else
             echo "  Remote access: not yet configured -- choose Features & settings -> Add remote access from the menu"
         fi

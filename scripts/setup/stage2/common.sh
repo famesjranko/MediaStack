@@ -22,7 +22,7 @@ stage2_le_failure_choices() {
 }
 
 stage2_skip_summary_copy() {
-    printf 'HTTPS skipped. LAN + VPN work. Choose Features & settings -> Add remote access from the menu to try again.'
+    printf 'HTTPS skipped. LAN access remains available. Choose Features & settings -> Add remote access from the menu to try again.'
 }
 
 stage2_tell_me_more_copy() {
