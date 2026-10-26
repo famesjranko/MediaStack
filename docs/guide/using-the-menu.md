@@ -100,7 +100,7 @@ To update one service:
 
 To update every service, pick **Update all**. **Update all** skips stopped services and WireGuard. Updating WireGuard restarts remote access, so update it alone from your home network with **Update a service**. WireGuard asks for a second confirmation.
 
-An update recreates only a service that is running. For a stopped service, it downloads the image without recreating the container. **Start a service** and **Start all services** recreate the container on the downloaded image. If that fails, the launcher reports an error and the service stays stopped.
+An update recreates only a service that is running. For a stopped service, it downloads the image without recreating the container. **Start a service** and **Start all services** recreate the container on the downloaded image. **Start a service** also starts the selected service's stopped dependencies. If the recreation fails, the launcher reports an error and the service stays stopped.
 
 Before an update moves a service off its installed image, MediaStack attempts to save a restore point of its settings. It skips configurations larger than 256 MiB and reports archive failures. The update can continue without a restore point.
 

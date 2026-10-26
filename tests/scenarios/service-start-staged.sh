@@ -34,7 +34,7 @@ storage_guard_before_start() { echo GUARD >>/tmp/w103.guard; return "${GUARD_RC:
 
 W=/tmp/w103
 rm -rf "$W" && mkdir -p "$W" && cd "$W" || exit 1
-docker rm -f svc bazarr >/dev/null 2>&1
+docker rm -f svc bazarr w103dep w103app >/dev/null 2>&1
 cat >docker-compose.yml <<'Y'
 name: w103
 services:
@@ -49,6 +49,15 @@ services:
     container_name: bazarr
     profiles: [subtitles]
     command: sleep 3600
+  dep:
+    image: python:3.12-alpine
+    container_name: w103dep
+    command: sleep 3600
+  app:
+    image: python:3.12-alpine
+    container_name: w103app
+    command: sleep 3600
+    depends_on: [dep]
 Y
 build() { printf 'FROM python:3.12-alpine\nRUN echo %s >/marker\n' "$2" | docker build -q -t "$1" - >/dev/null; }
 img() { docker inspect --format '{{.Image}}' "$1"; }
@@ -104,7 +113,15 @@ docker compose --profile subtitles stop bazarr >/dev/null 2>&1
 sed -i 's#ms-w103/bazarr:cur#ms-w103.invalid/nope:1#' docker-compose.yml
 CHOICE=bazarr action_service_start 2>&1 | sed 's/^/FAIL_START|/'
 out FAIL_STATE "$(state bazarr)"
-docker rm -f svc bazarr >/dev/null 2>&1
+
+# Stopped dependency: starting app must also start the stopped dep it needs.
+docker compose up -d app >/dev/null 2>&1
+docker compose stop app dep >/dev/null 2>&1
+out DEP_BEFORE "$(state w103dep)"
+CHOICE=app action_service_start >/dev/null 2>&1
+out DEP_APP_STATE "$(state w103app)"
+out DEP_STATE "$(state w103dep)"
+docker rm -f svc bazarr w103dep w103app >/dev/null 2>&1
 BASH
 
     local o
@@ -143,6 +160,12 @@ BASH
     # Given an optional-profile service, Then it starts on its new image.
     assert_eq "running" "$(_v BZ_STATE)" "optional-profile service starts"
     assert_eq "$(_v BZ_NEW)" "$(_v BZ_ID)" "optional-profile service runs its staged image"
+
+    # Given an app and its dependency both stopped, When Start a service starts the app,
+    # Then the dependency is running too.
+    assert_eq "exited" "$(_v DEP_BEFORE)" "fixture: dependency starts out stopped"
+    assert_eq "running" "$(_v DEP_APP_STATE)" "selected service with a dependency starts"
+    assert_eq "running" "$(_v DEP_STATE)" "stopped dependency is started with the selected service"
 
     # Given an unpullable image, Then the failure is reported and nothing claims success.
     local failblock

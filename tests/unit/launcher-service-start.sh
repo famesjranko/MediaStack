@@ -8,6 +8,7 @@
 #     guard runs none;
 #   - an optional-profile service (bazarr, npm, wireguard, autoheal) gets its
 #     --profile flag, a default-profile service gets none;
+#   - dependencies are not skipped (no --no-deps), so stopped ones start too;
 #   - a failed up -d is an error with no success line;
 #   - staging an update for a stopped service runs neither up nor start.
 # The real image/config change is proven in DinD: tests/scenarios/service-start-staged.sh.
@@ -51,8 +52,9 @@ for pair in "bazarr:--profile subtitles" "npm:--profile proxy" "wireguard:--prof
     # Given a stopped service, When Start a service is chosen,
     # Then the guard runs first and compose reconciles it with its profile flag.
     out=$(run_start "$svc" 0 0)
-    expected="docker compose ${flag:+$flag }up -d --no-deps $svc"
+    expected="docker compose ${flag:+$flag }up -d $svc"
     assert_contains "$out" "$expected" "$svc: started with '$expected'"
+    assert_not_contains "$out" "--no-deps" "$svc: dependencies are not skipped"
     assert_not_contains "$out" "compose start" "$svc: plain 'compose start' is not used"
     guard_line=$(grep -n '^GUARD$' <<<"$out" | head -1 | cut -d: -f1)
     up_line=$(grep -n ' up -d ' <<<"$out" | head -1 | cut -d: -f1)

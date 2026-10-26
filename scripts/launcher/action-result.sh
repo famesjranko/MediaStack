@@ -371,9 +371,9 @@ action_service_start() {
         launcher_pause_for_menu
         return 0
     fi
-    # `up -d`, not `start`: it recreates a container whose image or config changed.
+    # `up -d`, not `start`: recreates on a changed image/config; starts dependencies.
     read -ra pflag <<<"$(profiles_service_flag "$choice")"
-    docker compose "${pflag[@]}" up -d --no-deps "$choice" 2>&1 || rc=$?
+    docker compose "${pflag[@]}" up -d "$choice" 2>&1 || rc=$?
     _show_action_result "$rc" "Start $choice"
     ((rc == 0)) && service_intent_clear "$choice"
     launcher_pause_for_menu
