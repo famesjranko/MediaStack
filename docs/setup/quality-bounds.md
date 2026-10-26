@@ -122,7 +122,7 @@ Reference table for sanity-checking:
 ./mediastack   →  Features & settings  →  Change quality profile (resolution & size)
 ```
 
-Re-pick a resolution, then a size. The launcher rewrites only the quality sections of `config.yml` (your indexers, subtitles and bandwidth are untouched) and re-pushes to Sonarr/Radarr. Because the profile name is `"{resolution} {size}"`, changing a cell renames the profile (`1080p Balanced` → `1080p Large`); the launcher renames the existing profile **in place** (same profile id), so your existing series/movies follow the change and **no orphaned profile is left behind**. You are warned first that raising the ceiling or size makes Sonarr/Radarr re-search and upgrade existing media (extra downloads and disk use).
+Re-pick a resolution, then a size. The launcher rewrites only the quality sections of `config.yml` (your indexers, subtitles and bandwidth are untouched) and re-pushes to Sonarr/Radarr. Because the profile name is `"{resolution} {size}"`, changing a cell renames the profile (`1080p Balanced` → `1080p Large`); the launcher renames the existing profile **in place** (same profile id), so your existing series/movies follow the change and **no orphaned profile is left behind**. You are told first that the change updates the profile's quality and upgrade rules, so existing media may become eligible for upgrade. No search starts; upgrades use extra downloads and disk space only when Sonarr/Radarr find better releases.
 
 > Downgrading the resolution (e.g. 1080p → 720p) disables the higher tiers in the profile but leaves their **global** `quality_definitions` bounds in place — they are shared across all profiles and simply go unused by the narrower profile. This is expected, not a leak.
 

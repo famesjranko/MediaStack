@@ -136,8 +136,8 @@ Flow:
 2. **Pick** — the same two-axis picker the wizard uses (`scripts/lib/quality-select.sh`): resolution
    ceiling, then size envelope. The current cell is pre-selected.
 3. **No-change / confirm** — re-picking the current cell short-circuits. Otherwise you are warned that
-   raising the ceiling or size makes Sonarr/Radarr **re-search and upgrade existing media** (extra
-   downloads and disk), and asked to confirm (default: no).
+   the change updates the profile's quality and upgrade rules, so existing media may become eligible
+   for upgrade. **No search starts**; you are asked to confirm (default: no).
 4. **Apply** — `wizard_apply.py --quality-only` rewrites **only** the three quality sections of
    `config.yml` (quality profile, definitions, custom formats); indexers, subtitles and bandwidth are
    left untouched.
@@ -147,7 +147,7 @@ Flow:
    orphaned profile is left behind**.
 
 If you renamed the quality profile yourself in the Sonarr/Radarr UI (so the live name no longer matches
-`config.yml`), the re-push refuses to create a duplicate and warns instead — rename it back, or rebuild.
+`config.yml`), the re-push refuses to create a duplicate and warns instead — rename it back, or set `quality_profile.name` in `config.yml` to the new name, then run the action again.
 
 ## `./mediastack` → Features & settings → Update DDNS provider / credentials
 

@@ -83,8 +83,9 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
         return 0
     fi
 
-    ui_log warn "Changing to '${new_name}' makes Sonarr/Radarr re-search and upgrade"
-    ui_log warn "existing media toward the new ceiling - expect extra downloads and disk use."
+    ui_log warn "Changing to '${new_name}' updates the profile's quality and upgrade rules, so"
+    ui_log warn "existing media may become eligible for upgrade. No search starts now; upgrades"
+    ui_log warn "download only when Sonarr/Radarr next find a better release or you search yourself."
     ui_log info "Your existing profile is renamed in place ('${cur_name}' -> '${new_name}') - no duplicate profile is created."
     ui_confirm "Apply '${new_name}' to Sonarr and Radarr now?" no || {
         ui_log info "No change."
@@ -121,7 +122,7 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
     elif [[ -n "$rename_failed" ]]; then
         echo ""
         ui_log warn "Quality change did NOT apply to: ${rename_failed} (see the messages above)."
-        ui_log warn "Your library still uses '${cur_name}'. Fix the warning and retry, or rebuild."
+        ui_log warn "Your library still uses '${cur_name}'. Fix the warning, then run Change quality profile again. To keep the new name instead, set quality_profile.name in config.yml to it first."
     elif [[ -z "$qp_status_file" ]]; then
         # mktemp failed, so we couldn't capture the re-push's per-app outcome.
         # Under-claim rather than over-claim (cf. _run_setup_return): the re-push
@@ -130,6 +131,7 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
         ui_log warn "Re-pushed '${new_name}', but couldn't verify the result - check the messages above to confirm it applied to Sonarr and Radarr."
     else
         _show_action_result 0 "Change quality profile"
+        ui_log info "Profile '${new_name}' updated in place. Upgrade eligibility changed; no search was started."
     fi
     launcher_pause_for_menu
 }
