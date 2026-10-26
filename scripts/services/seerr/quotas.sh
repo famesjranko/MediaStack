@@ -95,9 +95,11 @@ reconcile_seerr_quotas() {
     # HTTP 200 does not prove the change: read the settings back.
     local after
     after=$(api_fetch "Seerr main settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/main") || after=""
-    if python3 -I -c "$_SEERR_QUOTA_PY" verify "${args[@]}" <<<"$after"; then
-        log_ok "Seerr: admin-approval required, quotas ${movie_limit} movies/${movie_days}d + ${tv_limit} TV/${tv_days}d"
-    else
-        log_warn "Seerr accepted the quota update but its settings do not match config.yml"
-    fi
+    local verify_rc=0
+    python3 -I -c "$_SEERR_QUOTA_PY" verify "${args[@]}" <<<"$after" || verify_rc=$?
+    case "$verify_rc" in
+        0) log_ok "Seerr: admin-approval required, quotas ${movie_limit} movies/${movie_days}d + ${tv_limit} TV/${tv_days}d" ;;
+        3) log_warn "Could not read back Seerr settings after the update" ;;
+        *) log_warn "Seerr accepted the quota update but its settings do not match config.yml" ;;
+    esac
 }

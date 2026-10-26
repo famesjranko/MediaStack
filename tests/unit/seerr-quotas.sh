@@ -39,6 +39,10 @@ curl() {
     done
     printf '%s\n' "$body" >>"$POSTS"
     [[ -n "${FAKE_IGNORE_POST:-}" ]] && return 0
+    if [[ -n "${FAKE_GARBLE_AFTER_POST:-}" ]]; then
+        echo "not json" >"$STATE"
+        return 0
+    fi
     python3 -I - "$STATE" "$body" <<'PY'
 import json, sys
 
@@ -68,8 +72,8 @@ PY
 
 # Args: movie_limit movie_days tv_limit tv_days (desired config)
 want() {
-    CFG=([seerr.quotas.movie.limit]="$1" [seerr.quotas.movie.days]="$2"
-        [seerr.quotas.tv.limit]="$3" [seerr.quotas.tv.days]="$4")
+    CFG=(["seerr.quotas.movie.limit"]="$1" ["seerr.quotas.movie.days"]="$2"
+        ["seerr.quotas.tv.limit"]="$3" ["seerr.quotas.tv.days"]="$4")
 }
 
 # Runs the reconcile with a clean record of POSTs and log lines.
@@ -170,6 +174,16 @@ want 0 7 0 7
 FAKE_IGNORE_POST=1 run_reconcile
 assert_contains "$(logs)" "warn: Seerr accepted the quota update but its settings do not match" "a 200 with unchanged settings is a warning"
 assert_not_contains "$(logs)" "ok:" "a 200 with unchanged settings is not reported as success"
+
+# Given Seerr that answers 200 to the POST but then returns an unreadable body.
+# When the reconcile runs.
+# Then it warns that it could not read the settings back, and does not claim success.
+live 10 7 10 7
+want 0 7 0 7
+FAKE_GARBLE_AFTER_POST=1 run_reconcile
+assert_contains "$(logs)" "warn: Could not read back Seerr settings after the update" "an unreadable readback is reported as unreadable"
+assert_not_contains "$(logs)" "do not match" "an unreadable readback is not reported as a mismatch"
+assert_not_contains "$(logs)" "ok:" "an unreadable readback is not reported as success"
 
 # Given config values that are not non-negative whole numbers, or a period of 0 with a limit.
 # When the reconcile runs against quotas that would otherwise need a change.
