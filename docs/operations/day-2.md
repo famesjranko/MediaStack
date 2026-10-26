@@ -10,19 +10,19 @@ protection are intentionally out of scope for MediaStack.
 
 User steps: [Remove MediaStack](../guide/install.md#remove-mediastack).
 
-Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership (MediaStack-installed Samba is purged, not just removed, and the Linux account MediaStack created is deleted when nothing outside MediaStack's paths uses it; no autoremove runs, so Samba's dependency packages stay), watchdog units, and setup banners. `data/`, `config/examples/` and the checkout are preserved. `config/` runtime state, `.env`, `config.yml`, the generated compose override, and MediaStack's labelled Docker volumes and networks are removed.
+Uninstall is a typed-`DESTROY`, ordered teardown that can stop partway and be retried. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership (MediaStack-installed Samba is purged, not just removed, and the Linux account MediaStack created is deleted when nothing outside MediaStack's paths uses it; no autoremove runs, so Samba's dependency packages stay), watchdog units, and setup banners. The configured `DATA_DIR` media path, `config/examples/` and the checkout are preserved. `config/` runtime state, `.env`, `config.yml`, the generated compose override, and MediaStack's labelled Docker volumes and networks are removed.
 
-The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts the recorded teardown and instead offers a best-effort cleanup of the host changes MediaStack can still identify on its own. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried. User-modified MediaStack-owned files are preserved and reported instead of overwritten or deleted.
+The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts the recorded teardown and instead offers a best-effort cleanup of the host changes MediaStack can still identify on its own. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried; containers already removed are not restored. Edited host files with ownership checks, such as MediaStack's APT drop-ins, sysctl file and Samba include, are preserved and reported. This protection does not cover all MediaStack-owned files.
 
 ## `scripts/update.sh`
 
-Wrapper around `docker compose pull && up -d` for the configured image channel.
+Pulls images for the configured channel, then runs Compose `up -d` with the enabled profiles. After three failed pull attempts, it warns and continues with cached images; a completed run does not prove the pull succeeded.
 
 Flow (`scripts/update.sh`):
 
 1. **Override refresh** — reads `IMAGE_CHANNEL` from `.env`, regenerates `docker-compose.override.yml`, and validates `docs/operations/image-digests.lock` for Stable.
 2. **Profile selection** — `profiles_build_args` reads the enabled optional profiles from `.env` (the same table the installer and launcher use) and passes their `--profile` flags to the later commands. An enabled service that is stopped or crashed is recreated too. Without the flags, `pull` would skip optional-profile services.
-3. **Pull** — `docker compose $PROFILE_ARGS pull`. Stable pulls the tested `tag@sha256:digest` refs from the generated override; Latest pulls the tags in `docker-compose.yml`.
+3. **Pull** — `docker compose $PROFILE_ARGS pull`, with up to three attempts. Stable pulls the tested `tag@sha256:digest` refs from the generated override; Latest pulls the tags in `docker-compose.yml`. If all attempts fail, it warns and continues with cached images.
 4. **Recreate** — `docker compose $PROFILE_ARGS up -d --remove-orphans`. `--remove-orphans` cleans up containers from services that have been deleted from the compose file.
 5. **Optional prune** — only when run with `--prune`, calls `docker image prune -f` to reclaim disk from dangling images. This prune is host-wide, so the default update path skips it.
 6. **Converge** — runs the same steps as **Health & security → Apply changes from a MediaStack update** (admin-port filter, qBittorrent legacy whitelist, Beszel system entry, unused Beszel UFW rule, WireGuard UFW rule, missing NAS watchdog; see that section). A failure is reported after the status table and makes the script exit non-zero.
@@ -100,7 +100,7 @@ There is no day-2 channel toggle: changing the channel means re-running the inst
 `scripts/update.sh` remains a bulk re-pull per the current override.
 
 Update and revert only **recreate a service that is already running**; a stopped service has its new
-image pulled and staged but is **not started** — the change applies the next time the stack starts.
+image pulled and staged but is **not started** — the change applies on the next Compose recreation, such as **Manage stack → Start all services**. **Start a service** starts the existing container without applying the staged image.
 
 Every apply regenerates `docker-compose.override.yml` (preserving GPU/mem/NAS settings), runs the
 storage guard, and recreates only the touched service (no `--remove-orphans`). "latest" follows the
@@ -172,12 +172,14 @@ Flow:
 3. **Domain-change check** — if the chosen provider can't manage your current domain (any switch
    involving a free-hostname provider), you're told a new hostname is needed and offered a jump to
    **Add remote access**; nothing is changed here.
-4. **Collect + verify** — you enter the new provider's credentials, which are checked in a throwaway
-   `ddns-updater` container with **zero blast radius** (the live service is not touched). Rejected
-   credentials re-prompt; if verification can't run (Docker/network issue), nothing changes.
+4. **Collect + verify** — you enter the new provider's credentials and test them in a throwaway
+   `ddns-updater` container. This can send a live update request to the DNS provider, but does not
+   change the running updater's config. For Dynu and other `dyndns2` providers, an unchanged IP can
+   return success without checking the password; the next IP change is the meaningful check. Rejected
+   credentials re-prompt; if verification can't run (Docker/network issue), the live config stays unchanged.
 5. **Confirm** — you are warned that switching restarts `ddns-updater`, and told the current config is
    backed up and restored if the restart fails (default: no).
-6. **Apply (verify-first)** — only after the credentials verify: the current `config.json` is
+6. **Apply (verify-first)** — only after verification returns success: the current `config.json` is
    snapshotted, the new one is written (chmod 600), `ddns-updater` is restarted, and its startup is
    confirmed. If it fails to come up, the previous config is **restored** and the `DDNS_PROVIDER` key in
    `.env` is left unchanged.
@@ -187,9 +189,9 @@ non-secret `DDNS_PROVIDER` key. The `:8000` web UI is view-only status, not a pl
 
 **DDNS status display.** The main-menu `DDNS:` line and the **Manage stack** line show the confirmed
 IP against the detected WAN IP; the states are in
-[Check it works](../guide/remote-access.md#check-it-works). The banner caches the Public IP and DDNS IP
-for the session, so they refresh only through **Refresh status**
-([guide](../guide/using-the-menu.md#refresh-status)).
+[Check it works](../guide/remote-access.md#check-it-works). The banner caches the Public IP
+for the session; [**Refresh status**](../guide/using-the-menu.md#refresh-status) refreshes it.
+The DDNS A record is resolved on each banner redraw.
 
 ## `./mediastack` → Features & settings → Firewall (UFW) / System hardening
 
@@ -310,11 +312,11 @@ vim config.yml
 ./scripts/configure.sh
 ```
 
-Safe to re-run. Each step is idempotent — existing resources are detected by name/path and skipped. Added indexers/libraries are created; removed ones stay in place (the script doesn't reconcile — it only adds).
+Safe to re-run, but not add-only. Existing resources are checked before changes; some settings, including authenticated qBittorrent preferences and Jellyfin settings, can be updated. Added indexers/libraries are created; removed ones generally stay in place rather than being reconciled.
 
 **Caveats:**
 
-- **qBittorrent** (Step 1) short-circuits on re-runs because the temp password no longer exists (`configure_qbittorrent()` auth-fallback logic). Editing `qbittorrent.max_ratio` in `config.yml` will NOT push to a running instance.
+- **qBittorrent** runs after Portainer. A re-run first tries the shared admin password. A change to `qbittorrent.max_ratio` in `config.yml` applies if authentication succeeds; otherwise configuration warns and skips qBittorrent.
 - **Quality profile edits** are name-keyed. If you hand-edit `quality_profile.name` in `config.yml` and run `configure.sh`, it creates a *new* profile alongside the old one (you must delete the old one manually and re-point existing series). To change the quality cell **without** orphaning the profile, use the launcher's **Features & settings → Change quality profile** action instead — it renames the profile in place (see above).
 - **Removed indexers** stay registered. Delete via Jackett UI manually.
 
@@ -322,8 +324,9 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
 
 - Anything in `.env` that's interpolated into `docker-compose.yml` (PUID, PGID, TZ, paths, `SONARR_API_KEY` for unpackerr).
   ```bash
-  docker compose up -d       # picks up new env for changed services
+  ./mediastack
   ```
+  Choose **Manage stack → Start all services** to recreate changed services, including enabled optional profiles.
 - Changes to fail2ban jails or filters:
   ```bash
   docker compose restart fail2ban
@@ -342,8 +345,9 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
 - GPU override file regeneration (new GPU hardware):
   ```bash
   ./setup.sh                 # re-detects GPU, regenerates override.yml
-  docker compose up -d       # applies the new runtime/devices
+  ./mediastack
   ```
+  Choose **Manage stack → Start all services** to apply the new runtime/devices across enabled profiles.
 - NVIDIA healthcheck override changes:
   ```bash
   ./setup.sh --transcoding
@@ -361,7 +365,7 @@ delete it from `config.yml`, Jackett and Sonarr/Radarr, then re-run configure.sh
 
 ### Log rotation
 
-User steps: [Troubleshooting](../guide/troubleshooting.md#first-checks). The `x-logging` anchor (`&default-logging` in `docker-compose.yml`) caps each service at 3 x 10 MB rotated json-files.
+User steps: [Troubleshooting](../guide/troubleshooting.md#first-checks). The `x-logging` anchor (`&default-logging` in `docker-compose.yml`) defaults to 3 x 10 MB rotated json-files. `ddns-updater` overrides it with 2 x 1 MB.
 
 ## Recovery
 
@@ -369,14 +373,17 @@ User steps are in [Troubleshooting](../guide/troubleshooting.md). This section k
 
 ### After host reboot
 
-Every service has `restart: unless-stopped`, including the optional profiles, so Docker brings all of
-them back. No re-run of `setup.sh` or `configure.sh` is needed; existing `config/` state is preserved.
+Every service has `restart: unless-stopped`, including the optional profiles. Docker restarts existing
+containers that were running before shutdown. On NAS installs, the storage watchdog can also start
+manually stopped NAS-dependent services during startup or recovery. No re-run of `setup.sh` or
+`configure.sh` is needed; existing `config/` state is preserved.
 User steps: [After a reboot](../guide/troubleshooting.md#after-a-reboot).
 
 ### After partial configure.sh run
 
-Each step checks for existing state first (`log_skip` paths) and only creates missing pieces, so a
-re-run is safe on any mixture of configured and unconfigured services. User steps:
+Each step checks for existing state first (`log_skip` paths), so a re-run is safe on a mixture of
+configured and unconfigured services. It can also update some existing settings; authentication failures
+warn and skip affected services. User steps:
 [Setup stopped half way](../guide/troubleshooting.md#setup-stopped-half-way).
 
 ### Jellyfin wizard broken state
