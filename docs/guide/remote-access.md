@@ -36,21 +36,26 @@ If you own a domain at another company, you can manage the DNS records yourself.
 
 1. Create an A record for `jellyfin.<domain>` that points to your public IP.
 2. Create an A record for `seerr.<domain>` that points to your public IP.
-3. Choose **Yes - static IP, or I keep my own DNS updated (skip DDNS)** when the installer asks.
+3. If you enable WireGuard, also create an A record for `<domain>` that points to your public IP. This is the VPN endpoint.
+4. Choose **Yes - static IP, or I keep my own DNS updated (skip DDNS)** when the installer asks.
+
+Keep these records updated if your public IP changes.
 
 ## Forward ports
 
-Forward these ports on your router to the LAN address of your server. To find that address, run `hostname -I` on the server.
+Forward the ports for the features you use to the LAN address of your server. To find that address, run `hostname -I` on the server.
 
 | Port | Protocol | Purpose |
 |:-----|:---------|:--------|
 | 80 | TCP | Let's Encrypt validation and HTTP to HTTPS redirect |
 | 443 | TCP | HTTPS for Jellyfin and Seerr |
-| 6881 | TCP and UDP | qBittorrent peers |
-| 51820 | UDP | WireGuard VPN |
+| 6881 (default) | TCP and UDP | Incoming qBittorrent peer connections |
+| 51820 (default) | UDP | WireGuard VPN, if enabled |
+
+HTTPS needs ports 80 and 443. If you changed the torrent or WireGuard port during setup, forward the selected port instead of its default.
 
 > [!WARNING]
-> Forward only these four ports. Keep every other port on the LAN only. This is very important for the NPM admin page (port 81) and the wg-easy admin page (port 51821).
+> Keep admin pages private. Do not forward the NPM admin port (81), the wg-easy admin port (51821), or other admin ports.
 > Jellyfin and Seerr reach the internet through the reverse proxy on port 443, not through their own ports.
 
 To test the forwards, open **Diagnostics (ports, public IP, DNS, readiness)** and choose **Test port forwarding**. Then choose **Test the required MediaStack ports**.
@@ -72,7 +77,7 @@ If a certificate request fails, MediaStack shows a `[WARN]` message. It does not
 Fix the cause. Then choose **Add remote access (HTTPS, domain, WireGuard)** again. For manual certificate management, see the [Nginx Proxy Manager docs](https://nginxproxymanager.com/guide/).
 
 > [!NOTE]
-> After a browser sees the HSTS header, it refuses plain HTTP for all subdomains. Set up SSL before you add new subdomains.
+> After a browser receives the [HSTS header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security) over HTTPS, it requires HTTPS for that hostname and its subdomains.
 
 ## Check it works
 
@@ -90,23 +95,25 @@ When a DDNS provider is set up, the main menu shows a `DDNS:` line. It shows the
 | Yellow, `propagating?` | The domain resolves to a different IP. The record is old or not updated yet. |
 | `not resolving yet` | The domain has no A record. |
 
-The menu keeps the public IP and the DDNS IP for the whole session. To check them again, choose **Refresh status (re-check public IP & DDNS)** in the main menu.
+The menu caches your public IP for the session and checks DDNS whenever it redraws. Choose **Refresh status (re-check public IP & DDNS)** to refresh the public IP too.
 
 ### Change the DDNS provider or credentials
 
 1. Open **Features & settings (quality, bandwidth, subtitles, sharing, indexers)**.
 2. Choose **Update DDNS provider / credentials**.
 3. Choose a provider, or choose **Skip for now** to change nothing.
-4. Enter the new credentials. MediaStack checks them before it changes anything.
+4. Enter the new credentials. MediaStack attempts to verify them with the provider.
 5. Confirm the restart of `ddns-updater`.
 
-This entry appears only when remote access is set up with a DDNS provider. If the new settings fail, MediaStack restores the old settings.
+This entry appears only when remote access is set up with a DDNS provider. For Dynu and deSEC, MediaStack warns that a successful response may not prove the credentials work when the IP has not changed.
+
+If saving the settings or restarting the updater fails, MediaStack attempts to restore the previous settings. It reports a warning if recovery fails. A running updater alone does not prove that it can update DNS.
 
 This action keeps your domain. Use it to enter the credentials again, or to switch between Cloudflare and Porkbun on a domain you own. A switch to or from DuckDNS, Dynu, deSEC, or dynv6 needs a new hostname. MediaStack then offers to start **Add remote access**.
 
 ## WireGuard VPN
 
-WireGuard lets your phone or laptop reach your home network from anywhere. Choose WireGuard when you turn on remote access. You can also add it later with **Add remote access (HTTPS, domain, WireGuard)**.
+WireGuard lets your phone or laptop reach your home network while away. Choose WireGuard during remote-access setup. Once HTTPS is ready, the menu does not offer a way to add WireGuard. Running `./setup.sh --remote` then repairs the existing setup without asking for new WireGuard settings.
 
 wg-easy manages the VPN. It starts with your admin login and one first peer. The peer has the name of your admin user and the access tier you chose at install.
 
