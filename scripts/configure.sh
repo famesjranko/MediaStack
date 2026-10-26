@@ -128,6 +128,34 @@ _run_configure() {
     return "$_rc"
 }
 
+# Recreates Unpackerr so it picks up the API keys configure.sh just saved to
+# the dotenv file. `docker compose restart` only stops and starts the existing
+# container with its original (empty) values; `up -d` detects the change and
+# recreates it. A failed recreate leaves the old container running with stale
+# keys, so it is logged as a warning and recorded in the summary. The
+# configurator continues.
+_recreate_unpackerr() {
+    if storage_is_manual; then
+        log_skip "Unpackerr recreate skipped (manual app wiring)"
+        return 0
+    fi
+    echo ""
+    log_info "Recreating Unpackerr with API keys..."
+    local _w0=$((_LOG_COUNTS_WARN + _LOG_COUNTS_ERROR)) _out _rc=0 _key
+    _out=$(docker compose up -d unpackerr 2>&1) || _rc=$?
+    if ((_rc == 0)); then
+        log_ok "Unpackerr restarted"
+    else
+        # Bound the output and keep API keys out of the log.
+        for _key in "${SONARR_API_KEY:-}" "${RADARR_API_KEY:-}"; do
+            [[ -n "$_key" ]] && _out="${_out//"$_key"/***}"
+        done
+        log_warn "Unpackerr was not recreated (docker compose exit $_rc); it may still use old API keys. Last output:"
+        printf '%s\n' "$_out" | tail -n 5 | sed 's/^/      /'
+    fi
+    _record_configure_result "Unpackerr|unpackerr" "$_w0" "$((_rc != 0))"
+}
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -281,18 +309,7 @@ main() {
     fi
 
     if [[ -z "$ONLY_SERVICES" ]]; then
-        # Recreate Unpackerr so it picks up the API keys configure.sh just saved
-        # to .env. `docker compose restart` only stops/starts the existing container
-        # with its original (empty) env — `up -d` detects the env change and
-        # recreates the container with the new values.
-        if storage_is_manual; then
-            log_skip "Unpackerr recreate skipped (manual app wiring)"
-        else
-            echo ""
-            log_info "Recreating Unpackerr with API keys..."
-            docker compose up -d unpackerr >/dev/null 2>&1
-            log_ok "Unpackerr restarted"
-        fi
+        _recreate_unpackerr
 
         # Reload fail2ban so jails pick up the real (dated) log files that services
         # have created since startup. At boot, fail2ban resolves logpath globs to
