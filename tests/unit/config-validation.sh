@@ -147,12 +147,17 @@ _run_configure "Fixture|fixture" configure_clean
 assert_eq "1" "${#_CONFIGURE_OK[@]}" "clean rc=0 badges OK"
 assert_eq "0" "${#_CONFIGURE_WARN[@]}" "clean rc=0 records no WARN"
 
-# Advisory drift via the REAL log_drift (sourced from common.sh) must not bump
-# the warn counter, so a drift-only configurator still badges OK. Guards against
-# a regression that makes log_drift count.
+# Given the complete real log_drift definition from common.sh.
 _log_emit() { :; }
 _ui_status_token() { :; }
-eval "$(grep '^log_drift()' "$REPO_ROOT/scripts/lib/common.sh")"
+unset -f log_drift
+LOG_DRIFT_DEFINITION=$(sed -n '/^log_drift()/,/^}/p' "$REPO_ROOT/scripts/lib/common.sh")
+if [[ -z "$LOG_DRIFT_DEFINITION" ]] || ! eval "$LOG_DRIFT_DEFINITION" \
+    || ! declare -F log_drift >/dev/null; then
+    fail "real log_drift definition loads" "common.sh has no valid log_drift definition"
+    summary
+    exit 1
+fi
 _CONFIGURE_OK=()
 _CONFIGURE_WARN=()
 _LOG_COUNTS_WARN=0
@@ -161,7 +166,12 @@ configure_drift() {
     log_drift "advisory drift notice"
     return 0
 }
+
+# When a successful configurator emits only an advisory drift notice.
 _run_configure "Fixture|fixture" configure_drift
+
+# Then the real logger leaves counted warnings unchanged and records OK.
+assert_eq "0" "$_LOG_COUNTS_WARN" "advisory log_drift leaves warning count unchanged"
 assert_eq "1" "${#_CONFIGURE_OK[@]}" "advisory log_drift with rc=0 badges OK"
 assert_eq "0" "${#_CONFIGURE_WARN[@]}" "advisory log_drift does not badge WARN"
 
