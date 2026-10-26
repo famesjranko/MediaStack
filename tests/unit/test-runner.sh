@@ -64,6 +64,13 @@ dind_strip_services() { :; }
 dind_down() { :; }
 STUB
     printf '%s\n' ':' >"$TMP_DIR/sandbox/tests/lib/stack.sh"
+    # run.sh sources receipts.sh and calls these hooks around every scenario; the
+    # real recorder needs a Docker daemon, so the sandbox stubs them as no-ops.
+    cat >"$TMP_DIR/sandbox/tests/lib/receipts.sh" <<'STUB'
+receipts_recorder_start() { :; }
+receipts_scenario_begin() { :; }
+receipts_scenario_end() { :; }
+STUB
 
     cat >"$TMP_DIR/sandbox/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -197,6 +204,19 @@ rc=$?
 assert_contains "$output" "RUN:ok" "test runner reaches the scenario loop with MS_CACHE_MIRROR_KEEP"
 assert_not_contains_local "$output" "CACHE_DOWN" "test runner keeps cache mirror when MS_CACHE_MIRROR_KEEP=1"
 assert_eq "0" "$rc" "test runner exits zero with MS_CACHE_MIRROR_KEEP=1"
+
+# Without MS_TEST_IMAGE_OVERRIDES no receipts are wanted; the runner must still
+# complete, so a receipts hook cannot become a hard dependency of every run.
+setup_runner_sandbox
+cat >"$TMP_DIR/sandbox/tests/scenarios/ok.sh" <<'STUB'
+run_scenario() { printf 'RUN:ok\n'; }
+STUB
+output=$(env -u MS_TEST_IMAGE_OVERRIDES PATH="$TMP_DIR/sandbox/bin:$PATH" \
+    "$TMP_DIR/sandbox/tests/run.sh" ok 2>&1)
+rc=$?
+
+assert_contains "$output" "RUN:ok" "test runner reaches the scenario loop without image overrides"
+assert_eq "0" "$rc" "test runner exits zero when MS_TEST_IMAGE_OVERRIDES is unset"
 
 scenario_end "$CURRENT_SCENARIO"
 summary
