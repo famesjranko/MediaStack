@@ -4,6 +4,7 @@
 
 # shellcheck source=scripts/lib/project-volumes.sh
 source "$SCRIPT_DIR/scripts/lib/project-volumes.sh"
+source "$SCRIPT_DIR/scripts/lib/service-intent.sh"
 
 _cached_public_ip() {
     if ((_MS_PUBLIC_IP_CHECKED == 0)); then
@@ -317,11 +318,10 @@ _run_setup_return() {
     local strict="$1" label="$2"
     shift 2
     local rc=0 outcome="" result_file=""
-    # setup.sh reports its real outcome (completed / aborted / unchanged) by
-    # writing a one-word token to this file; without it the launcher can only
-    # guess from the exit code. No-op for direct setup.sh runs (var unset). If
-    # mktemp itself fails, a strict action with a bare exit 0 falls back to "did
-    # not complete" — a safe under-claim, never a false "completed".
+    # setup.sh writes its real outcome (completed / aborted / unchanged) to this
+    # file as a one-word token; without it the launcher can only guess from the
+    # exit code. If mktemp fails, a strict action with a bare exit 0 reads "did
+    # not complete": a safe under-claim, never a false "completed".
     result_file=$(mktemp 2>/dev/null) || result_file=""
     [[ -n "$result_file" ]] && export MEDIASTACK_LAUNCHER_RESULT="$result_file"
     "$SCRIPT_DIR/setup.sh" "$@" || rc=$?
@@ -350,6 +350,7 @@ action_service_stop() {
     [[ "$choice" == "Back"* ]] && return 0
     docker compose stop "$choice" 2>&1 || rc=$?
     _show_action_result "$rc" "Stop $choice"
+    ((rc == 0)) && service_intent_record "$choice"
     launcher_pause_for_menu
 }
 
@@ -372,6 +373,7 @@ action_service_start() {
     fi
     docker compose start "$choice" 2>&1 || rc=$?
     _show_action_result "$rc" "Start $choice"
+    ((rc == 0)) && service_intent_clear "$choice"
     launcher_pause_for_menu
 }
 
@@ -396,17 +398,13 @@ action_stack_stop() {
         return 0
     fi
     ui_log info "Stopping all MediaStack services..."
-    # Pass profile args so optional services (npm, bazarr, wireguard, autoheal)
-    # actually stop. `--profile all` is a literal name, not a wildcard, so
-    # without explicit profile args those containers survive `down`.
-    # No --remove-orphans: the profile set is now disk-fresh (shared
-    # profiles_build_args), so plain `down` stops exactly the selected services
-    # without risking removal of containers that look orphaned to a stale profile.
-    # --volumes: images that declare VOLUME get a fresh anonymous volume on
-    # every `up`, and `down` without it leaves the old one behind, unlabelled
-    # and invisible to uninstall. docker-compose.yml declares no named volume
-    # and config/ and data/ are bind mounts, so this removes no user data.
-    # Collect anonymous volumes first: down skips a recreated named mount.
+    # Profile args make optional services (npm, bazarr, wireguard, autoheal) stop
+    # too: `--profile all` is a literal name, not a wildcard. No --remove-orphans:
+    # the profile set is disk-fresh (profiles_build_args), so plain `down` cannot
+    # remove containers that look orphaned. --volumes: images that declare VOLUME
+    # get a fresh anonymous volume on every `up` that plain `down` leaves behind,
+    # unlabelled and invisible to uninstall; config/ and data/ are bind mounts, so
+    # no user data goes. Anonymous volumes are collected first: down skips them.
     local rc=0 project anon_volumes=() kept_volumes=() vol
     project=$(_compose_project_name) || project=""
     if [[ -n "$project" ]]; then
@@ -422,6 +420,7 @@ action_stack_stop() {
         done
     fi
     _show_action_result "$rc" "Stop stack"
+    ((rc == 0)) && service_intent_record_data_services
     launcher_pause_for_menu
 }
 
@@ -432,13 +431,13 @@ action_stack_start() {
         return 0
     fi
     ui_log info "Starting MediaStack services..."
-    # Pass profile args so optional services (npm, bazarr, wireguard, autoheal)
-    # come back up — not just default-profile ones.
+    # Profile args bring optional services (npm, bazarr, wireguard, autoheal) back too.
     local profiles=()
     profiles_build_args profiles
     local rc=0
     docker compose "${profiles[@]}" up -d 2>&1 || rc=$?
     _show_action_result "$rc" "Start stack"
+    ((rc == 0)) && service_intent_clear_all
     launcher_pause_for_menu
 }
 

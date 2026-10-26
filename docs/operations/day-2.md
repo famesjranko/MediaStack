@@ -269,7 +269,7 @@ A read-only status box built entirely from the `storage_*` getters in
 
 The one action, **Re-check NAS now**, re-runs `storage_nas_ok` (mount + sentinel) and reports a
 verdict; the box then redraws with the live mount state. Remount/restart are intentionally not
-offered here — a running watchdog already auto-repairs the mount and restarts paused services.
+offered here — a running watchdog already auto-repairs the mount and restarts paused services (never one the user stopped from **Manage stack**).
 When the check fails, the message states the real watchdog state: running (it keeps retrying),
 installed but stopped, turned off, or not installed (run **Apply changes from a MediaStack update**).
 
@@ -374,8 +374,9 @@ User steps are in [Troubleshooting](../guide/troubleshooting.md). This section k
 ### After host reboot
 
 Every service has `restart: unless-stopped`, including the optional profiles. Docker restarts existing
-containers that were running before shutdown. On NAS installs, the storage watchdog can also start
-manually stopped NAS-dependent services during startup or recovery. No re-run of `setup.sh` or
+containers that were running before shutdown. On NAS installs, the storage watchdog also starts
+NAS-dependent services that are not running during startup or recovery, except those stopped from the launcher
+(`config/state/user-stopped-services`; see [storage](../setup/storage.md#guards-and-watchdog)). No re-run of `setup.sh` or
 `configure.sh` is needed; existing `config/` state is preserved.
 User steps: [After a reboot](../guide/troubleshooting.md#after-a-reboot).
 

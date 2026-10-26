@@ -379,7 +379,13 @@ unset -f findmnt
 unset STORAGE_SENTINEL_PROBE_TIMEOUT STORAGE_SENTINEL_PROBE_INTERVAL watchdog_probe_started watchdog_probe_elapsed
 
 rm -f "$WATCHDOG_DOCKER_LOG"
+# Keep the user's real intent and watchdog state out of the recovery assertions.
+WATCHDOG_ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+SCRIPT_DIR="$TMP_DIR"
+STATE_FILE="$TMP_DIR/storage-watchdog-stopped"
+STOPPED_SERVICES_FILE="$TMP_DIR/storage-watchdog-stopped-services"
 start_managed_services
+SCRIPT_DIR="$WATCHDOG_ORIGINAL_SCRIPT_DIR"
 assert_contains "$(cat "$WATCHDOG_DOCKER_LOG")" "docker compose up -d jellyfin" "watchdog recovery: starts known NAS service set from live state"
 assert_contains "$(cat "$WATCHDOG_DOCKER_LOG")" "docker compose up -d qbittorrent" "watchdog recovery: starts qBittorrent from known NAS service set"
 case "$(cat "$WATCHDOG_DOCKER_LOG")" in
@@ -387,5 +393,5 @@ case "$(cat "$WATCHDOG_DOCKER_LOG")" in
     *) pass "watchdog recovery: does not start disabled Bazarr" ;;
 esac
 PATH="${PATH#"$WATCHDOG_FAKEBIN:"}"
-unset -f log compose_running service_is_running protected_running_count stop_managed_services start_managed_services repair_mount_if_needed watchdog_main
-unset WATCHDOG_DOCKER_LOG WATCHDOG_FAKEBIN MEDIASTACK_WATCHDOG_SOURCE_ONLY STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE STORAGE_SENTINEL BAZARR_ENABLED
+unset -f log compose_running service_is_running protected_running_count stop_managed_services start_managed_services watchdog_drop_stale_intent repair_mount_if_needed watchdog_tick watchdog_main
+unset WATCHDOG_ORIGINAL_SCRIPT_DIR STATE_FILE STOPPED_SERVICES_FILE WATCHDOG_DOCKER_LOG WATCHDOG_FAKEBIN MEDIASTACK_WATCHDOG_SOURCE_ONLY STORAGE_MODE STORAGE_MOUNTPOINT STORAGE_EXPECTED_SOURCE STORAGE_EXPECTED_FSTYPE STORAGE_SENTINEL BAZARR_ENABLED

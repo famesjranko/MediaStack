@@ -118,11 +118,9 @@ grep -q \"docker compose up -d seerr\" $docker_log
     fi
 }
 
-run_scenario() {
-    local mountpoint="/tmp/ms-nas-data"
-    local export_path="/exports/mediastack"
-
-    dind_exec "bash -lc 'umount -l $mountpoint 2>/dev/null || true; rm -rf $mountpoint /exports/mediastack; mkdir -p $mountpoint'"
+# Writes a managed-NFS .env for the fixture. Shared with nas-watchdog-intent.sh.
+nas_storage_configure_env() {
+    local mountpoint="$1" export_path="$2"
     dind_exec "cp .env.example .env"
     env_set TZ Etc/UTC
     env_set PUID 1000
@@ -138,6 +136,14 @@ run_scenario() {
     env_set STORAGE_SENTINEL "$mountpoint/.mediastack-storage-ready"
     env_set STORAGE_EXPECTED_SOURCE ""
     env_set STORAGE_EXPECTED_FSTYPE ""
+}
+
+run_scenario() {
+    local mountpoint="/tmp/ms-nas-data"
+    local export_path="/exports/mediastack"
+
+    dind_exec "bash -lc 'umount -l $mountpoint 2>/dev/null || true; rm -rf $mountpoint /exports/mediastack; mkdir -p $mountpoint'"
+    nas_storage_configure_env "$mountpoint" "$export_path"
 
     if nas_storage_start_nfs_fixture; then
         pass "NAS: disposable NFS fixture starts"

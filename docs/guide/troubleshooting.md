@@ -128,7 +128,7 @@ timeout -k 1 5 test -e '<sentinel>'
 
 Compare the source and filesystem type with the configured NAS share. No mount result means the path is not mounted. The sentinel check prints nothing: exit code 0 means it found the marker, 1 means it did not, and 124 means it timed out. A missing marker alone does not prove that the wrong share is mounted.
 
-Automatic stopping and recovery require the NAS watchdog to be installed, enabled and running. Disabling it also disables the launcher's NAS start guard.
+Automatic stopping and recovery require the NAS watchdog to be installed, enabled and running. Disabling it also disables the launcher's NAS start guard. After an outage the watchdog restarts only the services it stopped, and never one you stopped yourself from **Manage stack**.
 
 **Watchdog messages.**
 
@@ -145,7 +145,7 @@ To move from local storage to NAS, or to change exports, stop the stack first. M
 
 Docker restarts installed services unless you stopped them. Optional services must have been enabled and created first. You do not run `setup.sh` again.
 
-On NAS installs, the running watchdog starts missing NAS-dependent services after its startup storage check, including services stopped before reboot. Docker's restart policy does not wait for NAS verification; the watchdog stops affected services after its failure grace period if storage is unavailable.
+On NAS installs, the running watchdog starts missing NAS-dependent services after its startup storage check, including services stopped before reboot, but not the ones you stopped with **Stop a service** or **Stop all services**. Use **Start a service** or **Start all services** to run those. Docker's restart policy does not wait for NAS verification; the watchdog stops affected services after its failure grace period if storage is unavailable.
 
 1. Wait two minutes after the server starts.
 2. Run `./mediastack`.

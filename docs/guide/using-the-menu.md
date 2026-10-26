@@ -56,7 +56,7 @@ The screen shows the NAS source, the mount state, free space, the watchdog state
 2. Read the mount state.
 3. To test the mount again, pick **Re-check NAS now**.
 
-A running watchdog repairs the mount and restarts paused services by itself. To turn the watchdog on or off, use **Features & settings** > **NAS storage watchdog**.
+A running watchdog repairs the mount and restarts paused services by itself. It does not restart a service you stopped with **Stop a service** or **Stop all services**. To turn the watchdog on or off, use **Features & settings** > **NAS storage watchdog**.
 
 ## Manage stack
 
@@ -70,11 +70,11 @@ Menu item: **Manage stack (status, stop, start, logs)**. The box at the top show
 | Start all services | Starts the whole stack |
 | Tail logs (live) | Shows live logs for all enabled services |
 
-Use these items instead of raw `docker compose` commands. They start the right optional services.
+Use these items instead of raw `docker compose` commands. They start the right optional services. On NAS installs they also tell the NAS watchdog which services you stopped, so it leaves them stopped; **Start a service** and **Start all services** clear that. Stops made with raw `docker` commands are not tracked.
 
 To read logs, pick **Tail logs (live)**. It streams logs for all enabled services. Press `Ctrl+C` to return to the menu. To follow one service, use `docker compose logs -f <service>`. Docker keeps up to 3 files of 10 MB for each service. DDNS Updater is the exception: it keeps 2 files of 1 MB.
 
-After a reboot, installed services restart automatically. Docker normally leaves manually stopped containers stopped; the NAS watchdog can restart missing NAS-dependent services after its startup check. Optional services run only when enabled. See [After a reboot](troubleshooting.md#after-a-reboot).
+After a reboot, installed services restart automatically. Docker normally leaves manually stopped containers stopped; the NAS watchdog restarts missing NAS-dependent services after its startup check, except the ones you stopped from this menu. Optional services run only when enabled. See [After a reboot](troubleshooting.md#after-a-reboot).
 
 ## Manage updates
 

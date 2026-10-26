@@ -56,6 +56,7 @@ See [`gcp-vm/README.md`](gcp-vm/README.md) and
 ./tests/run.sh smoke fresh-install   # both, in order
 ./tests/run.sh remote-gating         # REMOTE_WEB_STATE publication gates
 ./tests/run.sh --no-preload nas-storage  # managed NAS/NFS fixture (~4s)
+./tests/run.sh --no-preload nas-watchdog-intent  # user stop kept across reboot and outage (~1 min)
 ./tests/run.sh --no-preload wizard-ui-stage1-local wizard-ui-stage1-nas-retry  # core PTY wizard UX checks
 ./tests/run.sh smoke remote-gating npm-heal  # focused remote-state gate
 ./tests/run.sh smoke remote-gating npm-heal ddns-seed wireguard wireguard-server wireguard-containers wireguard-streaming stage2-skip stage2-ready  # focused remote-access gate
@@ -321,6 +322,20 @@ are needed:
 Boundary: this is not a vendor NAS proof. Unraid/Synology/TrueNAS export rules,
 root-squash policy, and long-running stale file handle behavior still need a
 real NAS or VM-host proof.
+
+### `nas-watchdog-intent` — user stops across reboot and outage
+
+Reuses the `nas-storage` fixture helpers and runs six alpine stand-ins named
+like the NAS data services, started from the override MediaStack generates for
+a NAS install (`restart: "no"`), plus a `probe` container with the default
+`unless-stopped`. A host reboot is `docker restart` of the DinD container.
+The scenario stops jellyfin the way the launcher does, reboots, and checks
+that Docker restores only the probe, that the watchdog then starts every data
+service but jellyfin, that an outage stops and restores the same set, and that
+Start a service lets the next reboot bring jellyfin back. Where the kernel
+cannot run an NFS server in DinD, it uses a tmpfs mount with the same mount
+identity and sentinel gate (a skip line says so). Unit coverage:
+`bash tests/unit/watchdog-intent.sh`.
 
 ### Reusable live assertions
 
