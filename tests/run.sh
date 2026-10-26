@@ -23,6 +23,9 @@
 #       image tags in the DinD compose copy for candidate-image upgrade preflight
 #       ("svc=ref" pairs, comma/space separated). A typo (unknown service, empty
 #       ref, malformed pair) aborts the run. Host compose is never touched.
+#       A digest ref also earns a receipt row (tests/.image-preflight-passed.tsv)
+#       per scenario that passed and ran that service from the digest; see
+#       tests/lib/receipts.sh.
 #   MS_CACHE_MIRROR_KEEP=1   # keep ms-registry-mirror running after normal exits
 #
 # Each scenario file in tests/scenarios/<name>.sh must define run_scenario().
@@ -100,6 +103,8 @@ source tests/lib/cache.sh
 source tests/lib/dind.sh
 # shellcheck source=lib/stack.sh
 source tests/lib/stack.sh
+# shellcheck source=lib/receipts.sh
+source tests/lib/receipts.sh
 
 # --- Trap cleanup ---
 runner_should_keep_dind_after_exit() {
@@ -152,6 +157,12 @@ else
     cache_preload_into_dind
 fi
 
+# --- Record what each scenario exercises, for preflight receipts ---
+# Rows go to tests/.image-preflight-passed.tsv one scenario at a time, from that
+# scenario's own container events (tests/lib/receipts.sh). A receipt problem never
+# changes the run's exit status; it only withholds rows.
+receipts_recorder_start
+
 # --- Run each scenario ---
 # Source scenarios in the current shell so their pass/fail updates to the
 # shared counters persist. A `return 1` from run_scenario just returns from
@@ -175,48 +186,21 @@ for s in "${SCENARIOS[@]}"; do
     fi
     _ran_one=1
     scenario_begin "$s"
+    receipts_scenario_begin
     unset -f run_scenario 2>/dev/null || true
     # shellcheck disable=SC1090
     source_rc=0
     source "tests/scenarios/${s}.sh" || source_rc=$?
     if ((source_rc != 0)); then
         fail "scenario source failed" "${s} (source returned $source_rc)"
-        scenario_end "$s"
-        continue
-    fi
-    if ! declare -F run_scenario >/dev/null; then
+    elif ! declare -F run_scenario >/dev/null; then
         fail "scenario missing run_scenario" "$s"
-        scenario_end "$s"
-        continue
+    else
+        run_scenario || fail "scenario exited non-zero" "${s} (run_scenario returned $?)"
     fi
-    run_scenario || fail "scenario exited non-zero" "${s} (run_scenario returned $?)"
     scenario_end "$s"
+    # Before the next scenario or --reset-between wipes the evidence's containers.
+    receipts_scenario_end "$s"
 done
-
-# --- Record a preflight pass receipt for the images this run overrode ---
-# When this run applied MS_TEST_IMAGE_OVERRIDES *and* every scenario passed, vouch
-# for the exact image@digest tested under each scenario. scripts/image_drift.py
-# reads this to refuse accepting an untested digest into the lock. Local-only and
-# gitignored; append + dedup so a maintainer's separate per-scenario runs (e.g.
-# fresh-install then autoheal) accumulate. Tag-only overrides carry no digest to
-# vouch for, so they are skipped. Parse the env directly (dind_override_images
-# validated every pair and aborted the run above on a bad one; its own
-# .image-override-applied record lives inside the DinD copy, not on the host).
-if [[ "${FAIL_COUNT:-0}" -eq 0 && -n "$MS_TEST_IMAGE_OVERRIDES" ]]; then
-    for _ovr in $(echo "$MS_TEST_IMAGE_OVERRIDES" | tr ',' ' '); do
-        _rsvc="${_ovr%%=*}"
-        _rref="${_ovr#*=}"
-        [[ -n "$_rsvc" && "$_rref" == *"@sha256:"* ]] || continue
-        _rimg="${_rref%@*}"
-        _rdig="${_rref##*@}"
-        for _rscn in "${SCENARIOS[@]}"; do
-            _rrow="${_rsvc}"$'\t'"${_rimg}"$'\t'"${_rdig}"$'\t'"${_rscn}"
-            if [[ ! -f tests/.image-preflight-passed.tsv ]] \
-                || ! grep -qxF "$_rrow" tests/.image-preflight-passed.tsv; then
-                printf '%s\n' "$_rrow" >>tests/.image-preflight-passed.tsv
-            fi
-        done
-    done
-fi
 
 # summary + exit handled by trap

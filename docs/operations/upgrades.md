@@ -161,9 +161,10 @@ When drift is reported:
    MS_TEST_IMAGE_OVERRIDES="jellyfin=jellyfin/jellyfin:latest@sha256:<digest>" ./tests/run.sh fresh-install
    ```
 
-   A run with no failed assertions records the supplied digest override and scenario in the
-   gitignored `tests/.image-preflight-passed.tsv`. Confirm that the scenario actually exercised the
-   candidate before accepting it; a scenario can also succeed after skipping.
+   Each scenario that passes writes a row to the gitignored `tests/.image-preflight-passed.tsv` for
+   every digest override whose service it started from that digest and left running or healthy. A
+   `[receipts]` line in the run output names each override that got no row, and why; a failed
+   scenario withholds only its own rows.
 
 5. For `compose-only` services, validate compose and review the upstream changelog if the service is
    security-sensitive.
@@ -190,10 +191,10 @@ When drift is reported:
 
    **Accept is receipt-gated.** `--accept-services` / `--accept-current` require a matching receipt
    for the exact `image@digest` and manifest scenario before writing a drifted scenario-backed row.
-   The receipt records an override supplied to a run with no failed assertions; it does not prove
-   that the image was pulled or executed. Tiers with no scenario oracle (`compose-only` / `manual`)
-   warn instead of block; `--no-verify-preflight` bypasses the gate. The tiers
-   are not equal confidence (see [Manifest](#manifest)), so weigh the tier, not just pass/fail.
+   The receipt records that the scenario passed and that the service ran from that digest; it does
+   not prove the scenario checks that service's behaviour. Tiers with no scenario oracle
+   (`compose-only` / `manual`) warn instead of block; `--no-verify-preflight` bypasses the gate. The
+   tiers are not equal confidence (see [Manifest](#manifest)), so weigh the tier, not just pass/fail.
 
 9. Regenerate the README Stable-baseline badge from the accepted lock:
 
