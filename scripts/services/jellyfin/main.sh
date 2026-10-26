@@ -115,8 +115,8 @@ configure_jellyfin() {
     # Verify the wizard actually created a working admin. The startup-wizard
     # admin is IsHidden=true so /Users/Public can't see it — authenticating is
     # the reliable check. Also: auth only works after /Startup/Complete, which
-    # is why this verification runs last. If it fails, the Jellyfin image has
-    # a broken startup wizard and manual intervention is required.
+    # is why this verification runs last. If it fails, setup cannot verify the
+    # admin login and must stop before saving an API key or reporting success.
     sleep 2
     local auth_result
     auth_result=$(curl_header_data_stdin "Authorization" "$auth_header" "$auth_body" \
@@ -126,9 +126,26 @@ configure_jellyfin() {
     jf_token=$(echo "$auth_result" | json_get AccessToken)
 
     if [[ -z "$jf_token" ]]; then
-        log_error "Jellyfin wizard completed but admin credentials do not authenticate."
-        log_error "This means the Jellyfin image's startup wizard is not working as expected."
-        log_error "To recover: stop the stack, delete ./config/jellyfin, and re-run setup."
+        log_error "Jellyfin admin login could not be verified."
+        log_error "First retry from the MediaStack directory:"
+        log_error "  ./scripts/configure.sh --only jellyfin"
+        log_error "Read its Jellyfin result and warnings. If login still fails, check"
+        log_error "Jellyfin logs and the admin credentials in .env."
+        log_error "\"Continue without changes\" in setup does not retry configuration."
+        log_error "Optional: start Jellyfin with empty application state."
+        log_error "This loses active users, settings and library state, including watch history. Old state is kept in ./config/jellyfin.before-reset."
+        log_error "Media files and Debian are unchanged by these commands."
+        log_error "This does not fix an upstream startup-wizard defect."
+        log_error "Other services may need their Jellyfin credentials reconnected."
+        log_error "Only proceed if you accept that loss. Run from the MediaStack directory:"
+        log_error "  test ! -e ./config/jellyfin.before-reset &&"
+        log_error "  test ! -L ./config/jellyfin.before-reset &&"
+        log_error "  docker compose stop jellyfin &&"
+        log_error "  sudo mv -- ./config/jellyfin ./config/jellyfin.before-reset &&"
+        log_error "  docker compose up -d --no-deps --force-recreate jellyfin &&"
+        log_error "  ./scripts/configure.sh --only jellyfin"
+        log_error "If any command fails, stop and read its error."
+        log_error "Do not delete the backup. Do not repeat a reset if setup fails again."
         return 1
     fi
     log_ok "Admin user created: $jf_user"

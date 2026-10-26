@@ -2,7 +2,7 @@
 # tests/unit/gpu-env-fallback-messages.sh
 #
 # GPU contracts: .env writer parity (E1), recorded transcoding outcomes (E2),
-# and user-facing messages that name ./mediastack, not scripts (E3).
+# and user-facing messages that prefer ./mediastack, with one exact Jellyfin recovery exception (E3).
 
 set -uo pipefail
 
@@ -187,14 +187,18 @@ verify_failed_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
 assert_contains "$verify_failed_out" "token=software-fallback:verify_failed" "transcoding: verify_failed keeps its software-fallback token"
 assert_contains "$verify_failed_out" "the GPU is not active" "transcoding: verify_failed still warns that the GPU is inactive"
 
-# --- E3: user-facing text never sends the user to a script -----------------
+# --- E3: user-facing text uses the menu, except Jellyfin recovery ----------
 # Given every log/ui/echo/printf string in the shell sources
 # When it is scanned for advice naming setup.sh, configure.sh or update.sh
 hits=$(cd "$REPO_ROOT" && grep -rnE '(log_[a-z]+|ui_[a-z]+|echo|printf)\b.*(setup|configure|update)\.sh' scripts setup.sh mediastack --include='*.sh' --include=mediastack \
     | grep -vE '^[^:]+:[0-9]+:\s*#' \
     | grep -vE 'dry-run\.sh:.*_dry_run_would' || true)
-# Then nothing is found
-assert_eq "" "$hits" "messages: no user-facing string advises setup.sh, configure.sh or update.sh"
+allowed_recovery='^scripts/services/jellyfin/main\.sh:[0-9]+:[[:space:]]*log_error "  \./scripts/configure\.sh --only jellyfin"$'
+recovery_hits=$(grep -E "$allowed_recovery" <<<"$hits" || true)
+other_hits=$(grep -vE "$allowed_recovery" <<<"$hits" || true)
+# Then exactly the approved standalone Jellyfin recovery commands are found.
+assert_eq "2" "$(grep -c . <<<"$recovery_hits")" "messages: both approved Jellyfin recovery commands are present"
+assert_eq "" "$other_hits" "messages: only exact Jellyfin recovery commands advise a script"
 
 # Given the Secure Boot remedy
 remedy=$(gpu_fallback_secure_boot_lines)
