@@ -29,8 +29,8 @@ hits=$(
     cd "$REPO_ROOT" \
         && grep -rnE 'down +(-v|--volumes)' mediastack setup.sh scripts --include='*.sh' --include='*.py' --include=mediastack \
         | grep -v '^scripts/setup/checks/destroy\.sh:' \
-        | grep -v '^scripts/image_drift\.py:.*re-baselines' \
-        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|docker )'
+            | grep -v '^scripts/image_drift\.py:.*re-baselines' \
+            | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|docker )'
 )
 # Then no message recommends it.
 assert_eq "" "$hits" "no runtime message recommends compose down -v"

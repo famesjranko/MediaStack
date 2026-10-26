@@ -390,7 +390,10 @@ main --uninstall
 
     # Given the reset is done, a new install sets the services up from empty state.
     # When the fixture install runs again.
-    drift_build_install || { fail "reset: a new install starts"; return 1; }
+    drift_build_install || {
+        fail "reset: a new install starts"
+        return 1
+    }
     # Then the stack is healthy, config.yml is applied, and the old API key is gone.
     out=$(drift_configure sonarr,radarr,jellyfin)
     assert_contains "$out" "Auto-configuration complete" "reset: configure succeeds on the new install"
@@ -400,7 +403,10 @@ main --uninstall
 }
 
 run_scenario() {
-    drift_build_install || { fail "fixture: a finished install starts"; return 1; }
+    drift_build_install || {
+        fail "fixture: a finished install starts"
+        return 1
+    }
     pass "fixture: a finished install starts"
     drift_root_folder_cases
     drift_category_cases
