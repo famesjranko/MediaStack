@@ -367,6 +367,7 @@ rc=$?
 assert_eq "1" "$rc" "rejected save: non-zero exit"
 assert_eq "0" "$(count_calls 'forceSave')" "rejected save: never force-saved"
 assert_eq "0" "$(count_log '^OK:.*replaced')" "rejected save: no success line"
+assert_contains "$(grep "^ERROR" "$LOG")" "JELLYFIN_API_KEY in .env may itself be stale" "rejected save: error hints at a stale .env key"
 
 # Given only a good managed record and a stale user-managed record
 reset

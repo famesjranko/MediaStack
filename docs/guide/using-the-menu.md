@@ -177,7 +177,7 @@ Sonarr and Radarr tell Jellyfin to scan new media. If Jellyfin gets a new API ke
 
 1. Pick **Repair Jellyfin connections (Sonarr, Radarr)**.
 2. Read the list of connections MediaStack will change. Each shows its name, which is `Jellyfin` for the ones MediaStack created.
-3. Confirm. MediaStack replaces only the key, keeps every other setting, then tests the connection and reports the result.
+3. Confirm for each app that has a stale connection. MediaStack replaces only the key, keeps every other setting, then tests the connection and reports the result.
 
 A connection you created yourself, with another name or address, is listed but never changed.
 

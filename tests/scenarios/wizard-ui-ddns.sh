@@ -125,7 +125,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "10\n"}
+  {"send": "11\n"}
 ]' || return 1
     cfg="$(dind_exec "cat /root/MediaStack/config/ddns-updater/config.json")"
     assert_contains "$cfg" "porkbun" "wizard-ui ddns [success]: config.json switched to porkbun"
@@ -160,7 +160,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "10\n"}
+  {"send": "11\n"}
 ]' || return 1
     cfg="$(dind_exec "cat /root/MediaStack/config/ddns-updater/config.json")"
     assert_contains "$cfg" "cloudflare" "wizard-ui ddns [reject]: live config still cloudflare"
@@ -194,7 +194,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "10\n"}
+  {"send": "11\n"}
 ]' || return 1
     # Prove the forward write LANDED (config held porkbun when the up-check ran),
     # so the cloudflare end-state is a real rollback, not a write that never happened.
@@ -229,7 +229,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "10\n"}
+  {"send": "11\n"}
 ]' || return 1
     cfg="$(dind_exec "cat /root/MediaStack/config/ddns-updater/config.json")"
     assert_contains "$cfg" "dynu" "wizard-ui ddns [route]: live config still dynu (not touched)"

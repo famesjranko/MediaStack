@@ -185,7 +185,7 @@ json.dump(r, sys.stdout)' <<<"$record" 2>/dev/null); then
         sleep $((attempt * 3))
     done
     if ((!saved)); then
-        log_error "$who: ${app^} rejected the new Jellyfin API key - nothing changed"
+        log_error "$who: ${app^} rejected the new Jellyfin API key - nothing changed. If Jellyfin was reset, JELLYFIN_API_KEY in .env may itself be stale; re-run Jellyfin configuration (./scripts/configure.sh --only jellyfin) to refresh it"
         return 1
     fi
 

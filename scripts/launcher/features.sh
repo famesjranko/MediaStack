@@ -64,13 +64,13 @@ submenu_features() {
         fi
         options+=("Change quality profile: ${_qp_name:-unknown}")
         options+=("Adjust bandwidth: DL ${_dl} / UL ${_ul}")
-        options+=("Repair Jellyfin connections (Sonarr, Radarr)")
         # Only when remote access is fully set up (ready) AND via DDNS: a static-IP
         # remote has no provider to change, and when remote is unset the "Add remote
         # access" row above is the entry point instead.
         if ! recovery_menu_remote_available && _ddns_configured; then
             options+=("Update DDNS provider / credentials: ${DDNS_PROVIDER:-}")
         fi
+        options+=("Repair Jellyfin connections (Sonarr, Radarr)")
         options+=("Back")
 
         echo ""
