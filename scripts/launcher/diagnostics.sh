@@ -266,9 +266,7 @@ submenu_diagnostics() {
 }
 
 _health_prime_sudo() {
-    sudo -n true 2>/dev/null && return 0
-    ui_log info "Firewall and certificate checks need sudo access."
-    sudo -v 2>/dev/null || ui_log warn "No sudo — those checks will be skipped."
+    ui_sudo_prime "Firewall and certificate checks need sudo access." "those checks will be skipped."
 }
 
 _health_present_spin() {
