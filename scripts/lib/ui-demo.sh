@@ -130,7 +130,7 @@ demo_run() {
     # --- Key-value summary ---
     ui_divider "Service Summary"
     echo ""
-    ui_kv "Dashboard" "http://192.168.1.50:5005"
+    ui_kv "Dashboard" "http://192.168.1.50:3000"
     ui_kv "Jellyfin" "http://192.168.1.50:8096"
     ui_kv "Sonarr" "http://192.168.1.50:8989"
     ui_kv "Radarr" "http://192.168.1.50:7878"
@@ -261,6 +261,6 @@ demo_run() {
     echo ""
     ui_banner "Setup Complete!" "MediaStack is running"
     ui_log ok "9/9 services configured successfully"
-    ui_log info "Access your dashboard at http://192.168.1.50:5005"
+    ui_log info "Access your dashboard at http://192.168.1.50:3000"
     echo ""
 }
