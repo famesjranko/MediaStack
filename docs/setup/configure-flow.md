@@ -289,6 +289,8 @@ Create admin via `POST /api/users/admin/init` with `{"Username": "<JELLYFIN_ADMI
 
 Widget `url` values use internal container names (`http://sonarr:8989`) — resolved via Docker DNS on the `mediastack` network. Widgets are conditional: omitted if the required key/credential is empty (graceful degradation on partial configuration).
 
+Before rendering the Jellyfin widget, Homepage reads its unauthenticated local `GET /System/Info/Public` version. Versions below 10.12.0 use widget API mode 1; 10.12.0 and newer use mode 2. A failed, oversized, malformed, or prerelease response preserves an existing `services.yaml`; a fresh install leaves it absent and continues other safe Homepage maintenance.
+
 All services get `description` (short role label) and `siteMonitor` (internal URL for health-status dots). Jackett is link-only (no Homepage widget type exists for it).
 
 **Remote-ready URLs:** User-facing services (Jellyfin, Seerr) get subdomain `href` URLs (`https://jellyfin.$DOMAIN`) only when `REMOTE_WEB_STATE=ready` and `DOMAIN` is real. Unchecked or skipped remote state uses LAN URLs. Admin tools always use `http://HOST_ADDRESS:port`.

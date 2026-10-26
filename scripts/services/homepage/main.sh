@@ -5,6 +5,29 @@
 # Pre-seeded settings.yaml, docker.yaml, widgets.yaml, bookmarks.yaml are
 # tracked in git. Only services.yaml is generated (contains API keys).
 
+HOMEPAGE_JELLYFIN_WIDGET_PARSER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/render/jellyfin_widget.py"
+
+_homepage_jellyfin_widget_version() {
+    local result_file url curl_rc parser_rc
+    local -a statuses
+    result_file=$(mktemp) || return 1
+    url="$(service_local_url jellyfin)/System/Info/Public"
+
+    curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+        --write-out '\n%{http_code}' "$url" \
+        | python3 "$HOMEPAGE_JELLYFIN_WIDGET_PARSER" >"$result_file"
+    statuses=("${PIPESTATUS[@]}")
+    curl_rc="${statuses[0]}"
+    parser_rc="${statuses[1]}"
+    if [[ "$curl_rc" == 0 && "$parser_rc" == 0 ]]; then
+        cat "$result_file"
+        rm -f "$result_file"
+        return 0
+    fi
+    rm -f "$result_file"
+    return 1
+}
+
 # Replace FILE with CONTENT atomically (temp + mv in the same directory).
 # The homepage container runs as root and rewrites services.yaml in place, so
 # the file is often root-owned and not writable by the setup user. A rename
@@ -68,6 +91,8 @@ configure_homepage() {
     fi
     local domain="${DOMAIN:-}"
     local remote_state="${REMOTE_WEB_STATE:-}"
+    local jellyfin_widget_version=""
+    local jellyfin_discovery_failed=false
 
     local has_bazarr="" has_wireguard="" has_ddns="" has_beszel="" has_npm=""
     if service_container_running bazarr; then
@@ -86,27 +111,36 @@ configure_homepage() {
         has_npm=1
     fi
 
-    local new_services
-    new_services=$(HOST_ADDR="$host_addr" \
-        DOMAIN="${domain}" \
-        REMOTE_WEB_STATE="${remote_state}" \
-        SONARR_KEY="${SONARR_API_KEY:-}" \
-        RADARR_KEY="${RADARR_API_KEY:-}" \
-        JELLYFIN_KEY="${JELLYFIN_API_KEY:-}" \
-        SEERR_KEY="${SEERR_API_KEY:-}" \
-        NPM_EMAIL="${NPM_ADMIN_EMAIL:-}" \
-        NPM_PW="${JELLYFIN_ADMIN_PASSWORD:-}" \
-        PORTAINER_KEY="${PORTAINER_API_KEY:-}" \
-        HAS_BAZARR="$has_bazarr" \
-        HAS_NPM="$has_npm" \
-        HAS_WIREGUARD="$has_wireguard" \
-        HAS_DDNS="$has_ddns" \
-        HAS_BESZEL="$has_beszel" \
-        BESZEL_EMAIL="${NPM_ADMIN_EMAIL:-}" \
-        BESZEL_PW="${JELLYFIN_ADMIN_PASSWORD:-}" \
-        SERVICE_PORTS_JSON="$(service_http_ports_json)" \
-        SERVICE_URLS_JSON="$(service_internal_urls_json)" \
-        python3 -c '
+    if [[ -n "${JELLYFIN_API_KEY:-}" ]]; then
+        if ! jellyfin_widget_version=$(_homepage_jellyfin_widget_version); then
+            log_warn "Homepage Jellyfin version discovery failed; services.yaml preserved"
+            jellyfin_discovery_failed=true
+        fi
+    fi
+
+    local new_services=""
+    if [[ -z "${JELLYFIN_API_KEY:-}" || -n "$jellyfin_widget_version" ]]; then
+        new_services=$(HOST_ADDR="$host_addr" \
+            DOMAIN="${domain}" \
+            REMOTE_WEB_STATE="${remote_state}" \
+            SONARR_KEY="${SONARR_API_KEY:-}" \
+            RADARR_KEY="${RADARR_API_KEY:-}" \
+            JELLYFIN_KEY="${JELLYFIN_API_KEY:-}" \
+            JELLYFIN_WIDGET_VERSION="$jellyfin_widget_version" \
+            SEERR_KEY="${SEERR_API_KEY:-}" \
+            NPM_EMAIL="${NPM_ADMIN_EMAIL:-}" \
+            NPM_PW="${JELLYFIN_ADMIN_PASSWORD:-}" \
+            PORTAINER_KEY="${PORTAINER_API_KEY:-}" \
+            HAS_BAZARR="$has_bazarr" \
+            HAS_NPM="$has_npm" \
+            HAS_WIREGUARD="$has_wireguard" \
+            HAS_DDNS="$has_ddns" \
+            HAS_BESZEL="$has_beszel" \
+            BESZEL_EMAIL="${NPM_ADMIN_EMAIL:-}" \
+            BESZEL_PW="${JELLYFIN_ADMIN_PASSWORD:-}" \
+            SERVICE_PORTS_JSON="$(service_http_ports_json)" \
+            SERVICE_URLS_JSON="$(service_internal_urls_json)" \
+            python3 -c '
 import json, os, yaml
 
 host = os.environ["HOST_ADDR"]
@@ -115,6 +149,7 @@ remote_state = os.environ["REMOTE_WEB_STATE"]
 sonarr_key = os.environ["SONARR_KEY"]
 radarr_key = os.environ["RADARR_KEY"]
 jf_key = os.environ["JELLYFIN_KEY"]
+jf_widget_version = os.environ["JELLYFIN_WIDGET_VERSION"]
 seerr_key = os.environ["SEERR_KEY"]
 npm_email = os.environ["NPM_EMAIL"]
 npm_pw = os.environ["NPM_PW"]
@@ -151,7 +186,7 @@ media = {"Media": [
         "description": "Media Server",
         "href": href("jellyfin", "jellyfin"),
         "siteMonitor": svc_url("jellyfin"),
-        "widget": {"type": "jellyfin", "url": svc_url("jellyfin"), "key": jf_key},
+        **({"widget": {"type": "jellyfin", "url": svc_url("jellyfin"), "key": jf_key, "version": int(jf_widget_version)}} if jf_widget_version else {}),
     }},
     {"Seerr": {
         "icon": "seerr",
@@ -276,20 +311,22 @@ services.append({"Admin": admin})
 
 print(yaml.safe_dump(services, default_flow_style=False, sort_keys=False))
 ')
-
-    if [[ -z "$new_services" ]]; then
-        log_warn "Failed to generate Homepage services.yaml"
-        return 0
     fi
 
-    local existing=""
-    [[ -f "$services_file" ]] && existing=$(cat "$services_file" 2>/dev/null)
-    if [[ -f "$services_file" && "$existing" == "$new_services" ]]; then
-        log_skip "Homepage services.yaml already up to date"
-    elif _homepage_write_file "$services_file" "$new_services"; then
-        log_ok "Homepage services.yaml generated"
+    if [[ -z "$new_services" ]]; then
+        if ! $jellyfin_discovery_failed; then
+            log_warn "Failed to generate Homepage services.yaml"
+        fi
     else
-        log_warn "Homepage services.yaml not written: cannot replace $services_file (fix: sudo chown -R $(id -u):$(id -g) $(dirname "$services_file"))"
+        local existing=""
+        [[ -f "$services_file" ]] && existing=$(cat "$services_file" 2>/dev/null)
+        if [[ -f "$services_file" && "$existing" == "$new_services" ]]; then
+            log_skip "Homepage services.yaml already up to date"
+        elif _homepage_write_file "$services_file" "$new_services"; then
+            log_ok "Homepage services.yaml generated"
+        else
+            log_warn "Homepage services.yaml not written: cannot replace $services_file (fix: sudo chown -R $(id -u):$(id -g) $(dirname "$services_file"))"
+        fi
     fi
 
     # Homepage writes default bookmarks (GitHub, Reddit, YouTube) on first

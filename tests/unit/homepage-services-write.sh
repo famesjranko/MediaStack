@@ -32,6 +32,7 @@ service_container_running() { return 1; }
 sudo() { return 1; }
 SCRIPT_DIR="$TMP_DIR"
 HOST_ADDRESS="10.0.0.5"
+JELLYFIN_API_KEY=""
 
 fresh_config() {
     rm -rf "$TMP_DIR/config"

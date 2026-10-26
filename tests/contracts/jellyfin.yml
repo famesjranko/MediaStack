@@ -10,6 +10,7 @@ auth: {type: header, name: Authorization, format: 'MediaBrowser Client="Contract
 # by replay.py spec mode 2026-08-04. Restore an openapi: URL if upstream
 # documents them.
 endpoints:
+  - {id: public-system-info, method: GET, path: /System/Info/Public, sends: [], reads: [Version], callers: [scripts/services/homepage/main.sh]}
   - {id: startup-configuration-get, method: GET, path: /Startup/Configuration, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: startup-configuration-update, method: POST, path: /Startup/Configuration, sends: [UICulture, MetadataCountry, PreferredMetadataLanguage], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: startup-user-get, method: GET, path: /Startup/User, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
