@@ -225,7 +225,7 @@ Dedup by case-insensitive exact name match. Each addition is `POST /api/v3/index
 3. `POST /Startup/User` — name + password.
 4. `POST /Startup/RemoteAccess` — enables remote, disables UPnP.
 5. `POST /Startup/Complete` — marks wizard done.
-6. Verify by authenticating. If auth fails the wizard is declared broken; `return 1` with a recovery message telling the user to delete `config/jellyfin`. That recovery path deletes the whole Jellyfin config directory, including the media database — a user with existing watch-state loses it, so it should only be used when Jellyfin genuinely cannot be recovered another way.
+6. Verify by authenticating. If auth fails, return 1 before saving an API key or reporting success. The recovery message first recommends `./scripts/configure.sh --only jellyfin` and checking logs and credentials. It also describes an optional reset that moves the old settings to `config/jellyfin.before-reset`, recreates Jellyfin, and retries configuration. This loses active application state and can require dependent services to be reconnected; it does not fix an upstream startup-wizard defect.
 
 ### Path B: wizard already completed
 

@@ -388,9 +388,7 @@ warn and skip affected services. User steps:
 
 ### Jellyfin wizard broken state
 
-`configure_jellyfin()` in `scripts/services/jellyfin/main.sh` flags this when the wizard reports
-complete but admin auth fails, and prints `To recover: stop the stack, delete ./config/jellyfin, and
-re-run setup.` That discards Jellyfin's database. User steps:
+`configure_jellyfin()` in `scripts/services/jellyfin/main.sh` reports when the first-run admin login cannot be verified. It recommends a targeted configuration retry and checking logs and credentials first. The optional reset preserves the old settings directory in `config/jellyfin.before-reset` and warns that active users, settings and watch history will be lost. User steps:
 [Jellyfin wizard broken state](../guide/troubleshooting.md#jellyfin-wizard-broken-state).
 
 ### NPM locked out

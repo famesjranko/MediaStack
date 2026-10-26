@@ -157,29 +157,33 @@ If a service does not run, choose **Start a service**. With the NAS watchdog ena
 
 ### Jellyfin wizard broken state
 
-**Symptom:** Setup reports that the Jellyfin wizard is complete, but the admin login fails. The setup output says `To recover: stop the stack, delete ./config/jellyfin, and re-run setup.`
+**Symptom:** Setup reports `Jellyfin admin login could not be verified.`
+
+First retry from the MediaStack folder:
+
+```bash
+./scripts/configure.sh --only jellyfin
+```
+
+Read the Jellyfin result and warnings. If login still fails, check the Jellyfin logs and the admin credentials in `.env`. Choosing **Continue without changes** in setup does not retry configuration.
+
+If you choose to reset Jellyfin, the commands below keep the old settings in `config/jellyfin.before-reset` and start with empty application state.
 
 > [!WARNING]
-> This deletes the Jellyfin database. You lose user accounts, watch history, and metadata. Do this only on a new install.
+> The reset removes active users, settings, library state and watch history from the running service. Media files stay in place. It does not fix an upstream startup-wizard defect. Keep the backup and do not repeat the reset if setup fails again.
 
-1. Run `./mediastack`.
-2. Choose **Manage stack (status, stop, start, logs)** > **Stop all services**.
-3. Delete the Jellyfin settings folder:
+Run from the MediaStack folder. If any command fails, stop and read its error.
 
-   ```bash
-   rm -rf ./config/jellyfin
-   ```
+```bash
+test ! -e ./config/jellyfin.before-reset &&
+test ! -L ./config/jellyfin.before-reset &&
+docker compose stop jellyfin &&
+sudo mv -- ./config/jellyfin ./config/jellyfin.before-reset &&
+docker compose up -d --no-deps --force-recreate jellyfin &&
+./scripts/configure.sh --only jellyfin
+```
 
-4. Run `./mediastack` again. Choose **Manage stack (status, stop, start, logs)** > **Start all services**. Wait until Jellyfin answers.
-5. Run configuration again. This rebuilds Jellyfin and retries the services that depend on its new API key.
-
-   ```bash
-   ./scripts/configure.sh
-   ```
-
-An existing Jellyfin connection in Sonarr or Radarr is preserved on a re-run. If it contains an old key, repair that connection in the service's settings.
-
-On an older install, restore a backup of `./config/jellyfin` instead. Ask for help before you delete it.
+After Jellyfin configuration succeeds, run `./scripts/configure.sh` to retry dependent services. Existing Jellyfin connections in Sonarr or Radarr are preserved on a re-run; repair any connection that still contains the old API key in the service's settings. Other services may also need their Jellyfin credentials reconnected.
 
 ### Nginx Proxy Manager (NPM) lockout
 
