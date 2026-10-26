@@ -303,8 +303,20 @@ if grep -q "or rebuild" <<<"$fail_out"; then
 else
     pass "honest-failure: the hint does not recommend a rebuild"
 fi
-assert_contains "$fail_out" "run Change quality profile again" \
-    "honest-failure: the hint says to run the action again"
+assert_contains "$fail_out" "In the Radarr UI (Settings -> Profiles) rename '1080p Balanced' to '720p Large'" \
+    "honest-failure: the hint names the app, old and new profile, and the UI location"
+assert_contains "$fail_out" "updates that profile in place on its next configure run" \
+    "honest-failure: the hint says the next configure run applies the rename"
+if grep -qE "again|set quality_profile.name" <<<"$fail_out"; then
+    fail "honest-failure: the hint does not promise a re-run or suggest a config.yml edit"
+else
+    pass "honest-failure: the hint does not promise a re-run or suggest a config.yml edit"
+fi
+if grep -q "no search was started" <<<"$fail_out"; then
+    fail "honest-failure: no completion line on the rename-failure branch"
+else
+    pass "honest-failure: no completion line on the rename-failure branch"
+fi
 if grep -q "completed successfully" <<<"$fail_out"; then
     fail "honest-failure: a failed rename is NOT reported as success"
 else

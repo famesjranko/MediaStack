@@ -147,7 +147,9 @@ Flow:
    orphaned profile is left behind**.
 
 If you renamed the quality profile yourself in the Sonarr/Radarr UI (so the live name no longer matches
-`config.yml`), the re-push refuses to create a duplicate and warns instead — rename it back, or set `quality_profile.name` in `config.yml` to the new name, then run the action again.
+`config.yml`), the re-push refuses to create a duplicate and warns instead — rename it to the new profile name in the app's UI (Settings -> Profiles). MediaStack then updates that
+profile in place on its next configure run, or run `./scripts/configure.sh --only sonarr,radarr`. The
+action has already written the new name to `config.yml`, so choosing the same profile again reports "No change".
 
 ## `./mediastack` → Features & settings → Update DDNS provider / credentials
 

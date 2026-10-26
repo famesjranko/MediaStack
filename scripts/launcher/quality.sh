@@ -122,7 +122,14 @@ print(w.compose_cell(m, os.environ["QSEL_RES"], os.environ["QSEL_SIZE"])["profil
     elif [[ -n "$rename_failed" ]]; then
         echo ""
         ui_log warn "Quality change did NOT apply to: ${rename_failed} (see the messages above)."
-        ui_log warn "Your library still uses '${cur_name}'. Fix the warning, then run Change quality profile again. To keep the new name instead, set quality_profile.name in config.yml to it first."
+        # config.yml already holds the new name here, so re-running this action
+        # reports "No change". The recovery is a UI rename that the next
+        # configure run then matches and updates in place.
+        local _app _apps=""
+        for _app in $rename_failed; do
+            _apps+="${_apps:+ and }${_app^}"
+        done
+        ui_log warn "Your library still uses '${cur_name}'. In the ${_apps} UI (Settings -> Profiles) rename '${cur_name}' to '${new_name}'; MediaStack then updates that profile in place on its next configure run."
     elif [[ -z "$qp_status_file" ]]; then
         # mktemp failed, so we couldn't capture the re-push's per-app outcome.
         # Under-claim rather than over-claim (cf. _run_setup_return): the re-push
