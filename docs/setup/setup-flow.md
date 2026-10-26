@@ -23,7 +23,7 @@ Entry point for the entire project. Common modes:
 | `scripts/setup/env-gen.sh` | `detect_env`, `write_env` | Auto-detect host values + write .env |
 | `scripts/setup/storage.sh` | `storage_preflight_nas`, `storage_guard_before_start`, `storage_install_watchdog` | Storage mode state, NFS guard, NAS watchdog installation |
 | `scripts/setup/wizard.sh` | `run_wizard` | Core LAN, hardware transcoding add-on, remote access flow (`DEMO=1` non-interactive mode) |
-| `scripts/setup/recovery.sh` | `require_stage1_complete`, `run_remote_recovery`, `run_remote_ready_recovery`, `run_wireguard_recovery`, `run_transcoding_recovery`, `show_existing_install_menu` | Recovery Hooks routing for `--remote`, `--transcoding`, and existing-install add-stage menu |
+| `scripts/setup/recovery.sh` | `require_stage1_complete`, `run_remote_recovery`, `run_remote_ready_recovery`, `run_wireguard_recovery`, `run_transcoding_recovery`, `show_existing_install_menu` | Recovery Hooks routing for `--remote`, `--wireguard`, `--transcoding`, and existing-install add-stage menu |
 | `scripts/setup/stages/stage1.sh` + `scripts/setup/stage1/*` | `run_stage1` and Stage 1 steps | Core LAN flow ordering, account/storage/qBittorrent collection, and install |
 | `scripts/setup/stages/stage2.sh` + `scripts/setup/stage2/*` | `run_stage2` and Stage 2 steps | Remote access flow ordering, collection/install, and `./setup.sh --remote` retry path |
 | `scripts/setup/stages/stage3.sh` + `scripts/setup/stage3/*` | `run_stage3`, `run_hardware_transcoding_addon`, and Stage 3 steps | Internal hardware transcoding engine, NVIDIA marker/reboot handoff, post-reboot finalize |

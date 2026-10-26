@@ -140,7 +140,10 @@ ui_choose() {
     echo "${WG_TIER_LABEL:-$2}"
 }
 net_detect_lan_cidr() { echo "192.168.1.0/24"; }
-pull_images() { wg_effect pull_images; }
+pull_images() {
+    wg_effect pull_images
+    [[ -z "${WG_PULL_FAIL:-}" ]]
+}
 start_stack() { wg_effect start_stack; }
 setup_ufw_wireguard_clients() { wg_effect setup_ufw_wireguard_clients; }
 setup_ufw_service_ports() { wg_effect setup_ufw_service_ports; }
@@ -248,6 +251,35 @@ else
     assert_contains "$(cat "$TMP_ROOT/wg-out")" "Add remote access" "WireGuard add: not-ready refusal names Add remote access"
     assert_eq "$wg_before" "$(wg_fingerprint)" "WireGuard add: not-ready refusal leaves .env unchanged"
     assert_eq "" "$(cat "$WG_PROMPTS")$(wg_effects_text)" "WireGuard add: not-ready refusal asks nothing"
+
+    # Given the real opt-in prompt and an input of end of file or a bare Enter
+    # When the add-WireGuard action runs
+    # Then the prompt defaults to no, .env and config.yml stay byte-identical and nothing starts
+    eval "${WG_SAVED_DEFS[0]}"
+    for wg_input in eof enter; do
+        reset_route_state
+        wg_seed "wg-optin-$wg_input" ready ""
+        wg_before=$(wg_fingerprint)
+        wg_run < <([[ "$wg_input" == "enter" ]] && printf '\n' || true)
+        assert_eq "0" "$WG_RC" "WireGuard add: $wg_input at the opt-in prompt exits 0"
+        assert_eq "$wg_before" "$(wg_fingerprint)" "WireGuard add: $wg_input at the opt-in prompt leaves .env and config.yml byte-identical"
+        assert_eq "" "$(wg_effects_text)" "WireGuard add: $wg_input at the opt-in prompt runs no stack or firewall step"
+        assert_eq "unchanged" "$(cat "$WG_RESULT")" "WireGuard add: $wg_input at the opt-in prompt reports unchanged"
+    done
+    ui_confirm() { wg_hit confirm; }
+
+    # Given the user accepts but the image pull fails
+    # When the add-WireGuard action runs
+    # Then it reports failed with a non-zero status and says the settings are saved but not started
+    reset_route_state
+    wg_seed "wg-pull-fails" ready ""
+    WG_PULL_FAIL=1
+    wg_run
+    unset WG_PULL_FAIL
+    assert_eq "1" "$WG_RC" "WireGuard add: a failed image pull returns non-zero"
+    assert_eq "failed" "$(cat "$WG_RESULT")" "WireGuard add: a failed image pull reports the failed outcome"
+    assert_contains "$(cat "$TMP_ROOT/wg-out")" "saved but the stack did not finish starting" "WireGuard add: a failed image pull warns that settings are saved but not started"
+    assert_eq "setup_ufw_wireguard_clients setup_ufw_service_ports pull_images " "$(wg_effects_text)" "WireGuard add: a failed image pull stops before the stack starts"
 fi
 
 for _wg_fn in "${WG_STUBBED_FNS[@]}"; do unset -f "$_wg_fn"; done

@@ -211,9 +211,11 @@ _remote_ready_prepare() {
 # run_wireguard_recovery, so the new service starts through the same path.
 _remote_ready_heal() {
     repair_ddns_updater_config_permissions || return 1
-    pull_images
-    start_stack
-    wait_all_healthy
+    # The caller runs this under `|| rc=$?`, which disables errexit, so each
+    # step reports its own failure.
+    pull_images || return 1
+    start_stack || return 1
+    wait_all_healthy || return 1
     # Remote access just came up → install the fail2ban log-rotation reload
     # watcher. Sudo is primed above (prompt_sudo_cache).
     if service_container_running fail2ban; then
@@ -240,7 +242,7 @@ run_wireguard_recovery() {
         return 1
     fi
     if [[ -n "${WG_INIT_PASSWORD:-}" ]]; then
-        log_info "WireGuard is already set up. No changes made. To re-check it, run ./setup.sh --remote."
+        log_info "WireGuard is already set up. No changes made."
         record_launcher_outcome unchanged
         return 0
     fi

@@ -92,7 +92,7 @@ wireguard_add_assert_ready() {
 
 wireguard_add_ufw_text() { dind_exec "ufw status numbered" | tr -s ' '; }
 
-run_scenario() {
+wireguard_add_scenario_body() {
     dind_exec "docker compose down -v --remove-orphans 2>/dev/null || true"
     dind_exec "ids=\$(docker ps -aq); [ -z \"\$ids\" ] || docker rm -f \$ids >/dev/null 2>&1 || true"
     dind_exec "docker rm -f pebble pebble-challtestsrv 2>/dev/null || true"
@@ -178,4 +178,17 @@ run_scenario() {
     assert_eq "$env_before" "$env_after" "wireguard add [rerun]: WG_INIT_PASSWORD and other credentials unchanged"
     assert_eq "$peers" "$(wireguard_add_peers)" "wireguard add [rerun]: --remote heal keeps existing peers"
     wireguard_add_assert_ready rerun-remote
+}
+
+# UFW lives in the shared DinD; later scenarios in a --reset-between battery must
+# start without it active. The wrapper resets it on pass and fail paths alike.
+wireguard_add_disable_ufw() {
+    dind_exec "command -v ufw >/dev/null && ufw --force reset >/dev/null || true"
+}
+
+run_scenario() {
+    local rc=0
+    wireguard_add_scenario_body || rc=$?
+    wireguard_add_disable_ufw
+    return "$rc"
 }
