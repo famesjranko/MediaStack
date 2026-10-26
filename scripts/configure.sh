@@ -341,8 +341,7 @@ main() {
         echo -e "  ${YELLOW}$(_ui_status_token warn)${NC}  $_wlabel"
     done
     echo ""
-    echo "  To retry these or change settings later, re-run MediaStack setup"
-    echo "  (already-configured services are skipped)."
+    echo "  To retry these, run ./scripts/configure.sh --only <service>."
     echo ""
     echo -e "${CYAN}$(_g_repeat 59 "$_G_DH")${NC}"
 
