@@ -164,7 +164,9 @@ When drift is reported:
    Each scenario that passes writes a row to the gitignored `tests/.image-preflight-passed.tsv` for
    every digest override whose service it started from that digest and left running or healthy. A
    `[receipts]` line in the run output names each override that got no row, and why; a failed
-   scenario withholds only its own rows.
+   scenario withholds only its own rows. Rows written by releases up to v0.2.0 carry no
+   per-scenario evidence, so delete `tests/.image-preflight-passed.tsv` once after updating past
+   v0.2.0 and re-run the preflight before accepting a digest.
 
 5. For `compose-only` services, validate compose and review the upstream changelog if the service is
    security-sensitive.

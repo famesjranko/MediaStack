@@ -31,8 +31,8 @@ _rcpt_say() { echo -e "${BLUE:-}[receipts]${NC:-} $*" >&2; }
 _rcpt_dind() { timeout "$RECEIPTS_TIMEOUT" docker exec "$DIND_NAME" "$@"; }
 
 # Parse MS_TEST_IMAGE_OVERRIDES into the RECEIPTS_* maps. Tag-only refs carry no digest
-# to vouch for and are skipped. A malformed or duplicate token voids the whole list
-# (return 1): a value split on a tab or newline cannot be trusted to be one override.
+# to vouch for and are skipped. Commas, tabs and newlines separate tokens. A token with no
+# '=', bad characters, a bad digest or a duplicate service voids the whole list (return 1).
 receipts_load_overrides() {
     local tok svc ref
     RECEIPTS_REF=() RECEIPTS_IMAGE=() RECEIPTS_DIGEST=()
