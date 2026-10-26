@@ -310,7 +310,17 @@ drift_library_cases() {
     assert_contains "$out" "start without watch history" "library: notice names the history it loses"
     assert_not_contains "$out" "down -v" "library: notice does not recommend down -v"
 
-    # Given the reapply path: the library is removed and configuration runs.
+    # Given the keep path: config.yml names the live library path.
+    drift_cfg_set 's#^\(      path: "/data/media/tv\)-new"#\1"#'
+    # When configuration runs again.
+    out=$(drift_configure jellyfin)
+    # Then the drift notice is gone and the library is unchanged.
+    assert_not_contains "$out" "set that library's path in config.yml to the live path" "library keep path: the drift notice is gone"
+    assert_contains "$(drift_api jellyfin libraries)" "TV Shows=/data/media/tv" "library keep path: the library keeps its live path"
+    assert_not_contains "$(drift_api jellyfin libraries)" "tv-new" "library keep path: the library is unchanged"
+
+    # Given the reapply path: config.yml names the new path, the library is removed and configuration runs.
+    drift_cfg_set 's#^\(      path: "/data/media/tv\)"#\1-new"#'
     drift_api jellyfin library-remove "TV Shows"
     out=$(drift_configure jellyfin)
     drift_api jellyfin scan

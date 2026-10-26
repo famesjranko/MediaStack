@@ -196,7 +196,7 @@ hits=$(cd "$REPO_ROOT" && grep -rnE '(log_[a-z]+|ui_[a-z]+|echo|printf)\b.*(setu
 allowed_recovery='^scripts/services/jellyfin/main\.sh:[0-9]+:[[:space:]]*log_error "  \./scripts/configure\.sh --only jellyfin"$'
 # Drift and completed-install notices name configure.sh as the reapply step: no
 # menu item reapplies config.yml (#105).
-allowed_reapply='^scripts/(configure|lib/arr/(storage|quality|formats)|services/jellyfin/wizard|setup/stages/stage1|lib/ui-demo)\.sh:[0-9]+:'
+allowed_reapply='^scripts/(configure|lib/arr/(storage|quality|formats)|services/jellyfin/wizard|setup/stages/stage1|lib/ui-demo)\.sh:[0-9]+:.*\./scripts/configure\.sh( --only [a-z]+)?'
 recovery_hits=$(grep -E "$allowed_recovery" <<<"$hits" || true)
 other_hits=$(grep -vE "$allowed_recovery|$allowed_reapply" <<<"$hits" || true)
 # Then exactly the approved standalone Jellyfin recovery commands are found.

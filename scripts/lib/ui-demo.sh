@@ -160,7 +160,7 @@ demo_run() {
     ui_log warn "Quality profile 'HD-1080p' differs from config.yml"
     ui_log info "  Live: min=5GB, max=15GB"
     ui_log info "  Want: min=3GB, max=12GB"
-    ui_log info "  Keep: set the live values in config.yml. Reapply: edit in Sonarr UI, then ./scripts/configure.sh --only sonarr"
+    ui_log info "  Keep: do nothing (notice repeats). Reapply: edit in Sonarr UI to match, then ./scripts/configure.sh --only sonarr"
     echo ""
     ui_log warn "Root folder '/data/media/movies' has extra entry '/mnt/external/movies'"
     ui_log info "  Not in config.yml - added manually?"
