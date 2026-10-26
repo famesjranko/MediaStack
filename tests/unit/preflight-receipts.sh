@@ -374,4 +374,31 @@ play fresh-install emit
 # Then the sonarr row stays and the seerr row appears once
 assert_eq "2" "$(rows | wc -l | tr -d ' ')" "receipts: earlier rows are kept and a repeated row is not duplicated"
 
+# --- 13. a crash that the restart policy hid, and a recreate that never started ---------------------
+new_fixture "seerr=$SEERR@$D1"
+emit() {
+    ev c1 create seerr "$SEERR@$D1"
+    ev c1 start seerr "$SEERR@$D1"
+    ev c1 die seerr "$SEERR@$D1"
+    ev c1 start seerr "$SEERR@$D1"
+}
+MSG=""
+play fresh-install emit
+# Given Seerr died with no stop or kill and the restart policy started it again
+# When the scenario passes
+# Then no row exists, because the crash is not cleared by the later start
+assert_eq "" "$(rows)" "receipts: a crash followed by a restart-policy start earns no row"
+
+new_fixture "seerr=$SEERR@$D1"
+emit() {
+    container a1 seerr "$SEERR@$D1" torn-down
+    ev b1 create seerr "$SEERR@$D1"
+}
+MSG=""
+play fresh-install emit
+# Given Seerr ran healthy and was torn down, and its replacement was created but never started
+# When the scenario passes
+# Then no row exists and the log says the latest container never started
+assert_eq "|latest container of this service never started" "$(rows)|$(grep -o 'latest container of this service never started' <<<"$MSG" | head -1)" "receipts: a recreated service that never started earns no row"
+
 summary

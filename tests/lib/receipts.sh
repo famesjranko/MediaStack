@@ -106,10 +106,10 @@ receipts_scenario_begin() {
 }
 
 # Verdict per override from the scenario's events. Args: events-file svc=ref...
-# Prints "ok|no<TAB>service<TAB>why". The latest instance of a service that started in
-# the window decides; it must run the candidate ref and end running or healthy. A stop
-# or removal after it ran counts as teardown; a die with no stop or kill before it
-# counts as a crash.
+# Prints "ok|no<TAB>service<TAB>why". The latest instance of a service (by creation)
+# decides; it must have started, run the candidate ref and end running or healthy. A
+# stop or removal after it ran counts as teardown. A die with no stop or kill before it
+# is a crash that a later restart-policy start does not clear.
 _rcpt_verdicts() {
     python3 -I - "$@" <<'PY'
 import json
@@ -130,7 +130,7 @@ try:
         i = insts.setdefault(ev["Actor"]["ID"], {
             "svc": attrs.get("com.docker.compose.service"), "image": attrs.get("image"),
             "started": False, "state": "created", "prior": None, "stopping": False,
-            "destroyed": False})
+            "crashed": False, "destroyed": False})
         act = ev["Action"]
         if act == "start":
             i.update(started=True, state="running", prior=None, stopping=False)
@@ -142,6 +142,7 @@ try:
         elif act == "die":
             i["prior"] = i["state"] if i["state"] in LIVE else i["prior"]
             i["state"] = "stopped" if i["stopping"] else "crashed"
+            i["crashed"] = i["crashed"] or not i["stopping"]
         elif act == "destroy":
             i["destroyed"] = True
 except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -151,11 +152,17 @@ except (OSError, ValueError, KeyError, TypeError) as exc:
 
 for spec in specs:
     svc, ref = spec.split("=", 1)
-    mine = [i for i in insts.values() if i["svc"] == svc and i["started"]]
-    if not mine:
+    all_i = [i for i in insts.values() if i["svc"] == svc]
+    if not any(i["started"] for i in all_i):
         print(f"no\t{svc}\tno container of this service started in the scenario")
         continue
-    i = mine[-1]
+    i = all_i[-1]
+    if not i["started"]:
+        print(f"no\t{svc}\tlatest container of this service never started")
+        continue
+    if i["crashed"]:
+        print(f"no\t{svc}\tcontainer ended crashed (died without a stop or kill in the scenario)")
+        continue
     final = i["prior"] if i["destroyed"] and i["state"] == "stopped" else i["state"]
     if i["image"] != ref:
         print(f"no\t{svc}\tcontainer ran {i['image']}, not the candidate {ref}")
