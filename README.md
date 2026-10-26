@@ -54,7 +54,7 @@ At the end, open the Homepage address shown by the installer to reach your servi
 
 ## What you get
 
-- Up to 20 containers, depending on the features you enable. Installed services restart after a reboot unless you stopped them.
+- Up to 20 containers, depending on the features you enable, with automatic restart after a reboot. See [reboot behaviour](docs/guide/troubleshooting.md#after-a-reboot), including NAS watchdog recovery.
 - Jellyfin for playback, Seerr for requests, Sonarr for TV, Radarr for movies and qBittorrent for downloads, already connected to each other.
 - A Homepage dashboard, Uptime Kuma and Beszel for monitoring, Portainer for containers and optional Bazarr for subtitles.
 - Optional remote access over HTTPS with a domain, plus a WireGuard VPN.

@@ -20,7 +20,7 @@ re-read them when a service changes.
 - Secondary: Python 3.9+ as the code floor (small render/config helpers using the stdlib plus distro `python3-yaml`; no pip)
 - Runtime: Debian 12 (Bookworm) or 13 (Trixie), headless. 12 is the floor (Python 3.11, bash 5.x; 11 reached end of life on 2026-08-31); 13 is the newest verified on real hardware
 - Package manager: apt (system packages only; no pip/npm/cargo)
-- Shell: bash with `set -euo pipefail` throughout
+- Shell: Bash with `nounset` and `pipefail`; `errexit` is enabled where appropriate
 
 ## Infrastructure
 - Container engine: Docker Engine, installed by `setup.sh --full` from Docker's own apt repo. `scripts/setup/checks/preflight.sh` requires the daemon to be present and reachable; it does not enforce a minimum version.
@@ -73,7 +73,7 @@ re-read them when a service changes.
   - Candidate-image preflight: `MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.sh wireguard` — test a new image tag in the DinD compose copy before editing compose (see `docs/operations/upgrades.md`)
   - Manifest guard: `./tests/unit/upgrades-manifest.sh` — keeps `docs/operations/upgrades.md` in sync with compose tags
   - CI image drift alert: scheduled GitHub workflow resolves remote image digests and compares them with `docs/operations/image-digests.lock`; Stable-channel installs pin runtime images to that record, so run the matching local DinD preflight before updating it.
-  - Cleanup leaked volumes: `docker volume prune -f`
+  - Remove a kept DinD container and its anonymous volumes: `docker rm -fv <container-name>` — use the container name printed by the test harness
 
 ## Lint / Format / Type Checking
 - CI runs shell syntax checks, Python bytecode checks, compose rendering, focused unit tests, the upgrades manifest guard, public secret/private-file guards, and wizard PTY scenarios.
@@ -86,7 +86,7 @@ re-read them when a service changes.
 
 ## Hosting
 - Platform: Self-hosted bare metal (user's own Debian box)
-- Remote access: NPM reverse proxy + Let's Encrypt + WireGuard VPN
+- Remote access: NPM reverse proxy and Let's Encrypt for HTTPS; optional WireGuard VPN
 - DDNS: Optional curated 6-provider wizard picker (Dynu, DuckDNS, deSEC, dynv6, Cloudflare, Porkbun) rendering `config/ddns-updater/config.json`; ddns-updater itself supports many more upstream. Credential handling: see `docs/setup/configuration-schema.md`
 - Cost: $0/mo (hardware owned by user)
 
@@ -134,7 +134,8 @@ explaining and are not checked for completeness by anything.
 ./setup.sh --nvidia-unlock-update
 ./setup.sh --nvidia-unlock-repatch
 
-# Re-configure after editing config.yml
+# Retry incomplete configuration (existing profile drift is reported, not reconciled)
+# For supported quality changes, use Features & settings → Change quality profile
 ./scripts/configure.sh
 
 # Update service images for the selected IMAGE_CHANNEL (does not prune host images by default)
@@ -146,7 +147,7 @@ explaining and are not checked for completeness by anything.
 # Day-2 health & security: ./mediastack → "Health & security" → "Run all checks" (fail2ban regex-drift/jails, TLS expiry, DNS drift, disk %, UFW, DOCKER-USER chain)
 # Day-2 per-service updates: ./mediastack → "Manage updates" (status, per-service updates)
 # Day-2 change quality profile: ./mediastack → "Features & settings" → "Change quality profile" (resolution × size, renamed in place, no orphan)
-# Day-2 uninstall: ./mediastack → "Uninstall MediaStack" (transactional teardown; removes only recorded MediaStack host changes; data/ preserved; config/ runtime state removed, config/examples/ kept)
+# Day-2 uninstall: ./mediastack → "Uninstall MediaStack" (ordered cleanup; configured media path preserved; config/ runtime state removed, config/examples/ kept)
 # Per-service update-availability scan (table / TSV):
 python3 scripts/image_drift.py --status
 python3 scripts/image_drift.py --status-tsv
@@ -163,7 +164,11 @@ python3 scripts/image_drift.py --check-readme-badges README.md
 ./tests/run.sh <scenario> [<scenario> ...]   # names: tests/scenarios/
 
 # Validate compose changes
-cp .env.example .env && docker compose config --quiet && docker compose --profile proxy config --quiet && docker compose --profile remote config --quiet && docker compose --profile autoheal config --quiet && rm .env
+docker compose --env-file .env.example -f docker-compose.yml config --quiet
+docker compose --env-file .env.example -f docker-compose.yml --profile proxy config --quiet
+docker compose --env-file .env.example -f docker-compose.yml --profile remote config --quiet
+docker compose --env-file .env.example -f docker-compose.yml --profile subtitles config --quiet
+docker compose --env-file .env.example -f docker-compose.yml --profile autoheal config --quiet
 
 # Service operations
 docker compose up -d                         # Core stack (includes Beszel)
@@ -182,7 +187,7 @@ docker compose logs -f <service>
 - DinD test base: Debian over Alpine — BusyBox grep lacks -P, envsubst missing from Alpine default, musl/glibc edge cases. Matches production distro.
 - CI covers syntax, compose rendering, focused unit checks, public guards, wizard PTY scenarios, and image-digest drift alerts against the committed tested record. Full image-backed integration proof remains local/manual DinD so GitHub Actions does not need privileged nested Docker pulls.
 - Python uses the stdlib plus distro `python3-yaml`: small render/config helpers, no pip dependencies or venv. Keeps the host dependency footprint minimal.
-- Config via APIs: Services are configured by calling their HTTP APIs from bash, not by templating config files. More robust across image version upgrades.
+- Config via APIs: Most service settings use HTTP APIs called from Bash. Some services, including Homepage and DDNS Updater, use generated configuration files.
 
 ## Reconsider If
 - Adding a non-bash component (Go CLI, web UI) — would need a build step and proper CI.

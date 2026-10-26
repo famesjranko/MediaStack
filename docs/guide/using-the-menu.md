@@ -74,7 +74,7 @@ Use these items instead of raw `docker compose` commands. They start the right o
 
 To read logs, pick **Tail logs (live)**. It streams logs for all enabled services. Press `Ctrl+C` to return to the menu. To follow one service, use `docker compose logs -f <service>`. Docker keeps up to 3 files of 10 MB for each service. DDNS Updater is the exception: it keeps 2 files of 1 MB.
 
-After a reboot, installed services restart automatically unless you stopped them. Optional services run only when enabled.
+After a reboot, installed services restart automatically. Docker normally leaves manually stopped containers stopped; the NAS watchdog can restart missing NAS-dependent services after its startup check. Optional services run only when enabled. See [After a reboot](troubleshooting.md#after-a-reboot).
 
 ## Manage updates
 

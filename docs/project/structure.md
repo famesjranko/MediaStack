@@ -125,7 +125,7 @@ config/                             Live service configs (all gitignored — run
                                     homepage/*.yaml, jackett/Jackett/ServerConfig.json,
                                     qbittorrent/qBittorrent/{qBittorrent.conf,categories.json}.
                                     create_config_dirs (seed_config_from_templates in
-                                    scripts/setup/stack.sh) copies each to config/<svc>/ on
+                                    scripts/setup/stack/dirs.sh) copies each to config/<svc>/ on
                                     install if absent; templates survive wipe and uninstall.
   fail2ban/, homepage/, jackett/, qbittorrent/   Live copies seeded from examples/defaults/ (gitignored)
 
@@ -245,9 +245,9 @@ other way is invisible to it.
 
 ## Adding a New Service
 
-1. Add container to `docker-compose.yml` (image, ports, healthcheck, volumes, profile). Pick a free host octet from the `mediastack` IP map in the network-block comment and express it as `${MEDIASTACK_NETWORK_PREFIX}.X` — every bridge service is pinned, no auto-allocation. `network_mode: host` services skip this. A service that only some containers may reach does not go on the `mediastack` bridge, because every container on it can reach every other. Run it with `network_mode: host`, listening on `127.0.0.1` only, and let host-network consumers connect there (see `socket-proxy`); a second Docker network with Docker-chosen addresses races the fixed `mediastack` subnet at `docker compose up`.
+1. Add container to `docker-compose.yml` (image, ports, healthcheck, volumes, profile). Check every `ipv4_address` in the compose file. Pick an unused host octet and express it as `${MEDIASTACK_NETWORK_PREFIX}.X` — every bridge service is pinned, no auto-allocation. `network_mode: host` services skip this. A service that only some containers may reach does not go on the `mediastack` bridge, because every container on it can reach every other. Run it with `network_mode: host`, listening on `127.0.0.1` only, and let host-network consumers connect there (see `socket-proxy`); a second Docker network with Docker-chosen addresses races the fixed `mediastack` subnet at `docker compose up`.
 2. Create `scripts/services/<svc>/main.sh` with `configure_<svc>()` function
-3. Add `<svc>` to the loop in `scripts/configure.sh` (ordering matters — after dependencies)
+3. Add `<svc>` to the source loop in `scripts/configure.sh`, then add a `configure_<svc>` call after its dependencies in the execution sequence
 4. Add config.yml section if the service needs user-editable parameters
 5. Extract `templates/*.json` only for static payloads (no variable substitution) with 4+ fields
 6. Put non-trivial pure JSON/policy transforms in `scripts/services/<svc>/render/*.py` when shell would only be a wrapper
@@ -262,7 +262,7 @@ service's pin policy and preflight command. To bump a service safely:
 2. Preflight it **without editing compose** — patch the DinD copy and run the service's oracle:
    `MS_TEST_IMAGE_OVERRIDES="<svc>=<candidate-ref>" ./tests/run.sh <preflight-scenario>`
    (most services use `fresh-install`; wireguard → `wireguard`, npm → `npm-heal`, fail2ban →
-   `fail2ban-drift`, ddns-updater → `ddns-seed`; always read the service's row for the exact token).
+   `fail2ban-drift`, ddns-updater → `ddns-verify`; always read the service's row for the exact token).
 3. If the API/env/config shape changed, update the touchpoint files (service `main.sh`, and where
    relevant `scripts/setup/env-gen.sh`, `stages/stage2.sh`, `scripts/lib/`, pre-seeded `config/`)
    and explain the rationale in the PR when the change is behavioral.
@@ -270,10 +270,11 @@ service's pin policy and preflight command. To bump a service safely:
    update the service's `docs/operations/upgrades.md` pin-policy token and the matching image-pin policy note.
 5. Re-run the preflight scenario + `./tests/run.sh smoke`; run `./tests/unit/upgrades-manifest.sh`.
 6. If the scheduled image-drift workflow alerted, refresh `docs/operations/image-digests.lock` only after the local DinD preflight passes. Stable-channel installs pin runtime image refs to this lock through `docker-compose.override.yml`.
-7. Major / API-unstable bumps are a clean cutover, not an in-place upgrade: `docker compose down -v && ./setup.sh --full`.
+7. For an incompatible service database, use **Manage updates → Revert a service to its installed image** first. A clean reinstall requires a backup and deliberate removal of the affected configuration; `docker compose down -v` preserves bind-mounted databases. See `docs/operations/upgrades.md` for the recovery path.
 
-Preflight checks API **shape** only (via the service's scenario/assertions oracle); it does not catch
-config-time breaks. For a major bump, run the service's own battery plus `fresh-install` where
+Preflight coverage depends on the scenario. Some scenarios verify configuration, environment
+contracts, authentication, and service interactions, but none establishes complete compatibility.
+For a major bump, run the service's own battery plus `fresh-install` where
 relevant — `fresh-install` does **not** start the `remote` (wireguard) or `subtitles` (bazarr)
 profiles, so those need their own scenarios (wireguard: `smoke` + `wireguard` + the access-tier
 scenarios).
@@ -282,6 +283,6 @@ scenarios).
 
 - Service main.sh > 200 lines → extract helpers within the service dir
 - New shared Sonarr/Radarr pattern → `scripts/lib/arr/`
-- New DDNS provider → registry cells in `scripts/lib/ddns-providers.sh` (`_DDNS_*` parallel arrays) + a field validator in `scripts/lib/validators.sh` + a `tests/unit/ddns-config.sh` fixture + docs. No wizard/day-2 flow-code edits — that is the whole point of the shared registry.
-- New test scenario → `tests/scenarios/<name>.sh` + register in run.sh case statement
+- New DDNS provider → registry cells in `scripts/lib/ddns-providers.sh` (`_DDNS_*` parallel arrays) + a field validator in `scripts/lib/validators/ddns.sh` + a `tests/unit/ddns-config.sh` fixture + docs. No wizard/day-2 flow-code edits — that is the whole point of the shared registry.
+- New test scenario → `tests/scenarios/<name>.sh` with a `run_scenario()` function; the runner discovers scenario files automatically
 - Pre-seeded config for a new service → add the template under `config/examples/defaults/<svc>/…` (tracked) and gitignore the live `config/<svc>/` copy; `seed_config_from_templates` copies it on install automatically

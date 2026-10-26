@@ -20,8 +20,8 @@ To see which services run, choose **Manage stack (status, stop, start, logs)**. 
 
 1. Run `./mediastack`.
 2. Choose **Manage stack (status, stop, start, logs)**.
-3. Choose **Tail logs (live)** and select the service. Read the last error.
-4. Choose **Start a service** and select the service again.
+3. Choose **Tail logs (live)**. Read the service-prefixed errors. Press `Ctrl+C` to return.
+4. Choose **Start a service** and select the stopped service.
 
 Or use these commands:
 
@@ -101,9 +101,9 @@ A driver update replaces the patched driver. In **Manage hardware transcoding (G
 
 **AMD or Intel GPU is not used.**
 
-Run `ls -la /dev/dri/` and `vainfo`.
+Choose **Configure or change hardware transcoding** and read the reported failure reason. MediaStack checks the selected render device and probes its capabilities inside Jellyfin.
 
-If the first command lists no render device, or `vainfo` fails, install the driver for your GPU.
+For a first manual check, run `ls -la /dev/dri/`. A failed bare `vainfo` command does not by itself prove that a driver is missing: display selection, device selection or permissions can also cause it to fail.
 
 ## NAS storage problems
 
@@ -119,14 +119,16 @@ This section applies only if you chose NAS storage.
 
 Do not create `media/` or `torrents/` folders under an unmounted path. This hides the real failure.
 
-You can also check the mount by hand:
+You can also check the mount by hand. Replace `<mountpoint>` with `STORAGE_MOUNTPOINT` from `.env`, and `<sentinel>` with `STORAGE_SENTINEL` from the same file:
 
 ```bash
-findmnt -rn -M /data -o SOURCE,FSTYPE,OPTIONS
-test -e /data/.mediastack-storage-ready
+findmnt -rn -M '<mountpoint>' -o SOURCE,FSTYPE,OPTIONS
+timeout -k 1 5 test -e '<sentinel>'
 ```
 
-If the second command prints nothing and returns an error, the NAS share is not the correct one. MediaStack stops the services that need it until the share returns.
+Compare the source and filesystem type with the configured NAS share. No mount result means the path is not mounted. The sentinel check prints nothing: exit code 0 means it found the marker, 1 means it did not, and 124 means it timed out. A missing marker alone does not prove that the wrong share is mounted.
+
+Automatic stopping and recovery require the NAS watchdog to be installed, enabled and running. Disabling it also disables the launcher's NAS start guard.
 
 **Watchdog messages.**
 
@@ -141,13 +143,15 @@ To move from local storage to NAS, or to change exports, stop the stack first. M
 
 ## After a reboot
 
-Every MediaStack service starts again by itself when Docker starts, unless you stopped it. This includes the optional services: reverse proxy, VPN, subtitles, and autoheal. You do not run `setup.sh` again.
+Docker restarts installed services unless you stopped them. Optional services must have been enabled and created first. You do not run `setup.sh` again.
+
+On NAS installs, the running watchdog starts missing NAS-dependent services after its startup storage check, including services stopped before reboot. Docker's restart policy does not wait for NAS verification; the watchdog stops affected services after its failure grace period if storage is unavailable.
 
 1. Wait two minutes after the server starts.
 2. Run `./mediastack`.
 3. Choose **Manage stack (status, stop, start, logs)** and check that all services run.
 
-If a service does not run, choose **Start a service**. With NAS storage, services that need the NAS wait until the NAS is mounted. See [NAS storage problems](#nas-storage-problems).
+If a service does not run, choose **Start a service**. With the NAS watchdog enabled, the launcher refuses to start services until the configured mount and sentinel pass verification. See [NAS storage problems](#nas-storage-problems).
 
 ## Recovery
 
@@ -167,11 +171,13 @@ If a service does not run, choose **Start a service**. With NAS storage, service
    ```
 
 4. Run `./mediastack` again. Choose **Manage stack (status, stop, start, logs)** > **Start all services**. Wait until Jellyfin answers.
-5. Run the Jellyfin wizard step again. It rebuilds only Jellyfin.
+5. Run configuration again. This rebuilds Jellyfin and retries the services that depend on its new API key.
 
    ```bash
-   ./scripts/configure.sh --only jellyfin
+   ./scripts/configure.sh
    ```
+
+An existing Jellyfin connection in Sonarr or Radarr is preserved on a re-run. If it contains an old key, repair that connection in the service's settings.
 
 On an older install, restore a backup of `./config/jellyfin` instead. Ask for help before you delete it.
 
@@ -179,24 +185,28 @@ On an older install, restore a backup of `./config/jellyfin` instead. Ask for he
 
 **Symptom:** Setup logs `NPM password rotation FAILED` and you cannot log in to NPM.
 
-1. Stop the stack: **Manage stack** > **Stop all services**.
-2. Open a shell in the NPM container:
+Use this reset only for a failed first install. It removes all NPM users and saves a database backup first. For an existing installation, restore a backup or ask for help before resetting accounts.
+
+1. From the MediaStack folder, stop NPM with `docker compose stop npm`.
+2. Use host Python to back up the database and remove its user records. The NPM image does not provide the `sqlite3` command.
 
    ```bash
-   docker compose run --rm --entrypoint sh npm
+   sudo python3 - <<'PY'
+   import sqlite3
+   from pathlib import Path
+
+   backup = Path("config/npm/data/database.before-admin-reset.sqlite")
+   if backup.exists():
+       raise SystemExit("Backup already exists; keep it and review the earlier reset.")
+   with sqlite3.connect("file:config/npm/data/database.sqlite?mode=rw", uri=True) as db:
+       with sqlite3.connect(backup) as saved:
+           db.backup(saved)
+       db.execute("DELETE FROM user")
+   PY
    ```
 
-3. In the shell, remove the NPM users:
-
-   ```bash
-   cd /data && sqlite3 database.sqlite
-   DELETE FROM user;
-   .quit
-   exit
-   ```
-
-4. Choose **Start all services**.
-5. Run `./scripts/configure.sh`. It creates the NPM admin again.
+3. Start NPM with `docker compose start npm`.
+4. Run `./scripts/configure.sh --only npm`. It creates the NPM admin again.
 
 ### Setup stopped half way
 
@@ -211,7 +221,7 @@ docker compose ps                          # service status
 docker compose logs -f jellyfin            # follow logs
 docker compose logs --since 1h <service>   # last hour
 docker compose restart sonarr              # restart one service
-./scripts/configure.sh                     # re-apply service settings after you edit config.yml
+./scripts/configure.sh                     # retry incomplete service configuration
 ./setup.sh --remote                        # add or repair remote access
 ./setup.sh --transcoding                   # check hardware transcoding again
 ```
@@ -220,5 +230,7 @@ docker compose restart sonarr              # restart one service
 > A bare `docker compose up -d` starts only the default services. It does not start remote access, subtitles, or autoheal. To start those, add `--profile proxy --profile remote --profile subtitles --profile autoheal`. Leave out the profiles you did not enable.
 
 To rename the quality profile, use **Features & settings (quality, bandwidth, subtitles, sharing, indexers)** > **Change quality profile**. Do not edit `config.yml` and run `configure.sh`: this leaves an extra profile.
+
+Configuration re-runs preserve many existing settings and can report drift instead of changing them. Use the supported menu action or service UI for those changes.
 
 See also: [install guide](install.md), [remote access](remote-access.md), [using the menu](using-the-menu.md).

@@ -111,7 +111,7 @@ The Autoheal container runs by default. To turn it off, set `AUTOHEAL_ENABLED=fa
 docker compose --profile autoheal stop autoheal
 ```
 
-Installed services restart by themselves after a reboot, unless you stopped them.
+Installed services restart after a reboot. Docker normally leaves manually stopped containers stopped; the NAS watchdog can restart missing NAS-dependent services after its startup check. See [After a reboot](troubleshooting.md#after-a-reboot).
 
 The installer also configures service accounts and connections. Downloads need configured indexers, and automatic subtitles need subtitle providers. Complete these choices under [After install](#after-install).
 
