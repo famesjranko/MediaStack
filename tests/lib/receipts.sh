@@ -137,8 +137,15 @@ try:
         elif act.startswith("health_status:") and i["state"] in LIVE:
             i["state"] = {"healthy": "healthy", "unhealthy": "unhealthy"}.get(
                 act.split(":", 1)[1].strip(), i["state"])
-        elif act in ("kill", "stop"):
+        elif act == "stop":
             i["stopping"] = True
+        elif act == "kill":
+            # Only a terminating signal is a stop; HUP, USR1 and the like leave a running
+            # container running, so a die after them is still a crash. Docker reports the
+            # signal as a number string or a name; an absent attribute counts as a stop.
+            sig = attrs.get("signal", "").strip().upper().removeprefix("SIG")
+            if sig in ("", "2", "3", "9", "15", "INT", "QUIT", "KILL", "TERM"):
+                i["stopping"] = True
         elif act == "die":
             i["prior"] = i["state"] if i["state"] in LIVE else i["prior"]
             i["state"] = "stopped" if i["stopping"] else "crashed"

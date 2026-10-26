@@ -78,9 +78,11 @@ new_fixture() { # new_fixture "<MS_TEST_IMAGE_OVERRIDES>"
     RECEIPTS_ACTIVE=1
 }
 
-ev() { # ev <id> <action> <service> <image> — the event shape of current Docker (no legacy id/status/from)
-    printf '{"Type":"container","Action":"%s","Actor":{"ID":"%s","Attributes":{"com.docker.compose.service":"%s","image":"%s","name":"%s"}},"scope":"local","timeNano":1}\n' \
-        "$2" "$1" "$3" "$4" "$3" >>"$RECEIPTS_EVENTS"
+ev() { # ev <id> <action> <service> <image> [signal] — the event shape of current Docker (no legacy id/status/from)
+    local sig=""
+    [[ -n "${5:-}" ]] && sig=",\"signal\":\"$5\""
+    printf '{"Type":"container","Action":"%s","Actor":{"ID":"%s","Attributes":{"com.docker.compose.service":"%s","image":"%s","name":"%s"%s}},"scope":"local","timeNano":1}\n' \
+        "$2" "$1" "$3" "$4" "$3" "$sig" >>"$RECEIPTS_EVENTS"
 }
 
 container() { # container <id> <service> <image> <how it ends>
@@ -400,5 +402,35 @@ play fresh-install emit
 # When the scenario passes
 # Then no row exists and the log says the latest container never started
 assert_eq "|latest container of this service never started" "$(rows)|$(grep -o 'latest container of this service never started' <<<"$MSG" | head -1)" "receipts: a recreated service that never started earns no row"
+
+new_fixture "seerr=$SEERR@$D1"
+emit() {
+    ev c1 create seerr "$SEERR@$D1"
+    ev c1 start seerr "$SEERR@$D1"
+    ev c1 kill seerr "$SEERR@$D1" 1
+    ev c1 die seerr "$SEERR@$D1"
+    ev c1 destroy seerr "$SEERR@$D1"
+}
+MSG=""
+play fresh-install emit
+# Given Seerr received a reload signal (HUP), then died and was removed
+# When the scenario passes
+# Then no row exists and the log says the container crashed, because HUP does not stop a container
+assert_eq "|container ended crashed" "$(rows)|$(grep -o 'container ended crashed' <<<"$MSG" | head -1)" "receipts: a crash after a non-terminating signal earns no row"
+
+new_fixture "seerr=$SEERR@$D1"
+emit() {
+    ev c1 create seerr "$SEERR@$D1"
+    ev c1 start seerr "$SEERR@$D1"
+    ev c1 kill seerr "$SEERR@$D1" 9
+    ev c1 die seerr "$SEERR@$D1"
+    ev c1 destroy seerr "$SEERR@$D1"
+}
+MSG=""
+play fresh-install emit
+# Given Seerr received KILL (9), then died and was removed
+# When the scenario passes
+# Then a row exists, because KILL is a teardown
+assert_eq "$(row seerr "$SEERR" "$D1" fresh-install)" "$(rows)" "receipts: a terminating kill signal counts as teardown"
 
 summary
