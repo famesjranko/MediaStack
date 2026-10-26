@@ -13,7 +13,7 @@ Top-level source of truth for service configuration. `scripts/configure.sh` read
 List of Jackett indexers. Public releases default this to `[]`; add entries only for indexers you are legally allowed to use, or apply the optional preset from `config/examples/public-indexers.yml`. Each entry has `id` (Jackett's internal indexer ID) and `type` — one of `general`, `tv`, `movies`. Consumed by:
 
 - Step 2 Jackett (`cfg_indexers` in `scripts/lib/common.sh`) — adds to Jackett.
-- `configure_arr_indexers` (`scripts/lib/arr/indexers.sh`, loaded by `main.sh`) — filters by type: Sonarr gets `general`+`tv`, Radarr gets `general`+`movies`. Each add is retried up to 3× with 8s backoff to absorb FlareSolverr cold-start timeouts during first-run setup.
+- `configure_arr_indexers` (`scripts/lib/arr/indexers.sh`, loaded by `main.sh`) — filters by type: Sonarr gets `general`+`tv`, Radarr gets `general`+`movies`. Each add gets up to two attempts, with a 2-second wait between them.
 
 An empty list is valid. Jackett still receives its admin password and FlareSolverr URL, while Sonarr/Radarr skip Torznab wiring.
 
@@ -39,7 +39,7 @@ Shared between Sonarr and Radarr. The setup wizard (`scripts/setup/wizard.sh`) *
 | **720p** (cutoff 1001) | `720p Compact` | `720p Balanced` | `720p Large` |
 | **1080p** (cutoff 1002) | `1080p Compact` | `1080p Balanced` (default) | `1080p Large` |
 
-Each cell enables every tier from the **SD floor** (SDTV/DVD/480p) up to the resolution's ceiling, all sources; the cutoff (a WEB group) stops upgrades at the ceiling, so SD/720p are fallbacks that upgrade away. The size axis sets only the per-tier bounds + scores (source-agnostic).
+Each cell enables every tier from the **SD floor** (SDTV/DVD/480p) up to the resolution's ceiling, all sources; the cutoff (a WEB group) stops upgrades at the ceiling, so SD/720p are fallbacks that upgrade away. The size axis sets the per-tier file-size bounds; format scores are currently the same for all three sizes.
 
 | Field | Meaning |
 |-------|---------|
@@ -59,7 +59,7 @@ Consumed by `configure_quality_profile` (`scripts/lib/arr/quality.sh`, with Pyth
 
 Per-tier file-size bounds (MB per minute of runtime — Sonarr per episode, Radarr per movie). Overrides Sonarr/Radarr's stock defaults, which are loose enough to let in both 400 MB cam rips and 25 GB bloat releases. Values come from the chosen **size** axis (`compact ≈ 0.7×`, `balanced 1.0×`, `large ≈ 1.2×`), masked to the resolution's enabled tiers — calibrated to real-world WEB-DL/Bluray ranges, not the TRaSH max-quality values, which target much larger files.
 
-Structure: `quality_definitions.{sonarr,radarr}.<QualityName>: { min, preferred, max }`. Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive): `SDTV`, `WEBDL-480p`, `HDTV-720p`, `WEBDL-1080p`, `Bluray-1080p`, etc. Tiers not listed keep their upstream defaults. Delete or comment the whole section to opt out entirely.
+Structure: `quality_definitions.{sonarr,radarr}.<QualityName>: { min, preferred, max }`. Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive): `SDTV`, `WEBDL-480p`, `HDTV-720p`, `WEBDL-1080p`, `Bluray-1080p`, etc. Tiers not listed keep their upstream defaults on a fresh install. Delete or comment the whole section to skip configuration; on an existing install, reset previously applied bounds in Sonarr/Radarr.
 
 Example (`1080p Balanced`, SD floor → 1080p):
 ```yaml
@@ -79,7 +79,7 @@ Consumed by `configure_quality_definitions` (`scripts/lib/arr/quality.sh`, with 
 
 ### `custom_formats`
 
-Release-attribute scoring that **steers** selection within a quality tier. A simple `name: score` mapping where higher scores are preferred and negative scores penalise. Scores do **not** gate file size (the `quality_definitions` bounds do) and, by default, nothing is hard-blocked — the neutral baseline penalises low-quality re-encode groups and nudges toward named releases, without ever refusing a grab. Set a format's score to `0` to make it neutral, or to `-10000` to **hard-block** it (no default format does). Delete the entire section to skip custom format configuration. See [`quality-bounds.md`](quality-bounds.md#custom-format-scores).
+Release-attribute scoring that **steers** selection within a quality tier. A simple `name: score` mapping where higher scores are preferred and negative scores penalise. Scores do **not** gate file size (the `quality_definitions` bounds do) and, by default, nothing is hard-blocked — the neutral baseline penalises low-quality re-encode groups and nudges toward named releases, without ever refusing a grab. Set a format's score to `0` to make it neutral, or to `-10000` to **hard-block** it (no default format does). Delete the entire section to skip configuration on a fresh install; on an existing install, reset previously applied formats and scores in Sonarr/Radarr. See [`quality-bounds.md`](quality-bounds.md#custom-format-scores).
 
 Format *definitions* (regex conditions, implementation type) are developer-managed in `scripts/lib/arr/custom_formats.yml` — users only tune scores here.
 
@@ -97,7 +97,7 @@ custom_formats:
 
 Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/formats.sh`) during steps 3 and 4. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
 
-The setup wizard writes size-appropriate scores via `wizard_apply.py`. Per-size values are defined in `scripts/setup/presets.yml` under each size's `custom_format_scores` key.
+The setup wizard writes the chosen preset's scores via `wizard_apply.py`. The `custom_format_scores` values in `scripts/setup/presets.yml` are currently identical for Compact, Balanced, and Large.
 
 ### `min_free_space_gb`
 
@@ -106,8 +106,8 @@ Minimum free disk space (in GB) before Sonarr and Radarr stop importing and grab
 | Field | Value |
 |-------|-------|
 | Type | integer |
-| Default | `20` (= 20480 MB) |
-| Disable | Set to `0` (restores the upstream 100 MB default) |
+| Template default | `20` (= 20480 MB); the installer may scale it to 2–19 GB when the data partition has less than 200 GB free |
+| Skip configuration | Set to `0`; on an existing install, reset the previously applied value in Sonarr/Radarr |
 
 Consumed by `configure_arr_disk_threshold` (`scripts/lib/arr/storage.sh`) during steps 3 and 4. Only applied on first run (when the value is the API default of 100 MB). If the user has changed the value in the UI, configure.sh warns on drift but does not reconcile.
 
@@ -136,6 +136,10 @@ Minimal per-*arr settings — the rest comes from `quality_profile` / `categorie
 
 - `root_folder` — `/data/media/tv` or `/data/media/movies`. Must exist; `setup.sh` creates it during directory initialization.
 - `download_client_category` — the qBittorrent category name. Must match a key in `qbittorrent.categories`.
+
+### `seerr.quotas`
+
+`movie` and `tv` each have a `limit` (requests per period; `0` means unlimited) and `days` (period length). The template sets both limits to `0` and both periods to `7` days. Consumed by `configure_seerr` (`scripts/services/seerr/main.sh`) for default user request quotas.
 
 ### `bazarr`
 
@@ -177,9 +181,9 @@ Consumed by `configure_npm` (`scripts/services/npm/main.sh`). When `enabled: tru
 1. Writes the `limit_req_zone` directive to NPM's `http_top.conf`.
 2. Injects `limit_req` directives into each proxy host's `advanced_config`.
 3. Reloads nginx inside the NPM container to activate.
-4. Checks that the `[npm-ratelimit]` jail values in the live copy of `config/examples/defaults/fail2ban/jail.d/mediastack.conf` match `ban_maxretry` / `ban_findtime`.
+4. Checks that the `[npm-ratelimit]` jail values in `config/fail2ban/jail.d/mediastack.conf` match `ban_maxretry` / `ban_findtime`.
 
-When `enabled: false` (the default), each of those steps logs a skip. To re-enable, set `enabled: true` **and** set `enabled = true` on the `[npm-ratelimit]` jail in the live copy of `config/examples/defaults/fail2ban/jail.d/mediastack.conf`. The proper future fix is per-path exemption (a second zone + per-`location` config) so streaming/image paths are never limited.
+When `enabled: false` (the default), each of those steps logs a skip. To re-enable, set `enabled: true` **and** set `enabled = true` on the `[npm-ratelimit]` jail in `config/fail2ban/jail.d/mediastack.conf` (seeded from the template under `config/examples/defaults/`). The proper future fix is per-path exemption (a second zone + per-`location` config) so streaming/image paths are never limited.
 
 ---
 
@@ -187,7 +191,7 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 
 `.env.example` is the template; `.env` is generated by `setup.sh` (chmod 600). The API-key fields near the end of `.env.example` ship empty; `configure.sh` populates them on install. A user who copies `.env.example` to `.env` directly, skipping `setup.sh`, still ends up with a working file — but `.env.example` is then documenting "initial state" as much as "template", which is worth remembering when editing it.
 
-### User-set (interactive prompts in `setup.sh`)
+### Setup and user values
 
 | Key | Default source | Example |
 |-----|---------------|---------|
@@ -211,6 +215,8 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `JELLYFIN_ADMIN_USER` | prompt, default `admin` | `admin` |
 | `JELLYFIN_ADMIN_PASSWORD` | `openssl rand -base64 12` — shared across all services | (random) |
 | `NPM_ADMIN_EMAIL` | `admin@example.com` (not prompted) | — |
+| `TORRENT_PORT` | wizard prompt, default `6881` | qBittorrent peer port (TCP/UDP) |
+| `QBT_DL_LIMIT` / `QBT_UL_LIMIT` | wizard prompt, default `0` | download/upload limits in MB/s; `0` means unlimited and overrides `config.yml` |
 | `JELLYFIN_GPU` | Hardware transcoding proof | `nvidia`, `intel`, `amd`, `none` |
 | `NVIDIA_DRIVER_MODE` | Hardware transcoding (NVIDIA) | `standard` (Debian-managed, default), `unlock` (patch-managed `.run` + nvidia-patch), `existing` (a non-Debian driver kept as-is), or empty. Primary NVIDIA driver state; "patch enabled" is **derived** (true iff `unlock`) — there is no separately-settable `NVIDIA_PATCH_ENABLED` (a legacy value migrates to `unlock`). |
 | `STAGE_3_GPU_STATE` / `STAGE_3_GPU_VENDOR` / `STAGE_3_GPU_ENCODER` | Hardware transcoding state | `complete` / `nvidia` / `nvenc` |
@@ -220,8 +226,10 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `STAGE_3_GPU_RENDER_DEVICE` | Intel/AMD render-node probe | `/dev/dri/renderD128` |
 | `STAGE_3_GPU_FALLBACK_REASON` | Why Jellyfin is on software: `no_gpu`, `user_choice`, `secure_boot`, `driver_install_failed`, `verify_failed`, `finalize_failed`; empty when the GPU is active | `secure_boot` |
 | `DOMAIN` | prompt, blank to skip remote | `example.com` |
+| `REMOTE_WEB_STATE` | Stage 2 generated state, initially blank | `unchecked`, `ready`, `skipped`, or `failed`; gates public HTTPS links |
 | `DDNS_PROVIDER` | Stage 2 DDNS picker, blank if DDNS skipped | `dynu`, `duckdns`, `desec`, `dynv6`, `cloudflare`, `porkbun` |
 | `WG_HOST` | `${DOMAIN}` | `example.com` |
+| `WG_PORT` | wizard prompt, default `51820` | WireGuard UDP listen port |
 | `WG_INIT_PASSWORD` | plaintext `JELLYFIN_ADMIN_PASSWORD` (first-boot only) | `'GeneratedPassword123'` |
 | `WG_DEFAULT_DNS` | default `1.1.1.1` | `1.1.1.1` |
 | `WG_ACCESS_TIER` | wizard prompt: `full-lan` / `server` / `containers` (`streaming` / `streaming-requests` are README templates) | `full-lan` |
@@ -236,6 +244,8 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `UFW_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 | `HARDENING_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 | `ADMIN_PORT_FILTER` | Stage 1 prompt (asked only when the firewall is declined or the filter was previously off) + day-2 toggle, default `true` (recommended) | `true` |
+| `AUTOHEAL_ENABLED` | default `true` | `false` disables the autoheal sidecar |
+| `MS_DISABLE_RESOURCE_LIMITS` | `.env.example` default `false`; setup does not preserve this key when it regenerates `.env` | `true` omits CPU and memory caps from the generated compose override |
 
 **DDNS credentials:** the Stage 2 DDNS picker writes only the non-secret `DDNS_PROVIDER` to `.env`. The provider's credentials (Dynu username/password, DuckDNS/dynv6/deSEC tokens, Cloudflare zone-id + token, Porkbun API keys) live solely in the chmod-600 `config/ddns-updater/config.json` rendered by `ddns_render_config_json` — never in `.env`. A wizard re-run recalls the provider from `DDNS_PROVIDER` and pre-fills its credential prompts from that config.json.
 
@@ -275,7 +285,7 @@ In v15 the per-client firewall is enforced inside the wg-easy container regardle
 | `SEERR_API_KEY` | 6 | `scripts/services/seerr/main.sh` (from `apiKey` field of `GET /api/v1/settings/main`) |
 | `PORTAINER_API_KEY` | 7 | `scripts/services/portainer/main.sh` (persistent access token via `POST /api/users/1/tokens`) |
 
-Unpackerr reads `SONARR_API_KEY` / `RADARR_API_KEY` and `UNPACKERR_TORRENT_PATHS` from env (set in the `unpackerr` service definition in `docker-compose.yml`), which is why `configure.sh` restarts it after API key population for managed app wiring. Homepage reads all seven API keys/credentials from `.env` to generate `services.yaml` with live widgets.
+Unpackerr reads `SONARR_API_KEY` / `RADARR_API_KEY` and `UNPACKERR_TORRENT_PATHS` from env (set in the `unpackerr` service definition in `docker-compose.yml`), which is why `configure.sh` restarts it after API key population for managed app wiring. Homepage uses the Sonarr, Radarr, Jellyfin, Seerr, and Portainer API keys, plus `NPM_ADMIN_EMAIL` and `JELLYFIN_ADMIN_PASSWORD` for NPM and Beszel widgets, to generate `services.yaml`.
 
 ---
 
