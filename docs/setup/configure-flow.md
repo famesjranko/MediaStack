@@ -1,8 +1,8 @@
 # `scripts/configure.sh` — Auto-Configuration Flow
 
-Reads `config.yml`, wires up every service via its HTTP API, and writes generated API keys back into `.env`. Safe to re-run after editing `config.yml` — every step is individually idempotent. `--only svc1,svc2,...` restricts the run to named services (docker-compose names); used by the test suite for faster re-runs.
+Reads `config.yml`, wires up services via their APIs, and writes generated API keys back into `.env`. Re-runs check existing app state. Some settings are updated; others produce advisory drift and need repair in the service UI or a supported menu action. Drift alone does not mark a service WARN in the summary. `--only svc1,svc2,...` restricts the run to named services (docker-compose names); used by the test suite for faster re-runs.
 
-`configure.sh` is a **thin entrypoint**. The work lives in `scripts/lib/*` helpers and one directory per service under `scripts/services/<svc>/`. `main()` in `scripts/configure.sh` runs 11 fixed configure steps in order (after per-service readiness waits), plus conditional Bazarr configuration when the subtitles profile is active, conditional Beszel configuration when its default-stack containers are running, then recreates Unpackerr with the populated API keys.
+`configure.sh` is a **thin entrypoint**. The work lives in `scripts/lib/*` helpers and one directory per service under `scripts/services/<svc>/`. `main()` in `scripts/configure.sh` runs Portainer first, then qBittorrent, Jackett, Sonarr, Radarr, a parallel Sonarr/Radarr indexer phase, conditional Bazarr, Jellyfin, Seerr, Homepage, conditional NPM, DDNS Updater (status when running), conditional WireGuard, Uptime Kuma, and Beszel. A full run then attempts to recreate Unpackerr with the populated API keys and reloads fail2ban if its container is running.
 
 When `STORAGE_APP_WIRING=manual`, configure.sh still sets credentials, auth, indexers, quality profiles, and non-storage services, but skips storage-facing wiring: qBittorrent save paths/categories, Sonarr/Radarr root folders and download clients, Jellyfin libraries, Seerr setup, Sonarr/Radarr Jellyfin notifications, and Unpackerr recreate. The generated `.env` also leaves `UNPACKERR_TORRENT_PATHS` blank so the compose-level Unpackerr integration does not advertise MediaStack's managed `/data/torrents` path. This is separate from `STORAGE_MODE`: manual app wiring can still use `STORAGE_MODE=nas` so the NAS sentinel guard and watchdog protect containers.
 
@@ -18,25 +18,24 @@ scripts/
 │   └── arr/
 │       ├── main.sh           # configure_quality_profile, configure_quality_definitions, configure_arr_custom_formats, configure_arr_format_scores, configure_arr_indexers, configure_arr_disk_threshold
 │       ├── custom_formats.yml         # curated TRaSH Guides format definitions
-│       ├── render/
-│       │   ├── quality_profile.py       # rebuild items[]/formatItems based on enabled quality IDs
-│       │   ├── quality_definitions.py   # diff live vs config, emit <id>\t<put-body> per needed update
-│       │   ├── custom_formats.py        # diff existing vs defined, emit <name>\t<post-body> per new format
-│       │   ├── format_scores.py         # compare profile formatItems, emit match/empty/drift status
-│       │   └── torznab_caps.py          # parse caps XML → filtered category list per app
-│       └── templates/
-│           └── indexer.json  # legacy static template; variable JSON is rendered with Python/http_json_body
+│       └── render/
+│           ├── quality_profile.py       # rebuild items[]/formatItems based on enabled quality IDs
+│           ├── quality_definitions.py   # diff live vs config, emit <id>\t<put-body> per needed update
+│           ├── custom_formats.py        # diff existing vs defined, emit <name>\t<post-body> per new format
+│           ├── format_scores.py         # compare profile formatItems, emit match/empty/drift status
+│           └── torznab_caps.py          # parse caps XML → filtered category list per app
 └── services/
     ├── qbittorrent/main.sh              # no templates — setPreferences payload built inline via python3 json.dumps
     ├── jackett/main.sh                  # no templates — mostly auth loops, no extractable payloads
-    ├── sonarr/main.sh    + templates/download-client.json
-    ├── radarr/main.sh    + templates/download-client.json
+    ├── sonarr/main.sh    # no templates — download-client payload built in lib/arr/storage.sh
+    ├── radarr/main.sh    # no templates — download-client payload built in lib/arr/storage.sh
     ├── bazarr/main.sh                   # no templates — API payloads built via python3 json.dumps
-    ├── jellyfin/main.sh, wizard.sh, encoding.sh, server.sh, network.sh + render/network_policy.py + templates/{startup-config,remote-access,library}.json
+    ├── jellyfin/main.sh, wizard.sh, encoding.sh, server.sh, network.sh + render/network_policy.py + templates/{startup-config,remote-access}.json
     ├── seerr/main.sh + templates/{sonarr-server,radarr-server}.json
     ├── portainer/main.sh                # no templates — payloads built inline via python3 json.dumps
     ├── homepage/main.sh
     ├── npm/main.sh       + templates/token-default.json
+    ├── wireguard/main.sh
     ├── uptime-kuma/main.sh
     └── beszel/main.sh
 ```
@@ -72,7 +71,7 @@ All are parsed fresh each call — no caching. For a file this small it doesn't 
 
 Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (service readiness + response-capture POSTs):
 
-- `wait_for_service NAME URL` in `scripts/lib/http.sh` — 90-second curl loop; used only by `main()` before the 10 steps.
+- `wait_for_service NAME URL` in `scripts/lib/http.sh` — 90-second curl loop; used by `main()` for initial waits and later service readiness checks.
 - `api_get URL KEY` / `api_post URL KEY BODY` / `api_put URL KEY BODY` in `scripts/lib/common.sh` — curl wrappers for *arr APIs with `X-Api-Key` header. `api_put` is used by `configure_quality_definitions` to update individual quality definitions; `api_post` for everything else.
 - `api_get_key PATH` in `scripts/lib/common.sh` — regex-extract `<ApiKey>` from Sonarr/Radarr `config.xml`.
 - `api_get_jackett_key` in `scripts/lib/common.sh` — JSON parse `config/jackett/Jackett/ServerConfig.json`.
@@ -82,22 +81,36 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 ## Pre-step wait (top of `main()` in `scripts/configure.sh`)
 
-`main()` runs `wait_for_service` against the 10 user-facing services (including Portainer and Uptime Kuma). Each times out after 90s (configured in `wait_for_service`) — if any service never comes up, the step still runs and fails its API check later.
+`main()` runs `wait_for_service` for eight services: qBittorrent, Jackett, Sonarr, Radarr, Jellyfin, Seerr, Portainer, and Homepage (subject to `--only`). Each wait times out after 90s; if a service never comes up, its configure step still runs. Bazarr, NPM, Uptime Kuma, WireGuard, and Beszel have later readiness checks.
 
-## Step 1 — qBittorrent (`configure_qbittorrent` in `scripts/services/qbittorrent/main.sh`)
+## Step 1 — Portainer (`configure_portainer` in `scripts/services/portainer/main.sh`)
+
+Portainer CE is distroless (no shell, no curl inside the container), so all configuration happens via external API calls.
+
+**Admin creation:** Check `GET /api/users/admin/check` — HTTP 204 means admin exists (skip), 404 means no admin yet (create), anything else (e.g. init timeout) triggers a `docker restart portainer` to reset the 5-minute admin creation window (Portainer locks itself if no admin is created within 5 minutes of first start).
+
+Create admin via `POST /api/users/admin/init` with `{"Username": "<JELLYFIN_ADMIN_USER>", "Password": "<shared password>"}`. The payload is built via `python3 json.dumps` (not a template) so usernames/passwords with JSON-special characters are properly escaped. HTTP 200 = created, 409 = already exists. If a prior run created Portainer's first admin as `admin`, `configure.sh` authenticates with the shared password and renames user ID 1 to `JELLYFIN_ADMIN_USER` so the login matches the rest of the stack.
+
+**Local Docker endpoint:** After admin creation (or skip), authenticate via `POST /api/auth` to get a JWT, then check `GET /api/endpoints`. If authentication returns no JWT (for example, a manually changed Portainer password), warn and skip endpoint/API-token setup rather than failing the whole configurator silently. If zero endpoints exist, `POST /api/endpoints` with `Name=local&EndpointCreationType=1` to create a local Docker socket endpoint. This makes containers visible in the Portainer UI without requiring the user to complete the web-UI setup wizard.
+
+**Persistent API token:** After JWT auth, creates a persistent API access token via `POST /api/users/1/tokens` with `{"description": "Homepage", "password": "<admin_pw>"}`. The `rawAPIKey` (returned only at creation time) is saved to `.env` as `PORTAINER_API_KEY`. Used by the Homepage Portainer widget in Step 8. Idempotent: if `PORTAINER_API_KEY` is already set in `.env`, validates it against `GET /api/endpoints` — only creates a new token if the existing one is missing or invalid.
+
+**Idempotency:** Skip admin creation if already initialized (204 from admin check). Skip endpoint creation if any endpoint already exists. Skip API token creation if existing token validates.
+
+## Step 2 — qBittorrent (`configure_qbittorrent` in `scripts/services/qbittorrent/main.sh`)
 
 **Auth:** Three-tier cascade: (1) `JELLYFIN_ADMIN_USER` + `JELLYFIN_ADMIN_PASSWORD` — the shared admin login (re-runs / already unified), with a fallback to qBittorrent's default `admin` username for older installs, (2) temporary `admin` password from container logs (first run), (3) legacy `QBT_ADMIN_PASSWORD` from `.env` (migration from pre-unification installs). Auth via `POST /api/v2/auth/login` to get a `SID` cookie.
 
 **Writes:**
 
-- `POST /api/v2/app/setPreferences` — save path/temp path for managed app wiring, max ratio, connection limits, queueing. In manual app wiring, save/temp paths are skipped while auth, port, and limits are still applied. The `max_ratio_act` field is hardcoded to `0` (pause) — not taken from `config.yml`. This is the documented value; Sonarr/Radarr's download-client validator rejects any non-pause setting.
+- `POST /api/v2/app/setPreferences` — save path/temp path for managed app wiring, max ratio, connection limits, queueing. In manual app wiring, the first preferences payload sets the listening port, speed limits, and optional auth whitelist, but not connection or queue limits; a later payload sets credentials and seeding limits. The `max_ratio_act` field is hardcoded to `0` (pause) — not taken from `config.yml`. This is the documented value; Sonarr/Radarr's download-client validator rejects any non-pause setting.
 - Auth-bypass whitelist (`bypass_auth_subnet_whitelist`), in the same `setPreferences` call and in both wiring modes: only the `/32` addresses of the containers that call qBittorrent without credentials — Sonarr `.22`, Radarr `.23`, Homepage `.40` of `MEDIASTACK_NETWORK_PREFIX`. Never the bridge gateway or the whole subnet. The live value is read first and replaced only when it is empty (fresh seed) or exactly MediaStack's legacy `172.16.0.0/12` (enabled). Any other value is user state: `log_drift`, left unchanged. A missing or malformed `MEDIASTACK_NETWORK_PREFIX`, an unreadable live value, or a failed `setPreferences` leaves the whitelist unchanged with a `log_warn`; it never falls back to a wide range. During day-2 converge, an empty API value with a non-empty `[WebUI]` `AuthSubnetWhitelist` in `qBittorrent.conf` is drift: the running image cannot read that layout, so Sonarr and Radarr get 403. It is reported and never reconciled.
 - WebUI username/password alignment to `JELLYFIN_ADMIN_USER` + `JELLYFIN_ADMIN_PASSWORD` via `setPreferences`. Uses `python3 json.dumps` for credential values.
 - Categories via `POST /api/v2/torrents/createCategory` per entry in `cfg_qbt_categories`, skipped for manual app wiring. If `editCategory` reports failure, configure.sh fetches categories again and treats the category as successful when the live save path matches config.yml.
 
 **Idempotency:** Re-runs authenticate with the shared admin login (tier 1) and proceed to re-apply preferences (idempotent by nature of `setPreferences`) and verify categories. Migration from default `admin`, temporary-password, or legacy `QBT_ADMIN_PASSWORD` paths rotates to the shared login automatically. There is no separate "already configured" check beyond re-applying preferences — editing qBittorrent settings in `config.yml` and re-running `configure.sh` re-pushes them from scratch rather than diffing first.
 
-## Step 2 — Jackett indexers + admin password (`configure_jackett` in `scripts/services/jackett/main.sh`)
+## Step 3 — Jackett indexers + admin password (`configure_jackett` in `scripts/services/jackett/main.sh`)
 
 **Auth:** Jackett's management API requires a session cookie (the `apikey` param alone returns 302). `POST /UI/Dashboard` sets the cookie; on re-run (password already set), the shared admin password is posted to authenticate.
 
@@ -107,14 +120,14 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 **Idempotency:** Skip indexers if already configured. Skip + warn if indexer ID isn't available in Jackett — a typo'd indexer ID in `config.yml` produces a warning and continues, so `configure.sh` can complete successfully with no indexers configured. Skip password if already set.
 
-## Step 3 — Sonarr (`scripts/services/sonarr/main.sh`)
+## Step 4 — Sonarr (`scripts/services/sonarr/main.sh`)
 
 **Auth:** Read API key from `config/sonarr/config.xml` (generated by Sonarr on first start). If missing, `log_error` and `return 1` — Sonarr not ready means we cannot proceed with this step.
 
 **Writes (each check-before-create):**
 
 - Root folder — delegates to shared `configure_arr_root_folder` (see below).
-- Download client — delegates to shared `configure_arr_download_client` with `tvCategory` (see below). Payload template at `scripts/services/sonarr/templates/download-client.json`.
+- Download client — delegates to shared `configure_arr_download_client` with `tvCategory` (see below). Payload built inline in `scripts/lib/arr/storage.sh`.
 - Quality profile — delegates to shared `configure_quality_profile` in `scripts/lib/arr/quality.sh` (loaded by the `arr/main.sh` entry point; see below).
 - Quality definitions — delegates to shared `configure_quality_definitions` (see below).
 - Custom formats — delegates to shared `configure_arr_custom_formats` (see below). Creates curated format definitions from `scripts/lib/arr/custom_formats.yml`.
@@ -125,13 +138,13 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 **Writeback:** `env_save_api_key "SONARR_API_KEY" "$sonarr_key"`.
 
-## Step 4 — Radarr (`scripts/services/radarr/main.sh`)
+## Step 5 — Radarr (`scripts/services/radarr/main.sh`)
 
 Structural mirror of Sonarr — both delegate to the same shared helpers (including `configure_arr_custom_formats` and `configure_arr_format_scores`). Differences:
 
-- Download client uses `movieCategory` field (not `tvCategory`); template at `scripts/services/radarr/templates/download-client.json`.
+- Download client uses `movieCategory` field (not `tvCategory`); payload built inline in `scripts/lib/arr/storage.sh`.
 - Torznab call uses `categories.movies` from `config.yml`.
-- Quality-profile *allowed set* matches Sonarr (Remux-1080p deliberately excluded for movies as well — see [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md)).
+- Quality-profile *allowed set* matches Sonarr (Remux-1080p deliberately excluded for movies as well — see [`docs/setup/quality-bounds.md`](quality-bounds.md)).
 - Quality definitions set is the same shape as Sonarr's; Remux-1080p is not configured.
 - Naming conventions use movie-specific format (`{Movie CleanTitle} ({Release Year}) [imdbid-{ImdbId}]`). Skipped if `renameMovies` is already True. Inline in radarr/main.sh.
 
@@ -141,15 +154,15 @@ Structural mirror of Sonarr — both delegate to the same shared helpers (includ
 
 ### `configure_arr_root_folder APP BASE KEY`
 
-Reads `<app>.root_folder` from `config.yml`, `GET /api/v3/rootfolder`, and compares. `log_skip` on match, `log_warn` on drift, `POST /api/v3/rootfolder` on absent.
+Reads `<app>.root_folder` from `config.yml`, `GET /api/v3/rootfolder`, and compares. `log_skip` on match, `log_drift` on drift (leaves the existing folder unchanged; use the named UI repair or rebuild), `POST /api/v3/rootfolder` on absent.
 
 ### `configure_arr_disk_threshold APP BASE KEY`
 
-Reads `min_free_space_gb` from `config.yml` (default 20), converts to MB (×1024), and applies via `GET`/`PUT /api/v3/config/mediamanagement` (field: `minimumFreeSpaceWhenImporting`). The PUT requires the full config object — GET first, mutate the one field, PUT back. Only updates when the current value is the API default (100 MB); warns on drift from user-customized values. `0` disables (skips with `log_skip`).
+Reads `min_free_space_gb` from `config.yml` (default 20), converts to MB (×1024), and applies via `GET`/`PUT /api/v3/config/mediamanagement` (field: `minimumFreeSpaceWhenImporting`). The PUT requires the full config object — GET first, mutate the one field, PUT back. Only updates when the current value is the API default (100 MB); reports user-customized values with `log_drift`. `0` skips configuration with `log_skip`; it does not reset an existing threshold.
 
 ### `configure_arr_download_client APP BASE KEY CATEGORY_FIELD`
 
-Reads `<app>.download_client_category` from `config.yml`, `GET /api/v3/downloadclient`, and compares the qBittorrent entry's category field (4th arg: `tvCategory` for Sonarr, `movieCategory` for Radarr). `log_skip`/`log_warn`/`POST` pattern. The create payload is built with Python `json.dumps` so configured categories are JSON-escaped safely.
+Reads `<app>.download_client_category` from `config.yml`, `GET /api/v3/downloadclient`, and compares the qBittorrent entry's category field (4th arg: `tvCategory` for Sonarr, `movieCategory` for Radarr). `log_skip` on match, `log_drift` on drift (leaves the category unchanged; use the named UI repair or rebuild), `POST` on absent. The create payload is built with Python `json.dumps` so configured categories are JSON-escaped safely.
 
 ### `configure_arr_auth APP BASE KEY`
 
@@ -158,7 +171,7 @@ Enables Forms authentication using shared Jellyfin admin credentials (`JELLYFIN_
 ### `configure_quality_profile APP BASE KEY ENABLED_IDS_JSON`
 
 1. Read `quality_profile.{name, cutoff_id, upgrade_allowed}` from `config.yml`.
-2. Look up a profile by name; compare live `cutoff`, `upgradeAllowed`, and the set of enabled leaf quality IDs against `config.yml`. `log_skip` on match, `log_warn` on drift (configure.sh does not reconcile drift — rebuild is the canonical migration path).
+2. Look up a profile by name; compare live `cutoff`, `upgradeAllowed`, and the set of enabled leaf quality IDs against `config.yml`. `log_skip` on match, `log_drift` on drift (configure.sh leaves it unchanged; edit the profile in the app UI or rebuild).
 3. Absent → fetch the default profile as a template, feed it through `render/quality_profile.py` which rebuilds the `items` array marking each quality as `allowed: true/false` based on `ENABLED_IDS_JSON` (a JSON array from `cfg_quality_ids`).
 4. `POST /api/v3/qualityprofile` with the rebuilt profile.
 
@@ -188,7 +201,7 @@ Enables Forms authentication using shared Jellyfin admin credentials (`JELLYFIN_
 4. Feed profile JSON + scores + format ID map to `render/format_scores.py`, which returns:
    - `match` — current `formatItems` already match. `log_skip`.
    - `empty\t<put-body>` — `formatItems` was empty; treated as CREATE. `PUT /api/v3/qualityprofile/{id}` with populated `formatItems`.
-   - `drift\t<details>` — `formatItems` non-empty and differs. `log_warn` (no reconcile).
+   - `drift\t<details>` — `formatItems` non-empty and differs. `log_drift` (no reconcile).
 
 ### `configure_arr_indexers APP BASE KEY CATEGORIES`
 
@@ -197,11 +210,11 @@ Iterates `cfg_indexers`, filtering:
 - `sonarr` gets `general` + `tv` (skip `movies`).
 - `radarr` gets `general` + `movies` (skip `tv`).
 
-Dedup by name-substring match. Each addition is `POST /api/v3/indexer` with a Torznab config (template `scripts/lib/arr/templates/indexer.json`) pointing at `http://jackett:9117/api/v2.0/indexers/<id>/results/torznab/`. Categories are auto-discovered from each indexer's Torznab caps via `render/torznab_caps.py` — Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Falls back to `config.yml` values when caps discovery fails.
+Dedup by case-insensitive exact name match. Each addition is `POST /api/v3/indexer` with a Torznab config (payload built inline in `scripts/lib/arr/indexers.sh`) pointing at `http://jackett:9117/api/v2.0/indexers/<id>/results/torznab/`. Categories are auto-discovered from each indexer's Torznab caps via `render/torznab_caps.py` — Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Falls back to `config.yml` values when caps discovery fails.
 
-**Retry-with-backoff:** each POST is attempted up to 3 times with an 8-second backoff between attempts. Sonarr/Radarr run a live `tvsearch`/`search` add-time test that Jackett forwards through FlareSolverr's ClearanceHandler (even for non-CF indexers). The first few adds in a fresh setup routinely lose the 65s HttpClient timeout while FlareSolverr cold-starts. Retrying absorbs the race. On success with attempt > 1, the log notes `(attempt N)`; on final failure, `(3 attempts)`.
+**Retry-with-backoff:** each POST is attempted up to 2 times with a 2-second pause between attempts. Sonarr/Radarr run a live `tvsearch`/`search` add-time test that Jackett forwards through FlareSolverr's ClearanceHandler (even for non-CF indexers). A retry can absorb a transient failure. On success with attempt > 1, the log notes `(attempt N)`; on final failure, `(2 attempts)`.
 
-## Step 5 — Jellyfin (`configure_jellyfin` in `scripts/services/jellyfin/main.sh`)
+## Step 6 — Jellyfin (`configure_jellyfin` in `scripts/services/jellyfin/main.sh`)
 
 **Two paths selected by whether `/Startup/Configuration` returns anything:**
 
@@ -212,11 +225,11 @@ Dedup by name-substring match. Each addition is `POST /api/v3/indexer` with a To
 3. `POST /Startup/User` — name + password.
 4. `POST /Startup/RemoteAccess` — enables remote, disables UPnP.
 5. `POST /Startup/Complete` — marks wizard done.
-6. Verify by authenticating. If auth fails the wizard is declared broken; `return 1` with a recovery message telling the user to delete `config/jellyfin`. That recovery path deletes the whole Jellyfin config directory, including the media database — a user with existing watch-state loses it, so it should only be used when Jellyfin genuinely cannot be recovered another way.
+6. Verify by authenticating. If auth fails, return 1 before saving an API key or reporting success. The recovery message first recommends `./scripts/configure.sh --only jellyfin` and checking logs and credentials. It also describes an optional reset that moves the old settings to `config/jellyfin.before-reset`, recreates Jellyfin, and retries configuration. This loses active application state and can require dependent services to be reconnected; it does not fix an upstream startup-wizard defect.
 
 ### Path B: wizard already completed
 
-Skip straight to `POST /Users/AuthenticateByName`, save the returned `AccessToken` as `JELLYFIN_API_KEY`, and fall through to server name / library sync.
+Skip straight to `POST /Users/AuthenticateByName`, use the session token to find or create a permanent MediaStack API key, and fall through to server name / library sync. Save the session token as `JELLYFIN_API_KEY` only if permanent-key creation fails.
 
 ### `configure_jellyfin_server_name` (in `scripts/services/jellyfin/server.sh`)
 
@@ -226,19 +239,23 @@ Sets Jellyfin's display name (Dashboard header, browser tab) via `GET`/`POST /Sy
 
 `POST /Library/VirtualFolders?name=...&collectionType=...` per entry in `cfg_jf_libraries`. Library name is URL-encoded via inline Python.
 
+### Encoding and streaming (in `scripts/services/jellyfin/encoding.sh` and `server.sh`)
+
+Both wizard paths call `configure_jellyfin_encoding` and `configure_jellyfin_streaming` before networking. Encoding skips until GPU setup supplies a GPU state; streaming applies `jellyfin.remote_bitrate_limit` through `/System/Configuration`.
+
 ### `configure_jellyfin_networking` (in `scripts/services/jellyfin/network.sh`)
 
 Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/network` (a different JSON blob from `/System/Configuration` used by streaming). `render/network_policy.py` compares the live JSON with MediaStack's desired policy and emits the skip/drift/apply decision that the shell wrapper logs and posts. Three fields:
 
-- **`AutoDiscovery: true`** — enables UDP 7359 broadcast for LAN device auto-discovery (port exposed in `docker-compose.yml`).
-- **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see the static-octet map in the `mediastack` network block of `docker-compose.yml`).
+- **`AutoDiscovery: true`** — desired for UDP 7359 LAN discovery (port exposed in `docker-compose.yml`). A live `false` value is reported as drift and left unchanged.
+- **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see the service `ipv4_address` entries in `docker-compose.yml`).
 - **`PublishedServerUriBySubnet`** — `["internal=http://<HOST_IP>:8096"]` always; adds `"external=https://jellyfin.<DOMAIN>"` only when `REMOTE_WEB_STATE=ready`. Unchecked or skipped remote state stays LAN-only even if `DOMAIN` is real.
 
-**Idempotency:** GET current, compare each field. `log_skip` on match. `log_warn` on drift (non-default values that differ from expected — user changed in UI). POST only when values are at defaults. Writes `JELLYFIN_PUBLISHED_URL` to `.env` via `env_save_api_key`.
+**Idempotency:** GET current, compare each field. `log_skip` on match. `log_drift` on drift (non-default values that differ from expected — user changed in UI). POST only for fields the policy renderer can manage. Writes `JELLYFIN_PUBLISHED_URL` to `.env` via `env_save_api_key`.
 
 **Restart:** `KnownProxies` and `AutoDiscovery` are startup-config (ASP.NET `ForwardedHeadersOptions` and UDP listener, respectively). After an owned restart or recreate, MediaStack waits up to 30 seconds for an authenticated typed read of `/System/Configuration/network`. It retries only transient startup failures and HTTP 503; malformed data and permanent HTTP errors fail immediately. `--force-recreate` ensures the container is recreated (picks up `.env` changes); `--no-deps` avoids pulling in other services. Skip/drift normally avoids restart, except when `JELLYFIN_PUBLISHED_URL` changes; that value is a compose environment variable, so the Jellyfin container is force-recreated to pick up the new LAN or HTTPS URL even when the network API write itself is skipped or drift-protected.
 
-## Step 6 — Seerr (`configure_seerr` in `scripts/services/seerr/main.sh`)
+## Step 7 — Seerr (`configure_seerr` in `scripts/services/seerr/main.sh`)
 
 The longest step — Seerr's bootstrap involves three moving API surfaces (its own, Jellyfin's, and the *arr apps').
 
@@ -246,48 +263,35 @@ The longest step — Seerr's bootstrap involves three moving API surfaces (its o
 2. **`POST /api/v1/auth/jellyfin`** — includes `hostname/port/useSsl/urlBase/serverType:2`. If that fails (partial prior run may have stored hostname already), retry without hostname; the retry is silent, so there is no log signal distinguishing a normal first-attempt success from a fallback that masked a real hostname mismatch. Uses a cookie jar for session persistence.
 3. **Session verify** via `GET /api/v1/auth/me` — guards against silent auth-cookie failures.
 4. **Library readiness poll**. Read the Jellyfin API key Seerr generated for itself (from the `apiKey` field in `GET /api/v1/settings/jellyfin`), then poll Jellyfin's `GET /Library/MediaFolders` with it for 60s until the `Movies` and `TV Shows` folders appear. Poll count is 30 x 2s. This is the correct gate — Seerr's sync calls Jellyfin's `/Library/MediaFolders` internally, *not* the refresh task status.
-5. **Library sync** — `GET /api/v1/settings/jellyfin/library?sync=true`. Captures HTTP code + body so real failures (`404 SYNC_ERROR_NO_LIBRARIES`, `501 SYNC_ERROR_GROUPED_FOLDERS`) surface instead of being masked. A previous implementation used `|| echo "[]"` and silently lost errors.
-6. **Enable libraries** — `GET /api/v1/settings/jellyfin/library?enable=<comma-ids>`.
+5. **Library sync** — `POST /api/v1/settings/jellyfin/library/sync`. Captures HTTP code + body so real failures (`404 SYNC_ERROR_NO_LIBRARIES`, `501 SYNC_ERROR_GROUPED_FOLDERS`) surface instead of being masked. A previous implementation used `|| echo "[]"` and silently lost errors.
+6. **Enable libraries** — `PUT /api/v1/settings/jellyfin/library/{id}` with `{"enabled":true}` for each returned library ID.
 7. **Connect Sonarr + Radarr** via `http_json_post` (defined in `scripts/lib/http.sh`), which captures the response body on non-2xx. Payload includes `activeProfileName`, `activeDirectory`, `activeLanguageProfileId` (Sonarr) — Seerr 2.7.x silently accepts an incomplete payload but the connection won't work without these fields.
 8. **Mark setup complete** — `POST /api/v1/settings/initialize`, then re-fetch `/api/v1/settings/public` to verify `initialized=true`.
 9. **Extract API key** — from the `apiKey` field of `GET /api/v1/settings/main` (fetched for permissions check below). Saved to `.env` as `SEERR_API_KEY` via `env_save_api_key`. Used by the Homepage widget in Step 8.
-10. **Set default permissions + quotas** — `POST /api/v1/settings/main` with `defaultPermissions: 32` (REQUEST only) and `defaultQuotas` from `config.yml` (`seerr.quotas.movie` and `seerr.quotas.tv`). Bits 128/256/512 (auto-approve movies/TV/4K) are NOT set, so all requests require admin approval. Quotas default to unlimited (`limit: 0`) in the shipped `config.yml`.
+10. **Set default permissions + quotas** — `POST /api/v1/settings/main` with `defaultPermissions: 32` (REQUEST only) and `defaultQuotas` from `config.yml` (`seerr.quotas.movie` and `seerr.quotas.tv`). Bits 128/256/512 (auto-approve movies/TV/4K) are NOT set, so all requests require admin approval. Quotas default to unlimited (`limit: 0`) in the shipped `config.yml`. Period-only changes and clearing both existing limits need the Seerr UI; see [Seerr quotas](configuration-schema.md#seerrquotas).
+11. **Set proxy trust** — read `trustProxy` from `GET /api/v1/settings/network`; set it to `true` only when `REMOTE_WEB_STATE=ready` with a real domain, otherwise `false`. `POST /api/v1/settings/network` when it differs, then restart Seerr after a successful change so the setting takes effect.
 
 Heredoc-stdin hazard (commented in the source near the `lib_ids` extraction): `python3 - <<'PY'` rebinds stdin, so using it in a pipeline like `echo $libs | python3 - <<'PY'` silently gives Python an EOF — the `echo`'s output never reaches `sys.stdin`. Use `python3 -c '…'` inside pipes.
-
-## Step 7 — Portainer (`configure_portainer` in `scripts/services/portainer/main.sh`)
-
-Portainer CE is distroless (no shell, no curl inside the container), so all configuration happens via external API calls.
-
-**Admin creation:** Check `GET /api/users/admin/check` — HTTP 204 means admin exists (skip), 404 means no admin yet (create), anything else (e.g. init timeout) triggers a `docker restart portainer` to reset the 5-minute admin creation window (Portainer locks itself if no admin is created within 5 minutes of first start).
-
-Create admin via `POST /api/users/admin/init` with `{"Username": "<JELLYFIN_ADMIN_USER>", "Password": "<shared password>"}`. The payload is built via `python3 json.dumps` (not a template) so usernames/passwords with JSON-special characters are properly escaped. HTTP 200 = created, 409 = already exists. If a prior run created Portainer's first admin as `admin`, `configure.sh` authenticates with the shared password and renames user ID 1 to `JELLYFIN_ADMIN_USER` so the login matches the rest of the stack.
-
-**Local Docker endpoint:** After admin creation (or skip), authenticate via `POST /api/auth` to get a JWT, then check `GET /api/endpoints`. If authentication returns no JWT (for example, a manually changed Portainer password), warn and skip endpoint/API-token setup rather than failing the whole configurator silently. If zero endpoints exist, `POST /api/endpoints` with `Name=local&EndpointCreationType=1` to create a local Docker socket endpoint. This makes containers visible in the Portainer UI without requiring the user to complete the web-UI setup wizard.
-
-**Persistent API token:** After JWT auth, creates a persistent API access token via `POST /api/users/1/tokens` with `{"description": "Homepage", "password": "<admin_pw>"}`. The `rawAPIKey` (returned only at creation time) is saved to `.env` as `PORTAINER_API_KEY`. Used by the Homepage Portainer widget in Step 8. Idempotent: if `PORTAINER_API_KEY` is already set in `.env`, validates it against `GET /api/endpoints` — only creates a new token if the existing one is missing or invalid.
-
-**Idempotency:** Skip admin creation if already initialized (204 from admin check). Skip endpoint creation if any endpoint already exists. Skip API token creation if existing token validates.
 
 ## Step 8 — Homepage (`scripts/services/homepage/main.sh`)
 
 **No auth needed.** Homepage reads static YAML config files from `/app/config/` and hot-reloads on change. No Docker socket mount — the main security win over the previous Flame dashboard.
 
-**Writes:** Generates `config/homepage/services.yaml` via Python `yaml.safe_dump`. Five service groups: Media (Jellyfin + Seerr), Media Management (Sonarr + Radarr + optional Bazarr), Downloads (qBittorrent + Jackett), Network (NPM + optional WireGuard + optional DDNS Updater), Admin (Portainer + optional Beszel + Uptime Kuma). Nine services get native API widgets showing live data:
+**Writes:** Generates `config/homepage/services.yaml` via Python `yaml.safe_dump`. Four service groups are always present: Media (Jellyfin + Seerr), Media Management (Sonarr + Radarr + optional Bazarr), Downloads (qBittorrent + Jackett), and Admin (Portainer + Beszel when running + Uptime Kuma). Network is added only when NPM, WireGuard, or DDNS Updater qualifies. Nine services can get native API widgets showing live data:
 
 | Service | Widget type | Auth source |
 |---------|------------|-------------|
 | Jellyfin | `jellyfin` | `JELLYFIN_API_KEY` from `.env` |
-| Seerr | `seerr` | `SEERR_API_KEY` from `.env` (extracted in Step 6) |
+| Seerr | `seerr` | `SEERR_API_KEY` from `.env` (extracted in Step 7) |
 | Sonarr | `sonarr` | `SONARR_API_KEY` from `.env` |
 | Radarr | `radarr` | `RADARR_API_KEY` from `.env` |
 | qBittorrent | `qbittorrent` | Subnet-whitelisted (no auth needed) |
 | NPM | `npm` | `NPM_ADMIN_EMAIL` + `JELLYFIN_ADMIN_PASSWORD` from `.env` |
-| Portainer | `portainer` | `PORTAINER_API_KEY` from `.env` (created in Step 7) |
+| Portainer | `portainer` | `PORTAINER_API_KEY` from `.env` (created in Step 1) |
 | Beszel | `beszel` | `NPM_ADMIN_EMAIL` + `JELLYFIN_ADMIN_PASSWORD` from `.env` |
 | Uptime Kuma | `uptimekuma` | Public status page slug (no auth) |
 
-Widget `url` values use internal container names (`http://sonarr:8989`) — resolved via Docker DNS on the `mediastack` network. Widgets are conditional: omitted if the required key/credential is empty (graceful degradation on partial configuration).
+Widget `url` values use internal container names (`http://sonarr:8989`) — resolved via Docker DNS on the `mediastack` network. Jellyfin, Sonarr, and Radarr widget entries are written even when their keys are empty. Other credentialed widgets are omitted when their required credentials are empty.
 
 Before rendering the Jellyfin widget, Homepage reads its unauthenticated local `GET /System/Info/Public` version. Versions below 10.12.0 use widget API mode 1; 10.12.0 and newer use mode 2. A failed, oversized, malformed, or prerelease response preserves an existing `services.yaml`; a fresh install leaves it absent and continues other safe Homepage maintenance.
 
@@ -295,7 +299,7 @@ All services get `description` (short role label) and `siteMonitor` (internal UR
 
 **Remote-ready URLs:** User-facing services (Jellyfin, Seerr) get subdomain `href` URLs (`https://jellyfin.$DOMAIN`) only when `REMOTE_WEB_STATE=ready` and `DOMAIN` is real. Unchecked or skipped remote state uses LAN URLs. Admin tools always use `http://HOST_ADDRESS:port`.
 
-**Optional services:** Bazarr, WireGuard, DDNS Updater, Beszel detected via `docker compose ps` — included only when running.
+**Service guards:** Bazarr, WireGuard, DDNS Updater, and default-stack Beszel are included only when running; NPM also requires a real domain.
 
 **Idempotency:** Compare generated YAML with existing file. `log_skip` if identical, write + `log_ok` if different.
 
@@ -326,7 +330,7 @@ NPM ships with an empty user table on first boot. The famous `admin@example.com 
 
 Admin tools (Sonarr, Radarr, Jackett, qBittorrent) are NOT proxied — they stay LAN/VPN-only. Fail2ban protects all proxied traffic via the NPM access log jail (401/403 responses) plus per-service jails for Jellyfin and Seerr.
 
-`DOMAIN` still controls infrastructure startup elsewhere: `scripts/setup/stack.sh::profiles_build_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
+`DOMAIN` still controls infrastructure startup elsewhere: `scripts/lib/profiles.sh::profiles_build_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
 
 NPM admin setup, health healing, default-site hardening, the rate-limit step (which only writes the `limit_req_zone` when `rate_limiting.enabled` is true — otherwise it logs a skip; disabled by default — see [`rate_limiting`](configuration-schema.md#rate_limiting)), reload checks, and fail2ban jail validation run even when remote state is unchecked, skipped, or failed. Only public proxy hosts, certificate requests, and cert-backed HTTPS publication are inside the ready/attempt gate. `NPM_LE_SERVER` remains part of the ready path so DinD/Pebble can exercise certificate issuance without production Let's Encrypt. Each Stage 2 remote cert attempt writes `config/state/npm-cert-status-last.json` for persistent forensics.
 
@@ -336,9 +340,13 @@ NPM admin setup, health healing, default-site hardening, the rate-limit step (wh
 
 Only runs if the `ddns-updater` container is running (detected via `docker ps`). Actual DDNS config seeding happens in `setup.sh` before containers start — this step just reports status so `configure.sh` output is consistent.
 
-Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; if absent, `log_warn` with guidance to configure at the web UI (`http://<ip>:8000`).
+Checks whether `config/ddns-updater/config.json` exists. If present, `log_ok` points to the status-only web UI (`http://<ip>:8000`) and the menu action for changing provider credentials. If absent, `log_warn` points to **Features & settings → Add remote access**.
 
-## Step 11 — Uptime Kuma (`configure_uptime_kuma` in `scripts/services/uptime-kuma/main.sh`)
+## Step 11 — WireGuard (`configure_wireguard` in `scripts/services/wireguard/main.sh`)
+
+Only runs when the WireGuard container is running. After a health wait, the configurator checks wg-easy Basic Auth, enables its per-client firewall when configured, creates the initial peer if absent, and sets its firewall IPs from the selected access tier. An access-tier enforcement failure stops the remaining configure flow.
+
+## Step 12 — Uptime Kuma (`configure_uptime_kuma` in `scripts/services/uptime-kuma/main.sh`)
 
 **No config.yml dependency.** Uptime Kuma is fully auto-configured with no user-editable parameters.
 
@@ -356,9 +364,9 @@ Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; i
 
 **Stderr handling:** npm install and Node.js errors go to `/tmp/kuma-configure.err`. On failure (empty stdout), the last 5 lines of stderr are logged via `log_warn`.
 
-## Step 12 — Beszel (`configure_beszel` in `scripts/services/beszel/main.sh`)
+## Step 13 — Beszel (`configure_beszel` in `scripts/services/beszel/main.sh`)
 
-**Conditional.** Only runs when the `beszel` container is running. Beszel is part of the default stack, but the guard keeps targeted or partial runs graceful. Configures the Beszel hub+agent system resource monitor via PocketBase REST API.
+Beszel is part of the default stack. When selected, `configure.sh` waits for its service, then calls `configure_beszel` without a running-container guard. Configures the Beszel hub+agent system resource monitor via PocketBase REST API.
 
 **Auth:** `POST /api/collections/users/auth-with-password` with `NPM_ADMIN_EMAIL` / `JELLYFIN_ADMIN_PASSWORD`. The hub auto-creates this user from `USER_EMAIL`/`USER_PASSWORD` env vars on first container start — no API call needed for initial user creation.
 
@@ -372,4 +380,4 @@ Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; i
 
 ## Unpackerr restart (end of `main()` in `scripts/configure.sh`)
 
-After the 11 steps, `docker compose up -d unpackerr` recreates the container so it picks up the `SONARR_API_KEY` + `RADARR_API_KEY` env vars that `configure.sh` just wrote to `.env`. A plain `docker compose restart` would not work — it reuses the original (empty) env. `up -d` detects the env change and recreates with the new values.
+After the service steps on a full, non-manual run, `configure.sh` attempts `docker compose up -d unpackerr` so it can pick up the `SONARR_API_KEY` + `RADARR_API_KEY` env vars written to `.env`. A plain `docker compose restart` would reuse the original (empty) env. `up -d` can detect the env change and recreate with the new values, but this call's exit status is not checked. If fail2ban is running, `configure.sh` then attempts to reload it so jails watch the current log files.

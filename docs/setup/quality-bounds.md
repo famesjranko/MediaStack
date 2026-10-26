@@ -126,13 +126,7 @@ Re-pick a resolution, then a size. The launcher rewrites only the quality sectio
 
 > Downgrading the resolution (e.g. 1080p → 720p) disables the higher tiers in the profile but leaves their **global** `quality_definitions` bounds in place — they are shared across all profiles and simply go unused by the narrower profile. This is expected, not a leak.
 
-**Switch cells during setup** — re-run the wizard:
-
-```bash
-./scripts/setup/wizard.sh
-```
-
-Pick a resolution, then a size; the wizard rewrites `config.yml`. Then re-run `./configure.sh` to push the new bounds and scores to Sonarr/Radarr.
+**Switch cells** — run `./mediastack`, choose *Features & settings*, then *Change quality profile*. Pick a resolution, then a size; the launcher rewrites `config.yml` and pushes the new bounds and scores to Sonarr/Radarr.
 
 **Hand-tune within a cell** — edit `config.yml` directly:
 
@@ -140,7 +134,7 @@ Pick a resolution, then a size; the wizard rewrites `config.yml`. Then re-run `.
 - `quality_definitions.radarr.<Quality>: { min, preferred, max }`
 - `custom_formats.<Format>: <score>`
 
-Then re-run `./configure.sh`. The renderer (`scripts/lib/arr/render/quality_definitions.py`) reads live state via `GET /api/v3/qualitydefinition` and only `PUT`s tiers that differ from `config.yml`. If you've been editing values in the Sonarr/Radarr UI directly, expect a `log_warn` rather than a silent overwrite — re-runs surface drift but never auto-reconcile.
+Then re-run `./scripts/configure.sh`. The renderer (`scripts/lib/arr/render/quality_definitions.py`) reads live state via `GET /api/v3/qualitydefinition` and only `PUT`s tiers that differ from `config.yml`. If you've been editing values in the Sonarr/Radarr UI directly, expect a `log_warn` rather than a silent overwrite — re-runs surface drift but never auto-reconcile.
 
 ## Adding a resolution
 
@@ -150,4 +144,4 @@ Adding a 2160p / 4K column is a **pure data change** to `presets.yml`: a new `re
 
 - TRaSH Guides — Sonarr quality settings file size: https://trash-guides.info/Sonarr/Sonarr-Quality-Settings-File-Size/
 - TRaSH Guides — Radarr quality settings file size: https://trash-guides.info/Radarr/Radarr-Quality-Settings-File-Size/
-- Related: [`docs/setup/configuration-schema.md`](../setup/configuration-schema.md) — `quality_profile`, `quality_definitions`, `custom_formats` schema reference
+- Related: [`docs/setup/configuration-schema.md`](configuration-schema.md) — `quality_profile`, `quality_definitions`, `custom_formats` schema reference

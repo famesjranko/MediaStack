@@ -1,23 +1,28 @@
-# Operations
+# Day-2 internals
 
-Day-2 scripts under `scripts/` and routine operational tasks. Backup and
-long-term data protection are intentionally out of scope for MediaStack.
+Contributor reference for the day-2 scripts under `scripts/` and the launcher
+actions that call them. For the user procedures, see the guides:
+[Use the MediaStack menu](../guide/using-the-menu.md) and
+[Troubleshooting](../guide/troubleshooting.md). Backup and long-term data
+protection are intentionally out of scope for MediaStack.
 
 ## `./mediastack` → Uninstall MediaStack
 
-Uninstall is a typed-`DESTROY`, transactional action. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership (MediaStack-installed Samba is purged, not just removed, and the Linux account MediaStack created is deleted when nothing outside MediaStack's paths uses it; no autoremove runs, so Samba's dependency packages stay), watchdog units, and setup banners. `data/`, `config/examples/` and the checkout are preserved. `config/` runtime state, `.env`, `config.yml`, the generated compose override, and MediaStack's labelled Docker volumes and networks are removed.
+User steps: [Remove MediaStack](../guide/install.md#remove-mediastack).
 
-The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts the recorded teardown and instead offers a best-effort cleanup of the host changes MediaStack can still identify on its own. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried. User-modified MediaStack-owned files are preserved and reported instead of overwritten or deleted.
+Uninstall is a typed-`DESTROY`, ordered teardown that can stop partway and be retried. It stops every Compose profile, verifies no project containers remain, then removes tagged UFW rules, the live Docker firewall chain, MediaStack APT drop-ins, a MediaStack-written Docker apt source that cannot work on this host (a working one stays, because Docker Engine stays installed and the source keeps it patched), unchanged sysctl hardening, Samba ownership (MediaStack-installed Samba is purged, not just removed, and the Linux account MediaStack created is deleted when nothing outside MediaStack's paths uses it; no autoremove runs, so Samba's dependency packages stay), watchdog units, and setup banners. The configured `DATA_DIR` media path, `config/examples/` and the checkout are preserved. `config/` runtime state, `.env`, `config.yml`, the generated compose override, and MediaStack's labelled Docker volumes and networks are removed.
+
+The ownership ledger is `/etc/mediastack/install-state`. Missing or malformed state aborts the recorded teardown and instead offers a best-effort cleanup of the host changes MediaStack can still identify on its own. Docker or host-cleanup failure retains `.env` and the ledger so the same action can be retried; containers already removed are not restored. Edited host files with ownership checks, such as MediaStack's APT drop-ins, sysctl file and Samba include, are preserved and reported. This protection does not cover all MediaStack-owned files.
 
 ## `scripts/update.sh`
 
-Wrapper around `docker compose pull && up -d` for the configured image channel.
+Pulls images for the configured channel, then runs Compose `up -d` with the enabled profiles. After three failed pull attempts, it warns and continues with cached images; a completed run does not prove the pull succeeded.
 
 Flow (`scripts/update.sh`):
 
 1. **Override refresh** — reads `IMAGE_CHANNEL` from `.env`, regenerates `docker-compose.override.yml`, and validates `docs/operations/image-digests.lock` for Stable.
 2. **Profile selection** — `profiles_build_args` reads the enabled optional profiles from `.env` (the same table the installer and launcher use) and passes their `--profile` flags to the later commands. An enabled service that is stopped or crashed is recreated too. Without the flags, `pull` would skip optional-profile services.
-3. **Pull** — `docker compose $PROFILE_ARGS pull`. Stable pulls the tested `tag@sha256:digest` refs from the generated override; Latest pulls the tags in `docker-compose.yml`.
+3. **Pull** — `docker compose $PROFILE_ARGS pull`, with up to three attempts. Stable pulls the tested `tag@sha256:digest` refs from the generated override; Latest pulls the tags in `docker-compose.yml`. If all attempts fail, it warns and continues with cached images.
 4. **Recreate** — `docker compose $PROFILE_ARGS up -d --remove-orphans`. `--remove-orphans` cleans up containers from services that have been deleted from the compose file.
 5. **Optional prune** — only when run with `--prune`, calls `docker image prune -f` to reclaim disk from dangling images. This prune is host-wide, so the default update path skips it.
 6. **Converge** — runs the same steps as **Health & security → Apply changes from a MediaStack update** (admin-port filter, qBittorrent legacy whitelist, Beszel system entry, unused Beszel UFW rule, WireGuard UFW rule, missing NAS watchdog; see that section). A failure is reported after the status table and makes the script exit non-zero.
@@ -33,7 +38,7 @@ Flow (`scripts/update.sh`):
 
 ## `./mediastack` → Health & security → Apply changes from a MediaStack update
 
-After you pull new MediaStack code onto a finished install, run this action once. A finished install never re-runs setup or configure on its own: **Install MediaStack** ends at the existing-install menu with "No changes made", and a re-run with `STAGE_1_COMPLETE=1` skips configure. So a release that changes MediaStack's own host or service state cannot reach the box unless this action applies it. The main-menu "Admin-port filter NOT active" warning and the Health & security firewall check name this action as the fix.
+User steps: [Update MediaStack itself](../guide/using-the-menu.md#update-mediastack-itself). After you pull new MediaStack code onto a finished install, run this action once. A finished install never re-runs setup or configure on its own: **Install MediaStack** ends at the existing-install menu with "No changes made", and a re-run with `STAGE_1_COMPLETE=1` skips configure. So a release that changes MediaStack's own host or service state cannot reach the box unless this action applies it. The main-menu "Admin-port filter NOT active" warning and the Health & security firewall check name this action as the fix.
 
 It changes only MediaStack's own artefacts, and each step is idempotent:
 
@@ -48,12 +53,12 @@ All steps always run, so a filter failure never hides a later step. Your own cho
 
 ## `./mediastack` → Manage updates (per-service)
 
-The launcher's post-install **"Manage updates"** screen is the day-2 update surface for
-non-technical users — per-image visibility and selective control, without SSH or Portainer.
+User steps: [Manage updates](../guide/using-the-menu.md#manage-updates). This section holds the
+state model behind the screen.
 
-`stable`/`latest` is an **install-time** choice only (which image versions the installer
-was tested against); post-install every update is a uniform, manual opt-in, so detection and apply
-are fully channel-agnostic — an update is an update.
+`stable`/`latest` is an **install-time** choice only (see
+[Stable and latest images](../guide/using-the-menu.md#stable-and-latest-images)); post-install every
+update is a uniform, manual opt-in, so detection and apply are channel-agnostic.
 
 **Status scan.** `python3 scripts/image_drift.py --status` (table) / `--status-tsv` (machine)
 reports, per service, a **Policy** (`Pinned` = still on its installed digest / `Tracking tag` =
@@ -74,27 +79,28 @@ you've updated — an explicit per-service row) or `default`. The running digest
 **image object** (`docker image inspect … RepoDigests`, repo-matched), not the container; both it
 and the upstream digest are manifest-list digests, so the comparison is multi-arch safe.
 
-**Menu actions.**
-- **Update a service / Update all** — pull the newest image for the service(s). A service still on
-  its installed (pinned) digest floats to its compose tag — a sticky per-service `latest` override
-  in `config/state/image-policy.tsv` — while one already tracking its tag just pulls the newer
-  digest. "Update all" covers every updatable service and **excludes WireGuard**; a single WireGuard
-  update needs an extra confirm (it can disconnect the VPN client running it).
-- **Revert a service to its installed image** — re-pins the service to the digest it was installed
-  running (recorded in `config/state/image-install.tsv`), on **any** channel — written as a per-service
-  digest pin in `config/state/image-policy.tsv`. Lists only services you've updated (a manual override),
-  excluding `Not installed`. If the installed image is no longer available upstream the recreate is
-  rolled back onto the service's previous cached image rather than left down.
-- **Restore points and Revert checks.** Before **Update a service** or **Update all** moves a service off its installed image, MediaStack saves a restore point of `config/<service>` (up to 256 MiB), taken while the service is stopped for the update. **Revert a service to its installed image** puts that config back with the old image, then checks that the service is healthy and that MediaStack can still log in to qBittorrent, Sonarr, Radarr and Jellyfin. If the check fails, Revert says so and keeps the restore point. If there is no restore point, Revert warns that the config may be newer than the image and asks you to confirm.
-- **What the lists show.** The Revert list shows only services you have updated (a manual override) that are installed. **Update all** skips stopped services and lists them as skipped; update one with **Update a service** (the new image is staged until it starts).
-- **Re-check for updates now** — re-runs the registry scan.
+**Policy files.**
+- **Update a service / Update all** — a service still on its installed (pinned) digest floats to its
+  compose tag, recorded as a sticky per-service `latest` override in `config/state/image-policy.tsv`;
+  one already tracking its tag just pulls the newer digest. "Update all" excludes WireGuard; a single
+  WireGuard update needs an extra confirm (it can disconnect the VPN client running it).
+- **Revert a service to its installed image** — re-pins the service to the digest recorded at install in
+  `config/state/image-install.tsv`, on **any** channel, written as a per-service digest pin in
+  `config/state/image-policy.tsv`. If the installed image is no longer available upstream, the recreate
+  is rolled back onto the service's previous cached image rather than left down.
+- **Restore points.** Before an update moves a service off its installed image, MediaStack attempts to save a restore point of
+  `config/<service>` (up to 256 MiB) while the service is stopped. A failed backup is reported, but the update can continue. When a restore point exists, Revert restores it with the
+  old image, then checks service health and MediaStack's logins to qBittorrent, Sonarr, Radarr and
+  Jellyfin. A failed check keeps the restore point. With no restore point, Revert warns and asks to
+  confirm.
+- **Skips.** The Revert list shows only installed services with a manual override. **Update all** skips
+  stopped services and lists them as skipped.
 
-To change the global install channel after install, re-run the installer (`./mediastack` → Install)
-and pick the other channel; there is no day-2 channel toggle. The CLI `scripts/update.sh` remains a
-bulk re-pull per the current override.
+There is no day-2 channel toggle. Re-running the installer on a completed installation does not offer a channel change; use the per-service update and revert actions. The CLI
+`scripts/update.sh` remains a bulk re-pull per the current override.
 
 Update and revert only **recreate a service that is already running**; a stopped service has its new
-image pulled and staged but is **not started** — the change applies the next time the stack starts.
+image pulled and staged but is **not started** — the change applies on the next Compose recreation, such as **Manage stack → Start all services**. **Start a service** starts the existing container without applying the staged image.
 
 Every apply regenerates `docker-compose.override.yml` (preserving GPU/mem/NAS settings), runs the
 storage guard, and recreates only the touched service (no `--remove-orphans`). "latest" follows the
@@ -104,28 +110,24 @@ file is never edited by this path.
 
 ## `./mediastack` → Manage hardware transcoding
 
-The launcher's post-install **"Manage hardware transcoding (GPU)"** screen is the
-day-2 surface for GPU driver/encoder changes. It is intentionally separate from
-**Manage updates**, which only manages container images.
+User steps: [Manage hardware transcoding (GPU)](../guide/using-the-menu.md#manage-hardware-transcoding-gpu).
+The screen is separate from **Manage updates**, which only manages container images.
 
-Actions:
-
-- **Configure or change hardware transcoding** — delegates to `./setup.sh --transcoding`.
-  This re-detects the GPU and runs the Stage 3 hardware engine without rerunning Stage 1/2.
-  NVIDIA users can choose **Standard driver** or **Unlock NVENC limit (advanced)** here.
-- **Update NVIDIA driver + reapply Unlock patch** — available only for an active
-  NVIDIA/Unlock configuration. The guarded setup action defaults to No, downloads before
-  mutation, refuses loaded modules, installs once, and patches only after reboot/version verification.
-- **Reapply Unlock patch only** — uses the same guarded setup route and reviewed pinned patch.
-  Both Unlock actions stay hidden and fail closed for Standard, externally managed, and non-NVIDIA installs.
-- **Reboot to finish hardware transcoding** — appears when an NVIDIA finalize marker is
-  waiting on the current boot.
+- **Configure or change hardware transcoding** delegates to `./setup.sh --transcoding`, which
+  re-detects the GPU and runs the Stage 3 hardware engine without rerunning Stage 1/2.
+- **Update NVIDIA driver + reapply Unlock patch** is available only for an active NVIDIA/Unlock
+  configuration. The guarded setup action defaults to No, downloads before mutation, refuses loaded
+  modules, installs once, and patches only after reboot/version verification.
+- **Reapply Unlock patch only** uses the same guarded route and the reviewed pinned patch. Both
+  Unlock actions stay hidden and fail closed for Standard, externally managed, and non-NVIDIA installs.
+- **Reboot to finish hardware transcoding** appears while an NVIDIA finalize marker waits on the
+  current boot.
 
 ## `./mediastack` → Features & settings → Change quality profile
 
-The launcher's post-install **"Change quality profile (resolution & size)"** action (under
-**Features & settings**) re-picks the quality cell after install — the day-2 counterpart of the
-wizard's two-prompt quality step — without re-running the whole wizard or hand-editing `config.yml`.
+User steps: [Change the quality profile](../guide/using-the-menu.md#change-the-quality-profile). The
+action (under **Features & settings**) re-picks the quality cell without re-running the wizard or
+hand-editing `config.yml`.
 
 Flow:
 
@@ -149,12 +151,11 @@ If you renamed the quality profile yourself in the Sonarr/Radarr UI (so the live
 
 ## `./mediastack` → Features & settings → Update DDNS provider / credentials
 
-The **"Update DDNS provider / credentials"** action (under **Features & settings**) swaps the
-dynamic-DNS provider — or just re-enters its credentials — after install, reusing the exact provider
-picker, JSON renderer and ephemeral verify the setup wizard uses (`scripts/lib/ddns-providers.sh` +
-`scripts/lib/network.sh`). The row is shown only once remote access is set up **and** uses DDNS (a
-static-IP remote has no provider to change); when remote access is not configured yet, use **Add remote
-access** instead.
+User steps: [Change the DDNS provider or credentials](../guide/remote-access.md#change-the-ddns-provider-or-credentials).
+The action swaps the dynamic-DNS provider, or re-enters its credentials, reusing the provider
+picker, JSON renderer and ephemeral verify of the setup wizard (`scripts/lib/ddns-providers.sh` +
+`scripts/lib/network.sh`). The row is shown only once remote access uses DDNS; otherwise **Add remote
+access** applies.
 
 This action keeps your **existing domain** — so it only covers switches where the domain doesn't move:
 re-entering the current provider's credentials, or switching between the two bring-your-own-domain
@@ -171,12 +172,14 @@ Flow:
 3. **Domain-change check** — if the chosen provider can't manage your current domain (any switch
    involving a free-hostname provider), you're told a new hostname is needed and offered a jump to
    **Add remote access**; nothing is changed here.
-4. **Collect + verify** — you enter the new provider's credentials, which are checked in a throwaway
-   `ddns-updater` container with **zero blast radius** (the live service is not touched). Rejected
-   credentials re-prompt; if verification can't run (Docker/network issue), nothing changes.
+4. **Collect + verify** — you enter the new provider's credentials and test them in a throwaway
+   `ddns-updater` container. This can send a live update request to the DNS provider, but does not
+   change the running updater's config. For Dynu and other `dyndns2` providers, an unchanged IP can
+   return success without checking the password; the next IP change is the meaningful check. Rejected
+   credentials re-prompt; if verification can't run (Docker/network issue), the live config stays unchanged.
 5. **Confirm** — you are warned that switching restarts `ddns-updater`, and told the current config is
    backed up and restored if the restart fails (default: no).
-6. **Apply (verify-first)** — only after the credentials verify: the current `config.json` is
+6. **Apply (verify-first)** — only after verification returns success: the current `config.json` is
    snapshotted, the new one is written (chmod 600), `ddns-updater` is restarted, and its startup is
    confirmed. If it fails to come up, the previous config is **restored** and the `DDNS_PROVIDER` key in
    `.env` is left unchanged.
@@ -184,23 +187,15 @@ Flow:
 Credentials live only in the chmod-600 `config/ddns-updater/config.json`; `.env` keeps just the
 non-secret `DDNS_PROVIDER` key. The `:8000` web UI is view-only status, not a place to configure.
 
-**Seeing DDNS status.** When a provider is configured and `ddns-updater` is running, the main-menu
-header shows a `DDNS:` line with the **confirmed IP** (what your domain currently resolves to). It is
-green when that IP matches your detected WAN IP (the record is up to date), **yellow** when it resolves
-to a different IP (`propagating?` — the record is stale or still catching up), or plain `not resolving
-yet` when there's no A-record. The
-same status appears in **Manage stack** (next to *Remote access*) as `DDNS: <provider> · <ip> ·
-<state>`. For an active, on-demand check, **Diagnostics → DNS check** resolves your subdomains and
-compares them to your live WAN IP (and shows the provider + container health when DDNS is set up).
-
-The banner's Public IP and DDNS IP are cached for the session (so the menu doesn't re-probe on every
-redraw), so a record propagating from `propagating?` to up-to-date won't update mid-session on its own.
-The main-menu **Refresh status** option re-checks both and redraws — use it to watch a DDNS change take
-effect after switching providers.
+**DDNS status display.** The main-menu `DDNS:` line and the **Manage stack** line show the confirmed
+IP against the detected WAN IP; the states are in
+[Check it works](../guide/remote-access.md#check-it-works). The banner caches the Public IP
+for the session; [**Refresh status**](../guide/using-the-menu.md#refresh-status) refreshes it.
+The DDNS A record is resolved on each banner redraw.
 
 ## `./mediastack` → Features & settings → Firewall (UFW) / System hardening
 
-Three ON/OFF toggles mirror the Stage 1 wizard's Security prompts, backed by `UFW_ENABLED`,
+User steps: [Firewall, admin-port filter, and hardening](../guide/using-the-menu.md#firewall-admin-port-filter-and-hardening). Three ON/OFF toggles mirror the Stage 1 wizard's Security prompts, backed by `UFW_ENABLED`,
 `ADMIN_PORT_FILTER` and `HARDENING_ENABLED` in `.env`:
 
 - **Firewall (UFW)** — ON runs `setup_ufw` (default-deny inbound, LAN/SSH/web allowed),
@@ -224,6 +219,11 @@ Three ON/OFF toggles mirror the Stage 1 wizard's Security prompts, backed by `UF
   owns and removing the MediaStack drop-ins. ON applies only MediaStack's own sysctl file and fails loudly if a key does not take effect or
   `ip_forward` changes. UFW's `/etc/ufw/sysctl.conf` can override `log_martians` on each UFW reload;
   setup and the OFF message then say that UFW owns the key.
+
+- **File sharing (SMB)** — OFF removes MediaStack's share block and its `MediaStack:SMB-LAN` firewall
+  rules and resets `SMB_SHARE_SCOPE` to `data`. It stops and disables `smbd`/`nmbd` only when
+  MediaStack installed Samba; a Samba that was already there keeps running with the user's own shares.
+  User steps: [Share files on your LAN](../guide/using-the-menu.md#share-files-on-your-lan).
 
 Both ON actions refuse (warn + skip) when no valid ownership ledger exists — run a full install or
 reset first. Toggling is add-only: turning a feature off never deletes user data or user-owned
@@ -252,7 +252,7 @@ access: wg-easy's per-peer `firewallIps` still decide which addresses and ports 
 Shown **only on NAS installs** (`STORAGE_MODE=nas`) as a top-level menu item — local
 installs have no mount to inspect (data dir + free space already show in **Manage stack**).
 A read-only status box built entirely from the `storage_*` getters in
-`scripts/setup/storage.sh`, so a non-technical user can see their mount at a glance:
+`scripts/setup/storage.sh`. User steps: [View storage & data mount](../guide/using-the-menu.md#view-storage--data-mount). Fields:
 
 - **NAS source** — the expected `host:/export` (`storage_expected_source`).
 - **Filesystem** — expected type plus live state: `mounted, healthy`; `mounted, verifying…`
@@ -288,7 +288,7 @@ No `docker compose` restart is involved — it is a host systemd unit, not a Com
 
 ## `scripts/nvidia-repatch.sh`
 
-Repatch wrapper for after NVIDIA driver updates — relevant **only in Unlock NVENC mode** (`NVIDIA_DRIVER_MODE=unlock`). Standard (Debian-managed) and `existing` installs are not patched and are maintained by apt, so the script is a no-op there with guidance (override with `--force`). See [Phase 9 — hardware transcoding](../setup/setup-flow.md) for how the driver mode is chosen.
+Repatch wrapper for after NVIDIA driver updates — relevant **only in Unlock NVENC mode** (`NVIDIA_DRIVER_MODE=unlock`). Standard (Debian-managed) and `existing` installs are not patched and are maintained by apt, so the script is a no-op there with guidance (override with `--force`). See [GPU detection + Hardware Transcoding ownership](../setup/setup-flow.md#gpu-detection--hardware-transcoding-ownership) for how the driver mode is chosen.
 
 Flow:
 
@@ -312,11 +312,11 @@ vim config.yml
 ./scripts/configure.sh
 ```
 
-Safe to re-run. Each step is idempotent — existing resources are detected by name/path and skipped. Added indexers/libraries are created; removed ones stay in place (the script doesn't reconcile — it only adds).
+Safe to re-run, but not add-only. Existing resources are checked before changes; some settings, including authenticated qBittorrent preferences and Jellyfin settings, can be updated. Added indexers/libraries are created; removed ones generally stay in place rather than being reconciled.
 
 **Caveats:**
 
-- **qBittorrent** (Step 1) short-circuits on re-runs because the temp password no longer exists (`configure_qbittorrent()` auth-fallback logic). Editing `qbittorrent.max_ratio` in `config.yml` will NOT push to a running instance.
+- **qBittorrent** runs after Portainer. A re-run first tries the shared admin password. A change to `qbittorrent.max_ratio` in `config.yml` applies if authentication succeeds; otherwise configuration warns and skips qBittorrent.
 - **Quality profile edits** are name-keyed. If you hand-edit `quality_profile.name` in `config.yml` and run `configure.sh`, it creates a *new* profile alongside the old one (you must delete the old one manually and re-point existing series). To change the quality cell **without** orphaning the profile, use the launcher's **Features & settings → Change quality profile** action instead — it renames the profile in place (see above).
 - **Removed indexers** stay registered. Delete via Jackett UI manually.
 
@@ -324,27 +324,30 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
 
 - Anything in `.env` that's interpolated into `docker-compose.yml` (PUID, PGID, TZ, paths, `SONARR_API_KEY` for unpackerr).
   ```bash
-  docker compose up -d       # picks up new env for changed services
+  ./mediastack
   ```
+  Choose **Manage stack → Start all services** to recreate changed services, including enabled optional profiles.
 - Changes to fail2ban jails or filters:
   ```bash
   docker compose restart fail2ban
   ```
-  To view or release bans without shelling into the container, use `./mediastack` → **Manage fail2ban**:
-    - **Banned IPs** — the hub. Every currently-banned address is one row (collapsed across jails); pick one, then **Unban** to release it, or **Unban + always allow** to release it *and* add it to the whitelist so it is never banned again. With more than one address banned, **Unban all** releases everything at once (each can still be re-banned on its next failed login).
-    - **Whitelist (always-allow IPs)** — the addresses/ranges fail2ban never bans. Add or remove your own entries; the four private-network defaults are locked.
-    - **Jail stats & history** — per-jail ban counts and all-time totals, a drill-down into any jail (with its watched log path), and the recent Ban/Unban log.
+  The **Manage fail2ban** menu views and releases bans; see
+  [Manage fail2ban](../guide/using-the-menu.md#manage-fail2ban). A ban blocks **all** services, and one
+  unban clears the address from **every** jail.
 
-  Two things to know: a ban blocks **all** services, not just the jail that fired it; and one unban clears the address from **every** jail at once.
+  The menu and health checks tell two cases apart: with no real `DOMAIN` in `.env`, fail2ban is *not
+  installed (LAN-only install)*; with a domain set, it is *installed but not running*, because a stopped
+  fail2ban on a remote-access host leaves the logins unprotected.
 
-  The menu and the health checks tell two cases apart. With no real `DOMAIN` in `.env` they say fail2ban is *not installed (LAN-only install)*. With a domain set they say it is *installed but not running* and point to **Manage stack → Start a service**, because a stopped fail2ban on a remote-access host leaves the logins unprotected.
-
-  Daily log rotation needs no action. Jellyfin and Seerr write a new dated log file each day; the `mediastack-fail2ban-reload.service` watcher reloads fail2ban whenever a new file appears, so the jails keep following the current log without a manual restart. If that watcher ever stops, the Health & security menu's *fail2ban jellyfin watch* check reports a jail left on a stale file.
+  Daily log rotation needs no action. Jellyfin and Seerr write a new dated log file each day; the
+  `mediastack-fail2ban-reload.service` watcher reloads fail2ban whenever a new file appears. If the
+  watcher stops, the Health & security *fail2ban jellyfin watch* check reports a jail left on a stale file.
 - GPU override file regeneration (new GPU hardware):
   ```bash
-  ./setup.sh                 # re-detects GPU, regenerates override.yml
-  docker compose up -d       # applies the new runtime/devices
+  ./setup.sh --transcoding   # configure and verify hardware transcoding
+  ./mediastack
   ```
+  Choose **Manage stack → Start all services** to apply the new runtime/devices across enabled profiles.
 - NVIDIA healthcheck override changes:
   ```bash
   ./setup.sh --transcoding
@@ -353,67 +356,44 @@ Safe to re-run. Each step is idempotent — existing resources are detected by n
   ```
   Docker restart policies do not restart on `unhealthy`; MediaStack relies on the autoheal sidecar for healthcheck-triggered recovery.
 
-### Adding a new indexer
+### Adding an indexer or a Jellyfin library
 
-1. `vim config.yml` — add `- id: <jackett-id>\n  type: <general|tv|movies>`.
-2. `./scripts/configure.sh` — Step 2 adds to Jackett, Step 3/4 add to Sonarr/Radarr as Torznab.
+User steps: [Add an indexer or a library](../guide/using-the-menu.md#add-an-indexer-or-a-library).
+`./scripts/configure.sh` Step 2 adds an indexer to Jackett and Steps 3/4 add it to Sonarr/Radarr as
+Torznab; Step 5 creates a library via `/Library/VirtualFolders`. Replacing a dead indexer stays manual:
+delete it from `config.yml`, Jackett and Sonarr/Radarr, then re-run configure.sh.
 
-To *replace* a dead indexer: delete the old entry from `config.yml`, manually delete from Jackett + Sonarr/Radarr UI, then run configure.sh to add the replacement.
+### Log rotation
 
-### Adding a new Jellyfin library
-
-1. `vim config.yml` — add to `jellyfin.libraries`.
-2. `./scripts/configure.sh` — Step 5 creates it via `/Library/VirtualFolders`.
-3. Jellyfin scans the new folder asynchronously.
-
-### Log viewing
-
-```bash
-docker compose logs -f <service>          # tail all
-docker compose logs --since 1h <service>  # last hour
-docker compose logs --tail 100 <service>  # last 100 lines
-```
-
-Log rotation: `x-logging` anchor (`&default-logging` in `docker-compose.yml`) caps each service at 3 x 10 MB rotated json-files.
+User steps: [Troubleshooting](../guide/troubleshooting.md#first-checks). The `x-logging` anchor (`&default-logging` in `docker-compose.yml`) defaults to 3 x 10 MB rotated json-files. `ddns-updater` overrides it with 2 x 1 MB.
 
 ## Recovery
 
+User steps are in [Troubleshooting](../guide/troubleshooting.md). This section keeps the code behind them.
+
 ### After host reboot
 
-Services with `restart: unless-stopped` (all default-profile services) come back automatically with Docker. wg-easy (remote profile) needs:
-
-```bash
-docker compose --profile remote up -d
-```
-
-No re-run of `setup.sh` or `configure.sh` is needed — existing `config/` state is preserved and `restart: unless-stopped` handles the rest.
+Every service has `restart: unless-stopped`, including the optional profiles. Docker restarts existing
+containers that were running before shutdown. On NAS installs, the storage watchdog can also start
+manually stopped NAS-dependent services during startup or recovery. No re-run of `setup.sh` or
+`configure.sh` is needed; existing `config/` state is preserved.
+User steps: [After a reboot](../guide/troubleshooting.md#after-a-reboot).
 
 ### After partial configure.sh run
 
-Re-run it:
-
-```bash
-./scripts/configure.sh
-```
-
-Each step checks for existing state first (`log_skip` paths) and only creates missing pieces. Safe on any mixture of configured/unconfigured services.
+Each step checks for existing state first (`log_skip` paths), so a re-run is safe on a mixture of
+configured and unconfigured services. It can also update some existing settings; authentication failures
+warn and skip affected services. User steps:
+[Setup stopped half way](../guide/troubleshooting.md#setup-stopped-half-way).
 
 ### Jellyfin wizard broken state
 
-`configure_jellyfin()` in `scripts/services/jellyfin/main.sh` flags this when the wizard reports complete but admin auth fails:
-
-```
-To recover: stop the stack, delete ./config/jellyfin, and re-run setup.
-```
-
-**This discards Jellyfin's database** — watched state, user accounts, metadata. If the user has only just set things up, the cost is low. For an established install, manual recovery (restore DB, diff log lines) is preferable to the sledgehammer.
+`configure_jellyfin()` in `scripts/services/jellyfin/main.sh` reports when the first-run admin login cannot be verified. It recommends a targeted configuration retry and checking logs and credentials first. The optional reset preserves the old settings directory in `config/jellyfin.before-reset` and warns that active users, settings and watch history will be lost. User steps:
+[Jellyfin wizard broken state](../guide/troubleshooting.md#jellyfin-wizard-broken-state).
 
 ### NPM locked out
 
-If `scripts/services/npm/main.sh` logs `NPM password rotation FAILED`:
-
-- Stop the stack.
-- `docker compose run --rm --entrypoint sh npm` → `cd /data && sqlite3 database.sqlite` → `DELETE FROM user;` → exit.
-- Restart. NPM rebuilds as empty-user state, next configure.sh will seed correctly with `JELLYFIN_ADMIN_PASSWORD` + `NPM_ADMIN_EMAIL`.
-
-**SMB OFF** (Features) removes MediaStack's share block and its `MediaStack:SMB-LAN` firewall rules and resets `SMB_SHARE_SCOPE` to `data`. It also stops and disables `smbd`/`nmbd` only when MediaStack installed Samba; a Samba that was already there keeps running with the user's own shares.
+`scripts/services/npm/main.sh` logs `NPM password rotation FAILED` when it cannot rotate the admin
+password. Emptying the `user` table lets the next configure.sh seed the admin from
+`JELLYFIN_ADMIN_PASSWORD` + `NPM_ADMIN_EMAIL`. User steps:
+[Nginx Proxy Manager (NPM) lockout](../guide/troubleshooting.md#nginx-proxy-manager-npm-lockout).

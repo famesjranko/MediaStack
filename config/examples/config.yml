@@ -38,13 +38,13 @@ categories:
 # the setup wizard to pick a different resolution or size.
 # Enables every tier from the SD floor up to the 1080p ceiling, all sources; the
 # cutoff (WEB 1080p group) stops upgrades once a 1080p WEB release is reached, so
-# SD/720p are only fallbacks that upgrade away. See docs/reference/quality-bounds.md.
+# SD/720p are only fallbacks that upgrade away. See docs/setup/quality-bounds.md.
 #
 # Quality IDs reference (Sonarr; Radarr differs only at Bluray-480p=20):
 #   SDTV=1, DVD=2, WEBDL-480p=8, WEBRip-480p=12, Bluray-480p=13
 #   HDTV-720p=4, WEBDL-720p=5, Bluray-720p=6, WEBRip-720p=14
 #   HDTV-1080p=9, WEBDL-1080p=3, Bluray-1080p=7, WEBRip-1080p=15
-#   Remux-1080p=30 (deliberately excluded; see docs/reference/quality-bounds.md)
+#   Remux-1080p=30 (deliberately excluded; see docs/setup/quality-bounds.md)
 # Group IDs (for cutoff_id; Sonarr rejects sub-quality IDs as cutoffs):
 #   WEB 480p=1000, WEB 720p=1001, WEB 1080p=1002, WEB 2160p=1003
 quality_profile:
@@ -91,7 +91,7 @@ quality_profile:
 # is the chosen size axis (here: Balanced "~4-8 GB/movie" at 1080p) — preferred
 # sits mid-range of real-world sources, max is a sane ceiling, NOT the TRaSH
 # max-quality baselines. The SD-floor rows accept small fallback releases that
-# upgrade away toward the ceiling. See docs/reference/quality-bounds.md.
+# upgrade away toward the ceiling. See docs/setup/quality-bounds.md.
 #
 # Keys must match Sonarr/Radarr's internal quality names exactly (case-sensitive).
 # Tiers not listed here keep their upstream defaults. To opt out entirely,

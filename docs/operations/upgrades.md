@@ -21,9 +21,15 @@ us or the API is unstable. `stable`/`latest` is an **install-time** choice: a St
 generates `image: tag@sha256:digest` overrides from `docs/operations/image-digests.lock` (the
 versions the installer was tested against), a Latest install installs raw compose tags. Post-install
 a service stays on its installed image until the user updates it from the day-2 menu — there is no
-auto-updater. When an upgrade outruns what the configurator supports, the recovery model is **clean
-cutover**: `docker compose down -v && ./setup.sh --full`. There is no in-place
-multi-version support.
+auto-updater. If an updated service cannot use its database, first use **Manage updates →
+Revert a service to its installed image**. Revert can restore the saved service configuration
+when a restore point exists. `docker compose down -v && ./setup.sh --full` does not resolve an
+incompatible database: service configuration and databases are bind-mounted under `config/`, and
+setup can skip a completed installation. For a clean reinstall, back up the configuration you
+need, run **Uninstall MediaStack** from `./mediastack`, then run `./setup.sh --full`. Uninstall
+removes runtime `config/` (service databases, settings, and credentials), `.env`, and `config.yml`;
+media at the configured data path remains. See [Remove MediaStack](../guide/install.md#remove-mediastack)
+for the complete removal list. There is no in-place multi-version support.
 
 ## User-facing per-service updates
 
@@ -51,8 +57,9 @@ with the newer `[WebUI]` whitelist layout onto a 5.2.x image, it warns that the 
 take effect and Sonarr and Radarr will get 403; update qBittorrent again to recover. It also warns
 when the target image metadata cannot be inspected or is not a usable version. With no restore point (config over
 the size limit, or an update from before this feature), Revert warns that the config may be newer
-than the image and asks for confirmation. The Revert list shows only services that differ from
-their install image. "Update all" skips stopped services and names them; "Update a service" can
+than the image and asks for confirmation. The Revert list shows installed services with an
+explicit manual override, regardless of whether their image currently differs from the install
+digest. "Update all" skips stopped services and names them; "Update a service" can
 still stage one. See `docs/operations/day-2.md` for the menu and status semantics.
 
 ## Preflight a candidate image (no compose edit, test-only)
@@ -82,27 +89,29 @@ the same way an accepted-digest update already travels with the bump. Neither re
 the PR gate; see `tests/README.md` "Contract mocks and drift replay" for what each mode does and
 does not cover.
 
-**Caveat:** preflight only checks API **shape** via the service's scenario/assertions oracle (most
-use `tests/assertions/<svc>.sh`; wireguard and npm assert inline; ddns-updater is
-start+healthcheck only). It does **not** catch config-time / env-contract breaks (e.g. the wg-easy
-`INIT_PASSWORD`/`wgpw` shift). For a major or API-unstable bump, run the service's **own** battery
-plus `fresh-install` where relevant — note `fresh-install` does **not** start the `remote`
+**Caveat:** coverage depends on the scenario. Some scenarios verify configuration writes,
+environment contracts, authentication, and service interactions. The WireGuard scenario runs its
+production configurator and checks the resulting peer policy; DDNS scenarios check resolver
+environment wiring, provider responses, and malformed configuration. None establishes complete
+compatibility. For a major or API-unstable bump, run the service's **own** battery plus
+`fresh-install` where relevant. `fresh-install` does **not** start the `remote`
 (wireguard) or `subtitles` (bazarr) profiles, so those use dedicated scenarios. Services marked
 `compose-only` / `manual` have no automated oracle — verify by hand.
 
 **What a green `fresh-install` preflight proves — and what it does not.** It boots the full
-default-profile stack, runs the real `scripts/configure.sh` (which must exit 0), and reads back each
-service's live API to assert the resulting configuration matches `config.yml`/`.env`. So it is a deep
-test of the **configurator's write/read contract** against the candidate image — the drift class that
-bites most often (an image whose API schema shifts breaks `configure.sh` or a shape assertion). It
-also exercises a few live integration paths: qBittorrent WebUI login, Jackett per-indexer `t=caps`,
-and an arr→qBittorrent `downloadclient/testall` connect (proves Sonarr/Radarr actually authenticate
+default-profile stack, runs the real `scripts/configure.sh` (which must exit 0), and checks
+configuration through live APIs or files for the services with assertions. This tests many
+**configurator write/read contracts** against the candidate image; a service with only a startup
+or health assertion has narrower coverage. It also exercises live integration paths: qBittorrent
+WebUI login and an arr→qBittorrent `downloadclient/testall` connect (proves Sonarr/Radarr authenticate
 to the download client, not just that the client object is shaped right). It does **not** exercise the
 media pipeline end to end: no release search, grab, import, rename, Jellyfin media scan, or VPN
 routing. Those depend on live trackers and real downloads and are non-deterministic in hermetic DinD,
 so they are deliberately excluded — a flaky preflight maintainers learn to ignore is worse than an
 honest, narrower one. Read a green preflight as *"boots + configures + connects to its download
-client"*, not *"every user workflow works"*.
+client"*, not *"every user workflow works"*. The shipped `config.yml` has no indexers, so
+`fresh-install` skips Jackett `t=caps` checks by default. `wizard-presets` enables indexers and
+runs that assertion.
 
 **fail2ban filters are re-verified when you preflight jellyfin or seerr.** Both are
 `scenario:fresh-install`, and `fresh-install.sh` runs `assert_fail2ban_configured`, which
@@ -112,13 +121,15 @@ brute-force bans is caught at preflight, before the digest reaches the stable ba
 **only** automated signal for that break. fail2ban's own `scenario:fail2ban-drift` row uses static
 fixture logs, so it guards the fail2ban engine/filters against a *fail2ban* image bump but does
 **not** see a jellyfin/seerr format change. (Vetting-time counterpart of the day-2
-"Health & security → fail2ban" check — see [day-2 health & security](day-2.md).)
+"Health & security → fail2ban protection (regex + jails)" check — see
+[day-2 health & security](day-2.md).)
 
 ## CI image drift alert
 
 The `Image Drift Alert` GitHub workflow runs weekly and on demand. It resolves each compose image tag
-to its current remote digest with `scripts/image_drift.py`, compares that with
-`docs/operations/image-digests.lock`, and fails when a tag moved.
+to its current remote digest with `scripts/image_drift.py` and compares that with
+`docs/operations/image-digests.lock`. The digest checker exits nonzero when a tag moves. The
+workflow opens or updates an image-drift issue; drift alone does not fail the workflow.
 
 This is an alert only:
 
@@ -126,45 +137,86 @@ This is an alert only:
 - It does not start the stack.
 - It does not run DinD in GitHub Actions.
 
-When it fails, run the affected service's local DinD preflight from the workflow summary. The command
-uses `MS_TEST_IMAGE_OVERRIDES` with the exact new digest so the test is not fooled by stale local or
-mirror-cached `:latest` tags. Before preflight, freeze the current digest snapshot locally:
+Users choose **Stable** or **Latest** at install time; see [Install](../guide/install.md) for what each
+means to them. For maintainers, Stable costs more: every upstream image update needs a local preflight
+before the lock is restamped. Latest users can outrun the tested record.
+
+When drift is reported:
+
+1. Open the workflow summary and note every changed service.
+2. Read the service rows in the [Manifest](#manifest) below.
+3. Freeze the digest snapshot that will be tested:
+
+   ```bash
+   mkdir -p .tmp
+   python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv
+   ```
+
+4. Run the exact local preflight shown by that snapshot summary. For scenario-backed services, the
+   command uses `MS_TEST_IMAGE_OVERRIDES` with the exact new digest, so the test is not fooled by stale
+   local or mirror-cached `:latest` tags, for example:
+
+   ```bash
+   MS_TEST_IMAGE_OVERRIDES="jellyfin=jellyfin/jellyfin:latest@sha256:<digest>" ./tests/run.sh fresh-install
+   ```
+
+   A run with no failed assertions records the supplied digest override and scenario in the
+   gitignored `tests/.image-preflight-passed.tsv`. Confirm that the scenario actually exercised the
+   candidate before accepting it; a scenario can also succeed after skipping.
+
+5. For `compose-only` services, validate compose and review the upstream changelog if the service is
+   security-sensitive.
+6. For `manual` services, start the relevant profile locally and verify the UI/configurator path by
+   hand.
+7. If any preflight fails, leave `docs/operations/image-digests.lock` unchanged for that service and
+   fix the integration before accepting its digest. This does not block accepting other services that
+   did pass.
+8. Acceptance is **selective by default**: accept only the services whose preflight passed and leave the
+   rest pending until they are fixed, manually verified, or deliberately deferred.
+
+   ```bash
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
+   ```
+
+   `--accept-services` preserves every other row and its timestamp, and refuses if the snapshot adds or
+   removes a service (full re-baseline needs `--accept-current` instead). Reach for `--accept-current`
+   only when every drifted service's preflight passed and you want to accept the whole snapshot in one
+   step:
+
+   ```bash
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
+   ```
+
+   **Accept is receipt-gated.** `--accept-services` / `--accept-current` require a matching receipt
+   for the exact `image@digest` and manifest scenario before writing a drifted scenario-backed row.
+   The receipt records an override supplied to a run with no failed assertions; it does not prove
+   that the image was pulled or executed. Tiers with no scenario oracle (`compose-only` / `manual`)
+   warn instead of block; `--no-verify-preflight` bypasses the gate. The tiers
+   are not equal confidence (see [Manifest](#manifest)), so weigh the tier, not just pass/fail.
+
+9. Regenerate the README Stable-baseline badge from the accepted lock:
+
+   ```bash
+   python3 scripts/image_drift.py --write-readme-badges README.md
+   ```
+
+10. Inspect the lock-file diff. Only rows for changed images should get new digests and timestamps,
+    unless this is the first validation restamp.
+11. Commit the lock-file update with any required code/docs fixes. Stable-channel users receive the
+    new tested digests after updating the repo and running `./scripts/update.sh`. Latest-channel users
+    may already be running the moved upstream digest.
+
+For the first validation pass, keep the tested digests and the accepted digests identical. To
+accept a new remote snapshot, run the relevant scenarios with candidate overrides for each changed
+`image@digest`, then accept that frozen snapshot using step 8. Testing the bootstrap lock does not
+validate different digests in a current remote snapshot. If only restamping the bootstrap baseline,
+run the relevant scenarios with candidate overrides for the lock's exact `image@digest` references,
+then restamp the existing lock without replacing its digests:
 
 ```bash
-mkdir -p .tmp
-python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv
-python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv
+python3 scripts/image_drift.py --current-file docs/operations/image-digests.lock --write-current docs/operations/image-digests.lock --restamp-all
 ```
-
-Accepting drifted services is **selective by default**, not all-or-nothing: accept only the rows
-whose preflight passed and leave the rest pending until they are fixed, manually verified, or
-deliberately deferred.
-
-```bash
-python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
-```
-
-`--accept-services` preserves every other row and its timestamp, and refuses if the snapshot adds or
-removes a service (full re-baseline needs `--accept-current` instead). Reach for `--accept-current`
-only when every drifted service's preflight passed and you want to accept the whole snapshot in one
-step:
-
-```bash
-python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
-```
-
-**Accept is receipt-gated.** A passing `./tests/run.sh` that applied `MS_TEST_IMAGE_OVERRIDES` records
-what it tested to the gitignored `tests/.image-preflight-passed.tsv`. `--accept-services` /
-`--accept-current` then refuse to write a drifted digest into the lock unless that receipt vouches for
-the exact `image@digest` under the service's manifest scenario — so a digest cannot enter the tested
-baseline without a local preflight that actually pulled it and passed. Tiers with no scenario oracle
-(`compose-only` / `manual`) warn instead of block; `--no-verify-preflight` overrides the gate for a
-hand-verified accept.
-
-Stable-channel users receive newly accepted digests after updating the repo and running
-`./scripts/update.sh`. Latest-channel users may already be running the moved upstream digest.
-
-See `docs/operations/image-updates.md` for the full maintainer workflow.
 
 ## Manifest
 
@@ -174,9 +226,10 @@ Columns parsed by the unit test use strict tokens; **do not put `|` inside any c
 **API stability** and **Touchpoint** are human prose (not machine-checked).
 
 These four preflight tokens are not equal confidence. Roughly highest to lowest: a `scenario:`
-brings the service up and asserts its configured/API state; a `unit:` check is a narrower,
-non-DinD assertion; `compose-only` only proves the tag resolves and parses; `manual` has no
-automated oracle at all. Weigh a row's tier, not just whether it "passed", before accepting it —
+normally starts the service and runs its own assertions, which can be limited to health or can
+skip; a `unit:` check is a narrower, non-DinD assertion; `compose-only` only proves the tag
+resolves and parses; `manual` has no automated oracle. Weigh a row's tier, not just whether it
+"passed", before accepting it —
 a `compose-only`/`manual` row carries materially less confidence than a `scenario:`-backed one even
 when neither failed.
 

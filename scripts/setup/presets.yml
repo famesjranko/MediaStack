@@ -17,7 +17,7 @@
 # ids to `quality_ids`.
 # Proven by tests/unit/wizard-composition.sh.
 #
-# See docs/reference/quality-bounds.md for the scalar size model, the SD floor,
+# See docs/setup/quality-bounds.md for the scalar size model, the SD floor,
 # and the TRaSH rationale.
 
 # ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ resolutions:
 # reference; `compact` ≈ 0.7× and `large` ≈ 1.2× its preferred/max (mins are the
 # source floor, size-independent). Bounds are MB/min (Sonarr per-episode, Radarr
 # per-movie); preferred sits in the middle of what real sources produce, max is a
-# sane ceiling — NOT TRaSH's "unlimited" (see docs/reference/quality-bounds.md).
+# sane ceiling — NOT TRaSH's "unlimited" (see docs/setup/quality-bounds.md).
 # The 720p/1080p balanced+large rows carry the calibrated reference values;
 # the SD-floor rows and compact's non-WEB rows are derived from the scalar model.
 # Tables are full (SD → 1080p); composition MASKS them to the resolution's tiers.

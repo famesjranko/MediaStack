@@ -253,7 +253,7 @@ The wizard asks two prompts — **resolution** (the ceiling) then **size** (the 
 - **Resolution** — `720p` (cutoff WEB 720p / 1001) or `1080p` (cutoff WEB 1080p / 1002). Enables every tier from the **SD floor** (SDTV/DVD/480p) up to the ceiling, all sources; SD/720p are fallbacks that upgrade away.
 - **Size** — `Compact` (~0.7×), `Balanced` (1.0×, the shipped default), `Large` (~1.2×): per-tier bounds + custom-format scores, source-agnostic.
 
-The default cell is **`1080p Balanced`**, which matches the shipped `config.yml`. Remux is intentionally excluded from every cell — single grabs of 25-40 GB don't fit the home-server audience. See [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md) for full per-tier numbers and the cell grid.
+The default cell is **`1080p Balanced`**, which matches the shipped `config.yml`. Remux is intentionally excluded from every cell — single grabs of 25-40 GB don't fit the home-server audience. See [`docs/setup/quality-bounds.md`](quality-bounds.md) for full per-tier numbers and the cell grid.
 
 `wizard_apply.py` performs section-targeted replacement in `config.yml` — only the `quality_profile`, `quality_definitions`, and `bazarr` sections are rewritten; comments in all other sections are preserved. Adds `wizard_completed: true` as a wizard-progress marker. Subsequent runs of `setup.sh` skip the wizard only when this marker is present and `.env` also has `STAGE_1_COMPLETE=1`; if setup was interrupted before Stage 1 proved Jellyfin usable, the wizard resumes with the previous `.env` values as defaults.
 

@@ -190,7 +190,7 @@ try:
             break
 except Exception: pass" 2>/dev/null)
     # config.yml ships HDTV-720p preferred=30.0, tightened from Sonarr's default
-    # of 95 MB/min to deliver real 1080p WEB-DL sizes (docs/reference/quality-bounds.md).
+    # of 95 MB/min to deliver real 1080p WEB-DL sizes (docs/setup/quality-bounds.md).
     if [[ "$sonarr_qd_pref" == "30" || "$sonarr_qd_pref" == "30.0" ]]; then
         pass "step 3 Sonarr: HDTV-720p preferredSize tightened to 30"
     else

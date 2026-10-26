@@ -71,7 +71,7 @@ assert_contains "$labels_1080" "GB/movie" "1080p: size menu carries a GB hint (c
 
 # Positive, per resolution — these FAIL on the pre-fix code (which renders the 1080p
 # column "~N GB/movie at 1080p" for EVERY resolution). Source of truth:
-# docs/reference/quality-bounds.md "Cells at a glance".
+# docs/setup/quality-bounds.md "Cells at a glance".
 assert_contains "$labels_720" "~1.5-3 GB/movie" "720p Compact hint is the 720p number (~1.5-3)"
 assert_contains "$labels_720" "~2-4 GB/movie" "720p Balanced hint is the 720p number (~2-4)"
 assert_contains "$labels_720" "~3-5 GB/movie" "720p Large hint is the 720p number (~3-5)"

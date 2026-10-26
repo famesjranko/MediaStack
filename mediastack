@@ -243,7 +243,7 @@ launcher_menu_post() {
         "Diagnostics (ports, public IP, DNS, readiness)"
         "Refresh status (re-check public IP & DDNS)"
     )
-    # Offer the GUM installer only when it's missing (mirrors launcher_menu_pre:2161).
+    # Offer the GUM installer only when it's missing (mirrors launcher_menu_pre).
     # MUST stay before "Uninstall"/"Quit": inserting it after Uninstall would
     # shift the numeric selection PTY tests target the wrong item (see
     # tests/scenarios/wizard-ui-uninstall.sh, tests/unit/dry-run.sh). The
