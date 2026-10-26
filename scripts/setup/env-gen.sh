@@ -135,6 +135,22 @@ _nvidia_resolve_driver_mode() {
     esac
 }
 
+# Normalises MS_DISABLE_RESOURCE_LIMITS in place for write_env: `true`/`false`
+# (case-insensitive, quotes already stripped on read), empty or absent -> false.
+# Any other value warns and falls back to false (limits ON, the safe default),
+# never to true: gpu/compose.sh only strips the caps on an exact `true`.
+_env_resolve_resource_limits() {
+    local raw="${MS_DISABLE_RESOURCE_LIMITS:-false}"
+    MS_DISABLE_RESOURCE_LIMITS="${raw,,}"
+    case "$MS_DISABLE_RESOURCE_LIMITS" in
+        true | false) ;;
+        *)
+            log_warn "Ignoring invalid MS_DISABLE_RESOURCE_LIMITS '${raw}' - using false (resource limits stay on)."
+            MS_DISABLE_RESOURCE_LIMITS="false"
+            ;;
+    esac
+}
+
 # write_env (the .env writer) lives in env-write.sh — see its header for why.
 # shellcheck source=scripts/setup/env-write.sh
 source "$_env_gen_dir/env-write.sh"
