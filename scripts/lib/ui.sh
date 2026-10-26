@@ -141,15 +141,19 @@ _ui_spin_report_failure() {
 }
 
 # Warm the sudo timestamp in the foreground, with a stated reason.
-#   ui_sudo_prime REASON [CONSEQUENCE]
+#   ui_sudo_prime REASON [CONSEQUENCE] [PROBE]
 # sudo writes its password prompt to /dev/tty, not stderr, so a bare `sudo -v`
 # with stderr discarded shows a prompt with no cause and hides a failure; a later
 # plain sudo inside spinner-wrapped work then prompts behind the turning spinner.
+# PROBE is the sudo command tried with -n before prompting (default -v). A caller
+# whose later sudo calls run one fixed command passes it (e.g. `true`), so a host
+# with command-specific NOPASSWD rules is not asked for a password it never needs.
 # Always returns 0: a failed prime warns and setup continues, as it did before.
 ui_sudo_prime() {
     local reason="${1:?ui_sudo_prime: reason required}"
     local consequence="${2:-later steps can stop at a password prompt or fail.}"
-    sudo -n -v 2>/dev/null && return 0
+    local probe="${3:--v}"
+    sudo -n "$probe" 2>/dev/null && return 0
     ui_log info "$reason"
     sudo -v || ui_log warn "Could not get sudo access: $consequence"
     return 0

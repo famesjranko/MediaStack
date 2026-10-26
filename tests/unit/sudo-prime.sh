@@ -23,10 +23,11 @@ mkdir -p "$WORK/bin"
 export TRACE="$WORK/trace"
 cat >"$WORK/bin/sudo" <<'STUB'
 #!/usr/bin/env bash
-# N_RC: exit code of `sudo -n -v` (1 = cold timestamp). V_RC: exit code of `sudo -v`.
+# N_RC: exit code of `sudo -n -v` (1 = cold timestamp). T_RC: exit code of `sudo -n true`. V_RC: exit code of `sudo -v`.
 echo "sudo $*" >>"$TRACE"
 case "$*" in
     "-n -v") exit "${N_RC:-1}" ;;
+    "-n true") exit "${T_RC:-0}" ;;
     "-v")
         echo "[sudo] password prompt" >>"$TRACE"
         exit "${V_RC:-0}"
@@ -89,6 +90,13 @@ assert_eq "" "$bad" "no priming site discards sudo -v stderr"
 for f in scripts/setup/stage2/install.sh scripts/setup/packages.sh scripts/launcher/diagnostics.sh scripts/lib/ui.sh; do
     assert_file_contains "$REPO_ROOT/$f" "ui_sudo_prime" "$f primes through ui_sudo_prime"
 done
+
+# 7) Given command-specific NOPASSWD rules (`sudo -n true` passes, `sudo -n -v` needs a password),
+#    when the Health prime runs, then it prints nothing and never prompts.
+: >"$TRACE"
+N_RC=1 T_RC=0 V_RC=1 timeout 10 bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/launcher/diagnostics.sh"; _health_prime_sudo' _ \
+    "$REPO_ROOT" >>"$TRACE" 2>&1 </dev/null
+assert_eq "sudo -n true" "$(<"$TRACE")" "the Health prime probes with sudo -n true and stays silent when it passes"
 
 scenario_end "$CURRENT_SCENARIO"
 summary
