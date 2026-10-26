@@ -357,21 +357,23 @@ action_service_stop() {
 action_service_start() {
     echo ""
     local svcs=()
-    mapfile -t svcs < <(docker compose ps --filter status=exited --format '{{.Name}}' 2>/dev/null || true)
+    mapfile -t svcs < <(docker compose ps --filter status=exited --format '{{.Service}}' 2>/dev/null || true)
     if ((${#svcs[@]} == 0)); then
         ui_log info "No stopped services."
         launcher_pause_for_menu
         return 0
     fi
     svcs+=("Back")
-    local choice rc=0
+    local choice rc=0 pflag=()
     choice=$(ui_choose "Start which service?" "${svcs[@]}")
     [[ "$choice" == "Back"* ]] && return 0
     if ! storage_guard_before_start; then
         launcher_pause_for_menu
         return 0
     fi
-    docker compose start "$choice" 2>&1 || rc=$?
+    # `up -d`, not `start`: it recreates a container whose image or config changed.
+    read -ra pflag <<<"$(profiles_service_flag "$choice")"
+    docker compose "${pflag[@]}" up -d --no-deps "$choice" 2>&1 || rc=$?
     _show_action_result "$rc" "Start $choice"
     ((rc == 0)) && service_intent_clear "$choice"
     launcher_pause_for_menu

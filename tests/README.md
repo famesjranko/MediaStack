@@ -301,6 +301,18 @@ Run the focused remote-access DinD gate with:
 
 This gate is intentionally not a real public WAN proof. Real public DNS, DDNS provider pushes, firewall behavior, and real Let's Encrypt HTTP-01 are covered by the operator-run `tests/gcp-vm/` harness.
 
+### `service-start-staged` — Start a service applies a staged update
+
+Runs the real launcher functions against a throwaway two-service Compose project in
+DinD. It proves that an update staged for a stopped service leaves it stopped, and that
+**Start a service** then runs the new image (image ID changes) or the new config. It
+also covers the failed storage guard, an optional-profile service, and a failed
+recreate that must not report success. It needs `python:3.12-alpine` on the host.
+
+```bash
+./tests/run.sh --no-preload service-start-staged
+```
+
 ### `nas-storage` — managed NAS/NFS fixture
 
 Starts a disposable kernel NFS server inside the privileged DinD VM, exports a
@@ -613,6 +625,7 @@ Current units:
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
 - **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening/admin-filter.sh`.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
+- **launcher-service-start** — checks that **Start a service** reconciles with `docker compose up -d` (not `start`), runs the storage guard first, passes the optional-profile flag, reports a failed recreate without a success line, and that staging for a stopped service starts nothing. Docker is shimmed.
 - **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image_drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
 - **launcher-hardware / nvidia-maintenance** — cover the day-2 hardware surface, Unlock-only visibility/dispatch guards, default-No cancellation, resolve-before-stop ordering, unload failure cleanup, one installer/toolkit execution, and expected-version marker persistence. Pure bash; no Docker/network.
 - **launcher-uninstall / uninstall-system-cleanup** — cover launcher routing/result reporting, root-only ledger reads, selective UFW/APT/sysctl/Samba cleanup, teardown failure rollback, and Stage 3 routing precedence.
