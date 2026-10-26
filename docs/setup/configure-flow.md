@@ -18,19 +18,17 @@ scripts/
 │   └── arr/
 │       ├── main.sh           # configure_quality_profile, configure_quality_definitions, configure_arr_custom_formats, configure_arr_format_scores, configure_arr_indexers, configure_arr_disk_threshold
 │       ├── custom_formats.yml         # curated TRaSH Guides format definitions
-│       ├── render/
-│       │   ├── quality_profile.py       # rebuild items[]/formatItems based on enabled quality IDs
-│       │   ├── quality_definitions.py   # diff live vs config, emit <id>\t<put-body> per needed update
-│       │   ├── custom_formats.py        # diff existing vs defined, emit <name>\t<post-body> per new format
-│       │   ├── format_scores.py         # compare profile formatItems, emit match/empty/drift status
-│       │   └── torznab_caps.py          # parse caps XML → filtered category list per app
-│       └── templates/
-│           └── indexer.json  # legacy static template; variable JSON is rendered with Python/http_json_body
+│       └── render/
+│           ├── quality_profile.py       # rebuild items[]/formatItems based on enabled quality IDs
+│           ├── quality_definitions.py   # diff live vs config, emit <id>\t<put-body> per needed update
+│           ├── custom_formats.py        # diff existing vs defined, emit <name>\t<post-body> per new format
+│           ├── format_scores.py         # compare profile formatItems, emit match/empty/drift status
+│           └── torznab_caps.py          # parse caps XML → filtered category list per app
 └── services/
     ├── qbittorrent/main.sh              # no templates — setPreferences payload built inline via python3 json.dumps
     ├── jackett/main.sh                  # no templates — mostly auth loops, no extractable payloads
-    ├── sonarr/main.sh    + templates/download-client.json
-    ├── radarr/main.sh    + templates/download-client.json
+    ├── sonarr/main.sh    # no templates — download-client payload built in lib/arr/storage.sh
+    ├── radarr/main.sh    # no templates — download-client payload built in lib/arr/storage.sh
     ├── bazarr/main.sh                   # no templates — API payloads built via python3 json.dumps
     ├── jellyfin/main.sh, wizard.sh, encoding.sh, server.sh, network.sh + render/network_policy.py + templates/{startup-config,remote-access,library}.json
     ├── seerr/main.sh + templates/{sonarr-server,radarr-server}.json
@@ -114,7 +112,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 **Writes (each check-before-create):**
 
 - Root folder — delegates to shared `configure_arr_root_folder` (see below).
-- Download client — delegates to shared `configure_arr_download_client` with `tvCategory` (see below). Payload template at `scripts/services/sonarr/templates/download-client.json`.
+- Download client — delegates to shared `configure_arr_download_client` with `tvCategory` (see below). Payload built inline in `scripts/lib/arr/storage.sh`.
 - Quality profile — delegates to shared `configure_quality_profile` in `scripts/lib/arr/quality.sh` (loaded by the `arr/main.sh` entry point; see below).
 - Quality definitions — delegates to shared `configure_quality_definitions` (see below).
 - Custom formats — delegates to shared `configure_arr_custom_formats` (see below). Creates curated format definitions from `scripts/lib/arr/custom_formats.yml`.
@@ -129,9 +127,9 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 Structural mirror of Sonarr — both delegate to the same shared helpers (including `configure_arr_custom_formats` and `configure_arr_format_scores`). Differences:
 
-- Download client uses `movieCategory` field (not `tvCategory`); template at `scripts/services/radarr/templates/download-client.json`.
+- Download client uses `movieCategory` field (not `tvCategory`); payload built inline in `scripts/lib/arr/storage.sh`.
 - Torznab call uses `categories.movies` from `config.yml`.
-- Quality-profile *allowed set* matches Sonarr (Remux-1080p deliberately excluded for movies as well — see [`docs/reference/quality-bounds.md`](../reference/quality-bounds.md)).
+- Quality-profile *allowed set* matches Sonarr (Remux-1080p deliberately excluded for movies as well — see [`docs/setup/quality-bounds.md`](quality-bounds.md)).
 - Quality definitions set is the same shape as Sonarr's; Remux-1080p is not configured.
 - Naming conventions use movie-specific format (`{Movie CleanTitle} ({Release Year}) [imdbid-{ImdbId}]`). Skipped if `renameMovies` is already True. Inline in radarr/main.sh.
 
@@ -197,7 +195,7 @@ Iterates `cfg_indexers`, filtering:
 - `sonarr` gets `general` + `tv` (skip `movies`).
 - `radarr` gets `general` + `movies` (skip `tv`).
 
-Dedup by name-substring match. Each addition is `POST /api/v3/indexer` with a Torznab config (template `scripts/lib/arr/templates/indexer.json`) pointing at `http://jackett:9117/api/v2.0/indexers/<id>/results/torznab/`. Categories are auto-discovered from each indexer's Torznab caps via `render/torznab_caps.py` — Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Falls back to `config.yml` values when caps discovery fails.
+Dedup by name-substring match. Each addition is `POST /api/v3/indexer` with a Torznab config (payload built inline in `scripts/lib/arr/indexers.sh`) pointing at `http://jackett:9117/api/v2.0/indexers/<id>/results/torznab/`. Categories are auto-discovered from each indexer's Torznab caps via `render/torznab_caps.py` — Radarr gets 2xxx + movie-native IDs, Sonarr gets 5xxx + TV-native IDs. Falls back to `config.yml` values when caps discovery fails.
 
 **Retry-with-backoff:** each POST is attempted up to 3 times with an 8-second backoff between attempts. Sonarr/Radarr run a live `tvsearch`/`search` add-time test that Jackett forwards through FlareSolverr's ClearanceHandler (even for non-CF indexers). The first few adds in a fresh setup routinely lose the 65s HttpClient timeout while FlareSolverr cold-starts. Retrying absorbs the race. On success with attempt > 1, the log notes `(attempt N)`; on final failure, `(3 attempts)`.
 
@@ -326,7 +324,7 @@ NPM ships with an empty user table on first boot. The famous `admin@example.com 
 
 Admin tools (Sonarr, Radarr, Jackett, qBittorrent) are NOT proxied — they stay LAN/VPN-only. Fail2ban protects all proxied traffic via the NPM access log jail (401/403 responses) plus per-service jails for Jellyfin and Seerr.
 
-`DOMAIN` still controls infrastructure startup elsewhere: `scripts/setup/stack.sh::profiles_build_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
+`DOMAIN` still controls infrastructure startup elsewhere: `scripts/lib/profiles.sh::profiles_build_args()` enables the proxy profile whenever `DOMAIN` is real, even while `REMOTE_WEB_STATE` is unchecked, skipped, or failed. That lets NPM, fail2ban, and DDNS run before HTTPS is ready.
 
 NPM admin setup, health healing, default-site hardening, the rate-limit step (which only writes the `limit_req_zone` when `rate_limiting.enabled` is true — otherwise it logs a skip; disabled by default — see [`rate_limiting`](configuration-schema.md#rate_limiting)), reload checks, and fail2ban jail validation run even when remote state is unchecked, skipped, or failed. Only public proxy hosts, certificate requests, and cert-backed HTTPS publication are inside the ready/attempt gate. `NPM_LE_SERVER` remains part of the ready path so DinD/Pebble can exercise certificate issuance without production Let's Encrypt. Each Stage 2 remote cert attempt writes `config/state/npm-cert-status-last.json` for persistent forensics.
 

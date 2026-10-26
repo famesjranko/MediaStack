@@ -256,7 +256,7 @@ def format_readme_badges(rows: list[ImageDigest]) -> str:
             "Stable image baseline",
             f"{count} pinned digests",
             "2ea44f",
-            "docs/operations/day-2.md",
+            "docs/guide/using-the-menu.md",
             query="logo=docker&logoColor=white",
         ),
         README_BADGES_END,

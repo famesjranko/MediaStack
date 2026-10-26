@@ -41,7 +41,7 @@ rc=$?
 
 assert_eq "0" "$rc" "image-drift README badges render exits zero"
 assert_contains "$badges" "Stable image baseline: 1 pinned digests" "image-drift README badge includes lock row count"
-assert_contains "$badges" "docs/operations/day-2.md" "image-drift README badge links to user-facing update guidance"
+assert_contains "$badges" "docs/guide/using-the-menu.md" "image-drift README badge links to user-facing update guidance"
 assert_eq "1" "$(grep -c '^\[!\[' <<<"$badges")" "image-drift README badge block contains one generated badge"
 
 cat >"$TMP_DIR/README.md" <<'EOF'

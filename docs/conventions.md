@@ -176,7 +176,7 @@ adding the next gate.
 | `tests/lint.sh` checks every tracked shell file in a separate ShellCheck process, continues after findings, and bounds dispatcher imports | `tests/unit/lint-sweep.sh` | `unit-host` |
 | Wizard PTY behaviour | `./tests/check.sh wizard` → `tests/ci-scenarios.sh` + `tests/run.sh` | `wizard-ui` |
 | No private, host, or credential artifact is tracked | `tests/unit/repository-safety.sh` over `tests/lib/repo_guard.py` | `unit-host` |
-| Control files exist and their relative links resolve | `tests/unit/docs.sh` | `unit-host` |
+| Control files and end-user guides exist, their relative links resolve, and `docs/README.md` links every guide | `tests/unit/docs.sh` | `unit-host` |
 | Exactly one `CONTRIBUTING.md` in the tree | `tests/unit/docs.sh` | `unit-host` |
 | Issue templates parse and route security reports privately | `tests/unit/docs.sh` | `unit-host` |
 | Every decision record carries all six required sections and is listed in the decisions index | `tests/unit/docs.sh` | `unit-host` |
@@ -269,11 +269,13 @@ lint rule, or CI job checks. Follow them; do not mistake them for gates.
   200 lines, features touching 2+ services, new shared *arr patterns). Advisory
   thresholds with no measurement.
 - **Relative links outside the control-file set.** `tests/unit/docs.sh` checks
-  links in `README.md`, `CONTRIBUTING.md`, `docs/README.md`,
-  `.github/SECURITY.md`, `AGENTS.md` and this file. Links in every
+  links in `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, `docs/README.md`,
+  `docs/conventions.md`, `docs/decisions/README.md`, `.github/SECURITY.md`,
+  `tests/README.md` and every `docs/guide/*.md`. Links in every
   other document, and anchor fragments everywhere, are unchecked.
-- **The reading order and index in `docs/README.md`.** The links are checked;
-  that the index still lists every document is not.
+- **The reading order and index in `docs/README.md`.** The links are checked,
+  and the index must link every `docs/guide/*.md`. That it lists every other
+  document is not checked.
 - **The CI workflow's own shape.** Nothing checks that every `check.sh`
   selector is run by some job, that a job declares `timeout-minutes`, or that
   branch protection's required contexts still match the job names in

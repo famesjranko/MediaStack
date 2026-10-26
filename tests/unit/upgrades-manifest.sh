@@ -14,7 +14,7 @@
 #     profiles/services it launches) — catches a row claiming a scenario that
 #     never launches the service (the bazarr class)
 #   - README Stable-baseline badge is regenerated from the current lock (catches
-#     a lock-restamping commit that forgot the image-updates.md step 9 badge
+#     a lock-restamping commit that forgot the upgrades.md "CI image drift alert" step 9 badge
 #     regen — see scripts/image_drift.py --check-readme-badges)
 # docker-compose.yml stays the single source of truth for tags; this guard makes
 # the manifest's policy claims self-checking.

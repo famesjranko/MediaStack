@@ -3,7 +3,7 @@
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"        # Debian 11 floor, docs/project/stack.md
+target-version = "py39"        # conservative floor; Debian 12+ ships 3.11, see docs/project/stack.md
 extend-exclude = ["config/examples"]
 
 [tool.ruff.lint]
@@ -17,7 +17,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.9"          # Debian 11 floor, docs/project/stack.md
+python_version = "3.9"          # conservative floor; Debian 12+ ships 3.11, see docs/project/stack.md
 check_untyped_defs = true       # also type-check unannotated function bodies
 disallow_untyped_defs = true    # every function must declare its full signature
 warn_return_any = true          # no smuggling Any past a function's declared return type

@@ -126,45 +126,83 @@ This is an alert only:
 - It does not start the stack.
 - It does not run DinD in GitHub Actions.
 
-When it fails, run the affected service's local DinD preflight from the workflow summary. The command
-uses `MS_TEST_IMAGE_OVERRIDES` with the exact new digest so the test is not fooled by stale local or
-mirror-cached `:latest` tags. Before preflight, freeze the current digest snapshot locally:
+Users choose **Stable** or **Latest** at install time; see [Install](../guide/install.md) for what each
+means to them. For maintainers, Stable costs more: every upstream image update needs a local preflight
+before the lock is restamped. Latest users can outrun the tested record.
+
+When the workflow fails:
+
+1. Open the workflow summary and note every changed service.
+2. Read the service rows in the [Manifest](#manifest) below.
+3. Freeze the digest snapshot that will be tested:
+
+   ```bash
+   mkdir -p .tmp
+   python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv
+   ```
+
+4. Run the exact local preflight shown by that snapshot summary. For scenario-backed services, the
+   command uses `MS_TEST_IMAGE_OVERRIDES` with the exact new digest, so the test is not fooled by stale
+   local or mirror-cached `:latest` tags, for example:
+
+   ```bash
+   MS_TEST_IMAGE_OVERRIDES="jellyfin=jellyfin/jellyfin:latest@sha256:<digest>" ./tests/run.sh fresh-install
+   ```
+
+   A passing run records what it tested to the gitignored `tests/.image-preflight-passed.tsv`; step 8's
+   accept reads that receipt, so you do not run any extra command — just let the preflight pass.
+
+5. For `compose-only` services, validate compose and review the upstream changelog if the service is
+   security-sensitive.
+6. For `manual` services, start the relevant profile locally and verify the UI/configurator path by
+   hand.
+7. If any preflight fails, leave `docs/operations/image-digests.lock` unchanged for that service and
+   fix the integration before accepting its digest. This does not block accepting other services that
+   did pass.
+8. Acceptance is **selective by default**: accept only the services whose preflight passed and leave the
+   rest pending until they are fixed, manually verified, or deliberately deferred.
+
+   ```bash
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
+   ```
+
+   `--accept-services` preserves every other row and its timestamp, and refuses if the snapshot adds or
+   removes a service (full re-baseline needs `--accept-current` instead). Reach for `--accept-current`
+   only when every drifted service's preflight passed and you want to accept the whole snapshot in one
+   step:
+
+   ```bash
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
+   ```
+
+   **Accept is receipt-gated.** `--accept-services` / `--accept-current` refuse to write a drifted
+   digest into the lock unless the step 4 receipt vouches for the exact `image@digest` under the
+   service's manifest scenario — so a digest cannot enter the tested baseline without a local preflight
+   that actually pulled it and passed. Tiers with no scenario oracle (`compose-only` / `manual`) warn
+   instead of block; `--no-verify-preflight` overrides the gate for a hand-verified accept. The tiers
+   are not equal confidence (see [Manifest](#manifest)), so weigh the tier, not just pass/fail.
+
+9. Regenerate the README Stable-baseline badge from the accepted lock:
+
+   ```bash
+   python3 scripts/image_drift.py --write-readme-badges README.md
+   ```
+
+10. Inspect the lock-file diff. Only rows for changed images should get new digests and timestamps,
+    unless this is the first validation restamp.
+11. Commit the lock-file update with any required code/docs fixes. Stable-channel users receive the
+    new tested digests after updating the repo and running `./scripts/update.sh`. Latest-channel users
+    may already be running the moved upstream digest.
+
+For the first validation pass, run the relevant DinD battery against the bootstrap lock and
+then restamp every row. This validates the whole baseline via the battery rather than per-service
+candidate overrides, so it produces no preflight receipts — pass `--no-verify-preflight` to tell the
+accept gate you vouch for the batch by hand. Take the step 3 snapshot first, then:
 
 ```bash
-mkdir -p .tmp
-python3 scripts/image_drift.py --snapshot-current .tmp/image-digests.current.tsv
-python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv
+python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current --restamp-all --no-verify-preflight
 ```
-
-Accepting drifted services is **selective by default**, not all-or-nothing: accept only the rows
-whose preflight passed and leave the rest pending until they are fixed, manually verified, or
-deliberately deferred.
-
-```bash
-python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-services <svc1,svc2,...>
-```
-
-`--accept-services` preserves every other row and its timestamp, and refuses if the snapshot adds or
-removes a service (full re-baseline needs `--accept-current` instead). Reach for `--accept-current`
-only when every drifted service's preflight passed and you want to accept the whole snapshot in one
-step:
-
-```bash
-python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --write-current docs/operations/image-digests.lock --accept-current
-```
-
-**Accept is receipt-gated.** A passing `./tests/run.sh` that applied `MS_TEST_IMAGE_OVERRIDES` records
-what it tested to the gitignored `tests/.image-preflight-passed.tsv`. `--accept-services` /
-`--accept-current` then refuse to write a drifted digest into the lock unless that receipt vouches for
-the exact `image@digest` under the service's manifest scenario — so a digest cannot enter the tested
-baseline without a local preflight that actually pulled it and passed. Tiers with no scenario oracle
-(`compose-only` / `manual`) warn instead of block; `--no-verify-preflight` overrides the gate for a
-hand-verified accept.
-
-Stable-channel users receive newly accepted digests after updating the repo and running
-`./scripts/update.sh`. Latest-channel users may already be running the moved upstream digest.
-
-See `docs/operations/image-updates.md` for the full maintainer workflow.
 
 ## Manifest
 

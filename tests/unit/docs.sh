@@ -196,7 +196,18 @@ else:
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 links_checked = 0
 
-for rel in LINK_SOURCES:
+# End-user guides are derived from the tree, not declared: a new guide is a link
+# source the moment it exists. An empty population fails, since a glob over a
+# missing directory would otherwise check nothing and pass.
+guide_dir = root / "docs/guide"
+guides = sorted(guide_dir.glob("*.md")) if guide_dir.is_dir() else []
+if guides:
+    report("PASS", "end-user guide population is non-empty", f"{len(guides)} guide(s)")
+else:
+    report("FAIL", "end-user guide population is non-empty", f"no *.md under {guide_dir}")
+guide_rels = [str(g.relative_to(root)) for g in guides]
+
+for rel in LINK_SOURCES + guide_rels:
     path = root / rel
     if not path.is_file():
         continue
@@ -263,6 +274,23 @@ for path in records:
         report("PASS", name)
     else:
         report("FAIL", name, "no link to it in docs/decisions/README.md")
+
+# --- the docs index lists every end-user guide -------------------------------
+
+docs_index = root / "docs/README.md"
+docs_index_links = set()
+if docs_index.is_file():
+    for target in LINK_RE.findall(docs_index.read_text(encoding="utf-8")):
+        clean = target.split("#", 1)[0].split("?", 1)[0]
+        if clean:
+            docs_index_links.add((docs_index.parent / clean).resolve())
+
+for guide in guides:
+    name = f"docs index links the guide: {guide.relative_to(root)}"
+    if guide.resolve() in docs_index_links:
+        report("PASS", name)
+    else:
+        report("FAIL", name, "no link to it in docs/README.md")
 
 # --- exactly one contribution guide ------------------------------------------
 

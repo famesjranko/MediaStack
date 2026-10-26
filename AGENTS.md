@@ -30,6 +30,7 @@ and low maintenance.
 |---|---|---|
 | Anything (first visit) | [docs/conventions.md](docs/conventions.md) | What is enforced, what is deliberately not, file placement |
 | Services / compose | [docs/project/stack.md](docs/project/stack.md), [docs/project/structure.md](docs/project/structure.md) | Runtime model; where a new service's files go |
+| End-user guides | [docs/guide/](docs/guide/) | Prose in ASD-STE100 Simplified Technical English; use the exact launcher menu labels; code is authoritative |
 | Day-2 launcher | [docs/project/structure.md](docs/project/structure.md) | Feature seams under scripts/launcher/; mediastack remains the dispatcher |
 | `setup.sh` | [docs/setup/setup-flow.md](docs/setup/setup-flow.md) | Phase ordering that re-run safety depends on |
 | Hardening concerns | [docs/setup/setup-flow.md](docs/setup/setup-flow.md), [docs/project/structure.md](docs/project/structure.md) | Per-concern modules under `scripts/setup/hardening/`; preserve host-state ownership and skip/warn semantics |

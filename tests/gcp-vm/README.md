@@ -9,7 +9,7 @@ GCP's firewall actually blocks admin ports. This test does.
 
 Wall-time: **~10–15 min** for a full wipe + recreate + setup + 15 checks.
 (Pre-`--policy missing` runs were ~25–30 min because Stage 2 silently
-re-pulled every default-profile image; see `scripts/setup/stack.sh:pull_images`.)
+re-pulled every default-profile image; see `scripts/setup/stack/lifecycle.sh:pull_images`.)
 
 ## What it covers
 

@@ -63,7 +63,7 @@ def main() -> int:
         # scores bottom out around -120) so nothing is score-blocked by default,
         # while staying above -10000 for anyone who deliberately sets a format to
         # that hard-block value. Do NOT raise to 0 — that would turn every negative
-        # score into a hard reject. See docs/reference/quality-bounds.md.
+        # score into a hard reject. See docs/setup/quality-bounds.md.
         "minFormatScore": -1000,
         "cutoffFormatScore": 0,
         "minUpgradeFormatScore": 1,
