@@ -12,7 +12,7 @@ Top-level source of truth for service configuration. `scripts/configure.sh` read
 
 List of Jackett indexers. Public releases default this to `[]`; add entries only for indexers you are legally allowed to use, or apply the optional preset from `config/examples/public-indexers.yml`. Each entry has `id` (Jackett's internal indexer ID) and `type` — one of `general`, `tv`, `movies`. Consumed by:
 
-- Step 2 Jackett (`cfg_indexers` in `scripts/lib/common.sh`) — adds to Jackett.
+- Jackett (`cfg_indexers` in `scripts/lib/common.sh`) — adds to Jackett.
 - `configure_arr_indexers` (`scripts/lib/arr/indexers.sh`, loaded by `main.sh`) — filters by type: Sonarr gets `general`+`tv`, Radarr gets `general`+`movies`. Each add gets up to two attempts, with a 2-second wait between them.
 
 An empty list is valid. Jackett still receives its admin password and FlareSolverr URL, while Sonarr/Radarr skip Torznab wiring.
@@ -75,7 +75,7 @@ quality_definitions:
     Bluray-1080p: { min: 10.0, preferred: 65.0, max: 90.0 }
 ```
 
-Consumed by `configure_quality_definitions` (`scripts/lib/arr/quality.sh`, with diff helper at `scripts/lib/arr/render/quality_definitions.py`) during steps 3 and 4, after `configure_quality_profile`. Idempotent — reads the live set via `GET /api/v3/qualitydefinition`, compares with a small float tolerance, `PUT`s only the tiers that differ.
+Consumed by `configure_quality_definitions` (`scripts/lib/arr/quality.sh`, with diff helper at `scripts/lib/arr/render/quality_definitions.py`) during Sonarr and Radarr configuration, after `configure_quality_profile`. Idempotent — reads the live set via `GET /api/v3/qualitydefinition`, compares with a small float tolerance, `PUT`s only the tiers that differ.
 
 ### `custom_formats`
 
@@ -95,7 +95,7 @@ custom_formats:
   "Obfuscated":     -10
 ```
 
-Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/formats.sh`) during steps 3 and 4. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
+Consumed by `configure_arr_custom_formats` and `configure_arr_format_scores` (`scripts/lib/arr/formats.sh`) during Sonarr and Radarr configuration. `configure_arr_custom_formats` creates format definitions via `POST /api/v3/customformat` (skips if already present by name). `configure_arr_format_scores` attaches scores to the quality profile via `PUT /api/v3/qualityprofile/{id}` — only when the profile's `formatItems` is empty (treated as CREATE). Non-empty `formatItems` that differ triggers a drift warning, not reconciliation.
 
 The setup wizard writes the chosen preset's scores via `wizard_apply.py`. The `custom_format_scores` values in `scripts/setup/presets.yml` are currently identical for Compact, Balanced, and Large.
 
@@ -109,7 +109,7 @@ Minimum free disk space (in GB) before Sonarr and Radarr stop importing and grab
 | Template default | `20` (= 20480 MB); the installer may scale it to 2–19 GB when the data partition has less than 200 GB free |
 | Skip configuration | Set to `0`; on an existing install, reset the previously applied value in Sonarr/Radarr |
 
-Consumed by `configure_arr_disk_threshold` (`scripts/lib/arr/storage.sh`) during steps 3 and 4. Only applied on first run (when the value is the API default of 100 MB). If the user has changed the value in the UI, configure.sh warns on drift but does not reconcile.
+Consumed by `configure_arr_disk_threshold` (`scripts/lib/arr/storage.sh`) during Sonarr and Radarr configuration. Only applied on first run (when the value is the API default of 100 MB). If the user has changed the value in the UI, configure.sh warns on drift but does not reconcile.
 
 ### `qbittorrent`
 
@@ -128,7 +128,7 @@ Passed directly to `POST /api/v2/app/setPreferences`:
 | `ul_speed_limit` | `up_limit` (converted from MB/s to bytes/s; `.env QBT_UL_LIMIT` overrides) |
 | `categories` | `name:path` pairs → `POST /api/v2/torrents/createCategory` per entry |
 
-**Not configurable here:** `max_ratio_act`, `bypass_auth_subnet_whitelist`, connection limits — hardcoded in the `setPreferences` payload in `scripts/services/qbittorrent/main.sh`. See [configure-flow.md](configure-flow.md) Step 1 for why `max_ratio_act` is pinned to pause.
+**Not configurable here:** `max_ratio_act`, `bypass_auth_subnet_whitelist`, connection limits — hardcoded in the `setPreferences` payload in `scripts/services/qbittorrent/main.sh`. See the qBittorrent section in [configure-flow.md](configure-flow.md) for why `max_ratio_act` is pinned to pause.
 
 ### `sonarr` / `radarr`
 
@@ -139,7 +139,7 @@ Minimal per-*arr settings — the rest comes from `quality_profile` / `categorie
 
 ### `seerr.quotas`
 
-`movie` and `tv` each have a `limit` (requests per period; `0` means unlimited) and `days` (period length). The template sets both limits to `0` and both periods to `7` days. Consumed by `configure_seerr` (`scripts/services/seerr/main.sh`) for default user request quotas.
+`movie` and `tv` each have a `limit` (requests per period; `0` means unlimited) and `days` (period length). The template sets both limits to `0` and both periods to `7` days. Consumed by `configure_seerr` (`scripts/services/seerr/main.sh`) for default user request quotas. A change to `days` alone is currently skipped. Setting both limits to `0` also omits the quota update, so existing limits can remain. Use the Seerr settings UI to change these values on an existing install.
 
 ### `bazarr`
 
@@ -244,7 +244,7 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `UFW_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 | `HARDENING_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 | `ADMIN_PORT_FILTER` | Stage 1 prompt (asked only when the firewall is declined or the filter was previously off) + day-2 toggle, default `true` (recommended) | `true` |
-| `AUTOHEAL_ENABLED` | default `true` | `false` disables the autoheal sidecar |
+| `AUTOHEAL_ENABLED` | default `true` | `false` excludes the autoheal profile; stop an existing sidecar too (see [installation guide](../guide/install.md#what-you-get)) |
 | `MS_DISABLE_RESOURCE_LIMITS` | `.env.example` default `false`; setup does not preserve this key when it regenerates `.env` | `true` omits CPU and memory caps from the generated compose override |
 
 **DDNS credentials:** the Stage 2 DDNS picker writes only the non-secret `DDNS_PROVIDER` to `.env`. The provider's credentials (Dynu username/password, DuckDNS/dynv6/deSEC tokens, Cloudflare zone-id + token, Porkbun API keys) live solely in the chmod-600 `config/ddns-updater/config.json` rendered by `ddns_render_config_json` — never in `.env`. A wizard re-run recalls the provider from `DDNS_PROVIDER` and pre-fills its credential prompts from that config.json.
@@ -275,17 +275,17 @@ In v15 the per-client firewall is enforced inside the wg-easy container regardle
 
 ### Auto-populated (by `configure.sh`)
 
-| Key | Populated in step | By |
-|-----|-------------------|-----|
-| `SONARR_API_KEY` | 3 | `scripts/services/sonarr/main.sh` (read from `config/sonarr/config.xml`) |
-| `RADARR_API_KEY` | 4 | `scripts/services/radarr/main.sh` (read from `config/radarr/config.xml`) |
-| `JELLYFIN_API_KEY` | 5 | `scripts/services/jellyfin/main.sh` (AccessToken from auth response, saved as a permanent API key via `/Auth/Keys`) |
-| `JELLYFIN_PUBLISHED_URL` | 5 | `scripts/services/jellyfin/main.sh` (`configure_jellyfin_networking` — `https://jellyfin.<DOMAIN>` when DOMAIN set, else `http://<HOST_ADDRESS>:8096`) |
-| `BAZARR_API_KEY` | (conditional) | `scripts/services/bazarr/main.sh` (read from `config/bazarr/config/config.yaml`; only when subtitles profile is active) |
-| `SEERR_API_KEY` | 6 | `scripts/services/seerr/main.sh` (from `apiKey` field of `GET /api/v1/settings/main`) |
-| `PORTAINER_API_KEY` | 7 | `scripts/services/portainer/main.sh` (persistent access token via `POST /api/users/1/tokens`) |
+| Key | By |
+|-----|----|
+| `SONARR_API_KEY` | `scripts/services/sonarr/main.sh` (read from `config/sonarr/config.xml`) |
+| `RADARR_API_KEY` | `scripts/services/radarr/main.sh` (read from `config/radarr/config.xml`) |
+| `JELLYFIN_API_KEY` | `scripts/services/jellyfin/main.sh` (finds or creates a permanent key via `/Auth/Keys`; saves the authenticated session token only if permanent-key creation fails) |
+| `JELLYFIN_PUBLISHED_URL` | `scripts/services/jellyfin/main.sh` (`configure_jellyfin_networking` — `https://jellyfin.<DOMAIN>` when DOMAIN set, else `http://<HOST_ADDRESS>:8096`) |
+| `BAZARR_API_KEY` | `scripts/services/bazarr/main.sh` (read from `config/bazarr/config/config.yaml`; only when subtitles profile is active) |
+| `SEERR_API_KEY` | `scripts/services/seerr/main.sh` (from `apiKey` field of `GET /api/v1/settings/main`) |
+| `PORTAINER_API_KEY` | `scripts/services/portainer/main.sh` (persistent access token via `POST /api/users/1/tokens`) |
 
-Unpackerr reads `SONARR_API_KEY` / `RADARR_API_KEY` and `UNPACKERR_TORRENT_PATHS` from env (set in the `unpackerr` service definition in `docker-compose.yml`), which is why `configure.sh` restarts it after API key population for managed app wiring. Homepage uses the Sonarr, Radarr, Jellyfin, Seerr, and Portainer API keys, plus `NPM_ADMIN_EMAIL` and `JELLYFIN_ADMIN_PASSWORD` for NPM and Beszel widgets, to generate `services.yaml`.
+Unpackerr reads `SONARR_API_KEY` / `RADARR_API_KEY` and `UNPACKERR_TORRENT_PATHS` from env (set in the `unpackerr` service definition in `docker-compose.yml`), which is why `configure.sh` attempts to recreate it after API key population for managed app wiring. Homepage uses the Sonarr, Radarr, Jellyfin, Seerr, and Portainer API keys, plus `NPM_ADMIN_EMAIL` and `JELLYFIN_ADMIN_PASSWORD` for NPM and Beszel widgets, to generate `services.yaml`.
 
 ---
 

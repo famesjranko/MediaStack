@@ -1,6 +1,6 @@
 # `scripts/configure.sh` — Auto-Configuration Flow
 
-Reads `config.yml`, wires up services via their APIs, and writes generated API keys back into `.env`. Re-runs preserve existing app state; some changed settings produce advisory drift and need the named UI repair or a rebuild. Drift alone does not mark a service WARN in the summary. `--only svc1,svc2,...` restricts the run to named services (docker-compose names); used by the test suite for faster re-runs.
+Reads `config.yml`, wires up services via their APIs, and writes generated API keys back into `.env`. Re-runs check existing app state. Some settings are updated; others produce advisory drift and need repair in the service UI or a supported menu action. Drift alone does not mark a service WARN in the summary. `--only svc1,svc2,...` restricts the run to named services (docker-compose names); used by the test suite for faster re-runs.
 
 `configure.sh` is a **thin entrypoint**. The work lives in `scripts/lib/*` helpers and one directory per service under `scripts/services/<svc>/`. `main()` in `scripts/configure.sh` runs Portainer first, then qBittorrent, Jackett, Sonarr, Radarr, a parallel Sonarr/Radarr indexer phase, conditional Bazarr, Jellyfin, Seerr, Homepage, conditional NPM, DDNS Updater (status when running), conditional WireGuard, Uptime Kuma, and Beszel. A full run then attempts to recreate Unpackerr with the populated API keys and reloads fail2ban if its container is running.
 
@@ -158,7 +158,7 @@ Reads `<app>.root_folder` from `config.yml`, `GET /api/v3/rootfolder`, and compa
 
 ### `configure_arr_disk_threshold APP BASE KEY`
 
-Reads `min_free_space_gb` from `config.yml` (default 20), converts to MB (×1024), and applies via `GET`/`PUT /api/v3/config/mediamanagement` (field: `minimumFreeSpaceWhenImporting`). The PUT requires the full config object — GET first, mutate the one field, PUT back. Only updates when the current value is the API default (100 MB); reports user-customized values with `log_drift`. `0` disables (skips with `log_skip`).
+Reads `min_free_space_gb` from `config.yml` (default 20), converts to MB (×1024), and applies via `GET`/`PUT /api/v3/config/mediamanagement` (field: `minimumFreeSpaceWhenImporting`). The PUT requires the full config object — GET first, mutate the one field, PUT back. Only updates when the current value is the API default (100 MB); reports user-customized values with `log_drift`. `0` skips configuration with `log_skip`; it does not reset an existing threshold.
 
 ### `configure_arr_download_client APP BASE KEY CATEGORY_FIELD`
 
@@ -201,7 +201,7 @@ Enables Forms authentication using shared Jellyfin admin credentials (`JELLYFIN_
 4. Feed profile JSON + scores + format ID map to `render/format_scores.py`, which returns:
    - `match` — current `formatItems` already match. `log_skip`.
    - `empty\t<put-body>` — `formatItems` was empty; treated as CREATE. `PUT /api/v3/qualityprofile/{id}` with populated `formatItems`.
-   - `drift\t<details>` — `formatItems` non-empty and differs. `log_warn` (no reconcile).
+   - `drift\t<details>` — `formatItems` non-empty and differs. `log_drift` (no reconcile).
 
 ### `configure_arr_indexers APP BASE KEY CATEGORIES`
 
@@ -248,7 +248,7 @@ Both wizard paths call `configure_jellyfin_encoding` and `configure_jellyfin_str
 Configures Jellyfin's network settings via `GET`/`POST /System/Configuration/network` (a different JSON blob from `/System/Configuration` used by streaming). `render/network_policy.py` compares the live JSON with MediaStack's desired policy and emits the skip/drift/apply decision that the shell wrapper logs and posts. Three fields:
 
 - **`AutoDiscovery: true`** — desired for UDP 7359 LAN discovery (port exposed in `docker-compose.yml`). A live `false` value is reported as drift and left unchanged.
-- **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see the static-octet map in the `mediastack` network block of `docker-compose.yml`).
+- **`KnownProxies: ["${MEDIASTACK_NPM_IP}"]`** — only when `REMOTE_WEB_STATE=ready` with a real domain. Tells Jellyfin to trust `X-Forwarded-*` from NPM. Uses NPM's pinned IP from `.env` (default `172.28.0.10`, selected by `setup.sh` after LAN/VPN collision checks) — Jellyfin caches DNS lookups at startup, so a hostname goes stale after any network rebuild (see the service `ipv4_address` entries in `docker-compose.yml`).
 - **`PublishedServerUriBySubnet`** — `["internal=http://<HOST_IP>:8096"]` always; adds `"external=https://jellyfin.<DOMAIN>"` only when `REMOTE_WEB_STATE=ready`. Unchecked or skipped remote state stays LAN-only even if `DOMAIN` is real.
 
 **Idempotency:** GET current, compare each field. `log_skip` on match. `log_drift` on drift (non-default values that differ from expected — user changed in UI). POST only for fields the policy renderer can manage. Writes `JELLYFIN_PUBLISHED_URL` to `.env` via `env_save_api_key`.
@@ -268,7 +268,7 @@ The longest step — Seerr's bootstrap involves three moving API surfaces (its o
 7. **Connect Sonarr + Radarr** via `http_json_post` (defined in `scripts/lib/http.sh`), which captures the response body on non-2xx. Payload includes `activeProfileName`, `activeDirectory`, `activeLanguageProfileId` (Sonarr) — Seerr 2.7.x silently accepts an incomplete payload but the connection won't work without these fields.
 8. **Mark setup complete** — `POST /api/v1/settings/initialize`, then re-fetch `/api/v1/settings/public` to verify `initialized=true`.
 9. **Extract API key** — from the `apiKey` field of `GET /api/v1/settings/main` (fetched for permissions check below). Saved to `.env` as `SEERR_API_KEY` via `env_save_api_key`. Used by the Homepage widget in Step 8.
-10. **Set default permissions + quotas** — `POST /api/v1/settings/main` with `defaultPermissions: 32` (REQUEST only) and `defaultQuotas` from `config.yml` (`seerr.quotas.movie` and `seerr.quotas.tv`). Bits 128/256/512 (auto-approve movies/TV/4K) are NOT set, so all requests require admin approval. Quotas default to unlimited (`limit: 0`) in the shipped `config.yml`.
+10. **Set default permissions + quotas** — `POST /api/v1/settings/main` with `defaultPermissions: 32` (REQUEST only) and `defaultQuotas` from `config.yml` (`seerr.quotas.movie` and `seerr.quotas.tv`). Bits 128/256/512 (auto-approve movies/TV/4K) are NOT set, so all requests require admin approval. Quotas default to unlimited (`limit: 0`) in the shipped `config.yml`. Period-only changes and clearing both existing limits need the Seerr UI; see [Seerr quotas](configuration-schema.md#seerrquotas).
 11. **Set proxy trust** — read `trustProxy` from `GET /api/v1/settings/network`; set it to `true` only when `REMOTE_WEB_STATE=ready` with a real domain, otherwise `false`. `POST /api/v1/settings/network` when it differs, then restart Seerr after a successful change so the setting takes effect.
 
 Heredoc-stdin hazard (commented in the source near the `lib_ids` extraction): `python3 - <<'PY'` rebinds stdin, so using it in a pipeline like `echo $libs | python3 - <<'PY'` silently gives Python an EOF — the `echo`'s output never reaches `sys.stdin`. Use `python3 -c '…'` inside pipes.
@@ -340,7 +340,7 @@ NPM admin setup, health healing, default-site hardening, the rate-limit step (wh
 
 Only runs if the `ddns-updater` container is running (detected via `docker ps`). Actual DDNS config seeding happens in `setup.sh` before containers start — this step just reports status so `configure.sh` output is consistent.
 
-Checks whether `config/ddns-updater/config.json` exists: if present, `log_ok`; if absent, `log_warn` with guidance to configure at the web UI (`http://<ip>:8000`).
+Checks whether `config/ddns-updater/config.json` exists. If present, `log_ok` points to the status-only web UI (`http://<ip>:8000`) and the menu action for changing provider credentials. If absent, `log_warn` points to **Features & settings → Add remote access**.
 
 ## Step 11 — WireGuard (`configure_wireguard` in `scripts/services/wireguard/main.sh`)
 

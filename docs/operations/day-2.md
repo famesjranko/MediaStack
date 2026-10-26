@@ -88,15 +88,15 @@ and the upstream digest are manifest-list digests, so the comparison is multi-ar
   `config/state/image-install.tsv`, on **any** channel, written as a per-service digest pin in
   `config/state/image-policy.tsv`. If the installed image is no longer available upstream, the recreate
   is rolled back onto the service's previous cached image rather than left down.
-- **Restore points.** Before an update moves a service off its installed image, a restore point of
-  `config/<service>` (up to 256 MiB) is saved while the service is stopped. Revert restores it with the
+- **Restore points.** Before an update moves a service off its installed image, MediaStack attempts to save a restore point of
+  `config/<service>` (up to 256 MiB) while the service is stopped. A failed backup is reported, but the update can continue. When a restore point exists, Revert restores it with the
   old image, then checks service health and MediaStack's logins to qBittorrent, Sonarr, Radarr and
   Jellyfin. A failed check keeps the restore point. With no restore point, Revert warns and asks to
   confirm.
 - **Skips.** The Revert list shows only installed services with a manual override. **Update all** skips
   stopped services and lists them as skipped.
 
-There is no day-2 channel toggle: changing the channel means re-running the installer. The CLI
+There is no day-2 channel toggle. Re-running the installer on a completed installation does not offer a channel change; use the per-service update and revert actions. The CLI
 `scripts/update.sh` remains a bulk re-pull per the current override.
 
 Update and revert only **recreate a service that is already running**; a stopped service has its new
@@ -344,7 +344,7 @@ Safe to re-run, but not add-only. Existing resources are checked before changes;
   watcher stops, the Health & security *fail2ban jellyfin watch* check reports a jail left on a stale file.
 - GPU override file regeneration (new GPU hardware):
   ```bash
-  ./setup.sh                 # re-detects GPU, regenerates override.yml
+  ./setup.sh --transcoding   # configure and verify hardware transcoding
   ./mediastack
   ```
   Choose **Manage stack → Start all services** to apply the new runtime/devices across enabled profiles.
