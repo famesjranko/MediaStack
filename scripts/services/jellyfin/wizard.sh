@@ -76,7 +76,7 @@ else:
                 continue
                 ;;
             drift)
-                log_drift "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). MediaStack does not change it on re-run. To keep the live path: set that library's path in config.yml to the live path. To use the config.yml path: Jellyfin UI -> Dashboard -> Libraries -> remove '$lib_name', then run ./scripts/configure.sh --only jellyfin. Items at the new path are scanned as new items, so they start without watch history; media files and other libraries stay."
+                log_drift "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). MediaStack does not change it on re-run. To keep the live path: set that library's path in config.yml to the live path. To use the config.yml path: Jellyfin UI -> Dashboard -> Libraries -> remove '$lib_name', then run ./scripts/configure.sh --only jellyfin,seerr. Items at the new path are scanned as new items, so they start without watch history; media files and other libraries stay."
                 continue
                 ;;
         esac

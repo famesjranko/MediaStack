@@ -216,7 +216,7 @@ rc=$?
 assert_eq "0" "$rc" "Jellyfin library path drift remains non-fatal"
 assert_contains "${DRIFT_MESSAGES[*]:-}" "set that library's path in config.yml to the live path" \
     "Jellyfin library path drift offers keeping the live path"
-assert_contains "${DRIFT_MESSAGES[*]:-}" "remove 'Movies', then run ./scripts/configure.sh --only jellyfin" \
+assert_contains "${DRIFT_MESSAGES[*]:-}" "remove 'Movies', then run ./scripts/configure.sh --only jellyfin,seerr" \
     "Jellyfin library path drift offers reapplying config.yml"
 assert_contains "${DRIFT_MESSAGES[*]:-}" "start without watch history" \
     "Jellyfin library path drift names the history it loses"

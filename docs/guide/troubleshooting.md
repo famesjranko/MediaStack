@@ -240,6 +240,6 @@ Configuration re-runs preserve many existing settings and can report drift inste
 - **Keep the current setting.** Change the value in `config.yml` to match the service, or leave both as they are. The notice then repeats or goes away. Nothing is lost.
 - **Reapply `config.yml`.** Change the service as the notice says, then run `./scripts/configure.sh --only <service>`.
 
-Do not use `docker compose down -v` for this. Service databases live in `config/<service>`, and `down -v` keeps them. To remove all service data on purpose, choose **Uninstall MediaStack**. It deletes `config/` except `config/examples/`, `.env` and `config.yml`, with every service's database, watch history, logins and API keys. Media files stay. Install again afterwards.
+Do not use `docker compose down -v` for this. Service databases live in `config/<service>`, and `down -v` keeps them. To remove all service data on purpose, choose **Uninstall MediaStack**. It deletes `config/` except `config/examples/`, `.env` and `config.yml`, with every service's database, watch history, logins and API keys, including NPM certificates and WireGuard peers. Media files stay. Install again afterwards.
 
 See also: [install guide](install.md), [remote access](remote-access.md), [using the menu](using-the-menu.md).

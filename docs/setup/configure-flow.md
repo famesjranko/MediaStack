@@ -237,7 +237,7 @@ Sets Jellyfin's display name (Dashboard header, browser tab) via `GET`/`POST /Sy
 
 ### `configure_jellyfin_libraries` (in `scripts/services/jellyfin/wizard.sh`)
 
-`POST /Library/VirtualFolders?name=...&collectionType=...` per entry in `cfg_jf_libraries`. Library name is URL-encoded via inline Python. A library whose live path differs from `config.yml` is `log_drift` and left unchanged; the notice names two routes: set the library path in `config.yml` to the live path, or remove the library in Jellyfin and run `./scripts/configure.sh --only jellyfin`. Items at the new path are new to Jellyfin and start without watch history.
+`POST /Library/VirtualFolders?name=...&collectionType=...` per entry in `cfg_jf_libraries`. Library name is URL-encoded via inline Python. A library whose live path differs from `config.yml` is `log_drift` and left unchanged; the notice names two routes: set the library path in `config.yml` to the live path, or remove the library in Jellyfin and run `./scripts/configure.sh --only jellyfin,seerr`. Items at the new path are new to Jellyfin and start without watch history.
 
 ### Encoding and streaming (in `scripts/services/jellyfin/encoding.sh` and `server.sh`)
 

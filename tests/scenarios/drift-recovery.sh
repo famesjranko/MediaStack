@@ -307,6 +307,7 @@ drift_library_cases() {
     out=$(drift_configure jellyfin)
     # Then the notice offers both paths and names the history it loses.
     assert_contains "$out" "set that library's path in config.yml to the live path" "library: notice offers the keep path"
+    assert_contains "$out" "then run ./scripts/configure.sh --only jellyfin,seerr" "library: notice offers the reapply path and re-syncs Seerr"
     assert_contains "$out" "start without watch history" "library: notice names the history it loses"
     assert_not_contains "$out" "down -v" "library: notice does not recommend down -v"
 
