@@ -113,7 +113,7 @@ This action keeps your domain. Use it to enter the credentials again, or to swit
 
 ## WireGuard VPN
 
-WireGuard lets your phone or laptop reach your home network while away. Choose WireGuard during remote-access setup. Once HTTPS is ready, the menu does not offer a way to add WireGuard. Running `./setup.sh --remote` then repairs the existing setup without asking for new WireGuard settings.
+WireGuard lets your phone or laptop reach your home network while away. Choose WireGuard during remote-access setup. If you declined it, add it later: choose **Features & settings (quality, bandwidth, subtitles, sharing, indexers)** → **Add WireGuard VPN**, or run `./setup.sh --wireguard`. This item shows only when HTTPS is ready and WireGuard is not set up. MediaStack asks for the UDP port and access tier, then asks you to confirm. If you decline or cancel, nothing changes. Your domain, HTTPS setup, and passwords stay as they are. If WireGuard is already set up, the action changes nothing. Running `./setup.sh --remote` repairs the existing setup, keeps the peers in wg-easy, and does not ask for new WireGuard settings.
 
 wg-easy manages the VPN. It starts with your admin login and one first peer. The peer has the name of your admin user and the access tier you chose at install.
 

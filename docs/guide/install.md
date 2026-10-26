@@ -76,7 +76,7 @@ Once the core stack is running, setup offers two optional steps:
 1. **Hardware transcoding**, if a supported GPU is detected.
 2. **Remote access**, including HTTPS and WireGuard. It needs a domain name and port forwarding. See [Remote access](remote-access.md).
 
-You can skip either step. After install, run `./mediastack` to open the day-2 management menu. To add a skipped feature, choose **Manage hardware transcoding (GPU)** or **Features & settings** → **Add remote access (HTTPS, domain, WireGuard)**.
+You can skip either step. After install, run `./mediastack` to open the day-2 management menu. To add a skipped feature, choose **Manage hardware transcoding (GPU)** or **Features & settings** → **Add remote access (HTTPS, domain, WireGuard)**. If HTTPS is ready and you declined WireGuard, choose **Features & settings** → **Add WireGuard VPN**.
 
 ## What you get
 

@@ -53,6 +53,9 @@ submenu_features() {
         if recovery_menu_remote_available; then
             options+=("Add remote access (HTTPS, domain, WireGuard)")
         fi
+        if recovery_menu_wireguard_available; then
+            options+=("Add WireGuard VPN")
+        fi
         options+=("Subtitles (Bazarr): $(_feature_state "${BAZARR_ENABLED:-false}")")
         options+=("File sharing (SMB): $(_feature_state "${SMB_ENABLED:-false}")")
         options+=("Search indexers: $(_feature_state "${PUBLIC_INDEXERS_ENABLED:-false}")")
@@ -79,6 +82,7 @@ submenu_features() {
 
         case "$choice" in
             "Add remote access"*) action_remote ;;
+            "Add WireGuard VPN"*) action_add_wireguard ;;
             "Subtitles (Bazarr):"*) action_toggle_bazarr ;;
             "File sharing (SMB):"*) action_toggle_smb ;;
             "Search indexers:"*) action_toggle_indexers ;;
@@ -404,3 +408,4 @@ action_repair_jellyfin_connections() {
 }
 
 action_remote() { _run_setup_return 0 "Add remote access" --remote; }
+action_add_wireguard() { _run_setup_return 0 "Add WireGuard VPN" --wireguard; }

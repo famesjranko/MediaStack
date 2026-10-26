@@ -43,6 +43,13 @@ recovery_menu_remote_available() {
     esac
 }
 
+# Ready HTTPS with no WireGuard: the launcher offers "Add WireGuard VPN". The
+# test is WG_INIT_PASSWORD alone because that value is what activates the remote
+# profile (scripts/lib/profiles.sh).
+recovery_menu_wireguard_available() {
+    [[ "${REMOTE_WEB_STATE:-}" == "ready" && -z "${WG_INIT_PASSWORD:-}" ]]
+}
+
 recovery_menu_transcoding_available() {
     [[ "${GPU_TYPE:-none}" != "none" ]] || return 1
     case "${STAGE_3_GPU_STATE:-}" in
@@ -187,13 +194,22 @@ run_remote_recovery() {
 }
 
 run_remote_ready_recovery() {
+    _remote_ready_prepare
+    _remote_ready_heal
+}
+
+_remote_ready_prepare() {
     check_docker
     check_compose
     check_internet_reachability
     prompt_sudo_cache
     detect_env
     _wizard_load_existing_env
+}
 
+# Verify/heal an already-ready remote install. Also the tail of
+# run_wireguard_recovery, so the new service starts through the same path.
+_remote_ready_heal() {
     repair_ddns_updater_config_permissions || return 1
     pull_images
     start_stack
@@ -209,6 +225,74 @@ run_remote_ready_recovery() {
         print_final_summary
         stage3_prompt_pending_nvidia_reboot
     fi
+}
+
+# Add WireGuard to an install whose HTTPS is already ready. Collection reuses
+# the Stage 2 WireGuard prompts and validators; nothing is written until the
+# final confirm, so every decline or cancel leaves the install untouched. Only
+# the WG_* keys change: HTTPS, domain, DDNS and all other credentials stay as
+# they are, and the heal path keeps peers that wg-easy already holds.
+run_wireguard_recovery() {
+    require_stage1_complete "--wireguard" || return 1
+
+    if [[ "${REMOTE_WEB_STATE:-}" != "ready" ]]; then
+        log_warn "WireGuard is added after HTTPS remote access is ready. Choose Add remote access first."
+        return 1
+    fi
+    if [[ -n "${WG_INIT_PASSWORD:-}" ]]; then
+        log_info "WireGuard is already set up. No changes made. To re-check it, run ./setup.sh --remote."
+        record_launcher_outcome unchanged
+        return 0
+    fi
+
+    _remote_ready_prepare
+
+    _stage2_seed_wizard_defaults
+    if [[ -z "${_WIZ_ADMIN_PW:-}" ]]; then
+        log_error "JELLYFIN_ADMIN_PASSWORD is missing from .env. WireGuard uses it as the wg-easy admin password."
+        return 1
+    fi
+    # Default the opt-in prompt to "no": end of input must not add a service.
+    _WIZ_WG_ENABLED="false"
+    _WIZ_WG_STANDALONE="true"
+    _stage2_collect_wireguard
+    if [[ "$_WIZ_WG_ENABLED" != "true" ]] || ! ui_confirm "Start WireGuard with these settings?" "yes"; then
+        log_info "No changes made."
+        record_launcher_outcome unchanged
+        return 0
+    fi
+
+    local writer_status
+    local -a wg_pairs=(
+        WG_HOST "$_WIZ_WG_HOST"
+        WG_PORT "$_WIZ_WG_PORT"
+        WG_INIT_PASSWORD "$_WIZ_ADMIN_PW"
+        WG_ACCESS_TIER "$_WIZ_WG_ACCESS_TIER"
+        WG_LAN_CIDR "$_WIZ_WG_LAN_CIDR"
+        WG_SERVER_LAN_IP "$_WIZ_WG_SERVER_LAN_IP"
+        WG_INIT_ALLOWED_IPS "$_WIZ_WG_INIT_ALLOWED_IPS"
+        WG_PER_CLIENT_FIREWALL "$_WIZ_WG_PER_CLIENT_FIREWALL"
+    )
+    if ! writer_status=$(_env_write_kv "$SCRIPT_DIR/.env" "${wg_pairs[@]}"); then
+        _env_write_kv_warn WG_INIT_PASSWORD "$writer_status"
+        record_launcher_outcome failed
+        return 1
+    fi
+    _stage2_source_env
+
+    setup_ufw_wireguard_clients || log_warn "Could not converge the WireGuard firewall rule; peers may not reach host services. 'Apply changes from a MediaStack update' retries it."
+    if [[ "${UFW_ENABLED:-true}" == "true" ]]; then
+        setup_ufw_service_ports || log_warn "Could not open the service-port firewall rules; 'Enable UFW firewall' in Features & settings retries them."
+    fi
+
+    local rc=0
+    _remote_ready_heal || rc=$?
+    if ((rc != 0)); then
+        log_warn "WireGuard settings are saved but the stack did not finish starting. Run ./setup.sh --remote to retry."
+        record_launcher_outcome failed
+        return "$rc"
+    fi
+    record_launcher_outcome completed
 }
 
 # A software fallback is successful when no GPU is available or the user chooses it.

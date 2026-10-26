@@ -2,7 +2,15 @@
 # Sources: Stage 2 defaults, network detection, WireGuard validators, and UI.
 
 _stage2_collect_wireguard() {
-    ui_section 3 5 "WireGuard"
+    # run_wireguard_recovery (day-2 "Add WireGuard VPN") reuses this collection
+    # outside the five-step Stage 2 flow, so it drops the step counter.
+    local wg_prompt="Also set up a WireGuard VPN for admin access?"
+    if [[ "${_WIZ_WG_STANDALONE:-false}" == "true" ]]; then
+        ui_section "WireGuard"
+        wg_prompt="Set up a WireGuard VPN for admin access?"
+    else
+        ui_section 3 5 "WireGuard"
+    fi
 
     # Opt-in sub-toggle: WireGuard is a distinct service (the wg-easy container),
     # not mandatory for HTTPS remote access. Gate its config prompts behind an
@@ -12,7 +20,7 @@ _stage2_collect_wireguard() {
     local wg_default="yes"
     [[ "${_WIZ_WG_ENABLED:-true}" == "true" ]] || wg_default="no"
     ui_log info "WireGuard gives you a private VPN to reach admin pages and your home LAN while away. Recommended."
-    if ! ui_confirm "Also set up a WireGuard VPN for admin access?" "$wg_default"; then
+    if ! ui_confirm "$wg_prompt" "$wg_default"; then
         _WIZ_WG_ENABLED="false"
         ui_kv "WireGuard" "disabled"
         return 0

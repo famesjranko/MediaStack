@@ -13,6 +13,7 @@
 #   ./setup.sh          # Stack setup only (Docker must be installed)
 #   ./setup.sh --full   # Full setup from bare Debian (installs Docker)
 #   ./setup.sh --remote # Retry remote access setup after Stage 1
+#   ./setup.sh --wireguard # Add WireGuard to an install whose HTTPS is ready
 #   ./setup.sh --transcoding # Retry hardware transcoding setup after Stage 1
 #   ./setup.sh --nvidia-unlock-update  # Update the Unlock driver (guarded)
 #   ./setup.sh --nvidia-unlock-repatch # Reapply the reviewed Unlock patch (guarded)
@@ -206,6 +207,11 @@ main() {
 
     if [[ "${1:-}" == "--remote" ]]; then
         run_remote_recovery
+        return $?
+    fi
+
+    if [[ "${1:-}" == "--wireguard" ]]; then
+        run_wireguard_recovery
         return $?
     fi
 
