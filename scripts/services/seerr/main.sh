@@ -4,6 +4,7 @@
 
 _SEERR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_SEERR_DIR/arr-connect.sh"
+source "$_SEERR_DIR/quotas.sh"
 
 configure_seerr() {
     echo ""
@@ -278,50 +279,15 @@ except Exception:
     # Default permissions + request quotas. Non-admin users can submit requests
     # but they require admin approval (bit 32 = REQUEST only, no auto-approve).
     # Quotas prevent request spam from family members.
-    local movie_limit movie_days tv_limit tv_days
-    movie_limit=$(cfg_field "seerr.quotas.movie.limit" 2>/dev/null || echo "10")
-    movie_days=$(cfg_field "seerr.quotas.movie.days" 2>/dev/null || echo "7")
-    tv_limit=$(cfg_field "seerr.quotas.tv.limit" 2>/dev/null || echo "10")
-    tv_days=$(cfg_field "seerr.quotas.tv.days" 2>/dev/null || echo "7")
-
-    local current_settings current_perms current_movie_limit current_tv_limit
+    local current_settings seerr_api_key
     if ! current_settings=$(api_fetch "Seerr main settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/main"); then
-        current_settings="{}"
+        current_settings=""
     fi
-    local seerr_api_key
     seerr_api_key=$(echo "$current_settings" | json_get apiKey)
     if [[ -n "$seerr_api_key" ]]; then
         env_save_api_key "SEERR_API_KEY" "$seerr_api_key"
     fi
-
-    current_perms=$(echo "$current_settings" | json_get defaultPermissions 0)
-    current_movie_limit=$(echo "$current_settings" | json_path defaultQuotas.movie.quotaLimit 0)
-    current_tv_limit=$(echo "$current_settings" | json_path defaultQuotas.tv.quotaLimit 0)
-
-    if [[ "$current_perms" == "32" && "$current_movie_limit" == "$movie_limit" && "$current_tv_limit" == "$tv_limit" ]]; then
-        log_skip "Seerr permissions + quotas already match config.yml"
-    else
-        local settings_body
-        settings_body=$(python3 -c "
-import json
-body = {'defaultPermissions': 32}
-ml, md, tl, td = int('$movie_limit'), int('$movie_days'), int('$tv_limit'), int('$tv_days')
-if ml > 0 or tl > 0:
-    body['defaultQuotas'] = {
-        'movie': {'quotaLimit': ml, 'quotaDays': md} if ml > 0 else {},
-        'tv': {'quotaLimit': tl, 'quotaDays': td} if tl > 0 else {}
-    }
-print(json.dumps(body))
-" 2>/dev/null)
-        if curl -fsS -X POST "$seerr_url/api/v1/settings/main" \
-            -H "Content-Type: application/json" \
-            -c "$cookiejar" -b "$cookiejar" \
-            -d "$settings_body" >/dev/null 2>&1; then
-            log_ok "Seerr: admin-approval required, quotas ${movie_limit} movies/${movie_days}d + ${tv_limit} TV/${tv_days}d"
-        else
-            log_warn "Failed to set Seerr permissions/quotas"
-        fi
-    fi
+    reconcile_seerr_quotas "$seerr_url" "$cookiejar" "$current_settings"
 
     # ----------------------------------------------------------------------
     # Trust the NPM reverse proxy so Seerr reads the real client IP from

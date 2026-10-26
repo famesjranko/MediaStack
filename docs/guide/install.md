@@ -171,7 +171,7 @@ Create one Jellyfin account for each person. Do not share the admin login. For u
 
 By default, the limits are 0 movies and 0 series per 7 days. In Seerr, 0 means unlimited, but each request still needs approval. To set a cap, change `seerr.quotas` in `config.yml`, then apply it as [Using the menu](using-the-menu.md) describes.
 
-Changing only the quota period is currently skipped by the configurator when the limits are unchanged.
+A change to the limit or the period is applied on the next run, and a limit of 0 removes an earlier cap. If Seerr does not keep the change, the run shows a warning.
 
 ### Share files on your LAN (SMB)
 
