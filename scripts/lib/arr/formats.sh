@@ -125,7 +125,7 @@ except Exception:
             fi
             ;;
         drift)
-            log_drift "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. MediaStack does not reconcile this on re-run. To change: edit scores in the $app_label UI (Settings -> Profiles -> $profile_name), or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
+            log_drift "$app_label profile '$profile_name' format scores differ from config.yml: ${status#*$'\t'}. MediaStack does not change them on re-run. To keep the live scores: do nothing; this notice repeats on each configure run. To use the config.yml scores: set every custom-format score in $app_label UI (Settings -> Profiles -> $profile_name) to 0, then run ./scripts/configure.sh --only $app."
             ;;
         *)
             log_warn "Could not determine $app_label format score status"

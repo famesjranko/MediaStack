@@ -16,7 +16,8 @@ _qp_record_rename_failure() {
 # quality IDs enabled. On first run POSTs a new profile. On re-run with a
 # matching-named profile already present, compares cutoff/upgrade/enabled-IDs
 # against config.yml and emits [SKIP] on match, [WARN] on drift — configure.sh
-# does not reconcile drift (turnkey design: rebuild is the canonical migration).
+# does not reconcile drift (the user keeps the live value or reapplies config.yml;
+# the drift message names both paths).
 #
 # Args: <"sonarr"|"radarr"> <api-base-url> <api-key> <json-array-of-enabled-quality-ids>
 configure_quality_profile() {
@@ -152,7 +153,7 @@ sys.exit(0 if ok else 1)
                 : # new name already present -> fall through to normal match/skip
                 ;;
             *)
-                log_warn "${app_label}: no quality profile named '$rename_from' to rename (renamed in the ${app_label} UI?). Not creating a duplicate '$profile_name' that would orphan your in-use profile. To change: rename it back to '$rename_from' in ${app_label} (Settings -> Profiles) and retry, or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
+                log_warn "${app_label}: no quality profile named '$rename_from' to rename (renamed in the ${app_label} UI?). Not creating a duplicate '$profile_name' that would orphan your in-use profile. To retry: rename it back to '$rename_from' in ${app_label} (Settings -> Profiles), then run Change quality profile again. To keep the new name instead: set quality_profile.name in config.yml to that name first."
                 _qp_record_rename_failure "$app"
                 return 0
                 ;;
@@ -204,7 +205,7 @@ print("drift\t" + "; ".join(drift) if drift else "match")
             return 0
             ;;
         drift)
-            log_drift "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. MediaStack does not reconcile this on re-run. To change: edit the profile in the $app_label UI (Settings -> Profiles), or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
+            log_drift "$app_label quality profile '$profile_name' differs from config.yml: ${qp_status#*$'\t'}. MediaStack does not change it on re-run. To keep the live profile: do nothing; this notice repeats on each configure run. To use config.yml: edit the profile in the $app_label UI (Settings -> Profiles) to match, then run ./scripts/configure.sh --only $app."
             return 0
             ;;
     esac
