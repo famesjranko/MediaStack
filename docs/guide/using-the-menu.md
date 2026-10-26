@@ -68,13 +68,13 @@ Menu item: **Manage stack (status, stop, start, logs)**. The box at the top show
 | Start a service | Starts one service |
 | Stop all services | Stops the whole stack |
 | Start all services | Starts the whole stack |
-| Tail logs (live) | Shows live logs for a service |
+| Tail logs (live) | Shows live logs for all enabled services |
 
 Use these items instead of raw `docker compose` commands. They start the right optional services.
 
-To read logs, pick **Tail logs (live)**, then pick a service. Press `Ctrl+C` to stop. Docker keeps up to 3 files of 10 MB for each service. DDNS Updater is the exception: it keeps 2 files of 1 MB.
+To read logs, pick **Tail logs (live)**. It streams logs for all enabled services. Press `Ctrl+C` to return to the menu. To follow one service, use `docker compose logs -f <service>`. Docker keeps up to 3 files of 10 MB for each service. DDNS Updater is the exception: it keeps 2 files of 1 MB.
 
-After a reboot, all 20 services start again by themselves, unless you stopped them. You do not need to start the others.
+After a reboot, installed services restart automatically unless you stopped them. Optional services run only when enabled.
 
 ## Manage updates
 
@@ -100,9 +100,9 @@ To update one service:
 
 To update every service, pick **Update all**. **Update all** skips stopped services and WireGuard. Updating WireGuard restarts remote access, so update it alone from your home network with **Update a service**. WireGuard asks for a second confirmation.
 
-An update recreates only a service that is running. A stopped service gets the new image when you next start it.
+An update recreates only a service that is running. For a stopped service, it downloads the image without recreating the container. **Start all services** applies the downloaded image. **Start a service** starts the existing container with its old image.
 
-Before an update moves a service off its installed image, MediaStack saves a restore point of that service's settings. The restore point holds up to 256 MiB.
+Before an update moves a service off its installed image, MediaStack attempts to save a restore point of its settings. It skips configurations larger than 256 MiB and reports archive failures. The update can continue without a restore point.
 
 To go back to the installed image:
 
@@ -123,7 +123,7 @@ The installer asks which image versions to install with. This choice applies at 
 | Stable | Yes | The image versions MediaStack tested |
 | Latest | No | The newest upstream tags |
 
-To change channel, run the installer again and pick the other channel. The menu has no switch for it. No automatic rollback exists, and old image layers stay on disk until you prune them (see [Direct CLI usage](#direct-cli-usage)).
+The fresh-install wizard selects the channel. An ordinary installer re-run does not offer a channel switch. For an existing install, use **Manage updates** to update services or revert them to their installed images. Old image layers stay on disk until you prune them (see [Direct CLI usage](#direct-cli-usage)).
 
 ### Update MediaStack itself
 
@@ -144,7 +144,7 @@ Menu item: **Features & settings (quality, bandwidth, subtitles, sharing, indexe
 | Add remote access (HTTPS, domain, WireGuard) | Sets up remote access. See the [remote access guide](remote-access.md) |
 | Subtitles (Bazarr) | Turns subtitles on or off |
 | File sharing (SMB) | Turns the LAN file share on or off |
-| Search indexers | Turns public indexers on or off |
+| Search indexers | ON adds the example public indexers. OFF stops configuring them; existing indexers remain active until you disable or remove them in Jackett, Sonarr and Radarr |
 | Firewall (UFW) | Turns the MediaStack firewall rules on or off |
 | Admin-port filter | Limits admin pages to your home network and Tailscale |
 | System hardening | Turns security upgrades and kernel hardening on or off |
@@ -160,7 +160,7 @@ Menu item: **Features & settings (quality, bandwidth, subtitles, sharing, indexe
 3. Pick the resolution, then the size.
 4. Confirm. The default is no.
 
-If you raise the resolution or size, Sonarr and Radarr search again and upgrade existing media. This uses more downloads and disk space. The menu renames the profile in place, so no extra profile remains. Do not rename the profile by hand in `config.yml`.
+The new profile changes which releases qualify as upgrades. MediaStack does not start a library search when it changes the profile. Start a manual search in Sonarr or Radarr if you want to search existing media immediately. Upgrades can use more downloads and disk space. The menu renames the profile in place, so no extra profile remains. Do not rename the profile by hand in `config.yml`.
 
 ### Adjust bandwidth
 
@@ -283,7 +283,7 @@ If a remote test fails, see the [troubleshooting guide](troubleshooting.md).
 
 Menu item: **Refresh status (re-check public IP & DDNS)**.
 
-The menu header caches your public IP and DDNS IP for the session. Pick **Refresh status** to check both again and redraw the header. Use it after you change DDNS provider, to watch the change take effect.
+The menu header caches your public IP for the session and checks DDNS whenever it redraws. Pick **Refresh status** to check your public IP again and redraw the header. Use it after you change DDNS provider, to watch the change take effect.
 
 The `DDNS:` header line is green when the IP matches your public IP. It is yellow with `propagating?` when the IP differs.
 
@@ -304,11 +304,11 @@ Uninstall removes:
 
 Uninstall keeps:
 
-- `data/`, your media and downloads.
+- Your media and downloads at the configured data path.
 - `config/examples/`.
 - The MediaStack folder.
 
-Docker Engine stays installed. If the host cleanup fails, Uninstall keeps `.env` so you can retry. It keeps any MediaStack file you changed, and it reports the file.
+Docker Engine stays installed. If host cleanup fails, Uninstall keeps `.env` so you can retry. It preserves and reports some edited host configuration files, but this protection does not cover every generated file. Back up changes before uninstalling.
 
 ## Direct CLI usage
 
@@ -341,10 +341,10 @@ A bare `docker compose up -d` starts only the default services. It does not star
 1. Edit `config.yml`.
 2. Run `./scripts/configure.sh`.
 
-It is safe to run again. It skips what already exists. It adds new items and never removes old ones.
+Re-runs add missing items and preserve many existing registrations. Some settings are reapplied from configuration, including qBittorrent preferences and Jellyfin's remote bitrate limit.
 
 - A removed indexer stays registered. Delete it in the Jackett, Sonarr, and Radarr pages yourself.
-- Editing `qbittorrent.max_ratio` does not change a running qBittorrent.
+- Editing `qbittorrent.max_ratio` and re-running configuration updates qBittorrent's ratio limit.
 - Do not rename the quality profile here. Use **Change quality profile** in the menu.
 
 ### Add an indexer or a library
@@ -355,7 +355,7 @@ It is safe to run again. It skips what already exists. It adds new items and nev
 
 ### Apply changes in `.env`
 
-After you change a value in `.env` that the compose file uses, run `docker compose up -d`. After you change fail2ban jails or filters, run `docker compose restart fail2ban`.
+After you change a value in `.env` that the compose file uses, reopen `./mediastack` and choose **Manage stack** > **Start all services**. This includes the enabled optional profiles. Direct CLI users must include those profiles in `docker compose up -d`. After you change fail2ban jails or filters, run `docker compose restart fail2ban`.
 
 ## See also
 

@@ -202,7 +202,7 @@ The uninstall removes:
 - The `config/` runtime state: app databases, watch history and saved credentials.
 - The generated `.env` and `config.yml` files.
 
-The uninstall keeps media at your configured data path. Docker stays installed. Edited host files are preserved and can require manual cleanup. If host cleanup fails, uninstall stops before removing runtime state so you can correct the problem and retry.
+The uninstall keeps media at your configured data path. Docker stays installed. Some edited host configuration files are preserved and can require manual cleanup, but this protection does not cover every generated file. Back up changes before uninstalling. If host cleanup fails, uninstall stops before removing runtime state so you can correct the problem and retry.
 
 ## See also
 
