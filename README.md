@@ -29,6 +29,8 @@ Manage the installed stack, updates and security.
 
 ## Quick Start
 
+Run these commands from your normal user account with sudo access.
+
 ```bash
 git clone https://github.com/famesjranko/MediaStack.git MediaStack
 cd MediaStack
@@ -45,21 +47,22 @@ At the end, open the Homepage address shown by the installer to reach your servi
 ## Requirements
 
 - Debian 12 or 13 Server (headless)
+- Git and sudo installed
 - 50 GB or more of free disk
 - A machine that stays on, such as a small server or mini PC
 - An internet connection
 
 ## What you get
 
-- 20 containers, all set to restart after a reboot unless you stopped them, so nothing else needs a manual start.
+- Up to 20 containers, depending on the features you enable. Installed services restart after a reboot unless you stopped them.
 - Jellyfin for playback, Seerr for requests, Sonarr for TV, Radarr for movies and qBittorrent for downloads, already connected to each other.
-- A Homepage dashboard, Uptime Kuma and Beszel for monitoring, Portainer for containers and Bazarr for subtitles.
+- A Homepage dashboard, Uptime Kuma and Beszel for monitoring, Portainer for containers and optional Bazarr for subtitles.
 - Optional remote access over HTTPS with a domain, plus a WireGuard VPN.
 - Hardware transcoding on NVIDIA, AMD and Intel GPUs.
 - A [TRaSH Guides](https://trash-guides.info/) folder layout for downloads and media.
 - Safe re-runs: the installer skips what is configured and warns when something has drifted.
 - One menu for day 2: updates, settings, health checks, fail2ban, GPU changes and diagnostics all live in `./mediastack`.
-- Uninstall removes the host changes and the runtime state in `config/`. Your media in `data/` stays.
+- Uninstall removes MediaStack's containers and owned configuration. Media stays at your configured data path; Docker stays installed. Edited host files can require manual cleanup.
 
 > [!NOTE]
 > No public trackers are enabled. Add indexers only where you have the legal right to use them.

@@ -9,13 +9,14 @@ You need:
 - A Debian 12 or Debian 13 server (headless is fine).
 - At least 50 GB of free disk space.
 - An internet connection.
+- Git and sudo installed.
 - A user account that can use `sudo`.
 
 For a NAS install, you also need the NAS address and the NFS export path.
 
 ## Install
 
-1. Run these commands:
+1. Run these commands from your normal user account:
 
    ```bash
    git clone https://github.com/famesjranko/MediaStack.git MediaStack
@@ -79,7 +80,7 @@ You can skip either step. After install, run `./mediastack` to open the day-2 ma
 
 ## What you get
 
-MediaStack runs 20 containers. The default services start with the install. Other profiles start when you add the matching feature.
+MediaStack can run up to 20 containers. The default services start with the install. Other profiles start when you add the matching feature.
 
 | Service | Port | Purpose | Profile |
 |:--------|:-----|:--------|:--------|
@@ -104,11 +105,15 @@ MediaStack runs 20 containers. The default services start with the install. Othe
 | WireGuard | 51820/udp, 51821 | VPN with web UI | remote |
 | Bazarr | 6767 | Subtitle management | subtitles |
 
-The Autoheal container runs by default. To turn it off, set `AUTOHEAL_ENABLED=false` in `.env`.
+The Autoheal container runs by default. To turn it off, set `AUTOHEAL_ENABLED=false` in `.env`, then stop the existing container:
 
-All 20 services restart by themselves after a reboot, unless you stopped them.
+```bash
+docker compose --profile autoheal stop autoheal
+```
 
-The installer also configures each service through its API. The stack works right after install.
+Installed services restart by themselves after a reboot, unless you stopped them.
+
+The installer also configures service accounts and connections. Downloads need configured indexers, and automatic subtitles need subtitle providers. Complete these choices under [After install](#after-install).
 
 | Service | What the installer configures |
 |:--------|:------------------------------|
@@ -116,8 +121,8 @@ The installer also configures each service through its API. The stack works righ
 | Jackett | FlareSolverr URL, admin password, indexers |
 | Sonarr | Root folder, qBittorrent client, quality profile, file-size bounds, naming, optional indexers |
 | Radarr | The same as Sonarr, for movies. Remux is excluded from every profile. |
-| Bazarr | Connection to Sonarr and Radarr, English profile (subtitles profile only) |
-| Jellyfin | Admin account, Movies and TV libraries, hardware transcoding if a GPU is found |
+| Bazarr | Connection to Sonarr and Radarr, a profile for your selected languages (subtitles profile only) |
+| Jellyfin | Admin account, Movies and TV libraries; hardware transcoding when you enable the optional GPU step and verification succeeds |
 | Seerr | Connection to Jellyfin, Sonarr and Radarr, admin approval, per-user quotas |
 | Portainer | Admin user, local Docker endpoint |
 | Homepage | Service groups with API widgets |
@@ -151,8 +156,10 @@ Both folders must be on the same filesystem. Then a finished download and its li
 
    ![The Homepage dashboard](../assets/mediastack-homepage.png)
 
-2. Use Seerr at `http://<server-ip>:5055` to request a show or movie.
-3. Watch it in Jellyfin at `http://<server-ip>:8096` when the download finishes.
+2. If you skipped indexers, configure indexers you have permission to use before requesting downloads. To enable the bundled examples, choose **Features & settings (quality, bandwidth, subtitles, sharing, indexers)** → **Search indexers: OFF**. To add your own, see [Add an indexer or a library](using-the-menu.md#add-an-indexer-or-a-library).
+3. If you enabled Bazarr, configure subtitle providers at `http://<server-ip>:6767/settings/providers` before using automatic subtitle downloads.
+4. Use Seerr at `http://<server-ip>:5055` to request a show or movie.
+5. Watch it in Jellyfin at `http://<server-ip>:8096` when the download finishes.
 
 To see all URLs and logins again, run `./mediastack` and choose **View access info (URLs, logins, remote, ports)**.
 
@@ -163,6 +170,8 @@ Create one Jellyfin account for each person. Do not share the admin login. For u
 ### Seerr request limits
 
 By default, the limits are 0 movies and 0 series per 7 days. In Seerr, 0 means unlimited, but each request still needs approval. To set a cap, change `seerr.quotas` in `config.yml`, then apply it as [Using the menu](using-the-menu.md) describes.
+
+Changing only the quota period is currently skipped by the configurator when the limits are unchanged.
 
 ### Share files on your LAN (SMB)
 
@@ -178,7 +187,7 @@ By default, the limits are 0 movies and 0 series per 7 days. In Seerr, 0 means u
 - Windows: `\\<server-ip>\Media`
 - macOS and Linux: `smb://<server-ip>/Media`
 - Login: the admin username and password.
-- The share is for the LAN only. The firewall limits port 445 to private networks.
+- With UFW enabled and incoming traffic denied by default, MediaStack permits SMB access from private networks. If you disable UFW, provide equivalent firewall protection. Do not forward port 445.
 
 ## Remove MediaStack
 
@@ -189,11 +198,11 @@ By default, the limits are 0 movies and 0 series per 7 days. In Seerr, 0 means u
 
 The uninstall removes:
 
-- The containers and the host changes that MediaStack made.
+- The containers and host configuration owned by MediaStack.
 - The `config/` runtime state: app databases, watch history and saved credentials.
 - The generated `.env` and `config.yml` files.
 
-The uninstall keeps your `data/` folder with your media. A later install starts clean.
+The uninstall keeps media at your configured data path. Docker stays installed. Edited host files are preserved and can require manual cleanup. If host cleanup fails, uninstall stops before removing runtime state so you can correct the problem and retry.
 
 ## See also
 
