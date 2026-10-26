@@ -183,7 +183,7 @@ docker compose up -d --no-deps --force-recreate jellyfin &&
 ./scripts/configure.sh --only jellyfin
 ```
 
-After Jellyfin configuration succeeds, run `./scripts/configure.sh` to retry dependent services. Existing Jellyfin connections in Sonarr or Radarr are preserved on a re-run; repair any connection that still contains the old API key in the service's settings. Other services may also need their Jellyfin credentials reconnected.
+After Jellyfin configuration succeeds, run `./scripts/configure.sh` to retry dependent services. The re-run warns about each Sonarr or Radarr Jellyfin connection that still holds the old API key and changes none of them. To replace the key, open `./mediastack` and choose **Features & settings** > **Repair Jellyfin connections (Sonarr, Radarr)**, or run `./scripts/configure.sh --repair-jellyfin-connections`. MediaStack changes only the connection it created, named `Jellyfin`. For a connection you created yourself, update the key in the app (see the [Servarr connections documentation](https://wiki.servarr.com/sonarr/settings#connections)). Other services may also need their Jellyfin credentials reconnected.
 
 ### Nginx Proxy Manager (NPM) lockout
 

@@ -151,6 +151,7 @@ Menu item: **Features & settings (quality, bandwidth, subtitles, sharing, indexe
 | NAS storage watchdog | Turns NAS mount repair on or off (NAS installs only) |
 | Change quality profile | Picks a new resolution and size |
 | Adjust bandwidth | Sets qBittorrent download and upload limits |
+| Repair Jellyfin connections (Sonarr, Radarr) | Replaces a stale Jellyfin API key in the connections MediaStack created. See [Repair Jellyfin connections](#repair-jellyfin-connections) |
 | Update DDNS provider / credentials | Changes the DDNS provider or its login |
 
 ### Change the quality profile
@@ -169,6 +170,16 @@ The new profile changes which releases qualify as upgrades. MediaStack does not 
 3. Enter the upload limit.
 
 The limits apply at once. MediaStack saves them after the live change works.
+
+### Repair Jellyfin connections
+
+Sonarr and Radarr tell Jellyfin to scan new media. If Jellyfin gets a new API key, such as after a [Jellyfin reset](troubleshooting.md#jellyfin-wizard-broken-state), these connections stop working. A configuration re-run checks them and warns, but never changes them.
+
+1. Pick **Repair Jellyfin connections (Sonarr, Radarr)**.
+2. Read the list of connections MediaStack will change. Each shows its name, which is `Jellyfin` for the ones MediaStack created.
+3. Confirm. MediaStack replaces only the key, keeps every other setting, then tests the connection and reports the result.
+
+A connection you created yourself, with another name or address, is listed but never changed.
 
 ### Share files on your LAN
 
@@ -321,6 +332,7 @@ A normal install never needs these commands. They are for power users and automa
 | `./setup.sh --remote` | Adds or repairs remote access. Repair has no menu item |
 | `./setup.sh --transcoding` | Checks hardware transcoding again |
 | `./scripts/configure.sh [--only svc,...]` | Applies `config.yml` edits to the services |
+| `./scripts/configure.sh --repair-jellyfin-connections` | Same as **Repair Jellyfin connections**. It asks before it changes anything. Do not combine it with `--only` |
 | `./scripts/update.sh [--prune]` | Pulls and recreates images. `--prune` also deletes unused image layers |
 | `docker compose ...` | Raw status, logs, restarts |
 
@@ -341,7 +353,7 @@ A bare `docker compose up -d` starts only the default services. It does not star
 1. Edit `config.yml`.
 2. Run `./scripts/configure.sh`.
 
-Re-runs add missing items and preserve many existing registrations. Some settings are reapplied from configuration, including qBittorrent preferences and Jellyfin's remote bitrate limit.
+Re-runs add missing items and preserve many existing registrations. A re-run checks the Jellyfin connection in Sonarr and Radarr and warns about a stale key without changing it. Some settings are reapplied from configuration, including qBittorrent preferences and Jellyfin's remote bitrate limit.
 
 - A removed indexer stays registered. Delete it in the Jackett, Sonarr, and Radarr pages yourself.
 - Editing `qbittorrent.max_ratio` and re-running configuration updates qBittorrent's ratio limit.

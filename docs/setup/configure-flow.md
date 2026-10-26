@@ -168,6 +168,12 @@ Reads `<app>.download_client_category` from `config.yml`, `GET /api/v3/downloadc
 
 Enables Forms authentication using shared Jellyfin admin credentials (`JELLYFIN_ADMIN_USER`/`JELLYFIN_ADMIN_PASSWORD`). Checks `GET /api/v3/config/host`; if `authenticationMethod` is not `forms`, `PUT`s the update, then `docker restart <app>` and polls until the service is back (up to 60s). Port is derived from the base URL.
 
+### `configure_arr_jellyfin_connection APP BASE KEY`
+
+Needs `JELLYFIN_API_KEY`. `GET /api/v3/notification`: with no `MediaBrowser` record it `POST`s one named `Jellyfin` (host `jellyfin`, port 8096). An unreadable or malformed list warns and writes nothing. An existing record is never rewritten by a normal run. Each one is fetched with `GET /api/v3/notification/{id}` and checked with `POST /api/v3/notification/test`. Sonarr and Radarr mask the stored key on every `GET`, so only this test shows whether Jellyfin still accepts it; for a record that does not notify users, the test only reads Jellyfin's configuration. A passing record gets `log_skip`. A rejected key, a record that cannot be verified, and a record set to notify users (not tested) get `log_warn`; the warning never contains the key.
+
+`configure_arr_jellyfin_repair` is the explicit repair, reached from **Features & settings** > **Repair Jellyfin connections** or `./scripts/configure.sh --repair-jellyfin-connections`. It treats a record as MediaStack-created only when its name is `Jellyfin` and it points at `jellyfin:8096` without SSL; any other record is user-managed and is never changed. After confirmation it `PUT`s `/api/v3/notification/{id}` with the fetched record and only the `apiKey` field replaced, then runs the test again and reports a failed test as a failure.
+
 ### `configure_quality_profile APP BASE KEY ENABLED_IDS_JSON`
 
 1. Read `quality_profile.{name, cutoff_id, upgrade_allowed}` from `config.yml`.
