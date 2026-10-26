@@ -112,6 +112,7 @@ scripts/
     jellyfin/{encoding,network,server,wizard}.sh
                                     Jellyfin's internal concerns, sourced by jellyfin/main.sh
     seerr/arr-connect.sh            Seerr's Sonarr/Radarr wiring, sourced by seerr/main.sh
+    seerr/quotas.sh                 Seerr default permissions and request-quota reconcile, sourced by seerr/main.sh
     npm/{certs,health,post,publication,rendered,stale}.sh
                                     NPM's internal concerns, sourced by npm/main.sh
     templates/*.json                Static API payloads (no variable substitution)
