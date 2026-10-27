@@ -100,7 +100,7 @@ There is no day-2 channel toggle. Re-running the installer on a completed instal
 `scripts/update.sh` remains a bulk re-pull per the current override.
 
 Update and revert only **recreate a service that is already running**; a stopped service has its new
-image pulled and staged but is **not started** — the change applies on the next Compose recreation, such as **Manage stack → Start all services**. **Start a service** starts the existing container without applying the staged image.
+image pulled and staged but is **not started** — the change applies when you start it. **Start a service** and **Start all services** recreate the container on the staged image. **Start a service** also starts the selected service's stopped dependencies. If the recreation fails, the launcher reports an error and the service stays stopped.
 
 Every apply regenerates `docker-compose.override.yml` (preserving GPU/mem/NAS settings), runs the
 storage guard, and recreates only the touched service (no `--remove-orphans`). "latest" follows the

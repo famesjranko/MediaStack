@@ -153,7 +153,7 @@ _recreate_service() {
         }
     fi
     if ((!was_running)); then
-        ui_log info "${svc} is stopped - the new image is staged and applies next time it starts."
+        ui_log info "${svc} is stopped - the new image is staged and applies next time it starts (use Start a service)."
         return 0
     fi
     if docker compose "${pflag[@]}" up -d "$svc" 2>&1; then
