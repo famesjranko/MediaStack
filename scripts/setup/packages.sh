@@ -264,7 +264,7 @@ install_docker() {
     # configure_docker_apt_repo runs backgrounded under ui_spin and calls sudo
     # internally, so ui_spin's direct-`sudo` prime can't reach it — warm the
     # credential cache in the foreground here (see scripts/lib/ui.sh).
-    sudo -v 2>/dev/null || true
+    ui_sudo_prime "Adding the Docker apt repository needs your sudo password."
     ui_spin "Adding Docker apt repository..." configure_docker_apt_repo || return 1
     # ui_spin prints the failing command and apt's last lines; the message says what that means.
     if ! ui_spin "Updating package lists..." sudo apt-get update -qq; then

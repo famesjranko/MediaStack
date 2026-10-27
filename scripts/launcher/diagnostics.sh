@@ -265,10 +265,10 @@ submenu_diagnostics() {
     done
 }
 
+# Probe with `true` like _health_sudo_ok (scripts/lib/health.sh): the checks run
+# when `sudo -n true` passes, even if `sudo -n -v` would need a password.
 _health_prime_sudo() {
-    sudo -n true 2>/dev/null && return 0
-    ui_log info "Firewall and certificate checks need sudo access."
-    sudo -v 2>/dev/null || ui_log warn "No sudo — those checks will be skipped."
+    ui_sudo_prime "Firewall and certificate checks need sudo access." "those checks will be skipped." true
 }
 
 _health_present_spin() {

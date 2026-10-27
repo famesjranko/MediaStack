@@ -79,7 +79,7 @@ _stage2_install() {
         # configure.sh --only npm runs sudo internally (configure_npm), but it is
         # wrapped in `bash -c` here so ui_spin's direct-`sudo` prime can't reach it —
         # warm the credential cache in the foreground first (see scripts/lib/ui.sh).
-        sudo -v 2>/dev/null || true
+        ui_sudo_prime "Remote-access setup needs your sudo password."
         ui_spin "$spin_msg" \
             bash -c "cd '$SCRIPT_DIR' && MEDIASTACK_NPM_ATTEMPT_REMOTE=$attempt_remote ./scripts/configure.sh --only npm,ddns-updater,wireguard" || remote_config_rc=$?
     else
