@@ -321,10 +321,22 @@ ok = (len(rows) == 2
       and rows[0].startswith("sonarr\tlscr.io/x/sonarr:latest\tsha256:")
       and not any(r.startswith("ghost") for r in rows))
 print("RECORD_OK" if ok else "RECORD_BAD:" + repr(rows))
+
+# Given compose is already pinned to a candidate while Stable runs the accepted digest.
+m.load_compose_images = lambda _p: [("sonarr", "lscr.io/x/sonarr:latest@sha256:" + "a" * 64)]
+
+# When the install record is written from the actual running digest.
+m.record_install(pathlib.Path("docker-compose.yml"), out)
+data = [line.split("\t") for line in out.read_text().splitlines() if not line.startswith("#")]
+
+# Then appending its digest for Revert creates exactly one valid digest separator.
+expected = [["sonarr", "lscr.io/x/sonarr:latest", "sha256:" + "b" * 64]]
+print("PINNED_RECORD_OK" if data == expected else "PINNED_RECORD_BAD")
 PY
 )
 assert_contains "$rec_out" "POLICY_OK" "image-drift read_policy accepts a digest pin value"
 assert_contains "$rec_out" "RECORD_OK" "image-drift --record-install writes the service/image/digest set, skipping undigestable services"
+assert_contains "$rec_out" "PINNED_RECORD_OK" "image-drift --record-install normalizes already pinned compose images for Revert"
 
 # --- preflight-receipt accept gate ------------------------------------------
 # image_drift.py refuses to accept a drifted digest into the lock unless

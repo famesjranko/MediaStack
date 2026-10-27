@@ -1031,7 +1031,9 @@ def record_install(compose_path: pathlib.Path, out_path: pathlib.Path) -> int:
         digest = image_repo_digest(image_id, image)
         if not digest:
             continue
-        rows.append((service, image, digest))
+        # Revert appends the observed digest. A compose ref already pinned to
+        # another digest must not produce an invalid image@digest@digest pin.
+        rows.append((service, image.split("@", 1)[0], digest))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# MediaStack per-service install digests - the image each service was installed running.",
