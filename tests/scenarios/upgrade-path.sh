@@ -29,15 +29,26 @@ BASH
 }
 
 run_scenario() {
-    if [[ -z "${MS_TEST_IMAGE_OVERRIDES:-}" || -n "${MS_TEST_STRIP_SERVICES:-}" ]]; then
-        fail 'upgrade-path requires exact candidates and the complete default stack'
+    if [[ -n "${MS_TEST_STRIP_SERVICES:-}" ]]; then
+        fail 'upgrade-path requires the complete default stack'
         return 1
+    fi
+    local baseline_only=0
+    local MS_TEST_IMAGE_OVERRIDES="${MS_TEST_IMAGE_OVERRIDES:-}"
+    if [[ -z "$MS_TEST_IMAGE_OVERRIDES" ]]; then
+        # The ordinary battery has no candidate. Pin its Update/Revert target
+        # to the accepted qBittorrent image so the test never floats upstream.
+        # The recorder initialized without overrides, so this earns no receipt.
+        baseline_only=1
+        MS_TEST_IMAGE_OVERRIDES=$(awk -F '\t' '$1 == "qbittorrent" { print $1 "=" $2 "@" $3 }' "$REPO_ROOT/docs/operations/image-digests.lock")
+        [[ -n "$MS_TEST_IMAGE_OVERRIDES" ]] && dind_override_images || return 1
+        pass 'upgrade-path baseline only: accepted-image management, no candidate evidence'
     fi
     # Overrides already patched the DinD lock. Keep it as the target, then boot
     # the accepted lock from the host source checkout on the Stable channel.
     dind_exec 'cp docs/operations/image-digests.lock /tmp/upgrade-target.lock' || return 1
     dind_write_file docs/operations/image-digests.lock <"$REPO_ROOT/docs/operations/image-digests.lock" || return 1
-    if dind_exec 'cmp -s docs/operations/image-digests.lock /tmp/upgrade-target.lock'; then
+    if ((baseline_only == 0)) && dind_exec 'cmp -s docs/operations/image-digests.lock /tmp/upgrade-target.lock'; then
         fail 'upgrade-path requires a changed candidate digest'
         return 1
     fi
