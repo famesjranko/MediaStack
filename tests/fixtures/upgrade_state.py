@@ -33,7 +33,10 @@ class StateClient:
         ports = {"sonarr": 8989, "radarr": 7878, "jellyfin": 8096, "seerr": 5055}
         headers = {"Content-Type": "application/json"}
         key = self.env[f"{app.upper()}_API_KEY"]
-        headers["X-Api-Key" if app != "jellyfin" else "X-Emby-Token"] = key
+        if app == "jellyfin":
+            headers["Authorization"] = f'MediaBrowser Token="{key}"'
+        else:
+            headers["X-Api-Key"] = key
         req = urllib.request.Request(
             f"http://127.0.0.1:{ports[app]}{path}",
             data=json.dumps(body).encode() if body is not None else None,
@@ -51,7 +54,9 @@ class StateClient:
         self.call("sonarr", f"/api/v3/qualityprofile/{profile['id']}", profile, "PUT")
 
     def seed(self) -> None:
-        self.call("jellyfin", "/Users/New", {"Name": "upgrade-fixture-user"}, "POST")
+        users = self.call("jellyfin", "/Users")
+        if not any(user["Name"] == "upgrade-fixture-user" for user in users):
+            self.call("jellyfin", "/Users/New", {"Name": "upgrade-fixture-user"}, "POST")
         self.flip_profile()
 
     def qbt(self, endpoint: str) -> Any:
@@ -64,7 +69,8 @@ class StateClient:
         with self.http.open(
             "http://127.0.0.1:8080/api/v2/auth/login", credentials, timeout=20
         ) as response:
-            if response.read().strip() != b"Ok.":
+            body = response.read().strip()
+            if body != b"Ok." and not (response.status == 204 and not body):
                 raise ValueError("qBittorrent login failed")
         with self.http.open(f"http://127.0.0.1:8080/api/v2/{endpoint}", timeout=20) as response:
             return json.load(response)
