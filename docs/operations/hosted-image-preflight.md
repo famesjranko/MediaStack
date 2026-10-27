@@ -74,8 +74,14 @@ absent until both that measurement and an independent permissions/test review
 are complete. The existing scheduled alert remains active.
 
 GitHub must permit the repository's workflow token to create pull requests.
-Publication failures remain visible in the publisher job. The candidate tests do
-not gain write permissions to work around a repository restriction.
+The [repository Actions setting](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)
+is **Allow GitHub Actions to create and approve pull requests**. Keep default
+workflow permissions read-only; the publisher requests its own job permissions.
+The workflow never approves or merges a PR. At the first measurement, the
+repository reported `can_approve_pull_request_reviews: false`; publication needs
+an approved settings change before its default-branch trial. Publication failures
+remain visible in the publisher job. The candidate tests do not gain write
+permissions to work around a repository restriction.
 
 ## First cold hosted measurement
 
