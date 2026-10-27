@@ -44,6 +44,11 @@ run_scenario() {
     local baseline_fails=$FAIL_COUNT
     fresh_install_run || return 1
     ((FAIL_COUNT == baseline_fails)) || return 1
+    # DinD has no systemd host. Host firewall convergence has its own proofs;
+    # explicitly disable that optional host feature in this service fixture.
+    env_set ADMIN_PORT_FILTER false
+    env_set HARDENING_ENABLED false
+    env_set UFW_ENABLED false
     upgrade_state seed && upgrade_state save || {
         fail 'upgrade-path seeds and records real user settings'
         return 1
@@ -62,6 +67,27 @@ run_scenario() {
 
     dind_exec 'cp /tmp/upgrade-target.lock docs/operations/image-digests.lock' || return 1
     local log=/tmp/ms-upgrade-update.log
+    # The launcher takes a stopped-config restore point and performs a real
+    # recreation. Revert must restore the accepted image and usable login.
+    if upgrade_launcher update >"$log" 2>&1 && wait_healthy qbittorrent 120; then
+        pass 'upgrade-path launcher Update saves a restore point and recreates qBittorrent'
+    else
+        fail 'upgrade-path launcher Update saves a restore point and recreates qBittorrent'
+        tail -30 "$log"
+        return 1
+    fi
+    if upgrade_launcher revert >"$log" 2>&1 && wait_healthy qbittorrent 120 && upgrade_state check; then
+        pass 'upgrade-path launcher Revert restores the installed image, state, and login'
+    else
+        fail 'upgrade-path launcher Revert restores the installed image, state, and login'
+        tail -30 "$log"
+    fi
+    # End on the proposed candidate combination for the event-based receipts.
+    upgrade_launcher update >"$log" 2>&1 && wait_healthy qbittorrent 120 && upgrade_state check || {
+        fail 'upgrade-path returns to the candidate after verified revert'
+        return 1
+    }
+    pass 'upgrade-path returns to the candidate after verified revert'
     if dind_exec 'UI_ASCII=1 ./scripts/update.sh' >"$log" 2>&1; then
         pass 'upgrade-path real scripts/update.sh succeeds'
     else
@@ -103,25 +129,4 @@ run_scenario() {
     assert_radarr_configured "$log"
     assert_seerr_configured "$(env_get JELLYFIN_ADMIN_PASSWORD)"
 
-    # The launcher takes a stopped-config restore point and performs a real
-    # recreation. Revert must restore the accepted image and usable login.
-    if upgrade_launcher update >"$log" 2>&1 && wait_healthy qbittorrent 120; then
-        pass 'upgrade-path launcher Update saves a restore point and recreates qBittorrent'
-    else
-        fail 'upgrade-path launcher Update saves a restore point and recreates qBittorrent'
-        tail -30 "$log"
-        return 1
-    fi
-    if upgrade_launcher revert >"$log" 2>&1 && wait_healthy qbittorrent 120 && upgrade_state check; then
-        pass 'upgrade-path launcher Revert restores the installed image, state, and login'
-    else
-        fail 'upgrade-path launcher Revert restores the installed image, state, and login'
-        tail -30 "$log"
-    fi
-    # End on the proposed candidate combination for the event-based receipts.
-    upgrade_launcher update >"$log" 2>&1 && wait_healthy qbittorrent 120 && upgrade_state check || {
-        fail 'upgrade-path returns to the candidate after verified revert'
-        return 1
-    }
-    pass 'upgrade-path returns to the candidate after verified revert'
 }
