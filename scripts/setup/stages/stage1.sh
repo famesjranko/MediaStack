@@ -47,7 +47,8 @@ run_stage1() {
     # ever wrote an explicit "0".
     if [[ "${STAGE_1_COMPLETE:-}" == "1" ]]; then
         log_skip "Stage 1 already complete - rerun setup to add remote access or hardware transcoding when needed"
-        log_skip "To rebuild from scratch: docker compose down -v, then ./mediastack -> Install MediaStack"
+        log_skip "To apply config.yml edits to the services: ./scripts/configure.sh"
+        log_skip "To rebuild from scratch: ./mediastack -> Uninstall MediaStack, then Install MediaStack. This removes config/ except config/examples/ (service databases, watch history, logins, API keys, NPM certificates, WireGuard peers), .env and config.yml; your media stays."
         # Mark the install path as complete so setup.sh::main() does not fall
         # through to stop_existing_stack / pull_images / configure.sh on a
         # benign re-run. Honors the graceful re-run invariant —

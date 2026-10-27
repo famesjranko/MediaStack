@@ -53,7 +53,8 @@ configure_jellyfin_libraries() {
 
     # Add libraries from config.yml. On re-run with an existing library whose
     # path has drifted, warn but do not re-root — Jellyfin has no path-rename
-    # endpoint and DELETE drops watch history.
+    # endpoint, and items scanned at the new path are new items without watch
+    # history. The user chooses: keep the live path or remove the library.
     while IFS=: read -r lib_name lib_type lib_path; do
         local lib_status
         lib_status=$(echo "$existing_libs" | WANT_NAME="$lib_name" WANT_PATH="$lib_path" python3 -c '
@@ -75,7 +76,7 @@ else:
                 continue
                 ;;
             drift)
-                log_drift "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). Jellyfin cannot re-root a library without losing watch history. To migrate: Jellyfin UI -> Dashboard -> Libraries -> delete '$lib_name' and re-run via ./mediastack -> Install MediaStack (accepts history loss), or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
+                log_drift "Jellyfin library '$lib_name' path differs from config.yml (live=${lib_status#*$'\t'}, config.yml=$lib_path). MediaStack does not change it on re-run. To keep the live path: set that library's path in config.yml to the live path. To use the config.yml path: Jellyfin UI -> Dashboard -> Libraries -> remove '$lib_name', then run ./scripts/configure.sh --only jellyfin,seerr. Items at the new path are scanned as new items, so they start without watch history; media files and other libraries stay."
                 continue
                 ;;
         esac

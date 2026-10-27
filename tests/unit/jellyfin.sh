@@ -202,6 +202,28 @@ case " ${OK_MESSAGES[*]:-} " in
     *) pass "Jellyfin library create failure does not log OK" ;;
 esac
 
+log_drift() { DRIFT_MESSAGES+=("$1"); }
+
+# Given a Movies library whose live path differs from config.yml.
+reset_logs
+DRIFT_MESSAGES=()
+MOCK_EXISTING_LIBS='[{"Name":"Movies","Locations":["/data/old-movies"]}]'
+# When the Jellyfin libraries are configured.
+configure_jellyfin_libraries "http://localhost:8096" "token"
+rc=$?
+# Then the notice offers keeping the live path or removing the library, and
+# does not recommend deleting service data with down -v.
+assert_eq "0" "$rc" "Jellyfin library path drift remains non-fatal"
+assert_contains "${DRIFT_MESSAGES[*]:-}" "set that library's path in config.yml to the live path" \
+    "Jellyfin library path drift offers keeping the live path"
+assert_contains "${DRIFT_MESSAGES[*]:-}" "remove 'Movies', then run ./scripts/configure.sh --only jellyfin,seerr" \
+    "Jellyfin library path drift offers reapplying config.yml"
+assert_contains "${DRIFT_MESSAGES[*]:-}" "start without watch history" \
+    "Jellyfin library path drift names the history it loses"
+assert_not_contains "${DRIFT_MESSAGES[*]:-}" "down -v" \
+    "Jellyfin library path drift does not recommend down -v"
+MOCK_EXISTING_LIBS="[]"
+
 SCRIPT_DIR="$TMP_DIR"
 printf 'JELLYFIN_PUBLISHED_URL=http://192.168.1.50:8096\n' >"$TMP_DIR/.env"
 

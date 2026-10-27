@@ -154,7 +154,7 @@ Structural mirror of Sonarr — both delegate to the same shared helpers (includ
 
 ### `configure_arr_root_folder APP BASE KEY`
 
-Reads `<app>.root_folder` from `config.yml`, `GET /api/v3/rootfolder`, and compares. `log_skip` on match, `log_drift` on drift (leaves the existing folder unchanged; use the named UI repair or rebuild), `POST /api/v3/rootfolder` on absent.
+Reads `<app>.root_folder` from `config.yml`, `GET /api/v3/rootfolder`, and compares. `log_skip` on match, `log_drift` on drift (leaves the existing folder unchanged; the notice names two routes: set `<app>.root_folder` to the live path, or delete the live entry in the app UI and run `./scripts/configure.sh --only <app>`), `POST /api/v3/rootfolder` on absent.
 
 ### `configure_arr_disk_threshold APP BASE KEY`
 
@@ -162,7 +162,7 @@ Reads `min_free_space_gb` from `config.yml` (default 20), converts to MB (×1024
 
 ### `configure_arr_download_client APP BASE KEY CATEGORY_FIELD`
 
-Reads `<app>.download_client_category` from `config.yml`, `GET /api/v3/downloadclient`, and compares the qBittorrent entry's category field (4th arg: `tvCategory` for Sonarr, `movieCategory` for Radarr). `log_skip` on match, `log_drift` on drift (leaves the category unchanged; use the named UI repair or rebuild), `POST` on absent. The create payload is built with Python `json.dumps` so configured categories are JSON-escaped safely.
+Reads `<app>.download_client_category` from `config.yml`, `GET /api/v3/downloadclient`, and compares the qBittorrent entry's category field (4th arg: `tvCategory` for Sonarr, `movieCategory` for Radarr). `log_skip` on match, `log_drift` on drift (leaves the category unchanged; the notice names two routes: set `<app>.download_client_category` to the live value, or set Category in the app UI to the `config.yml` value), `POST` on absent. The create payload is built with Python `json.dumps` so configured categories are JSON-escaped safely.
 
 ### `configure_arr_auth APP BASE KEY`
 
@@ -171,7 +171,7 @@ Enables Forms authentication using shared Jellyfin admin credentials (`JELLYFIN_
 ### `configure_quality_profile APP BASE KEY ENABLED_IDS_JSON`
 
 1. Read `quality_profile.{name, cutoff_id, upgrade_allowed}` from `config.yml`.
-2. Look up a profile by name; compare live `cutoff`, `upgradeAllowed`, and the set of enabled leaf quality IDs against `config.yml`. `log_skip` on match, `log_drift` on drift (configure.sh leaves it unchanged; edit the profile in the app UI or rebuild).
+2. Look up a profile by name; compare live `cutoff`, `upgradeAllowed`, and the set of enabled leaf quality IDs against `config.yml`. `log_skip` on match, `log_drift` on drift (configure.sh leaves it unchanged; keep the live profile, or edit it in the app UI to match and run `./scripts/configure.sh --only <app>`).
 3. Absent → fetch the default profile as a template, feed it through `render/quality_profile.py` which rebuilds the `items` array marking each quality as `allowed: true/false` based on `ENABLED_IDS_JSON` (a JSON array from `cfg_quality_ids`).
 4. `POST /api/v3/qualityprofile` with the rebuilt profile.
 
@@ -201,7 +201,7 @@ Enables Forms authentication using shared Jellyfin admin credentials (`JELLYFIN_
 4. Feed profile JSON + scores + format ID map to `render/format_scores.py`, which returns:
    - `match` — current `formatItems` already match. `log_skip`.
    - `empty\t<put-body>` — `formatItems` was empty; treated as CREATE. `PUT /api/v3/qualityprofile/{id}` with populated `formatItems`.
-   - `drift\t<details>` — `formatItems` non-empty and differs. `log_drift` (no reconcile).
+   - `drift\t<details>` — `formatItems` non-empty and differs. `log_drift` (no reconcile). The notice names two routes: keep the live scores, or set every score in the profile to 0 so the next run takes the `empty` branch and reapplies `config.yml`.
 
 ### `configure_arr_indexers APP BASE KEY CATEGORIES`
 
@@ -237,7 +237,7 @@ Sets Jellyfin's display name (Dashboard header, browser tab) via `GET`/`POST /Sy
 
 ### `configure_jellyfin_libraries` (in `scripts/services/jellyfin/wizard.sh`)
 
-`POST /Library/VirtualFolders?name=...&collectionType=...` per entry in `cfg_jf_libraries`. Library name is URL-encoded via inline Python.
+`POST /Library/VirtualFolders?name=...&collectionType=...` per entry in `cfg_jf_libraries`. Library name is URL-encoded via inline Python. A library whose live path differs from `config.yml` is `log_drift` and left unchanged; the notice names two routes: set the library path in `config.yml` to the live path, or remove the library in Jellyfin and run `./scripts/configure.sh --only jellyfin,seerr`. Items at the new path are new to Jellyfin and start without watch history.
 
 ### Encoding and streaming (in `scripts/services/jellyfin/encoding.sh` and `server.sh`)
 

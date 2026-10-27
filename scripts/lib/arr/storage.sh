@@ -26,7 +26,7 @@ else:             print("absent")
             log_skip "${app^} root folder $root_folder already matches config.yml"
             ;;
         drift)
-            log_drift "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). MediaStack does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Media Management -> Root Folders -> delete the stale entry, or rebuild (docker compose down -v, then ./mediastack -> Install MediaStack)."
+            log_drift "${app^} root folder differs from config.yml (live=${rf_status#*$'\t'}, config.yml=$root_folder). MediaStack does not change it on re-run. To keep the live folder: set ${app}.root_folder in config.yml to the live path. To use the config.yml folder: delete the live entry in ${app^} UI -> Settings -> Media Management -> Root Folders, then run ./scripts/configure.sh --only ${app}."
             ;;
         *)
             local root_body
@@ -130,7 +130,7 @@ else:
             log_skip "${app^} qBittorrent category already matches config.yml ($dl_category)"
             ;;
         drift)
-            log_drift "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). MediaStack does not reconcile this on re-run. To change: ${app^} UI -> Settings -> Download Clients -> qBittorrent -> update Category, or rebuild."
+            log_drift "${app^} qBittorrent category differs from config.yml (live=${dc_status#*$'\t'}, config.yml=$dl_category). MediaStack does not change it on re-run. To keep the live category: set ${app}.download_client_category in config.yml to it. To use the config.yml category: set Category to that value in ${app^} UI -> Settings -> Download Clients -> qBittorrent."
             ;;
         *)
             local dlclient_json

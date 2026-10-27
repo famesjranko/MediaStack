@@ -235,6 +235,11 @@ docker compose restart sonarr              # restart one service
 
 To rename the quality profile, use **Features & settings (quality, bandwidth, subtitles, sharing, indexers)** > **Change quality profile**. Do not edit `config.yml` and run `configure.sh`: this leaves an extra profile.
 
-Configuration re-runs preserve many existing settings and can report drift instead of changing them. Use the supported menu action or service UI for those changes.
+Configuration re-runs preserve many existing settings and can report drift instead of changing them. Each drift notice names two routes:
+
+- **Keep the current setting.** Change the value in `config.yml` to match the service, or leave both as they are. The notice then repeats or goes away. Nothing is lost.
+- **Reapply `config.yml`.** Change the service as the notice says, then run `./scripts/configure.sh --only <service>`.
+
+Do not use `docker compose down -v` for this. Service databases live in `config/<service>`, and `down -v` keeps them. To remove all service data on purpose, choose **Uninstall MediaStack**. It deletes `config/` except `config/examples/`, `.env` and `config.yml`, with every service's database, watch history, logins and API keys, including NPM certificates and WireGuard peers. Media files stay. Install again afterwards.
 
 See also: [install guide](install.md), [remote access](remote-access.md), [using the menu](using-the-menu.md).

@@ -204,7 +204,7 @@ for n in (i.get("name","") for i in items):
     if [[ -n "$stale" ]]; then
         while IFS= read -r name; do
             [[ -z "$name" ]] && continue
-            log_drift "${app^} indexer '$name' exists but is not in config.yml. MediaStack does not remove indexers on re-run. To remove: ${app^} UI -> Settings -> Indexers -> Delete, or rebuild."
+            log_drift "${app^} indexer '$name' exists but is not in config.yml. MediaStack does not remove indexers on re-run. To remove: ${app^} UI -> Settings -> Indexers -> Delete. To keep it, add the indexer to config.yml."
         done <<<"$stale"
     fi
 }
