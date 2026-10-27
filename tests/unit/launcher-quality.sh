@@ -121,6 +121,39 @@ assert_contains "$applied" "ARGS=--only sonarr,radarr" \
 assert_contains "$applied" "RESULT rc=0" \
     "apply: success reported"
 
+# Messages describe what is submitted: a profile update, no search. Captured by a
+# ui_log that prints, run through the same sandbox as the apply case.
+msg_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  tmp=$(mktemp -d); SCRIPT_DIR="$tmp"
+  mkdir -p "$tmp/scripts/setup"
+  ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
+  ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
+  cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
+  python3 "$tmp/scripts/setup/wizard_apply.py" --quality-only \
+    --resolution 1080p --size balanced --config "$tmp/config.yml" >/dev/null 2>&1
+  printf "#!/usr/bin/env bash\nexit 0\n" > "$tmp/scripts/configure.sh"
+  chmod +x "$tmp/scripts/configure.sh"
+  _docker_reachable(){ return 0; }; _service_is_running(){ return 0; }
+  quality_select_pick(){ local -n _r=$1; local -n _s=$2; _r=720p; _s=large; }
+  ui_confirm(){ return 0; }
+  ui_log(){ shift; echo "$*"; }; launcher_pause_for_menu(){ :; }
+  _show_action_result(){ :; }
+  action_change_quality 2>&1
+  rm -rf "$tmp"
+' 2>&1)
+assert_contains "$msg_out" "No search starts now" \
+    "messages: prompt says no search starts"
+assert_contains "$msg_out" "upgrade rules" \
+    "messages: prompt names the profile update and upgrade rules"
+assert_contains "$msg_out" "no search was started" \
+    "messages: completion says no search was started"
+if grep -qE "re-search|expect extra downloads" <<<"$msg_out"; then
+    fail "messages: the old re-search promise is absent"
+else
+    pass "messages: the old re-search promise is absent"
+fi
+
 # 3. No change: re-pick the seeded cell -> short-circuit, no configure.sh call.
 nochg=$(run_quality 1080p balanced 1080p balanced)
 if grep -q "CONFIGURE" <<<"$nochg"; then
@@ -265,6 +298,25 @@ STUB
 ' 2>&1)
 assert_contains "$fail_out" "did NOT apply to: radarr" \
     "honest-failure: recorded rename failure is surfaced to the user"
+if grep -q "or rebuild" <<<"$fail_out"; then
+    fail "honest-failure: the hint does not recommend a rebuild"
+else
+    pass "honest-failure: the hint does not recommend a rebuild"
+fi
+assert_contains "$fail_out" "In the Radarr UI (Settings -> Profiles) rename '1080p Balanced' to '720p Large'" \
+    "honest-failure: the hint names the app, old and new profile, and the UI location"
+assert_contains "$fail_out" "updates that profile in place on its next configure run" \
+    "honest-failure: the hint says the next configure run applies the rename"
+if grep -qE "again|set quality_profile.name" <<<"$fail_out"; then
+    fail "honest-failure: the hint does not promise a re-run or suggest a config.yml edit"
+else
+    pass "honest-failure: the hint does not promise a re-run or suggest a config.yml edit"
+fi
+if grep -q "no search was started" <<<"$fail_out"; then
+    fail "honest-failure: no completion line on the rename-failure branch"
+else
+    pass "honest-failure: no completion line on the rename-failure branch"
+fi
 if grep -q "completed successfully" <<<"$fail_out"; then
     fail "honest-failure: a failed rename is NOT reported as success"
 else
