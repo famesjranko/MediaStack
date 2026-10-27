@@ -7,9 +7,10 @@
 # Checks:
 #   - presence: every compose service has a manifest row (no missing/stale/duplicate)
 #   - policy<->tag: each row's strict pin-policy token matches the live tag
-#   - preflight validity: each preflight token resolves to a real oracle
+#   - preflight validity: each preflight token resolves to a real oracle (every
+#     part of a `scenario:X+Y` token is a real scenario file)
 #   - lock<->manifest: accepted image records keep the same preflight confidence tier
-#   - scenario coverage: a `scenario:X` row's service is actually started by X,
+#   - scenario coverage: a `scenario:X` (or `scenario:X+Y`) row's service is actually started by each named scenario,
 #     checked against the explicit SCENARIO_COVERAGE map below (scenario ->
 #     profiles/services it launches) — catches a row claiming a scenario that
 #     never launches the service (the bazarr class)
@@ -136,12 +137,18 @@ pol_bad = [f"{s}(policy={rows[s]['policy']},tag={svc_tag[s]})"
 out.append(("FAIL", "pin policy matches live compose tag :: " + " ".join(pol_bad))
            if pol_bad else ("PASS", "pin policy matches live compose tag"))
 
-# 6. Preflight token validity.
+# 6. Preflight token validity. A `scenario:X+Y` token names several scenarios, each
+#    of which must be a real scenario file (and, in 8 below, must start the service).
+def scenarios_of(pf):
+    return pf.split(":", 1)[1].split("+") if pf.startswith("scenario:") else []
+
 def preflight_ok(pf):
     if pf in ("compose-only", "manual"):
         return True
     if pf.startswith("scenario:"):
-        return os.path.isfile(os.path.join(REPO, "tests/scenarios", pf.split(":", 1)[1] + ".sh"))
+        names = scenarios_of(pf)
+        return all(name and os.path.isfile(os.path.join(REPO, "tests/scenarios", name + ".sh"))
+                   for name in names)
     if pf.startswith("unit:"):
         return os.path.isfile(os.path.join(REPO, pf.split(":", 1)[1]))
     return False
@@ -203,10 +210,10 @@ def scenario_starts(svc, scen):
         return True
     return bool(svc_profiles(svc) & cov.get("profiles", set()))
 
-cov_bad = [f"{s}(scenario={rows[s]['preflight'].split(':',1)[1]},profiles={sorted(svc_profiles(s))})"
-           for s in services
-           if s in rows and rows[s]["preflight"].startswith("scenario:")
-           and not scenario_starts(s, rows[s]["preflight"].split(":", 1)[1])]
+cov_bad = [f"{s}(scenario={scen},profiles={sorted(svc_profiles(s))})"
+           for s in services if s in rows
+           for scen in scenarios_of(rows[s]["preflight"])
+           if not scenario_starts(s, scen)]
 out.append(("FAIL", "scenario actually starts the service :: " + " ".join(cov_bad))
            if cov_bad else ("PASS", "scenario actually starts the service"))
 

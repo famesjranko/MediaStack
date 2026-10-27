@@ -13,6 +13,7 @@ import concurrent.futures
 import json
 import os
 import pathlib
+import platform
 import re
 import subprocess
 import sys
@@ -34,6 +35,35 @@ class ImageDigest:
     digest: str
     tested_at_utc: str = ""
     preflight: str = ""
+
+
+@dataclass(frozen=True)
+class Receipt:
+    """One v2 row of tests/.image-preflight-passed.tsv (service is the dict key)."""
+
+    image: str
+    digest: str
+    scenario: str
+    source: str
+    run_id: str
+    arch: str
+
+
+@dataclass(frozen=True)
+class ReceiptPolicy:
+    """What a receipt must carry to vouch for a digest.
+
+    ``source`` is the commit the accept runs against; ``None`` means it could not be
+    resolved, which blocks every scenario-gated accept. ``run_ids`` restricts the
+    receipts to given runs; ``None`` accepts any run from that source.
+    """
+
+    source: str | None
+    run_ids: frozenset[str] | None = None
+    arch: str = platform.machine()
+
+
+RECEIPT_COLUMNS = 8
 
 
 def parse_args() -> argparse.Namespace:
@@ -104,9 +134,37 @@ def parse_args() -> argparse.Namespace:
         default="tests/.image-preflight-passed.tsv",
         metavar="PATH",
         help=(
-            "Local preflight pass-receipt written by tests/run.sh (service<TAB>image<TAB>"
-            "digest<TAB>scenario). An accept refuses a drifted digest unless PATH vouches "
-            "for it under the service's manifest scenario. Gitignored; absent in CI."
+            "Local preflight pass-receipts written by tests/run.sh (v2 rows: service, image, "
+            "digest, scenario, source, run_id, arch, recorded_at_utc). An accept refuses a "
+            "drifted digest unless PATH vouches for it under the service's manifest scenario "
+            "from the expected source commit. Gitignored; absent in CI."
+        ),
+    )
+    parser.add_argument(
+        "--receipt-source",
+        metavar="SHA",
+        help=(
+            "Commit a receipt must name in its source column to qualify. Default: "
+            "`git rev-parse HEAD` of the repository holding the lock file; when that cannot "
+            "be resolved and this option is absent, a scenario-gated accept fails."
+        ),
+    )
+    parser.add_argument(
+        "--receipt-run-id",
+        action="append",
+        metavar="ID[,ID...]",
+        help=(
+            "Only receipts from these tests/run.sh run ids qualify (repeatable and "
+            "comma-separated). Default: any run from the expected source."
+        ),
+    )
+    parser.add_argument(
+        "--preflight-plan",
+        metavar="PATH",
+        help=(
+            "With --current-file: write a JSON plan of the drifted or added services grouped "
+            "by required scenario (one MS_TEST_IMAGE_OVERRIDES value per group) and exit 0. "
+            "Services on a compose-only/manual/unit tier are listed under pending_non_scenario."
         ),
     )
     parser.add_argument(
@@ -491,30 +549,123 @@ def merge_selective(
     return [current_by_service[row.service] if row.service in selected else row for row in previous]
 
 
-def read_pass_receipts(path: pathlib.Path | None) -> dict[str, set[tuple[str, str, str]]]:
-    """Load the local preflight pass-receipts written by tests/run.sh.
+def read_pass_receipts(path: pathlib.Path | None) -> dict[str, list[Receipt]]:
+    """Load the v2 preflight pass-receipts written by tests/run.sh.
 
-    Each row is ``service<TAB>image<TAB>digest<TAB>scenario``, appended by a
-    ``./tests/run.sh`` invocation, one per scenario that passed and whose container
-    events show the service running from that override's digest. Returns
-    service -> set of ``(image, digest, scenario)`` that passed. A missing file is
-    empty (nothing vouched for, so accept fails closed). Malformed rows are skipped
-    rather than aborting an accept — a dropped row just reads as "no receipt", the
-    safe direction.
+    Each row is ``service image digest scenario source run_id arch recorded_at_utc``
+    (tab separated), appended by one ``./tests/run.sh`` invocation per scenario that
+    passed and whose container events show the service running from that override's
+    digest. Returns service -> receipts. A missing file is empty (nothing vouched
+    for, so accept fails closed). A row with any other column count is a legacy
+    (pre-v2) or malformed row: it never qualifies, and one stderr line counts them so
+    a maintainer knows to delete the old file and re-run the preflight.
     """
-    receipts: dict[str, set[tuple[str, str, str]]] = {}
+    receipts: dict[str, list[Receipt]] = {}
     if path is None or not path.exists():
         return receipts
+    skipped = 0
     for raw in path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split("\t")
-        if len(parts) != 4:
+        if len(parts) != RECEIPT_COLUMNS:
+            skipped += 1
             continue
-        service, image, digest, scenario = parts
-        receipts.setdefault(service, set()).add((image, digest, scenario))
+        service, image, digest, scenario, source, run_id, _arch, _recorded = parts
+        receipts.setdefault(service, []).append(
+            Receipt(image, digest, scenario, source, run_id, _arch)
+        )
+    if skipped:
+        print(
+            f"WARNING: ignored {skipped} legacy or malformed receipt row(s) in {path}; only v2 "
+            "rows (8 columns, with source and run id) can vouch for a digest. Delete the file "
+            "and re-run the preflight to record v2 rows.",
+            file=sys.stderr,
+        )
     return receipts
+
+
+def scenarios_of(token: str) -> list[str]:
+    """Scenario names of a ``scenario:X`` or ``scenario:X+Y`` preflight token."""
+    if not token.startswith("scenario:"):
+        return []
+    names = token.split(":", 1)[1].split("+")
+    if any(not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) for name in names):
+        raise SystemExit(f"invalid preflight scenario token: {token!r}")
+    if len(set(names)) != len(names):
+        raise SystemExit(f"duplicate preflight scenario in token: {token!r}")
+    return names
+
+
+def _short(sha: str) -> str:
+    base, dirty, _ = sha.partition("-dirty")
+    return base[:12] + dirty
+
+
+def _receipt_source_failure(candidates: list[Receipt], expected: str) -> str:
+    """Why none of these same-scenario receipts carries the expected source."""
+    dirty = [r for r in candidates if r.source == f"{expected}-dirty"]
+    if dirty:
+        return (
+            f"receipt was recorded from a dirty tree ({_short(dirty[0].source)}); commit the "
+            "changes, then re-run"
+        )
+    unknown = [r for r in candidates if r.source == "unknown"]
+    if len(unknown) == len(candidates):
+        return "receipt source is unknown (the preflight ran without git); re-run from a checkout"
+    other = next(r for r in candidates if r.source != "unknown")
+    return (
+        f"receipt is from commit {_short(other.source)}, not {_short(expected)}; re-run at "
+        "this commit"
+    )
+
+
+def _receipt_failure(
+    rows: list[Receipt], row: ImageDigest, scenario: str, policy: ReceiptPolicy
+) -> str | None:
+    """None when a receipt qualifies for this scenario, else the closest reason it does not.
+
+    Receipts are filtered digest -> scenario -> source -> run id; the first filter that
+    empties the set names the failure, so the message says what to fix.
+    """
+    digest_rows = [r for r in rows if r.image == row.image and r.digest == row.digest]
+    if not digest_rows:
+        return "no passing preflight receipt"
+    scenario_rows = [r for r in digest_rows if r.scenario == scenario]
+    if not scenario_rows:
+        seen = ", ".join(sorted({r.scenario for r in digest_rows}))
+        return f"receipt exists only for scenario {seen}, not {scenario}"
+    if policy.source is None:
+        return "cannot resolve the expected source commit (pass --receipt-source <sha>)"
+    source_rows = [r for r in scenario_rows if r.source == policy.source]
+    if not source_rows:
+        return _receipt_source_failure(scenario_rows, policy.source)
+    arch_rows = [r for r in source_rows if r.arch == policy.arch]
+    if not arch_rows:
+        return f"receipt architecture differs from {policy.arch}; re-run on this architecture"
+    if policy.run_ids is not None and not any(r.run_id in policy.run_ids for r in arch_rows):
+        seen = ", ".join(sorted({r.run_id for r in source_rows}))
+        allowed = ", ".join(sorted(policy.run_ids))
+        return f"receipt is from run {seen}, outside the allowed run id(s) {allowed}"
+    return None
+
+
+def _scenario_failures(
+    name: str, row: ImageDigest, receipts: dict[str, list[Receipt]], policy: ReceiptPolicy
+) -> list[str]:
+    """One message per manifest scenario of ``row`` that no receipt qualifies for."""
+    out: list[str] = []
+    for scenario in scenarios_of(row.preflight):
+        why = _receipt_failure(receipts.get(name, []), row, scenario, policy)
+        if why is None:
+            continue
+        out.append(
+            f"  {name}: {why} for {row.image}@{row.digest} ({scenario})\n"
+            f'    run: MS_TEST_IMAGE_OVERRIDES="{name}={row.image}@{row.digest}" '
+            f"./tests/run.sh {scenario}"
+        )
+    return out
 
 
 def _digest_changed(previous_row: ImageDigest | None, current_row: ImageDigest | None) -> bool:
@@ -526,37 +677,45 @@ def _digest_changed(previous_row: ImageDigest | None, current_row: ImageDigest |
     return previous_row.image != current_row.image or previous_row.digest != current_row.digest
 
 
-def verify_preflight_receipts(
-    services: set[str],
-    previous: list[ImageDigest],
-    current: list[ImageDigest],
-    receipts: dict[str, set[tuple[str, str, str]]],
-    no_verify: bool = False,
-) -> None:
-    """Refuse to accept a drifted digest with no passing local preflight receipt.
-
-    Only services whose ``(image, digest)`` actually differs from the lock are
-    gated — restamped/unchanged rows write nothing new, so they need no receipt.
-    For a service whose manifest preflight token is ``scenario:X`` (which every
-    service currently uses), require a receipt ``(image, digest, X)``: proof that
-    ``./tests/run.sh X`` pulled that exact digest and passed. The three recognized
-    non-scenario tiers (``compose-only``/``manual``/``unit:`` — schema-valid but
-    unused today) can't produce a run.sh receipt, so they warn rather than block.
-    Any *other* token — including an empty one, which means the service is absent
-    from the upgrades manifest — is not a recognized oracle and blocks fail-closed
-    rather than degrading to a warning (else an added, unmanifested service would
-    slip an untested digest into the lock). ``no_verify`` skips the gate with a loud
-    warning. Raises SystemExit (exit 1) listing every unproven service — the same
-    fail-closed idiom as resolve_accept_services.
-    """
+def changed_services(
+    services: set[str], previous: list[ImageDigest], current: list[ImageDigest]
+) -> list[str]:
+    """The selected services whose (image, digest) actually enters the lock, sorted."""
     previous_by_service = {row.service: row for row in previous}
     current_by_service = {row.service: row for row in current}
-    changed = sorted(
+    return sorted(
         name
         for name in services
         if _digest_changed(previous_by_service.get(name), current_by_service.get(name))
     )
 
+
+def verify_preflight_receipts(
+    services: set[str],
+    previous: list[ImageDigest],
+    current: list[ImageDigest],
+    receipts: dict[str, list[Receipt]],
+    policy: ReceiptPolicy,
+    no_verify: bool = False,
+) -> None:
+    """Refuse to accept a drifted digest with no qualifying local preflight receipt.
+
+    Only services whose ``(image, digest)`` actually differs from the lock are
+    gated — restamped/unchanged rows write nothing new, so they need no receipt.
+    For a manifest token ``scenario:X`` (or ``scenario:X+Y``) every listed scenario
+    needs its own receipt ``(image, digest, scenario)`` recorded from the expected
+    source commit (never a ``-dirty`` or ``unknown`` source) and, when the policy
+    names run ids, from one of those runs. The three recognized non-scenario tiers
+    (``compose-only``/``manual``/``unit:`` — schema-valid but unused today) can't
+    produce a run.sh receipt, so they warn rather than block. Any *other* token —
+    including an empty one, which means the service is absent from the upgrades
+    manifest — is not a recognized oracle and blocks fail-closed rather than
+    degrading to a warning (else an added, unmanifested service would slip an
+    untested digest into the lock). ``no_verify`` skips the gate with a loud
+    warning. Raises SystemExit (exit 1) listing every unproven service — the same
+    fail-closed idiom as resolve_accept_services.
+    """
+    changed = changed_services(services, previous, current)
     if no_verify:
         if changed:
             print(
@@ -566,19 +725,13 @@ def verify_preflight_receipts(
             )
         return
 
+    current_by_service = {row.service: row for row in current}
     missing: list[str] = []
     for name in changed:
         current_row = current_by_service[name]
         token = current_row.preflight or ""
         if token.startswith("scenario:"):
-            scenario = token.split(":", 1)[1]
-            if (current_row.image, current_row.digest, scenario) not in receipts.get(name, set()):
-                missing.append(
-                    f"  {name}: no passing preflight receipt for "
-                    f"{current_row.image}@{current_row.digest}\n"
-                    f'    run: MS_TEST_IMAGE_OVERRIDES="{name}='
-                    f'{current_row.image}@{current_row.digest}" ./tests/run.sh {scenario}'
-                )
+            missing.extend(_scenario_failures(name, current_row, receipts, policy))
         elif token.startswith("unit:") or token in ("compose-only", "manual"):
             print(
                 f"WARNING: {name}: preflight tier '{token}' has no automated "
@@ -601,16 +754,80 @@ def verify_preflight_receipts(
         )
 
 
-def preflight_command(row: ImageDigest) -> str:
-    if row.preflight.startswith("scenario:"):
-        scenario = row.preflight.split(":", 1)[1]
+def resolve_receipt_source(args: argparse.Namespace, lock_path: pathlib.Path | None) -> str | None:
+    """The commit receipts must name: --receipt-source, else HEAD of the lock's repository."""
+    if args.receipt_source:
+        source = str(args.receipt_source)
+        if not re.fullmatch(r"[0-9a-f]{40}", source):
+            raise SystemExit("--receipt-source must name a full, clean source commit SHA")
+        return source
+    repo_dir = lock_path.parent if lock_path is not None else pathlib.Path(".")
+    proc = subprocess.run(
+        ["git", "-C", str(repo_dir), "rev-parse", "HEAD"], text=True, capture_output=True
+    )
+    sha = proc.stdout.strip()
+    return sha if proc.returncode == 0 and sha else None
+
+
+def receipt_policy(args: argparse.Namespace, lock_path: pathlib.Path | None) -> ReceiptPolicy:
+    run_ids = frozenset(parse_service_selection(args.receipt_run_id or []))
+    return ReceiptPolicy(resolve_receipt_source(args, lock_path), run_ids or None)
+
+
+def preflight_commands(row: ImageDigest) -> list[str]:
+    """One command per oracle a drifted row needs (one per scenario of a ``+`` token)."""
+    scenarios = scenarios_of(row.preflight)
+    if scenarios:
         image_ref = f"{row.image}@{row.digest}"
-        return f'MS_TEST_IMAGE_OVERRIDES="{row.service}={image_ref}" ./tests/run.sh {scenario}'
+        return [
+            f'MS_TEST_IMAGE_OVERRIDES="{row.service}={image_ref}" ./tests/run.sh {scenario}'
+            for scenario in scenarios
+        ]
     if row.preflight.startswith("unit:"):
-        return f"bash {row.preflight.split(':', 1)[1]}"
+        return [f"bash {row.preflight.split(':', 1)[1]}"]
     if row.preflight == "compose-only":
-        return "docker compose config --quiet"
-    return "manual verification required"
+        return ["docker compose config --quiet"]
+    return ["manual verification required"]
+
+
+def _preflight_cell(row: ImageDigest) -> str:
+    return "<br>".join(f"`{command}`" for command in preflight_commands(row))
+
+
+def preflight_plan(
+    added: list[ImageDigest],
+    changed: list[tuple[ImageDigest, ImageDigest]],
+    source: str,
+    generated_at_utc: str,
+) -> dict[str, Any]:
+    """Drifted or added services grouped by the scenario each needs a receipt from.
+
+    A hosted workflow runs one tests/run.sh per group with the group's overrides; a
+    service on a ``scenario:X+Y`` token appears in both groups. Services on a tier
+    with no scenario oracle cannot earn a receipt and are listed separately.
+    """
+    rows = sorted([*added, *(current for _, current in changed)], key=lambda r: r.service)
+    groups: dict[str, list[ImageDigest]] = {}
+    pending: list[str] = []
+    for row in rows:
+        scenarios = scenarios_of(row.preflight)
+        if not scenarios:
+            pending.append(row.service)
+        for scenario in scenarios:
+            groups.setdefault(scenario, []).append(row)
+    return {
+        "source": source,
+        "generated_at_utc": generated_at_utc,
+        "scenarios": [
+            {
+                "scenario": scenario,
+                "services": [row.service for row in members],
+                "overrides": ",".join(f"{r.service}={r.image}@{r.digest}" for r in members),
+            }
+            for scenario, members in sorted(groups.items())
+        ],
+        "pending_non_scenario": pending,
+    }
 
 
 def markdown_summary(
@@ -654,13 +871,11 @@ def markdown_summary(
     for previous, current in changed:
         before = f"`{previous.image}`<br>`{previous.digest}`"
         after = f"`{current.image}`<br>`{current.digest}`"
-        lines.append(
-            f"| `{current.service}` | {before} | {after} | `{preflight_command(current)}` |"
-        )
+        lines.append(f"| `{current.service}` | {before} | {after} | {_preflight_cell(current)} |")
     for row in added:
         lines.append(
             f"| `{row.service}` | new service | `{row.image}`<br>`{row.digest}` | "
-            f"`{preflight_command(row)}` |"
+            f"{_preflight_cell(row)} |"
         )
     for row in removed:
         lines.append(f"| `{row.service}` | `{row.image}`<br>`{row.digest}` | removed | n/a |")
@@ -1051,6 +1266,16 @@ def _validate_accept_options(args: argparse.Namespace) -> bool:
             file=sys.stderr,
         )
         return False
+    if args.preflight_plan and (args.accept_current or args.accept_services):
+        print("--preflight-plan is a report; it cannot be combined with an accept", file=sys.stderr)
+        return False
+    if args.preflight_plan and not args.current_file:
+        print(
+            "--preflight-plan requires --current-file so the plan names the frozen snapshot "
+            "that will be preflighted",
+            file=sys.stderr,
+        )
+        return False
     return True
 
 
@@ -1107,6 +1332,7 @@ def _run_selective_accept(
         previous,
         current,
         read_pass_receipts(pathlib.Path(args.preflight_receipt)),
+        receipt_policy(args, pathlib.Path(args.previous) if args.previous else None),
         no_verify=args.no_verify_preflight,
     )
     merged = merge_selective(previous, current, selected)
@@ -1140,8 +1366,36 @@ def _verify_full_accept(
             previous,
             current,
             read_pass_receipts(pathlib.Path(args.preflight_receipt)),
+            receipt_policy(args, pathlib.Path(args.previous) if args.previous else None),
             no_verify=args.no_verify_preflight,
         )
+
+
+def _write_preflight_plan(
+    args: argparse.Namespace,
+    previous_path: pathlib.Path | None,
+    added: list[ImageDigest],
+    changed: list[tuple[ImageDigest, ImageDigest]],
+    generated_at_utc: str,
+) -> int:
+    source = resolve_receipt_source(args, previous_path)
+    if source is None:
+        print(
+            "--preflight-plan: cannot resolve the source commit receipts must name; pass "
+            "--receipt-source <sha> or run from a git checkout of the lock file",
+            file=sys.stderr,
+        )
+        return 1
+    plan_path = pathlib.Path(args.preflight_plan)
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan = preflight_plan(added, changed, source, generated_at_utc)
+    plan_path.write_text(json.dumps(plan, indent=2) + "\n")
+    groups = len(plan["scenarios"])
+    print(
+        f"Preflight plan written to {plan_path}: {groups} scenario group(s), "
+        f"{len(plan['pending_non_scenario'])} service(s) with no scenario oracle."
+    )
+    return 0
 
 
 def _write_summary(
@@ -1178,6 +1432,35 @@ def _write_summary(
     return 0
 
 
+def _record_fresh_baseline(
+    args: argparse.Namespace, current: list[ImageDigest], current_path: pathlib.Path | None
+) -> int:
+    if args.accept_services:
+        print(
+            "--accept-services requires an existing baseline lock to preserve unselected rows",
+            file=sys.stderr,
+        )
+        return 1
+    if current_path:
+        # No previous baseline means every row is new, so there is nothing to
+        # diff a receipt against — the preflight gate can't run here. Say so
+        # loudly rather than record an unverified baseline silently; the honest
+        # bootstrap acknowledges it by passing --no-verify-preflight.
+        if not args.no_verify_preflight:
+            print(
+                "WARNING: recording a fresh baseline with no prior lock to gate against — "
+                "digests are unverified by the preflight receipt gate. Confirm each was "
+                "preflighted, or pass --no-verify-preflight to vouch for them by hand.",
+                file=sys.stderr,
+            )
+        write_tsv(current_path, current)
+    print("No previous image digest baseline found; current digests recorded as baseline.")
+    summary = markdown_summary([], [], [])
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(summary)
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     direct_result = _run_direct_command(args)
@@ -1199,33 +1482,12 @@ def main() -> int:
     if snapshot_path:
         return 0 if _write_snapshot(snapshot_path, current) else 1
     if not previous:
-        if args.accept_services:
-            print(
-                "--accept-services requires an existing baseline lock to preserve unselected rows",
-                file=sys.stderr,
-            )
-            return 1
-        if current_path:
-            # No previous baseline means every row is new, so there is nothing to
-            # diff a receipt against — the preflight gate can't run here. Say so
-            # loudly rather than record an unverified baseline silently; the honest
-            # bootstrap acknowledges it by passing --no-verify-preflight.
-            if not args.no_verify_preflight:
-                print(
-                    "WARNING: recording a fresh baseline with no prior lock to gate against — "
-                    "digests are unverified by the preflight receipt gate. Confirm each was "
-                    "preflighted, or pass --no-verify-preflight to vouch for them by hand.",
-                    file=sys.stderr,
-                )
-            write_tsv(current_path, current)
-        print("No previous image digest baseline found; current digests recorded as baseline.")
-        summary = markdown_summary([], [], [])
-        if os.environ.get("GITHUB_STEP_SUMMARY"):
-            pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(summary)
-        return 0
+        return _record_fresh_baseline(args, current, current_path)
 
     added, changed, removed = compare(previous, current)
 
+    if args.preflight_plan:
+        return _write_preflight_plan(args, previous_path, added, changed, tested_at_utc)
     if args.accept_services:
         # Selective accept resolves and writes the merged lock here, then returns
         # before the full-snapshot write below, so it never clobbers the merge.

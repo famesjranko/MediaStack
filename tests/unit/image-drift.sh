@@ -329,9 +329,15 @@ assert_contains "$rec_out" "RECORD_OK" "image-drift --record-install writes the 
 # --- preflight-receipt accept gate ------------------------------------------
 # image_drift.py refuses to accept a drifted digest into the lock unless
 # tests/run.sh recorded a passing preflight for that exact image@digest under the
-# service's manifest scenario. Reuses the selective-accept baseline above
-# (sonarr SHA_A->SHA_C, radarr SHA_B->SHA_D, both scenario:fresh-install).
+# service's manifest scenario, from the commit the accept names. Reuses the
+# selective-accept baseline above (sonarr SHA_A->SHA_C, radarr SHA_B->SHA_D, both
+# scenario:fresh-install). Source and run-id binding, legacy rows, `+` tokens and
+# --preflight-plan are covered in tests/unit/image-drift-receipts.sh.
 gate_receipt="$TMP_DIR/receipt.tsv"
+SRC="$(printf '1%.0s' {1..40})"
+receipt_row() { # receipt_row <service> <image> <digest> <scenario>: one v2 row from commit SRC
+    printf '%s\t%s\t%s\t%s\t%s\trun-20260101T000000Z-0badcafe\tx86_64\t2026-01-01T00:00:00Z\n' "$1" "$2" "$3" "$4" "$SRC"
+}
 
 # (a) No receipt -> selective accept is refused, naming the service + run command,
 # and the lock is never written.
@@ -345,25 +351,25 @@ assert_contains "$output" "no passing local preflight receipt" "image-drift acce
 assert_contains "$output" "./tests/run.sh fresh-install" "image-drift accept gate prints the preflight command to run"
 assert_file_absent "$TMP_DIR/gate-x.tsv" "image-drift accept gate leaves the lock unwritten when blocked"
 
-# (b) A matching receipt (image, digest, scenario) unblocks the accept.
-printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tfresh-install\n' "$SHA_C" >"$gate_receipt"
+# (b) A matching receipt (image, digest, scenario, source) unblocks the accept.
+receipt_row sonarr linuxserver/sonarr:latest "$SHA_C" fresh-install >"$gate_receipt"
 output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-ok.tsv" \
-    --preflight-receipt "$gate_receipt" \
+    --preflight-receipt "$gate_receipt" --receipt-source "$SRC" \
     --accept-services sonarr --tested-at 2026-06-01T00:00:00Z 2>&1)
 rc=$?
 assert_eq "0" "$rc" "image-drift accept gate passes with a matching receipt"
 assert_contains "$output" "Selectively accepted drifted services: sonarr" "image-drift accept gate writes the accepted row when vouched"
 
 # (c) A receipt for the right digest but the wrong scenario does not vouch.
-printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tsmoke\n' "$SHA_C" >"$gate_receipt"
+receipt_row sonarr linuxserver/sonarr:latest "$SHA_C" smoke >"$gate_receipt"
 output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-x2.tsv" \
-    --preflight-receipt "$gate_receipt" \
+    --preflight-receipt "$gate_receipt" --receipt-source "$SRC" \
     --accept-services sonarr 2>&1)
 rc=$?
 assert_eq "1" "$rc" "image-drift accept gate rejects a receipt from the wrong scenario"
-assert_contains "$output" "no passing local preflight receipt" "image-drift accept gate ignores a wrong-scenario receipt"
+assert_contains "$output" "receipt exists only for scenario smoke, not fresh-install" "image-drift accept gate names the wrong-scenario receipt"
 
 # (d) --no-verify-preflight bypasses the gate with a loud warning.
 output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
@@ -385,12 +391,12 @@ assert_contains "$output" "sonarr" "image-drift accept-current gate names an unp
 assert_file_absent "$TMP_DIR/gate-ac.tsv" "image-drift accept-current gate leaves the lock unwritten when blocked"
 
 {
-    printf 'sonarr\tlinuxserver/sonarr:latest\t%s\tfresh-install\n' "$SHA_C"
-    printf 'radarr\tlinuxserver/radarr:latest\t%s\tfresh-install\n' "$SHA_D"
+    receipt_row sonarr linuxserver/sonarr:latest "$SHA_C" fresh-install
+    receipt_row radarr linuxserver/radarr:latest "$SHA_D" fresh-install
 } >"$gate_receipt"
 output=$(python3 "$REPO_ROOT/scripts/image_drift.py" "${sel_base[@]}" \
     --current-file "$TMP_DIR/sel-matched.tsv" --write-current "$TMP_DIR/gate-ac-ok.tsv" \
-    --preflight-receipt "$gate_receipt" \
+    --preflight-receipt "$gate_receipt" --receipt-source "$SRC" \
     --accept-current --tested-at 2026-06-01T00:00:00Z 2>&1)
 rc=$?
 assert_eq "0" "$rc" "image-drift accept-current gate passes when every drifted row is vouched"

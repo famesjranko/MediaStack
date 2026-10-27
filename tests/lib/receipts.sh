@@ -1,9 +1,15 @@
 # tests/lib/receipts.sh — evidence-backed image preflight receipts.
 # Sourced by tests/run.sh after dind.sh and assert.sh. No side effects at source time.
 #
-# A receipt row (service, image, digest, scenario) in tests/.image-preflight-passed.tsv
-# lets scripts/image_drift.py accept a digest. A row is written only when ALL hold
-# for that one scenario:
+# A receipt row in tests/.image-preflight-passed.tsv lets scripts/image_drift.py accept
+# a digest. Format v2, tab separated:
+#   service image digest scenario source run_id arch recorded_at_utc
+# `source` is the host checkout's HEAD at run start, with a `-dirty` suffix when the
+# tree had uncommitted or untracked changes, or `unknown` without git; `run_id` is one
+# id per tests/run.sh invocation. Both bind the evidence to a revision and a run, so an
+# old row cannot vouch for a later tree (image_drift.py accepts only rows whose source
+# equals the commit it is run against). A row is written only when ALL hold for that
+# one scenario:
 #   1. the scenario added no failed assertion;
 #   2. the DinD event log shows a compose container of that service, started inside
 #      the scenario's window, created from exactly the candidate ref, and neither
@@ -24,7 +30,11 @@ RECEIPTS_ACTIVE=0
 declare -A RECEIPTS_REF=() RECEIPTS_IMAGE=() RECEIPTS_DIGEST=() # keyed by service
 RECEIPTS_OFFSET=""
 RECEIPTS_FAIL_BASE=0
+RECEIPTS_SKIP_BASE=0
+RECEIPTS_SOURCE="" RECEIPTS_RUN_ID="" RECEIPTS_ARCH="" # one identity per run
+RECEIPTS_ROWS_WRITTEN=0
 _RCPT_SEQ=0
+_RCPT_RUN_ID_RE='^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$'
 
 _rcpt_say() { echo -e "${BLUE:-}[receipts]${NC:-} $*" >&2; }
 
@@ -51,6 +61,33 @@ receipts_load_overrides() {
         RECEIPTS_IMAGE[$svc]="${ref%@*}"
         RECEIPTS_DIGEST[$svc]="${ref##*@}"
     done
+    return 0
+}
+
+# The run identity every row of this invocation carries. Source is HEAD of the host
+# checkout (the cwd; tests/run.sh sets it to the repo root). Any uncommitted or
+# untracked change (ignored files excluded, as git does by default) makes it `-dirty`;
+# no git or no repository makes it `unknown`. image_drift.py accepts neither.
+# MS_TEST_RUN_ID lets a hosted workflow stamp its own id; a malformed one returns 1.
+receipts_run_identity() {
+    local sha status
+    if sha=$(git rev-parse HEAD 2>/dev/null) && [[ "$sha" =~ ^[0-9a-f]{40}$ ]] \
+        && status=$(git status --porcelain --untracked-files=normal 2>/dev/null); then
+        RECEIPTS_SOURCE="$sha"
+        [[ -n "$status" ]] && RECEIPTS_SOURCE="$sha-dirty"
+    else
+        RECEIPTS_SOURCE="unknown"
+    fi
+    RECEIPTS_ARCH="$(uname -m)"
+    if [[ -n "${MS_TEST_RUN_ID:-}" ]]; then
+        if [[ ! "$MS_TEST_RUN_ID" =~ $_RCPT_RUN_ID_RE ]]; then
+            _rcpt_say "MS_TEST_RUN_ID '$MS_TEST_RUN_ID' is malformed (expected run-<yyyymmddThhmmssZ>-<8 hex>); no receipts this run"
+            return 1
+        fi
+        RECEIPTS_RUN_ID="$MS_TEST_RUN_ID"
+    else
+        RECEIPTS_RUN_ID="run-$(date -u +%Y%m%dT%H%M%SZ)-$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    fi
     return 0
 }
 
@@ -83,20 +120,30 @@ receipts_recorder_start() {
     RECEIPTS_ACTIVE=0
     receipts_load_overrides || return 0
     ((${#RECEIPTS_REF[@]})) || return 0
+    receipts_run_identity || return 0
     if _rcpt_dind sh -c ": >'$RECEIPTS_EVENTS'" \
         && docker exec -d "$DIND_NAME" sh -c "echo \$\$ >'$RECEIPTS_PID'; exec docker events --format '{{json .}}' --filter type=container --filter type=volume >>'$RECEIPTS_EVENTS' 2>&1" \
         && sleep 1 && _rcpt_sync; then
         RECEIPTS_ACTIVE=1
+        _rcpt_say "run id: $RECEIPTS_RUN_ID (source $RECEIPTS_SOURCE, $RECEIPTS_ARCH)"
     else
         _rcpt_say "cannot start the evidence recorder; no receipts this run"
     fi
     return 0
 }
 
+# Final receipt output of the run: the id a maintainer or workflow passes to
+# image_drift.py --receipt-run-id, and how many rows this invocation added.
+receipts_run_end() {
+    ((RECEIPTS_ACTIVE)) || return 0
+    _rcpt_say "run id: $RECEIPTS_RUN_ID; $RECEIPTS_ROWS_WRITTEN new row(s) in $RECEIPTS_FILE"
+}
+
 # Mark where this scenario's events begin. Call after any reset, before the scenario.
 receipts_scenario_begin() {
     ((RECEIPTS_ACTIVE)) || return 0
     RECEIPTS_FAIL_BASE=${FAIL_COUNT:-0}
+    RECEIPTS_SKIP_BASE=${SKIP_COUNT:-0}
     RECEIPTS_OFFSET=""
     _rcpt_sync || return 0
     local size
@@ -180,14 +227,20 @@ for spec in specs:
 PY
 }
 
-# Append one row unless an identical one exists, so separate runs accumulate.
+# Append one v2 row unless an identical one exists, so separate runs accumulate. Rows
+# are identical when their evidence columns (everything but recorded_at_utc) match;
+# the timestamp only says when. A new or empty file gets the v2 header first.
 receipts_append_row() {
-    local tab=$'\t' row
-    row="$1${tab}$2${tab}$3${tab}$4"
-    if [[ -f "$RECEIPTS_FILE" ]] && grep -qxF -- "$row" "$RECEIPTS_FILE"; then
+    local tab=$'\t' evidence
+    evidence="$1${tab}$2${tab}$3${tab}$4${tab}$RECEIPTS_SOURCE${tab}$RECEIPTS_RUN_ID${tab}$RECEIPTS_ARCH"
+    if [[ -f "$RECEIPTS_FILE" ]] && cut -f1-7 "$RECEIPTS_FILE" | grep -qxF -- "$evidence"; then
         return 0
     fi
-    printf '%s\n' "$row" >>"$RECEIPTS_FILE"
+    if [[ ! -s "$RECEIPTS_FILE" ]]; then
+        printf '# MediaStack image preflight receipts v2\n# service\timage\tdigest\tscenario\tsource\trun_id\tarch\trecorded_at_utc\n' >"$RECEIPTS_FILE"
+    fi
+    printf '%s\t%s\n' "$evidence" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$RECEIPTS_FILE"
+    RECEIPTS_ROWS_WRITTEN=$((RECEIPTS_ROWS_WRITTEN + 1))
 }
 
 # Decide and write rows for the scenario that just ended. Never changes the run's exit.
@@ -196,6 +249,10 @@ receipts_scenario_end() {
     ((RECEIPTS_ACTIVE)) || return 0
     if ((${FAIL_COUNT:-0} > RECEIPTS_FAIL_BASE)); then
         _rcpt_say "$scn: assertions failed; no receipt rows"
+        return 0
+    fi
+    if ((${SKIP_COUNT:-0} > RECEIPTS_SKIP_BASE)); then
+        _rcpt_say "$scn: required assertions skipped; no receipt rows"
         return 0
     fi
     if [[ -z "$RECEIPTS_OFFSET" ]]; then
