@@ -216,17 +216,17 @@ trap 'rm -f "$COOKIE_JAR"' EXIT
 
 qbt_login() {
     local username="$1" password="$2" resp body http_code
-    resp=$(curl -s -c "$COOKIE_JAR" -w "\n%{http_code}" "$QBT_URL/api/v2/auth/login" \
+    resp=$(curl --connect-timeout 5 --max-time 20 -s -c "$COOKIE_JAR" -w "\n%{http_code}" "$QBT_URL/api/v2/auth/login" \
         --data-urlencode "username=$username" \
         --data-urlencode "password=$password" 2>/dev/null) || return 1
     http_code=$(printf '%s' "$resp" | tail -1 | tr -d '\r')
     body=$(printf '%s' "$resp" | sed '$d' | tr -d '\r')
-    [[ "$body" == "Ok." || ("$http_code" == "204" && -z "$body") ]]
+    [[ ("$http_code" == "200" && "$body" == "Ok.") || ("$http_code" == "204" && -z "$body") ]]
 }
 
 api_get() {
     local endpoint="$1"
-    curl -sf -b "$COOKIE_JAR" "$QBT_URL$endpoint" 2>/dev/null
+    curl --connect-timeout 5 --max-time 20 -sf -b "$COOKIE_JAR" "$QBT_URL$endpoint" 2>/dev/null
 }
 
 admin_user="$(env_value JELLYFIN_ADMIN_USER)"
