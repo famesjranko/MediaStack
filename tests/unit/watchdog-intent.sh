@@ -2,19 +2,14 @@
 # tests/unit/watchdog-intent.sh
 #
 # Contract: the NAS watchdog keeps owning storage-safety stop/resume and boot
-# recovery, but never restarts a service the user stopped through the launcher.
-#   - launcher Stop a service / Stop all record the intent; Start a service /
-#     Start all clear it (scripts/lib/service-intent.sh)
-#   - the watchdog records the services it stops and, after an outage, restarts
-#     only those, minus the user's; at boot it starts every data service the
-#     user did not stop
-#   - mount identity and sentinel checks gate every start; a missing, empty,
-#     malformed, unreadable or unknown-name intent file has a defined outcome
-#   - `docker compose up -d <svc>` also starts <svc>'s dependencies, so a service
-#     that depends on a user-stopped one stays stopped too, and with an unreadable
-#     Compose configuration nothing starts
-# The watchdog is stepped one poll at a time (watchdog_tick) against a fake
-# Docker with a running-set and a depends_on graph; no real containers needed.
+# recovery, but never restarts a service the user stopped through the launcher
+# (scripts/lib/service-intent.sh). It restarts only what it stopped, minus the
+# user's, and at boot every data service the user did not stop. Mount checks gate
+# every start. A service that depends on a user-stopped one stays stopped too
+# (`up -d` starts dependencies). Missing, empty, malformed, unreadable or
+# unknown-name intent files, an unreadable Compose configuration, and a stop
+# recorded while the watchdog works all have a defined outcome.
+# Stepped one poll at a time (watchdog_tick) against a fake Docker; no containers.
 
 set -uo pipefail
 
@@ -33,6 +28,7 @@ ALL="${ALL_SERVICES[*]}"
 # --- Fake Docker: a running-set and a depends_on graph in files, every call logged ---
 # Like real Compose, `up -d <svc>` starts <svc>'s dependencies too, and
 # `config --format json` prints the graph (or fails when the file is missing).
+# FAKE_UP_HOOK runs after `up -d $FAKE_UP_SVC`; FAKE_PS_HOOK runs after the first `ps`.
 FAKE_BIN="$TMP_DIR/bin"
 export FAKE_RUNNING="$TMP_DIR/running" FAKE_LOG="$TMP_DIR/docker.log" FAKE_DEPS="$TMP_DIR/deps" FAKE_CONFIG_BROKEN="$TMP_DIR/config-broken"
 mkdir -p "$FAKE_BIN"
@@ -50,9 +46,9 @@ case "$*" in
     *" config --format json"*)
         [[ ! -e "$FAKE_CONFIG_BROKEN" ]] || exit 1
         python3 -I -c 'import json,sys; print(json.dumps({"services": {l.split()[0]: {"depends_on": dict.fromkeys(l.split()[1:], {})} for l in sys.stdin}}))' <"$FAKE_DEPS" ;;
-    *"ps --filter status=running"*) cat "$FAKE_RUNNING" 2>/dev/null ;;
+    *"ps --filter status=running"*) cat "$FAKE_RUNNING" 2>/dev/null; [[ -z "${FAKE_PS_HOOK:-}" || -e "$FAKE_LOG.ps" ]] || { : >"$FAKE_LOG.ps"; eval "$FAKE_PS_HOOK"; } ;;
     *" stop "*) sed -i "/^${last}\$/d" "$FAKE_RUNNING" ;;
-    *" up -d "*) start "$last" ;;
+    *" up -d "*) start "$last"; [[ "$last" != "${FAKE_UP_SVC:-}" ]] || eval "$FAKE_UP_HOOK" ;;
 esac
 exit 0
 DOCKER
@@ -97,7 +93,7 @@ seerr jellyfin radarr sonarr
 sonarr jackett qbittorrent
 unpackerr radarr sonarr'
 fresh() { # $@ = services running at the start; a new watchdog process, intent empty
-    rm -rf "$STATE_DIR" "$SCRIPT_DIR" "$FAKE_LOG" "$TMP_DIR/watchdog.log"
+    rm -rf "$STATE_DIR" "$SCRIPT_DIR" "$FAKE_LOG" "$FAKE_LOG.ps" "$TMP_DIR/watchdog.log"
     printf '%s\n' "$DEPS_GRAPH" >"$FAKE_DEPS"
     rm -f "$FAKE_CONFIG_BROKEN"
     mkdir -p "$STATE_DIR" "$SCRIPT_DIR/config/state"
@@ -119,15 +115,11 @@ running_data() { sort "$FAKE_RUNNING" | grep -Fx -f <(printf '%s\n' "${ALL_SERVI
 intent() { service_intent_list | paste -sd' '; }
 sorted() { tr ' ' '\n' <<<"$*" | sort | paste -sd' '; }
 without() { # $1 = space list, $2.. = names to drop
-    local list="$1" n
+    local list=" $1 " n
     shift
-    for n in "$@"; do
-        list=" $list "
-        list="${list/ $n / }"
-    done
+    for n in "$@"; do list="${list/ $n / }"; done
     echo "$list" | xargs
 }
-# Replace the intent file with raw text (for malformed and unreadable cases).
 intent_raw() { printf '%b' "$1" >"$INTENT_FILE"; }
 
 # --- 1. Manual stop, then boot reconciliation ---
@@ -308,11 +300,7 @@ assert_eq "$DEPS_GRAPH" "$real_graph" "dependencies: the fake graph matches dock
 # --- 7. Storage checks gate every start, whatever the intent file holds ---
 for variant in missing empty malformed unreadable; do
     fresh
-    case "$variant" in
-        empty) : >"$INTENT_FILE" ;;
-        malformed) intent_raw "$MALFORMED" ;;
-        unreadable) mkdir "$INTENT_FILE" ;;
-    esac
+    case "$variant" in empty) : >"$INTENT_FILE" ;; malformed) intent_raw "$MALFORMED" ;; unreadable) mkdir "$INTENT_FILE" ;; esac
     tick bad
     tick bad
     assert_eq "" "$(ups)" "storage down: intent $variant never starts a service"
@@ -323,12 +311,8 @@ done
 # Then it never starts a service
 fresh
 watchdog_storage_nas_ok() { real_watchdog_storage_nas_ok; }
-findmnt() {
-    case "$*" in
-        *"-o SOURCE"*) echo "198.51.100.9:/exports/other" ;;
-        *"-o FSTYPE"*) echo "nfs4" ;;
-    esac
-}
+MOUNT_SOURCE="198.51.100.9:/exports/other"
+findmnt() { case "$*" in *"-o SOURCE"*) echo "$MOUNT_SOURCE" ;; *"-o FSTYPE"*) echo nfs4 ;; esac }
 mkdir -p "$TMP_DIR/mnt"
 touch "$STORAGE_SENTINEL"
 tick ok
@@ -336,12 +320,7 @@ assert_eq "" "$(ups)" "mount identity: a wrong live mount starts nothing"
 
 # Given the expected mount but no sentinel
 rm -f "$STORAGE_SENTINEL"
-findmnt() {
-    case "$*" in
-        *"-o SOURCE"*) echo "192.0.2.10:/exports/mediastack-fixture" ;;
-        *"-o FSTYPE"*) echo "nfs4" ;;
-    esac
-}
+MOUNT_SOURCE="$STORAGE_EXPECTED_SOURCE"
 tick ok
 assert_eq "" "$(ups)" "sentinel: a missing sentinel starts nothing"
 
@@ -372,13 +351,7 @@ launcher() { # $1 = action, env: CHOICE DOCKER_RC GUARD_RC; prints nothing
         launcher_pause_for_menu() { :; }; ui_log() { :; }; _show_action_result() { :; }
         profiles_build_args() { :; }; ui_confirm() { return 0; }; _compose_project_name() { echo ""; }
         ui_choose() { echo "$CHOICE"; }; storage_guard_before_start() { return "$GUARD_RC"; }
-        docker() {
-            case "$*" in
-                *"ps --filter status="*) echo "$CHOICE" ;;
-                *"ps -aq"*) echo c1 ;;
-                *) return "$DOCKER_RC" ;;
-            esac
-        }
+        docker() { case "$*" in *"ps --filter status="*) echo "$CHOICE" ;; *"ps -aq"*) echo c1 ;; *) return "$DOCKER_RC" ;; esac; }
         "$ACTION"
     ' >/dev/null 2>&1
 }
@@ -494,6 +467,33 @@ restart_out=$(REPO_ROOT="$REPO_ROOT" bash -c '
     rm -rf "$tmp"
 ' 2>&1)
 assert_eq "$(sorted "$ALL bazarr")" "$restart_out" "NAS override: every data service has restart \"no\""
+
+# --- 13. A stop the user records while the watchdog works is not overridden (hooks run inside the fake docker) ---
+STOP_JELLYFIN='docker compose stop jellyfin; bash -c "source \$REPO_ROOT/scripts/lib/service-intent.sh; service_intent_record jellyfin"'
+SCRIPT_DIR="$TMP_DIR/root"
+export REPO_ROOT SCRIPT_DIR
+# Given an outage recovery in progress
+# When the user stops jellyfin after the unpackerr start, before jellyfin's and seerr's
+# Then jellyfin and its dependent seerr stay stopped, and the entry survives
+fresh "${ALL_SERVICES[@]}"
+tick ok
+tick bad
+export FAKE_UP_SVC=unpackerr FAKE_UP_HOOK="$STOP_JELLYFIN"
+tick ok
+unset FAKE_UP_SVC FAKE_UP_HOOK
+assert_eq "$(sorted "$(without "$ALL" jellyfin seerr)")" "$(running_data)" "stop during start loop: the service and its dependent stay stopped"
+tick ok
+assert_eq "jellyfin" "$(intent)" "stop during start loop: the intent entry survives the next poll"
+
+# Given jellyfin runs with a stale intent entry
+# When the user stops it again between the running snapshot and the clearing
+# Then the entry is kept
+fresh "${ALL_SERVICES[@]}"
+service_intent_record jellyfin
+export FAKE_PS_HOOK="$STOP_JELLYFIN"
+tick ok
+unset FAKE_PS_HOOK
+assert_eq "jellyfin" "$(intent)" "stop after the snapshot: the intent entry is kept"
 
 echo -e "${CYAN}◀ watchdog-intent done${NC}"
 summary

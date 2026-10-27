@@ -164,9 +164,17 @@ watchdog_drop_stale_intent() {
     for svc in "${intent[@]}"; do
         service_is_running "$svc" "$running" && stale+=("$svc")
     done
-    if ((${#stale[@]} > 0)); then
-        log "dropping user-stop intent for running service(s): ${stale[*]}"
-        service_intent_clear "${stale[@]}" >/dev/null 2>&1 || true
+    ((${#stale[@]} > 0)) || return 0
+    # The snapshot may be seconds old: a stop the user recorded since then must
+    # keep its entry, so ask Docker again just before removing anything.
+    running="$(compose_running)"
+    local -a still=()
+    for svc in "${stale[@]}"; do
+        service_is_running "$svc" "$running" && still+=("$svc")
+    done
+    if ((${#still[@]} > 0)); then
+        log "dropping user-stop intent for running service(s): ${still[*]}"
+        service_intent_clear "${still[@]}" >/dev/null 2>&1 || true
     fi
 }
 
@@ -232,7 +240,7 @@ for name in sys.argv[1:]:
 # honoured: start nothing, keep the pending state and return 1 so the caller
 # tries again later.
 start_managed_services() {
-    local mode="${1:-boot}" running svc dep blocker stopped_by_watchdog="" held=""
+    local mode="${1:-boot}" running svc dep blocker stopped_by_watchdog="" held="" line="" gsvc gdeps have_graph=false
     local -A depends=()
     local -a managed=()
     running="$(compose_running)"
@@ -246,18 +254,24 @@ start_managed_services() {
         return 1
     fi
     mapfile -t managed < <(storage_data_services)
-    if [[ -n "$held" ]]; then
-        local line
-        if ! line="$(watchdog_service_dependencies "${managed[@]}")"; then
-            log "cannot read the Compose configuration; starting nothing because a service you stopped may be a dependency"
-            return 1
-        fi
-        while read -r svc dep; do depends[$svc]=" $dep "; done <<<"$line"
-    fi
     log "NAS storage stable; ensuring NAS-dependent services are running"
     for svc in "${managed[@]}"; do
         if [[ "$mode" == recover ]] && ! grep -qx "$svc" <<<"$stopped_by_watchdog"; then
             continue
+        fi
+        # Each `up -d` can take a minute, so the user may have stopped something
+        # since the last read; judge every service against the current list.
+        if ! held="$(service_intent_list)"; then
+            log "cannot read $(service_intent_file); starting nothing more until it is readable or removed"
+            return 1
+        fi
+        if [[ -n "$held" && $have_graph == false ]]; then
+            if ! line="$(watchdog_service_dependencies "${managed[@]}")"; then
+                log "cannot read the Compose configuration; starting nothing more because a service you stopped may be a dependency"
+                return 1
+            fi
+            while read -r gsvc gdeps; do depends[$gsvc]=" $gdeps "; done <<<"$line"
+            have_graph=true
         fi
         if grep -qx "$svc" <<<"$held"; then
             log "leaving $svc stopped: you stopped it"
