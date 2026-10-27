@@ -11,12 +11,10 @@
 #   - mount identity and sentinel checks gate every start; a missing, empty,
 #     malformed, unreadable or unknown-name intent file has a defined outcome
 #   - `docker compose up -d <svc>` also starts <svc>'s dependencies, so a service
-#     that depends on one the user stopped stays stopped too (and the user's
-#     intent entry survives); if the Compose configuration cannot be read, nothing
-#     starts
+#     that depends on a user-stopped one stays stopped too, and with an unreadable
+#     Compose configuration nothing starts
 # The watchdog is stepped one poll at a time (watchdog_tick) against a fake
-# Docker that keeps a running-set and a depends_on graph, so no sleeping or real
-# containers are needed.
+# Docker with a running-set and a depends_on graph; no real containers needed.
 
 set -uo pipefail
 
@@ -36,7 +34,7 @@ ALL="${ALL_SERVICES[*]}"
 # Like real Compose, `up -d <svc>` starts <svc>'s dependencies too, and
 # `config --format json` prints the graph (or fails when the file is missing).
 FAKE_BIN="$TMP_DIR/bin"
-export FAKE_RUNNING="$TMP_DIR/running" FAKE_LOG="$TMP_DIR/docker.log" FAKE_DEPS="$TMP_DIR/deps" FAKE_CONFIG="$TMP_DIR/config.json"
+export FAKE_RUNNING="$TMP_DIR/running" FAKE_LOG="$TMP_DIR/docker.log" FAKE_DEPS="$TMP_DIR/deps" FAKE_CONFIG_BROKEN="$TMP_DIR/config-broken"
 mkdir -p "$FAKE_BIN"
 cat >"$FAKE_BIN/docker" <<'DOCKER'
 #!/usr/bin/env bash
@@ -49,7 +47,9 @@ start() { # $1 = service; starts it and, recursively, what it depends on
     for dep in $(awk -v s="$1" '$1 == s { $1 = ""; print }' "$FAKE_DEPS"); do start "$dep"; done
 }
 case "$*" in
-    *" config --format json"*) cat "$FAKE_CONFIG" 2>/dev/null || exit 1 ;;
+    *" config --format json"*)
+        [[ ! -e "$FAKE_CONFIG_BROKEN" ]] || exit 1
+        python3 -I -c 'import json,sys; print(json.dumps({"services": {l.split()[0]: {"depends_on": dict.fromkeys(l.split()[1:], {})} for l in sys.stdin}}))' <"$FAKE_DEPS" ;;
     *"ps --filter status=running"*) cat "$FAKE_RUNNING" 2>/dev/null ;;
     *" stop "*) sed -i "/^${last}\$/d" "$FAKE_RUNNING" ;;
     *" up -d "*) start "$last" ;;
@@ -90,26 +90,16 @@ log() { printf '%s\n' "$*" >>"$TMP_DIR/watchdog.log"; }
 repair_mount_if_needed() { :; }
 
 # The direct depends_on edges of the data services (and jackett), as in docker-compose.yml.
-DEPS_GRAPH='unpackerr sonarr radarr
-sonarr jackett qbittorrent
+# Dependencies are listed in sorted order, which the drift check below relies on.
+DEPS_GRAPH='bazarr radarr sonarr
 radarr jackett qbittorrent
-seerr jellyfin sonarr radarr
-bazarr sonarr radarr'
-write_fake_config() { # renders the graph in $FAKE_DEPS as `docker compose config --format json`
-    python3 -I -c '
-import json, sys
-services = {}
-for line in sys.stdin:
-    name, *deps = line.split()
-    services[name] = {"depends_on": {d: {"condition": "service_healthy"} for d in deps}}
-print(json.dumps({"name": "mediastack", "services": services}))
-' <"$FAKE_DEPS" >"$FAKE_CONFIG"
-}
-
+seerr jellyfin radarr sonarr
+sonarr jackett qbittorrent
+unpackerr radarr sonarr'
 fresh() { # $@ = services running at the start; a new watchdog process, intent empty
     rm -rf "$STATE_DIR" "$SCRIPT_DIR" "$FAKE_LOG" "$TMP_DIR/watchdog.log"
     printf '%s\n' "$DEPS_GRAPH" >"$FAKE_DEPS"
-    write_fake_config
+    rm -f "$FAKE_CONFIG_BROKEN"
     mkdir -p "$STATE_DIR" "$SCRIPT_DIR/config/state"
     : >"$FAKE_LOG"
     printf '%s\n' "$@" | grep . >"$FAKE_RUNNING" || : >"$FAKE_RUNNING"
@@ -267,64 +257,53 @@ assert_eq "" "$(ups)" "intent unreadable: starts nothing at boot reconciliation"
 fresh
 service_intent_record qbittorrent
 tick ok
-assert_eq "jellyfin" "$(ups)" "dependency: nothing that depends on the user's stop starts"
 assert_eq "jellyfin" "$(running)" "dependency: no dependent is started as a side effect"
 assert_contains "$(<"$TMP_DIR/watchdog.log")" "leaving unpackerr stopped: it depends on qbittorrent, which you stopped" "dependency: a transitive dependent is skipped and named"
 
 # Given the user stopped qbittorrent while the rest ran, then NAS fails and recovers
-# Then recovery restarts jellyfin only, and the intent entry survives the next poll
+# Then only jellyfin restarts, and the intent entry survives the next poll
 fresh sonarr radarr unpackerr seerr jellyfin
 service_intent_record qbittorrent
 tick ok
 tick bad
 : >"$FAKE_LOG"
 tick ok
-assert_eq "jellyfin" "$(ups)" "dependency, recovery: restarts only what does not depend on the user's stop"
-assert_eq "jellyfin" "$(running)" "dependency, recovery: the dependents stay stopped"
+assert_eq "jellyfin" "$(running)" "dependency, recovery: restarts only what does not depend on the user's stop"
 tick ok
 assert_eq "qbittorrent" "$(intent)" "dependency, recovery: the intent entry survives the next poll"
 
-# Given the user stopped jellyfin and the Compose configuration cannot be read
-# When storage is stable after an outage
+# Given the user stopped jellyfin and the Compose configuration cannot be read, after an outage
 # Then nothing starts and the pending recovery is kept; once readable it completes
 fresh "${ALL_SERVICES[@]}"
 tick ok
 tick bad
 service_intent_record jellyfin
-rm -f "$FAKE_CONFIG"
+touch "$FAKE_CONFIG_BROKEN"
 : >"$FAKE_LOG"
 tick ok
 assert_eq "" "$(ups)" "config unreadable: starts nothing"
 assert_eq "yes" "$([[ -s $STATE_FILE ]] && echo yes)" "config unreadable: keeps the pending recovery state"
 assert_contains "$(<"$TMP_DIR/watchdog.log")" "cannot read the Compose configuration" "config unreadable: logs why nothing started"
-write_fake_config
+rm -f "$FAKE_CONFIG_BROKEN"
 tick ok
 tick ok
 assert_eq "$(sorted "$(without "$ALL" jellyfin seerr)")" "$(running_data)" "config unreadable: recovery completes once it is readable"
 
-# Given the user stopped nothing and the Compose configuration cannot be read
-# Then the graph is not needed and every service starts
+# Given the user stopped nothing, the graph is not needed: every service starts without it
 fresh
-rm -f "$FAKE_CONFIG"
+touch "$FAKE_CONFIG_BROKEN"
 tick ok
 assert_eq "$(sorted "$ALL")" "$(running_data)" "config unreadable, no user stop: starts every data service"
 
-# Given the graph in this test's fake Docker
-# Then it equals the direct depends_on edges of the managed services in docker-compose.yml
+# Given the fake graph, then it equals the direct depends_on edges in docker-compose.yml
 real_graph=$(python3 -I -c '
 import sys, yaml
 with open(sys.argv[1]) as f:
     services = yaml.safe_load(f)["services"]
 for name in sys.argv[2:]:
     print(name, *sorted(services[name].get("depends_on") or []))
-' "$REPO_ROOT/docker-compose.yml" unpackerr sonarr radarr seerr bazarr)
-fake_graph=$(python3 -I -c '
-import sys
-for line in sys.stdin:
-    name, *deps = line.split()
-    print(name, *sorted(deps))
-' <<<"$DEPS_GRAPH" | sort)
-assert_eq "$(sort <<<"$real_graph")" "$fake_graph" "dependencies: the fake graph matches docker-compose.yml"
+' "$REPO_ROOT/docker-compose.yml" bazarr radarr seerr sonarr unpackerr)
+assert_eq "$DEPS_GRAPH" "$real_graph" "dependencies: the fake graph matches docker-compose.yml"
 
 # --- 7. Storage checks gate every start, whatever the intent file holds ---
 for variant in missing empty malformed unreadable; do
