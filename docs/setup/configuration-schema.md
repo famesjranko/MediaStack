@@ -141,7 +141,7 @@ Minimal per-*arr settings — the rest comes from `quality_profile` / `categorie
 
 ### `seerr.quotas`
 
-`movie` and `tv` each have a `limit` (requests per period; `0` means unlimited) and `days` (period length). The template sets both limits to `0` and both periods to `7` days. Consumed by `reconcile_seerr_quotas` (`scripts/services/seerr/quotas.sh`) for default user request quotas. A change to `limit` or `days` is applied on re-run, and a limit of `0` clears an existing limit. `days` is ignored while its `limit` is `0`. Values must be whole numbers, and `days` must be at least `1` when `limit` is above `0`; otherwise the configurator warns and changes nothing.
+`movie` and `tv` each have a `limit` (requests per period; `0` means unlimited) and `days` (period length). The template and missing-key defaults set both limits to `0` and both periods to `7` days. Consumed by `reconcile_seerr_quotas` (`scripts/services/seerr/quotas.sh`) for default user request quotas. A change to `limit` or `days` is applied on re-run, and a limit of `0` clears an existing limit. `days` is ignored while its `limit` is `0`. Values must be whole numbers, and `days` must be at least `1` when `limit` is above `0`; otherwise the configurator warns and changes nothing.
 
 ### `bazarr`
 

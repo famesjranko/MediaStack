@@ -60,9 +60,9 @@ sys.exit(10)
 reconcile_seerr_quotas() {
     local seerr_url="$1" cookiejar="$2" current_settings="$3"
     local movie_limit movie_days tv_limit tv_days
-    movie_limit=$(cfg_field "seerr.quotas.movie.limit" 2>/dev/null || echo "10")
+    movie_limit=$(cfg_field "seerr.quotas.movie.limit" 2>/dev/null || echo "0")
     movie_days=$(cfg_field "seerr.quotas.movie.days" 2>/dev/null || echo "7")
-    tv_limit=$(cfg_field "seerr.quotas.tv.limit" 2>/dev/null || echo "10")
+    tv_limit=$(cfg_field "seerr.quotas.tv.limit" 2>/dev/null || echo "0")
     tv_days=$(cfg_field "seerr.quotas.tv.days" 2>/dev/null || echo "7")
     local args=("$movie_limit" "$movie_days" "$tv_limit" "$tv_days")
 
