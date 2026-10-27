@@ -31,6 +31,8 @@ n:
   nothing: null
   tilde: ~
   ratio: 1.5
+custom_formats: {x264: 1_000}
+quality_profile: {sonarr_qualities: [010, 0x10]}
 nested:
   deep:
     limit: 25
@@ -40,27 +42,47 @@ read_field() {
     CONFIG_FILE="$WORK/config.yml" bash -c 'source "$1/scripts/lib/common.sh"; cfg_field "$2"' _ "$REPO_ROOT" "$1"
 }
 
-# When each key is read through cfg_field
-# Then 010 reads as 10, not octal 8
-assert_eq "10" "$(read_field n.octal_like)" "010 reads as 10"
-# And 0x10 and 1:30 stay literal text so consumers reject them
-assert_eq "0x10" "$(read_field n.hex)" "0x10 stays text"
-assert_eq "1:30" "$(read_field n.clock)" "1:30 stays text"
-# And the unchanged forms read as before
-assert_eq "10" "$(read_field n.quoted)" 'quoted "10" reads as 10'
-assert_eq "7" "$(read_field n.plain)" "7 reads as 7"
-assert_eq "-5" "$(read_field n.negative)" "-5 reads as -5"
-assert_eq "1e1" "$(read_field n.sci)" "1e1 stays text"
-assert_eq "True" "$(read_field n.flag)" "true reads as True"
-assert_eq "None" "$(read_field n.nothing)" "null reads as None"
-assert_eq "None" "$(read_field n.tilde)" "~ reads as None"
-assert_eq "1.5" "$(read_field n.ratio)" "1.5 reads as 1.5"
-assert_eq "25" "$(read_field nested.deep.limit)" "nested key reads through"
-# And a missing key fails, or yields the default when one is given
+declare -A values
+
+# When each key is read through cfg_field.
+for key in octal_like hex clock quoted plain negative sci flag nothing tilde ratio; do
+    values[$key]=$(read_field "n.$key")
+done
+nested=$(read_field nested.deep.limit)
 read_field n.absent >/dev/null
-assert_eq "1" "$?" "a missing key without a default exits 1"
-assert_eq "fb" "$(CONFIG_FILE="$WORK/config.yml" bash -c 'source "$1/scripts/lib/common.sh"; cfg_read value n.absent fb' _ "$REPO_ROOT")" \
-    "a missing key with a default yields the default"
+missing_rc=$?
+default=$(CONFIG_FILE="$WORK/config.yml" bash -c 'source "$1/scripts/lib/common.sh"; cfg_read value n.absent fb' _ "$REPO_ROOT")
+
+# Then decimal-like and non-decimal forms have the expected values.
+assert_eq "10" "${values[octal_like]}" "010 reads as 10"
+assert_eq "0x10" "${values[hex]}" "0x10 stays text"
+assert_eq "1:30" "${values[clock]}" "1:30 stays text"
+assert_eq "10" "${values[quoted]}" 'quoted "10" reads as 10'
+assert_eq "7" "${values[plain]}" "7 reads as 7"
+assert_eq "-5" "${values[negative]}" "-5 reads as -5"
+assert_eq "1e1" "${values[sci]}" "1e1 stays text"
+assert_eq "True" "${values[flag]}" "true reads as True"
+assert_eq "None" "${values[nothing]}" "null reads as None"
+assert_eq "None" "${values[tilde]}" "~ reads as None"
+assert_eq "1.5" "${values[ratio]}" "1.5 reads as 1.5"
+assert_eq "25" "$nested" "nested key reads through"
+assert_eq "1" "$missing_rc" "a missing key without a default exits 1"
+assert_eq "fb" "$default" "a missing key with a default yields the default"
+
+# Given YAML 1.1 numbers used by the JSON adapters.
+CONFIG_FILE="$WORK/config.yml"
+source "$REPO_ROOT/scripts/lib/config-read.sh"
+
+# When the adapters read the scores and quality IDs and the renderer compares scores.
+scores=$(cfg_custom_format_scores)
+ids=$(cfg_quality_ids sonarr)
+rendered=$(printf '%s\n' '{"id":1,"formatItems":[{"format":1,"score":1000}]}' |
+    SCORES="$scores" FORMAT_MAP='{"x264":1}' python3 "$REPO_ROOT/scripts/lib/arr/render/format_scores.py")
+
+# Then their JSON retains safe_load numeric values and the live score matches.
+assert_eq '{"x264": 1000}' "$scores" "format scores preserve YAML numeric resolution"
+assert_eq '[8, 16]' "$ids" "quality IDs preserve YAML numeric resolution"
+assert_eq 'match' "$rendered" "equivalent format score does not drift"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

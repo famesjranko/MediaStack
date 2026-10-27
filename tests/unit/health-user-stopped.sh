@@ -21,8 +21,10 @@ export SCRIPT_DIR="$TMP_DIR" STORAGE_MODE=nas
 
 # Given a stopped service and a stopped service that depends on it.
 printf '%s\n' qbittorrent jellyfin >"$TMP_DIR/config/state/user-stopped-services"
+
 # When container health runs.
 output=$(health_containers)
+
 # Then it identifies the user's stop and the blocked dependency.
 assert_contains "$output" 'qbittorrent: stopped by you from the launcher' 'user stop has a cause'
 assert_contains "$output" 'sonarr: depends on qbittorrent, stopped by you' 'blocked service identifies its dependency'
@@ -31,8 +33,10 @@ assert_not_contains "$output" 'jellyfin: stopped by you' 'running service has no
 # Given an unreadable intent file.
 rm "$TMP_DIR/config/state/user-stopped-services"
 ln -s missing "$TMP_DIR/config/state/user-stopped-services"
+
 # When container health runs.
 output=$(health_containers)
+
 # Then it warns that the intent is unknown.
 assert_contains "$output" 'warn|Cannot read user-stopped services' 'unreadable intent warns'
 scenario_end "$CURRENT_SCENARIO"

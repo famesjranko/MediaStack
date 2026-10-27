@@ -26,6 +26,7 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# Given a command that writes a prompt to the tty while the spinner runs.
 # Stub command: writes text longer than the title straight to the tty, then
 # lets the spinner repaint a few more times.
 cat >"$WORK/stub.sh" <<'STUB'
@@ -73,10 +74,10 @@ run_backend() {
 }
 
 for backend in fallback gum; do
+    # When the spinner repaints afterwards.
     last_frame="$(run_backend "$backend")"
-    # Given a command that wrote a prompt to the tty while the spinner ran
-    # When the spinner repainted afterwards
-    # Then the last frame still shows the title
+
+    # Then the last frame still shows the title.
     assert_contains "$last_frame" "Requesting certificates..." \
         "$backend: spinner frame shows the title"
     # And the prompt text is no longer behind it

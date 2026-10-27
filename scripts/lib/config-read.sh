@@ -38,7 +38,7 @@ Loader.add_implicit_resolver(
 Loader.add_constructor(INT_FLOAT[0], lambda ld, node: int(ld.construct_scalar(node), 10))
 
 with open(config_file) as f:
-    data = yaml.load(f, Loader=Loader)
+    data = yaml.load(f, Loader=Loader) if mode == "value" else yaml.safe_load(f)
 
 def walk(root, dotted):
     node = root
