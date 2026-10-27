@@ -31,6 +31,14 @@ run_scenario() {
     # ------------------------------------------------------------------
     dind_exec "mkdir -p /tmp/ms-data/media/tv /tmp/ms-data/media/movies /tmp/ms-data/torrents/tv /tmp/ms-data/torrents/movies /tmp/ms-data/torrents/incomplete && chown -R 1000:1000 /tmp/ms-data"
     create_config_dirs_in_dind
+    # Deterministic indexer: Jackett loads the `mstest` definition at startup
+    # and config.yml names it, so the Jackett and Sonarr/Radarr indexer
+    # assertions run against a real registration instead of skipping.
+    torznab_fixture_seed || {
+        fail "torznab fixture seeded"
+        return 1
+    }
+    pass "torznab fixture seeded (Jackett definition + config.yml indexer)"
 
     dind_exec "cp .env.example .env"
 
@@ -50,6 +58,12 @@ run_scenario() {
     env_set WG_HOST fresh.test
     env_set WG_DEFAULT_DNS 1.1.1.1
     env_set WG_INIT_PASSWORD "''"
+    # The NPM configurator gates Let's Encrypt publication on a public-IP fetch
+    # and a DNS-propagation wait unless NPM_LE_SERVER names a custom ACME
+    # endpoint. This stack uses the in-VM Pebble endpoint (npm_acme_override),
+    # so say so: the fixture domain never resolves publicly and the wait only
+    # added an external-network dependency and minutes of wall time.
+    env_set NPM_LE_SERVER https://pebble:14000/dir
 
     local env_jf_pw
     env_jf_pw=$(env_get JELLYFIN_ADMIN_PASSWORD)
@@ -151,6 +165,15 @@ PYEOF
             fail "$svc has memory limit" "got '$mem' (0 = unlimited)"
         fi
     done
+
+    # ------------------------------------------------------------------
+    # 2a. Start the Torznab fixture site on the stack network.
+    # ------------------------------------------------------------------
+    if torznab_fixture_up; then
+        pass "torznab fixture site reachable on the mediastack network"
+    else
+        fail "torznab fixture site reachable on the mediastack network"
+    fi
 
     # ------------------------------------------------------------------
     # 2b. Start Pebble ACME test server.

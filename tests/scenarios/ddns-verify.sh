@@ -21,6 +21,11 @@
 # 202-accept path stays live-checked by GCP run-fresh.sh (real Dynu).
 #
 # Wall-time: ~40s warm (one ~20 MB image, a few one-shot containers).
+#
+# Every ddns-updater container this scenario starts carries the Compose service
+# label (com.docker.compose.service=ddns-updater). Nothing here runs under
+# Compose, and tests/lib/receipts.sh attributes container events to a service by
+# that label, so without it a passing run could never earn a preflight receipt.
 
 # The stub serves HTTPS on :443 for the provider APIs AND the public-IP fetch.
 # Root path (ipify) -> a fixed IP; any other path -> a provider update, logged
@@ -73,7 +78,7 @@ _ddns_verify_run() {
     fi
 
     dind_exec "docker rm -f dv-verify >/dev/null 2>&1 || true
-      docker run -d --name dv-verify \
+      docker run -d --name dv-verify --label com.docker.compose.service=ddns-updater \
         --add-host api.dynu.com:$DV_GW --add-host www.duckdns.org:$DV_GW --add-host api.ipify.org:$DV_GW \
         -e RESOLVER_ADDRESS=127.0.0.1:1 -e SSL_CERT_FILE=/ca/ca.crt \
         -e PUBLICIP_FETCHERS=http -e PUBLICIPV4_HTTP_PROVIDERS=ipify -e PERIOD=0 \
@@ -129,6 +134,7 @@ _ddns_verify_real() {
             if [ "$1" = run ]; then
                 shift
                 command docker run \
+                    --label com.docker.compose.service=ddns-updater \
                     --add-host api.dynu.com:"$gw" --add-host api.ipify.org:"$gw" \
                     -e SSL_CERT_FILE=/ca/ca.crt \
                     -e PUBLICIP_FETCHERS=http -e PUBLICIPV4_HTTP_PROVIDERS="$pubip" \
@@ -292,7 +298,7 @@ _dv_run_scenario() {
     docker exec -w /root/MediaStack "$DIND_NAME" bash -c \
         'source scripts/lib/ddns-providers.sh; declare -A F=([domain]=verify.duckdns.org [token]=00000000-0000-0000-0000-000000000000); ddns_render_config_json duckdns F > /tmp/dvi/config.json && chmod 644 /tmp/dvi/config.json' >/dev/null 2>&1
     dind_exec "docker rm -f dv-infra >/dev/null 2>&1 || true
-      docker run -d --name dv-infra \
+      docker run -d --name dv-infra --label com.docker.compose.service=ddns-updater \
         -e RESOLVER_ADDRESS=127.0.0.1:1 \
         -e PUBLICIP_FETCHERS=http -e PUBLICIPV4_HTTP_PROVIDERS=url:https://127.0.0.1:9/ip -e PERIOD=0 \
         -p 127.0.0.1:0:8000 -v /tmp/dvi:/updater/data \

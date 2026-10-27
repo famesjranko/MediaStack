@@ -109,9 +109,15 @@ media pipeline end to end: no release search, grab, import, rename, Jellyfin med
 routing. Those depend on live trackers and real downloads and are non-deterministic in hermetic DinD,
 so they are deliberately excluded — a flaky preflight maintainers learn to ignore is worse than an
 honest, narrower one. Read a green preflight as *"boots + configures + connects to its download
-client"*, not *"every user workflow works"*. The shipped `config.yml` has no indexers, so
-`fresh-install` skips Jackett `t=caps` checks by default. `wizard-presets` enables indexers and
-runs that assertion.
+client"*, not *"every user workflow works"*. Its assertions read expectations from the
+`config.yml` inside DinD and fail closed: an unreadable fixture, a failed API read or a malformed
+response is a FAIL, never a zero. `fresh-install` seeds a deterministic Torznab indexer
+(`tests/fixtures/torznab/`: a custom Jackett definition plus a static tracker site inside DinD),
+so the Jackett caps check, the Sonarr/Radarr registration count, each app's own indexer
+connection test and the persisted seed criteria run on every preflight without a public tracker.
+`wizard-presets` separately enables the public-indexer preset against real trackers. Seerr's Sonarr/Radarr entries are
+checked field by field (container, port, root folder, quality profile, the app's real API key)
+and then proved live through Seerr's own `POST /settings/<app>/test` with the stored values.
 
 **fail2ban filters are re-verified when you preflight jellyfin or seerr.** Both are
 `scenario:fresh-install`, and `fresh-install.sh` runs `assert_fail2ban_configured`, which

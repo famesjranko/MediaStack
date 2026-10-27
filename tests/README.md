@@ -15,6 +15,10 @@ the matching local DinD preflight before accepting image updates. Stable-channel
 use the accepted digest record through the generated compose override; Latest-channel
 installs intentionally follow upstream tags.
 
+## What reaches DinD
+
+`dind_copy_repo` (`tests/lib/dind.sh`) exports the pristine source tree: every tracked file plus every untracked file git does not ignore, from `git ls-files --cached --others --exclude-standard`. Uncommitted edits and new scenario files travel; the gitignored runtime state of a live install or an earlier run on the host (`.env`, `config.yml`, `docker-compose.override.yml`, the `config/<service>/` databases, completion markers, receipts, override records) never does, so a "fresh" scenario cannot inherit a completed setup. The tracked templates under `config/examples/` do reach DinD, and scenarios seed the live copies from them (`create_config_dirs_in_dind`). A non-git directory or an empty population is refused. `tests/unit/dind.sh` proves the exclusion set.
+
 ## Prerequisites
 
 - Docker on the host (Compose v2 not required inside DinD; it's pre-baked in the image).
@@ -227,11 +231,15 @@ Proves:
 - `configure.sh` exits 0 (does not abort mid-run on a recoverable API error).
 - Each of the 8 configure steps produced the expected side-effect (API key present, root folder registered, etc.).
 - qBittorrent's live API accepts the shared admin credentials and reports configured preferences/categories through `tests/assertions/qbittorrent-live.sh`.
-- Sonarr + Radarr indexer wiring is checked against whatever `config.yml` lists — the default ships `indexers: []`, so this is a no-op skip here; `wizard-presets.sh` is the scenario that actually seeds indexers (via the opt-in public-indexer preset) and exercises the FlareSolverr cold-start retry path, against real Cloudflare-protected trackers, so it is not a deterministic image-drift oracle for FlareSolverr — see `docs/operations/upgrades.md` "FlareSolverr — confidence boundary".
+- A deterministic Torznab indexer is seeded before the stack starts (`torznab_fixture_seed`, `tests/fixtures/torznab/`): a custom Jackett definition `mstest` plus a static tracker site (`torznab-fixture`, `python:3.12-alpine` on the stack network) that serves four fixed releases. `config.yml` in DinD names that indexer, so `configure.sh` enables it in Jackett and registers it into Sonarr and Radarr exactly as it would a public tracker — with no public tracker, Cloudflare or FlareSolverr solve involved.
+- Sonarr + Radarr indexer wiring is checked against the `config.yml` inside DinD (the scenario's own fixture, read fail-closed by `tests/assertions/arr-indexers.sh`): a fixture that cannot be read, a failed `GET /indexer` or a malformed response is a FAIL, an empty fixture is an explicit SKIP, and with indexers present the registered count must reach the fixture floor, every registered indexer must pass the app's own `POST /indexer/test` connection test (a real search through Jackett to the fixture site), and every indexer must carry MediaStack's seed criteria. `wizard-presets.sh` still seeds the opt-in public-indexer preset against real Cloudflare-protected trackers; that is a preset test, not a deterministic image-drift oracle for FlareSolverr — see `docs/operations/upgrades.md` "FlareSolverr — confidence boundary".
+- Jackett: the fixture indexer list is read from the DinD `config.yml` the same way, and every configured indexer must serve Torznab caps with at least one category (what Sonarr and Radarr consume on registration).
+- Seerr: each Sonarr/Radarr entry must name the intended container, port, root folder and configured quality profile, carry the app's real API key, and pass Seerr's own `POST /settings/<app>/test` connection test with those stored values (the answer must offer that profile and root folder). An entry that merely exists never passes.
+- No public-network dependency: `NPM_LE_SERVER` names the in-VM Pebble endpoint, so the NPM configurator skips its public-IP fetch and DNS-propagation wait.
 - Quality definitions were tightened from upstream defaults (HDTV-720p preferredSize on Sonarr, Bluray-1080p preferredSize on Radarr — both differ noticeably from stock; no Remux-1080p ships at all — see [quality bounds](../docs/setup/quality-bounds.md)).
 - `SONARR_API_KEY`, `RADARR_API_KEY`, `JELLYFIN_API_KEY`, and ready-state `REMOTE_WEB_STATE` are back-populated into `.env`.
 
-Total: 46 hard assertions at current scope.
+Total: 54 hard assertions at current scope.
 
 If you add new assertions that detect a known `configure.sh` bug, use `skip` with a bug-ref so the scenario still runs. Convert back to `pass`/`fail` once the bug is fixed.
 
@@ -500,7 +508,8 @@ Current DinD wizard UI coverage:
 1. Drop `tests/scenarios/<name>.sh` with a `run_scenario()` function.
 2. The function has access to everything sourced by `run.sh`:
    - **Assertions** (`lib/assert.sh`): `pass`, `fail`, `skip`, `assert_eq`, `assert_contains`, `assert_http`.
-   - **DinD control** (`lib/dind.sh`): `dind_exec "<cmd>"` (runs inside DinD with `/root/MediaStack` as CWD), `dind_logs <service>`, `dind_exec_tty` for manual poking.
+   - **DinD control** (`lib/dind.sh`): `dind_exec "<cmd>"` (runs inside DinD with `/root/MediaStack` as CWD), `dind_python ARG... <<'PY'` (a Python program on stdin, run with `-I` inside DinD — no shell quoting of the source), `dind_write_file <path>` (stdin to a file inside DinD), `dind_logs <service>`, `dind_exec_tty` for manual poking.
+   - **Reading expectations**: read them from the DinD copy (`config.yml` seeded by `create_config_dirs_in_dind`), never from the host tree, and treat a failed read as a FAIL — see `tests/assertions/arr-indexers.sh` for the shape. `tests/unit/assertions.sh` proves the fresh-install assertions fail closed.
    - **Stack helpers** (`lib/stack.sh`): `wait_healthy <svc> [timeout]`, `get_api_key_from_xml <path>`, `api_get_jackett_key`, `env_set KEY VALUE` (writes to `.env` via Python — safe with `$` and special chars), `env_get KEY`, `create_config_dirs_in_dind`.
    - **PTY wizard driver** (`lib/wizard_pty.py`): drive interactive prompt
      flows from JSON steps when pipe-based input would miss terminal behavior.
@@ -917,7 +926,7 @@ Any multi-scenario run that passes `--reset-between` to `tests/run.sh`
 tiers over `tests/ci-scenarios.sh`) restores a pristine DinD before every
 scenario after the first: `dind_reset` (`tests/lib/dind.sh`) removes every
 container, prunes anonymous volumes and custom networks, and re-copies the
-repo from the host tree — undoing anything a prior scenario stubbed
+pristine source tree from the host checkout — undoing anything a prior scenario stubbed
 (`scripts/configure.sh`, via `tests/lib/wizard-stub-common.sh`) or rewrote
 (`config.yml`, `.env`, any other file under the repo copy) — then re-applies
 image overrides/strips so those survive the reset too.

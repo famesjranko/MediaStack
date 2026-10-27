@@ -81,31 +81,56 @@ dind_up() {
     return 1
 }
 
-# Copy the working tree into the DinD at /root/MediaStack, excluding .git and
-# runtime state. Uses tar-pipe so the copy is single-pass and honours excludes.
+# Export the pristine source tree into the DinD at /root/MediaStack.
+#
+# The population is `git ls-files --cached --others --exclude-standard`: every
+# tracked file plus every untracked file git does not ignore. That is the source
+# as it stands (uncommitted edits and new scenario files included) and nothing
+# else. The gitignored runtime state a live install or an earlier test run
+# leaves on the host (.env, config.yml, docker-compose.override.yml, the
+# config/<service>/ databases, completion markers, receipts, override records)
+# is never copied, so a "fresh" scenario cannot inherit a completed setup.
+# The tracked pre-seed templates under config/examples/ do reach DinD;
+# create_config_dirs_in_dind seeds the live copies from them.
+#
+# A tracked path deleted from the working tree is still listed by git; it is
+# skipped rather than failing tar. An empty population or a failed listing is
+# an error, never a silent partial copy.
 dind_copy_repo() {
-    echo -e "${BLUE}[dind]${NC} copying repo to /root/MediaStack"
+    echo -e "${BLUE}[dind]${NC} copying pristine source tree to /root/MediaStack"
     docker exec "$DIND_NAME" mkdir -p /root/MediaStack
-    # Exclude: .git, .env (host's local), nvidia-patch clone, any backups,
-    # runtime subdirs of config/ that are gitignored. The pre-seed *templates*
-    # under config/examples/defaults/ must be included — create_config_dirs (and
-    # create_config_dirs_in_dind) seed the live config/{fail2ban,homepage,jackett,
-    # qbittorrent} copies from them. config/examples/ is not excluded below, so
-    # the templates always reach DinD.
-    tar --exclude=./.git \
-        --exclude=./.nvidia-patch \
-        --exclude=./.env \
-        --exclude=./backups \
-        --exclude=./tests/.dind-state \
-        --exclude=./config/portainer \
-        --exclude=./config/beszel \
-        -cf - -C "$REPO_ROOT" . \
+    local listing
+    listing=$(mktemp) || return 1
+    if ! git -C "$REPO_ROOT" ls-files -z --cached --others --exclude-standard >"$listing" 2>/dev/null; then
+        echo -e "${RED}[dind]${NC} repo copy: git ls-files failed in $REPO_ROOT (not a git checkout?)"
+        rm -f "$listing"
+        return 1
+    fi
+    local present
+    present=$(mktemp) || {
+        rm -f "$listing"
+        return 1
+    }
+    local path count=0
+    while IFS= read -r -d '' path; do
+        [[ -e "$REPO_ROOT/$path" || -L "$REPO_ROOT/$path" ]] || continue
+        printf '%s\0' "$path" >>"$present"
+        count=$((count + 1))
+    done <"$listing"
+    rm -f "$listing"
+    if ((count == 0)); then
+        echo -e "${RED}[dind]${NC} repo copy: source population is empty"
+        rm -f "$present"
+        return 1
+    fi
+    tar -C "$REPO_ROOT" --null --no-recursion -T "$present" -cf - \
         | docker exec -i "$DIND_NAME" tar -xf - -C /root/MediaStack
     # Detect a broken copy (PIPESTATUS covers both ends regardless of pipefail).
     # Without this a partial/failed extract goes unnoticed and every later
     # `docker exec -w /root/MediaStack` chdir-fails, cascading across the shared
     # DinD in --reset-between runs.
     local st=("${PIPESTATUS[@]}")
+    rm -f "$present"
     if [[ "${st[0]}" -ne 0 || "${st[1]}" -ne 0 ]]; then
         echo -e "${RED}[dind]${NC} repo copy tar pipe failed (host tar=${st[0]}, container tar=${st[1]})"
         return 1
@@ -114,12 +139,29 @@ dind_copy_repo() {
         echo -e "${RED}[dind]${NC} repo copy incomplete: /root/MediaStack/docker-compose.yml missing"
         return 1
     fi
+    echo -e "${BLUE}[dind]${NC} copied $count source files"
 }
 
 # Run a command inside the DinD with /root/MediaStack as CWD.
 # Usage: dind_exec "docker compose ps"
 dind_exec() {
     docker exec -w /root/MediaStack "$DIND_NAME" sh -c "$*"
+}
+
+# Run a Python program inside the DinD with /root/MediaStack as CWD. The program
+# arrives on stdin (a quoted heredoc at the call site), so no shell quoting of
+# the source is needed; positional arguments follow. -I isolates the interpreter
+# from the repo copy so a planted module cannot shadow a stdlib import.
+# Usage: dind_python ARG... <<'PY' ... PY
+dind_python() {
+    docker exec -i -w /root/MediaStack "$DIND_NAME" python3 -I - "$@"
+}
+
+# Write stdin to a file inside the DinD (path relative to /root/MediaStack or
+# absolute). Lets a scenario hand a request body to curl inside DinD without
+# shell-quoting it. Usage: dind_write_file /tmp/body.json <<<"$json"
+dind_write_file() {
+    docker exec -i -w /root/MediaStack "$DIND_NAME" sh -c "cat >'$1'"
 }
 
 # Strip services from the DinD copy's docker-compose.yml. Used when a local
