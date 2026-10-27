@@ -111,7 +111,7 @@ run_scenario() {
   {"send": "n\n"},
   {"expect": "No changes made"},
   {"expect": "Manage features & settings"},
-  {"send": "10\n"}
+  {"send": "11\n"}
 ]' || return 1
     transcript="$(dind_exec "cat $plain_log")"
     assert_contains "$transcript" "1) Add WireGuard VPN" "wizard-ui features add-wireguard [decline]: menu offers Add WireGuard VPN"
@@ -137,7 +137,7 @@ run_scenario() {
   {"send": "y\n"},
   {"expect": "SETUP_RC:0"},
   {"expect": "Manage features & settings"},
-  {"send": "10\n"}
+  {"send": "11\n"}
 ]' || return 1
     assert_eq "WizardAdminPass123" "$(env_get WG_INIT_PASSWORD)" "wizard-ui features add-wireguard [accept]: WG_INIT_PASSWORD set from the admin password"
     assert_eq "server" "$(env_get WG_ACCESS_TIER)" "wizard-ui features add-wireguard [accept]: selected tier saved"
