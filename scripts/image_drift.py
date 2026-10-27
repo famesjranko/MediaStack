@@ -495,11 +495,12 @@ def read_pass_receipts(path: pathlib.Path | None) -> dict[str, set[tuple[str, st
     """Load the local preflight pass-receipts written by tests/run.sh.
 
     Each row is ``service<TAB>image<TAB>digest<TAB>scenario``, appended by a
-    ``./tests/run.sh`` invocation that applied ``MS_TEST_IMAGE_OVERRIDES`` and had
-    every scenario pass. Returns service -> set of ``(image, digest, scenario)``
-    that passed. A missing file is empty (nothing vouched for, so accept fails
-    closed). Malformed rows are skipped rather than aborting an accept — a dropped
-    row just reads as "no receipt", the safe direction.
+    ``./tests/run.sh`` invocation, one per scenario that passed and whose container
+    events show the service running from that override's digest. Returns
+    service -> set of ``(image, digest, scenario)`` that passed. A missing file is
+    empty (nothing vouched for, so accept fails closed). Malformed rows are skipped
+    rather than aborting an accept — a dropped row just reads as "no receipt", the
+    safe direction.
     """
     receipts: dict[str, set[tuple[str, str, str]]] = {}
     if path is None or not path.exists():

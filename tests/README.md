@@ -557,6 +557,13 @@ service in both variables aborts the run — the override would be stripped.
 MS_TEST_STRIP_SERVICES="homepage,npm,fail2ban" ./tests/run.sh fresh-install
 ```
 
+A digest override also writes a row to `tests/.image-preflight-passed.tsv` for each scenario that passed
+and ran that service from that digest, judged from the DinD container events of that scenario alone
+(`tests/lib/receipts.sh`). The row is withheld when the scenario failed an assertion, the latest container
+of the service never started, it crashed (a `die` with no earlier stop or kill, even if it restarted), it
+ran another image, or it ended stopped or unhealthy. The run prints a `[receipts]` line for each override
+that got none, naming the reason. `image_drift.py accept` reads these rows.
+
 Preflight checks API **shape** only — for a major/API-unstable bump, also run the service's own battery plus `fresh-install` where relevant (note `fresh-install` excludes the `remote`/wireguard and `subtitles`/bazarr profiles). Host
 image sideload reads the host compose, so a candidate ref may need a network pull inside DinD.
 
@@ -625,6 +632,7 @@ Current units:
 - **json-helpers** — exercises `json_get`, `json_path`, `json_has_name`, `json_array_nonempty` from `scripts/lib/json.sh` with representative inputs (missing keys, nested paths, case-insensitive matching, empty/invalid JSON).
 - **common** — exercises shared `.env` API-key persistence helpers, including values with `&`, `|`, `/`, append behavior, sourceability, and rejection of unsupported newline/quote values.
 - **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening/admin-filter.sh`.
+- **preflight-receipts** — proves a row in `tests/.image-preflight-passed.tsv` is written only for a scenario that passed and whose container events show the service ran from the candidate digest: teardown after a healthy run, a crash hidden by a restart-policy start, a recreate that never started, a wrong digest, an unreadable log and the `[receipts]` reasons. Pure bash with a fake `docker` on `PATH`, no DinD; run directly with `./tests/unit/preflight-receipts.sh`.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; also checks the generated README Stable-baseline badge stays derived from the lock file.
 - **launcher-service-start** — checks that **Start a service** reconciles with `docker compose up -d` (not `start`), runs the storage guard first, passes the optional-profile flag, does not pass `--no-deps` (stopped dependencies start), reports a failed recreate without a success line, and that staging for a stopped service starts nothing. Docker is shimmed.
 - **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image_drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
