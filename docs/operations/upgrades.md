@@ -6,7 +6,8 @@ truth for image tags** — this file records the *policy* (why a service is pinn
 **not** repeat the literal tag.
 
 MediaStack has a scheduled image-drift alert, but image-upgrade confidence still comes from
-local/manual DinD scenarios via `./tests/run.sh` (see `docs/project/stack.md`). `docs/operations/image-digests.lock` records
+DinD scenarios via `./tests/run.sh` or the
+[manual hosted preflight](hosted-image-preflight.md). `docs/operations/image-digests.lock` records
 the exact remote digests last accepted by
 maintainers. The setup wizard defaults users to the Stable channel, which pins runtime image refs to
 that lock file through the generated `docker-compose.override.yml`. The table below is kept honest
@@ -140,11 +141,15 @@ to its current remote digest with `scripts/image_drift.py` and compares that wit
 `docs/operations/image-digests.lock`. The digest checker exits nonzero when a tag moves. The
 workflow opens or updates an image-drift issue; drift alone does not fail the workflow.
 
-This is an alert only:
+The scheduled mode is an alert only:
 
 - It does not pull image layers.
 - It does not start the stack.
 - It does not run DinD in GitHub Actions.
+
+Manual dispatch can instead run the [hosted preflight](hosted-image-preflight.md),
+validate the frozen combination and propose a digest PR. Scheduled image acceptance
+is not enabled.
 
 Users choose **Stable** or **Latest** at install time; see [Install](../guide/install.md) for what each
 means to them. For maintainers, Stable costs more: every upstream image update needs a local preflight
