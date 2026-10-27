@@ -27,6 +27,21 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+- Report a failed Unpackerr recreate instead of claiming success; the warning names the Compose exit and the service shows WARN in the summary (#100).
+- Start a service recreates a stopped service on its staged image and starts its stopped dependencies; a failed recreate is reported and the service stays stopped (#103).
+- State why setup asks for the sudo password and warn when the prompt fails, so a later prompt behind the spinner is explained (#95).
+- Changing the quality profile no longer claims to start a library search; the prompt describes the in-place profile update (#104).
+- Drift notices give a keep route and a reapply route instead of recommending `docker compose down -v`, which keeps service databases; Uninstall MediaStack is the only reset (#105).
+- Warn on re-run when a Sonarr or Radarr Jellyfin connection holds a key Jellyfin rejects; Features & settings -> Repair Jellyfin connections replaces it after confirmation (#107).
+- Add WireGuard VPN from Features & settings once HTTPS is ready; declining leaves the install unchanged and re-running finishes starting wg-easy if its settings were saved (#98).
+- Preserve `MS_DISABLE_RESOURCE_LIMITS` across `.env` rewrites; an invalid value warns and keeps the limits on (#102).
+- The NAS storage watchdog no longer restarts a service you stopped from the launcher, at boot or after an outage; a service that depends on one you stopped starts without it (#106).
+
+### Breaking Changes
+
+- Reconcile Seerr quota periods; a `config.yml` limit of 0 now clears a quota set in the Seerr UI on the next re-run; before re-running, set `seerr.quotas` in `config.yml` to the limits you want to keep (#101) (#108).
+- Require per-scenario evidence for Stable preflight receipts; delete the receipt file from releases up to v0.2.0 once before accepting image updates (#99).
+
 ## [0.2.0] - 2026-10-25
 
 - Allow slow DDNS provider responses with a 45-second timeout (#65).
