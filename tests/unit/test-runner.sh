@@ -70,6 +70,7 @@ STUB
 receipts_recorder_start() { :; }
 receipts_scenario_begin() { :; }
 receipts_scenario_end() { :; }
+receipts_run_end() { :; }
 STUB
 
     cat >"$TMP_DIR/sandbox/bin/docker" <<'STUB'

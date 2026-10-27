@@ -25,7 +25,11 @@
 #       ref, malformed pair) aborts the run. Host compose is never touched.
 #       A digest ref also earns a receipt row (tests/.image-preflight-passed.tsv)
 #       per scenario that passed and ran that service from the digest; see
-#       tests/lib/receipts.sh.
+#       tests/lib/receipts.sh. Every row carries the host checkout's HEAD
+#       (`-dirty` when the tree has changes) and one run id per invocation.
+#   MS_TEST_RUN_ID=run-<yyyymmddThhmmssZ>-<8 hex>  # stamp receipt rows with this
+#       run id instead of a generated one (a hosted workflow passes its own). A
+#       malformed value is refused and the run writes no receipts.
 #   MS_CACHE_MIRROR_KEEP=1   # keep ms-registry-mirror running after normal exits
 #
 # Each scenario file in tests/scenarios/<name>.sh must define run_scenario().
@@ -124,6 +128,7 @@ on_exit() {
     if ! runner_should_keep_dind_after_exit; then
         cache_mirror_down || echo "warning: registry mirror cleanup failed" >&2
     fi
+    receipts_run_end
     summary
     exit "$code"
 }

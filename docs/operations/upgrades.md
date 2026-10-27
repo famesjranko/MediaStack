@@ -167,12 +167,28 @@ When drift is reported:
    MS_TEST_IMAGE_OVERRIDES="jellyfin=jellyfin/jellyfin:latest@sha256:<digest>" ./tests/run.sh fresh-install
    ```
 
+   A service whose token is `scenario:X+Y` needs one run per scenario; the summary prints one
+   command per scenario. A hosted workflow can write the same grouping as a file:
+
+   ```bash
+   python3 scripts/image_drift.py --current-file .tmp/image-digests.current.tsv --preflight-plan .tmp/preflight-plan.json
+   ```
+
+   The plan lists the drifted or added services by scenario, each group with its
+   `MS_TEST_IMAGE_OVERRIDES` value, and the `compose-only`/`manual`/`unit:` services under
+   `pending_non_scenario`.
+
    Each scenario that passes writes a row to the gitignored `tests/.image-preflight-passed.tsv` for
    every digest override whose service it started from that digest and left running or healthy. A
    `[receipts]` line in the run output names each override that got no row, and why; a failed
-   scenario withholds only its own rows. Rows written by releases up to v0.2.0 carry no
-   per-scenario evidence, so delete `tests/.image-preflight-passed.tsv` once after updating past
-   v0.2.0 and re-run the preflight before accepting a digest.
+   scenario withholds only its own rows. Every row also records the commit the test tree was at
+   (`source`, with a `-dirty` suffix when the tree had uncommitted or untracked changes) and a run
+   id, printed as `[receipts] run id:` at the start and end of the run. Run the preflight from a
+   clean checkout of the commit you will accept at: a `-dirty` row never satisfies the accept.
+   Rows written by releases up to v0.2.0 carry no per-scenario evidence, and rows written before
+   receipt format v2 carry no source; the accept ignores them and prints how many it skipped. Delete
+   `tests/.image-preflight-passed.tsv` once after updating and re-run the preflight before accepting
+   a digest.
 
 5. For `compose-only` services, validate compose and review the upstream changelog if the service is
    security-sensitive.
@@ -199,10 +215,17 @@ When drift is reported:
 
    **Accept is receipt-gated.** `--accept-services` / `--accept-current` require a matching receipt
    for the exact `image@digest` and manifest scenario before writing a drifted scenario-backed row.
-   The receipt records that the scenario passed and that the service ran from that digest; it does
-   not prove the scenario checks that service's behaviour. Tiers with no scenario oracle
-   (`compose-only` / `manual`) warn instead of block; `--no-verify-preflight` bypasses the gate. The
-   tiers are not equal confidence (see [Manifest](#manifest)), so weigh the tier, not just pass/fail.
+   A `scenario:X+Y` token needs a receipt from each scenario. The receipt must come from the commit
+   the accept runs against: by default `git rev-parse HEAD` of the lock's repository, or the value
+   of `--receipt-source <sha>`. A receipt from another commit, from a `-dirty` tree, or with an
+   `unknown` source is refused, and the message says which. `--receipt-run-id <id>[,<id>...]`
+   narrows the gate to receipts from those runs (the ids `tests/run.sh` printed). The architecture
+   must match the accepting host. A skipped assertion withholds all receipts for that scenario.
+   Empty or duplicate scenario requirements are invalid. The receipt
+   records that the scenario passed and that the service ran from that digest; it does not prove
+   the scenario checks that service's behaviour. Tiers with no scenario oracle (`compose-only` /
+   `manual`) warn instead of block; `--no-verify-preflight` bypasses the gate. The tiers are not
+   equal confidence (see [Manifest](#manifest)), so weigh the tier, not just pass/fail.
 
 9. Regenerate the README Stable-baseline badge from the accepted lock:
 
@@ -231,7 +254,7 @@ python3 scripts/image_drift.py --current-file docs/operations/image-digests.lock
 
 Columns parsed by the unit test use strict tokens; **do not put `|` inside any cell.**
 **Pin policy** ∈ `latest` · `major:N` · `exact-patch` · `variant:<tag>`.
-**Preflight** ∈ `scenario:<name>` · `unit:tests/unit/<file>.sh` · `compose-only` · `manual`.
+**Preflight** ∈ `scenario:<name>` · `scenario:<name>+<name>` (one receipt per scenario) · `unit:tests/unit/<file>.sh` · `compose-only` · `manual`.
 **API stability** and **Touchpoint** are human prose (not machine-checked).
 
 These four preflight tokens are not equal confidence. Roughly highest to lowest: a `scenario:`
