@@ -227,6 +227,7 @@ docker compose logs --since 1h <service>   # last hour
 docker compose restart sonarr              # restart one service
 ./scripts/configure.sh                     # retry incomplete service configuration
 ./setup.sh --remote                        # add or repair remote access
+./setup.sh --wireguard                     # add WireGuard after HTTPS is ready
 ./setup.sh --transcoding                   # check hardware transcoding again
 ```
 

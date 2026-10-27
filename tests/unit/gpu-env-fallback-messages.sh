@@ -197,11 +197,15 @@ allowed_recovery='^scripts/services/jellyfin/main\.sh:[0-9]+:[[:space:]]*log_err
 # Drift and completed-install notices name configure.sh as the reapply step: no
 # menu item reapplies config.yml (#105).
 allowed_reapply='^scripts/(configure|lib/arr/(storage|quality|formats)|services/jellyfin/wizard|setup/stages/stage1|lib/ui-demo)\.sh:[0-9]+:.*\./scripts/configure\.sh( --only [a-z,]+)?'
+# WireGuard has no menu route to retry once WG_INIT_PASSWORD is saved, so its failure message keeps one exact script command.
+allowed_wireguard='^scripts/setup/recovery\.sh:[0-9]+:[[:space:]]*log_warn "WireGuard settings are saved but the stack did not finish starting\. Run \./setup\.sh --remote to retry\."$'
 recovery_hits=$(grep -E "$allowed_recovery" <<<"$hits" || true)
-other_hits=$(grep -vE "$allowed_recovery|$allowed_reapply" <<<"$hits" || true)
-# Then exactly the approved standalone Jellyfin recovery commands are found.
+wireguard_hits=$(grep -E "$allowed_wireguard" <<<"$hits" || true)
+other_hits=$(grep -vE "$allowed_recovery|$allowed_reapply|$allowed_wireguard" <<<"$hits" || true)
+# Then exactly the approved standalone Jellyfin recovery commands and the one WireGuard retry command are found.
 assert_eq "2" "$(grep -c . <<<"$recovery_hits")" "messages: both approved Jellyfin recovery commands are present"
-assert_eq "" "$other_hits" "messages: only exact Jellyfin recovery commands advise a script"
+assert_eq "1" "$(grep -c . <<<"$wireguard_hits")" "messages: the approved WireGuard retry command is present"
+assert_eq "" "$other_hits" "messages: only the approved exact recovery commands advise a script"
 
 # Given the Secure Boot remedy
 remedy=$(gpu_fallback_secure_boot_lines)

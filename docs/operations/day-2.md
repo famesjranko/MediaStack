@@ -245,6 +245,7 @@ access: wg-easy's per-peer `firewallIps` still decide which addresses and ports 
 |---|---|
 | Stage 2 / **Add remote access** with WireGuard accepted | Added |
 | Stage 2 / **Add remote access** with WireGuard declined | Removed |
+| **Add WireGuard VPN** (`./setup.sh --wireguard`) confirmed | Added |
 | Firewall (UFW) toggled ON | Added if WireGuard is enabled |
 | Firewall (UFW) toggled OFF, or uninstall | Removed with the other `MediaStack:*` rules |
 | **Apply changes from a MediaStack update** | Added, replaced or removed to match the state above |
