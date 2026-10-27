@@ -147,7 +147,8 @@ pull_images() {
 start_stack() { wg_effect start_stack; }
 setup_ufw_wireguard_clients() { wg_effect setup_ufw_wireguard_clients; }
 setup_ufw_service_ports() { wg_effect setup_ufw_service_ports; }
-service_container_running() { return 1; }
+# wg-easy counts as running only when a case sets WG_RUNNING.
+service_container_running() { [[ "$1" == wireguard && -n "${WG_RUNNING:-}" ]]; }
 
 # Given a completed install; $2 is REMOTE_WEB_STATE and $3 the WG_INIT_PASSWORD.
 wg_seed() {
@@ -228,17 +229,51 @@ else
     assert_eq "--only npm,jellyfin,homepage,ddns-updater,wireguard" "$(configure_args_from "$SCRIPT_DIR")" "WireGuard add: reuses the ready-state configure scope"
     assert_eq "completed" "$(cat "$WG_RESULT")" "WireGuard add: reports the completed outcome"
 
-    # Given WireGuard is already configured
+    # Given WireGuard is already configured and wg-easy is running
     # When the add-WireGuard action runs
-    # Then no prompt, stack or firewall step runs and .env is unchanged
+    # Then no prompt, stack, firewall or heal step runs and .env is unchanged
     reset_route_state
     wg_seed "wg-configured" ready "S3cret!pass"
     wg_before=$(wg_fingerprint)
-    wg_run
+    WG_RUNNING=1 wg_run
     assert_eq "0" "$WG_RC" "WireGuard add: an already-configured install exits 0"
     assert_eq "$wg_before" "$(wg_fingerprint)" "WireGuard add: an already-configured install keeps .env and config.yml byte-identical"
     assert_eq "" "$(cat "$WG_PROMPTS")$(wg_effects_text)" "WireGuard add: an already-configured install asks nothing and changes nothing"
+    assert_order_lacks "pull_images" "WireGuard add: a running wg-easy runs no heal step"
+    assert_eq "" "$(configure_args_from "$SCRIPT_DIR")" "WireGuard add: a running wg-easy runs no configure step"
     assert_eq "unchanged" "$(cat "$WG_RESULT")" "WireGuard add: an already-configured install reports unchanged"
+
+    # Given the WireGuard settings are saved but wg-easy is not running
+    # When the add-WireGuard action runs
+    # Then it asks nothing, keeps .env, runs the heal steps and reports completed
+    reset_route_state
+    wg_seed "wg-saved-not-running" ready "S3cret!pass"
+    wg_before=$(wg_fingerprint)
+    log_info() { echo "$*"; }
+    wg_run
+    log_info() { record log_info; }
+    assert_eq "0" "$WG_RC" "WireGuard add: saved settings with wg-easy stopped exit 0"
+    assert_contains "$(cat "$TMP_ROOT/wg-out")" "wg-easy is not running; starting it now" "WireGuard add: saved settings with wg-easy stopped say it is starting"
+    assert_eq "$wg_before" "$(wg_fingerprint)" "WireGuard add: saved settings with wg-easy stopped keep .env and config.yml byte-identical"
+    assert_eq "" "$(cat "$WG_PROMPTS")" "WireGuard add: saved settings with wg-easy stopped ask nothing"
+    assert_eq "pull_images start_stack " "$(wg_effects_text)" "WireGuard add: saved settings with wg-easy stopped run the heal steps"
+    assert_eq "--only npm,jellyfin,homepage,ddns-updater,wireguard" "$(configure_args_from "$SCRIPT_DIR")" "WireGuard add: saved settings with wg-easy stopped reuse the ready-state configure scope"
+    assert_eq "completed" "$(cat "$WG_RESULT")" "WireGuard add: saved settings with wg-easy stopped report completed"
+
+    # Given the settings are saved, wg-easy is not running and the stack start fails
+    # When the add-WireGuard action runs
+    # Then it reports failed with a non-zero status and says the settings are saved but not started
+    reset_route_state
+    wg_seed "wg-saved-start-fails" ready "S3cret!pass"
+    start_stack() {
+        wg_effect start_stack
+        return 1
+    }
+    wg_run
+    start_stack() { wg_effect start_stack; }
+    assert_eq "1" "$WG_RC" "WireGuard add: a failed stack start on heal returns non-zero"
+    assert_eq "failed" "$(cat "$WG_RESULT")" "WireGuard add: a failed stack start on heal reports the failed outcome"
+    assert_contains "$(cat "$TMP_ROOT/wg-out")" "saved but the stack did not finish starting" "WireGuard add: a failed stack start on heal warns that settings are saved but not started"
 
     # Given remote access is not ready
     # When the add-WireGuard action runs

@@ -242,9 +242,17 @@ run_wireguard_recovery() {
         return 1
     fi
     if [[ -n "${WG_INIT_PASSWORD:-}" ]]; then
-        log_info "WireGuard is already set up. No changes made."
-        record_launcher_outcome unchanged
-        return 0
+        if service_container_running wireguard; then
+            log_info "WireGuard is already set up. No changes made."
+            record_launcher_outcome unchanged
+            return 0
+        fi
+        # An earlier run saved the settings and then failed or was killed
+        # before wg-easy started; the menu row is gone, so this run finishes it.
+        log_info "WireGuard settings are saved but wg-easy is not running; starting it now."
+        _remote_ready_prepare
+        _wireguard_start_saved
+        return $?
     fi
 
     _remote_ready_prepare
@@ -287,6 +295,11 @@ run_wireguard_recovery() {
         setup_ufw_service_ports || log_warn "Could not open the service-port firewall rules; 'Enable UFW firewall' in Features & settings retries them."
     fi
 
+    _wireguard_start_saved
+}
+
+# Heal the stack after the WG_* keys are saved and record how it went.
+_wireguard_start_saved() {
     local rc=0
     _remote_ready_heal || rc=$?
     if ((rc != 0)); then
