@@ -8,6 +8,8 @@ Top-level source of truth for service configuration. `scripts/configure.sh` read
 
 `config.yml` is a **gitignored live copy** seeded from the tracked template `config/examples/config.yml` on first run (`seed_root_config`, first line of `run_wizard` in `scripts/setup/wizard.sh`), then mutated in place by the wizard (quality preset, `min_free_space_gb`, Jellyfin bitrate, `wizard_completed`). Re-runs keep your edits (seed is "only if absent"); uninstall removes it so a reinstall re-seeds the pristine template. To edit defaults for everyone, edit the template.
 
+Write numbers as plain decimal digits: `010` reads as 10, while `0x10` and `1:30` stay text and the setting that reads them warns that the value is not a number.
+
 ### `indexers`
 
 List of Jackett indexers. Public releases default this to `[]`; add entries only for indexers you are legally allowed to use, or apply the optional preset from `config/examples/public-indexers.yml`. Each entry has `id` (Jackett's internal indexer ID) and `type` — one of `general`, `tv`, `movies`. Consumed by:

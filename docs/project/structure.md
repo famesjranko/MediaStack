@@ -67,7 +67,7 @@ scripts/
     stack/                          dirs (data/config dirs, seeding), lifecycle (compose up, health wait), summary (access info)
     render/*.py                     Setup-time pure render/selector helpers (network_selector.py)
   lib/
-    common.sh                       Logging, cfg_* YAML readers, api_get/api_post, key mgmt
+    common.sh                       Logging, api_get/api_post, key mgmt
     apt.sh                          Non-interactive apt helpers
     env-update.sh                   In-place .env key updates
     gpu-fallback.sh                 GPU fallback messaging shared by setup and launcher
@@ -88,6 +88,7 @@ scripts/
     nvidia-patch.sh                 Shared nvidia-patch pinning and verified execution helpers
     profiles.sh                     Single source of truth for compose profile args, derived from `.env` (installer + launcher)
     quality-select.sh               Two-axis (resolution × size) quality picker, shared by the wizard and day-2 "Change quality profile"
+    config-read.sh                  cfg_read and the cfg_* YAML readers, sourced by common.sh
     term-caps.sh                    Terminal capability detection (colour/glyph support), shared by common.sh and ui-render-fallback.sh
     ui.sh + ui-render-fallback.sh + ui-render-gum.sh + ui-demo.sh   Interactive prompts: public API/orchestration, pure-bash backend, gum backend, demo-mode walkthrough
     validators.sh                   Compatibility entry point for Stage 1 input-contract validators

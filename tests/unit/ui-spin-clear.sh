@@ -26,7 +26,6 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-
 # Stub command: writes text longer than the title straight to the tty, then
 # lets the spinner repaint a few more times.
 cat >"$WORK/stub.sh" <<'STUB'
