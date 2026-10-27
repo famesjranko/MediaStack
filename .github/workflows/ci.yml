@@ -8,6 +8,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A PR created with GITHUB_TOKEN does not trigger pull_request workflows.
+  # The controlled image publisher dispatches this same independent fast gate.
+  workflow_dispatch:
 
 # Cancel a superseded run for the same ref, including main: a newer push
 # obsoletes an in-flight check on the commit it replaced either way, and

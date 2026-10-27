@@ -10,8 +10,10 @@ GitHub Actions runs a deliberately small PR gate: committed-secret checks, shell
 syntax checks, compose rendering, focused host unit tests, and the `wizard-ui-*` PTY
 scenarios in DinD with service image preload skipped. The full image-backed DinD battery
 (`fresh-install`, `smoke`, remote-access scenarios, and service startup checks) stays a
-local/on-demand gate. CI also handles the scheduled image-drift alert; maintainers run
-the matching local DinD preflight before accepting image updates. Stable-channel installs
+local/on-demand gate. The manually dispatched image preflight can also run required
+scenarios on disposable hosted VMs and prepare a reviewed digest PR. The weekly
+image-drift alert remains lightweight. See
+[hosted image preflight](../docs/operations/hosted-image-preflight.md). Stable-channel installs
 use the accepted digest record through the generated compose override; Latest-channel
 installs intentionally follow upstream tags.
 
@@ -68,7 +70,9 @@ See [`gcp-vm/README.md`](gcp-vm/README.md) and
 ./tests/run.sh --no-preload <scenario>  # skip host image sideload for lightweight scenarios
 ```
 
-Exit code is non-zero if any hard assertion failed. `[SKIP]` lines never fail.
+Exit code is non-zero if any hard assertion failed. `[SKIP]` lines do not fail
+the scenario exit, but withhold all image receipts for that scenario. Hosted
+acceptance also rejects skips, empty results and missing required scenarios.
 
 ## Exploring the UI safely — `--dry-run`
 
