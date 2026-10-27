@@ -5,10 +5,9 @@
 # recovery, but never restarts a service the user stopped through the launcher
 # (scripts/lib/service-intent.sh). It restarts only what it stopped, minus the
 # user's, and at boot every data service the user did not stop. Mount checks gate
-# every start. A service that depends on a user-stopped one stays stopped too
-# (`up -d` starts dependencies). Missing, empty, malformed, unreadable or
-# unknown-name intent files, an unreadable Compose configuration, and a stop
-# recorded while the watchdog works all have a defined outcome.
+# every start. A service that depends on a user-stopped one starts with
+# --no-deps, without the stopped one. Bad intent files, an unreadable Compose
+# configuration, and a stop recorded while the watchdog works have defined outcomes.
 # Stepped one poll at a time (watchdog_tick) against a fake Docker; no containers.
 
 set -uo pipefail
@@ -26,7 +25,7 @@ ALL_SERVICES=(unpackerr qbittorrent sonarr radarr seerr jellyfin)
 ALL="${ALL_SERVICES[*]}"
 
 # --- Fake Docker: a running-set and a depends_on graph in files, every call logged ---
-# Like real Compose, `up -d <svc>` starts <svc>'s dependencies too, and
+# Like real Compose, `up -d <svc>` starts <svc>'s dependencies too (`--no-deps` does not), and
 # `config --format json` prints the graph (or fails when the file is missing).
 # FAKE_UP_HOOK runs after `up -d $FAKE_UP_SVC`; FAKE_PS_HOOK runs after the first `ps`.
 FAKE_BIN="$TMP_DIR/bin"
@@ -48,6 +47,7 @@ case "$*" in
         python3 -I -c 'import json,sys; print(json.dumps({"services": {l.split()[0]: {"depends_on": dict.fromkeys(l.split()[1:], {})} for l in sys.stdin}}))' <"$FAKE_DEPS" ;;
     *"ps --filter status=running"*) cat "$FAKE_RUNNING" 2>/dev/null; [[ -z "${FAKE_PS_HOOK:-}" || -e "$FAKE_LOG.ps" ]] || { : >"$FAKE_LOG.ps"; eval "$FAKE_PS_HOOK"; } ;;
     *" stop "*) sed -i "/^${last}\$/d" "$FAKE_RUNNING" ;;
+    *" up -d --no-deps "*) grep -qx "$last" "$FAKE_RUNNING" 2>/dev/null || echo "$last" >>"$FAKE_RUNNING"; [[ "$last" != "${FAKE_UP_SVC:-}" ]] || eval "$FAKE_UP_HOOK" ;;
     *" up -d "*) start "$last"; [[ "$last" != "${FAKE_UP_SVC:-}" ]] || eval "$FAKE_UP_HOOK" ;;
 esac
 exit 0
@@ -106,7 +106,7 @@ tick() { # $1 = ok|bad
     printf '%s\n' "$1" >"$NAS_FLAG"
     watchdog_tick >/dev/null 2>&1
 }
-ups() { grep '^compose up -d ' "$FAKE_LOG" | awk '{print $4}' | paste -sd' '; }
+ups() { grep '^compose up -d ' "$FAKE_LOG" | awk '{print $NF}' | paste -sd' '; }
 stops() { grep '^compose stop ' "$FAKE_LOG" | awk '{print $3}' | paste -sd' '; }
 recorded() { [[ -f "$STOPPED_SERVICES_FILE" ]] && sort "$STOPPED_SERVICES_FILE" | paste -sd' '; }
 running() { sort "$FAKE_RUNNING" | paste -sd' '; }
@@ -125,15 +125,16 @@ intent_raw() { printf '%b' "$1" >"$INTENT_FILE"; }
 # --- 1. Manual stop, then boot reconciliation ---
 # Given the host just booted, nothing runs, and the user had stopped jellyfin
 # When storage is stable and the watchdog reconciles, and again on the next poll
-# Then qbittorrent, sonarr, radarr and unpackerr start, jellyfin and its dependent seerr stay stopped, and the intent entry survives
+# Then all but jellyfin start, seerr without it via --no-deps, and the intent entry survives
 fresh
 service_intent_record jellyfin
 tick ok
-assert_eq "qbittorrent radarr sonarr unpackerr" "$(running_data)" "boot reconcile: neither jellyfin nor seerr is started, directly or as a dependency"
-assert_contains "$(<"$TMP_DIR/watchdog.log")" "leaving seerr stopped: it depends on jellyfin, which you stopped" "boot reconcile: logs why the dependent stays stopped"
+assert_eq "qbittorrent radarr seerr sonarr unpackerr" "$(running_data)" "boot reconcile: seerr starts without jellyfin, which stays stopped"
+assert_contains "$(<"$TMP_DIR/watchdog.log")" "starting seerr without jellyfin, which you stopped" "boot reconcile: logs why the dependent starts alone"
+assert_contains "$(<"$FAKE_LOG")" "up -d --no-deps seerr" "boot reconcile: the dependent uses --no-deps"
 tick ok
 assert_eq "jellyfin" "$(intent)" "boot reconcile: the intent entry survives the next poll"
-assert_eq "qbittorrent radarr sonarr unpackerr" "$(running_data)" "boot reconcile: the next poll starts nothing more"
+assert_eq "qbittorrent radarr seerr sonarr unpackerr" "$(running_data)" "boot reconcile: the next poll starts nothing more"
 assert_contains "$(grep ' config ' "$FAKE_LOG")" "--profile *" "dependencies: the graph is read with every profile enabled, so bazarr is included"
 
 # Given five services run and the user had stopped jellyfin
@@ -155,7 +156,7 @@ tick ok
 tick bad
 assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(sorted "$(stops)")" "outage: stops the running services only"
 tick ok
-assert_eq "$(sorted "$(without "$ALL" jellyfin seerr)")" "$(running_data)" "recovery: restarts what the watchdog stopped, not the user's stop or its dependent"
+assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "recovery: restarts what the watchdog stopped, including seerr, not the user's stop"
 assert_eq "" "$(running | grep -o jellyfin)" "recovery: the user-stopped service is still stopped"
 
 # --- 3. Watchdog stop, then recovery ---
@@ -193,7 +194,7 @@ tick bad
 tick bad
 assert_eq "" "$(ups)" "boot with NAS down: starts nothing while storage is unavailable"
 tick ok
-assert_eq "$(sorted "$(without "$ALL" jellyfin seerr)")" "$(running_data)" "boot with NAS down: starts the data services but not the user's stop or its dependent once NAS is stable"
+assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "boot with NAS down: starts the data services but not the user's stop once NAS is stable"
 
 # --- 6. Intent file edge cases (cold boot, storage stable) ---
 # Given the file is missing / empty
@@ -212,14 +213,14 @@ fresh
 intent_raw "$MALFORMED"
 assert_eq "radarr" "$(service_intent_list)" "intent malformed: reading the file returns only valid names"
 tick ok
-assert_eq "$(sorted "$(without "$ALL" radarr unpackerr seerr)")" "$(running_data)" "intent malformed: damaged lines are ignored, valid names are honoured"
+assert_eq "$(sorted "$(without "$ALL" radarr)")" "$(running_data)" "intent malformed: damaged lines are ignored, valid names are honoured"
 
 # Given names that are not data services of this install (unknown, or disabled bazarr)
 # Then they are ignored and the real entry still applies
 fresh
 intent_raw 'notaservice\nbazarr\nsonarr\n'
 tick ok
-assert_eq "$(sorted "$(without "$ALL" sonarr unpackerr seerr)")" "$(running_data)" "intent unknown names: ignored, no error, other entries honoured"
+assert_eq "$(sorted "$(without "$ALL" sonarr)")" "$(running_data)" "intent unknown names: ignored, no error, other entries honoured"
 
 # Given the intent file cannot be read as a file (a directory in its place)
 # When storage is stable
@@ -242,27 +243,26 @@ mkdir "$INTENT_FILE"
 tick ok
 assert_eq "" "$(ups)" "intent unreadable: starts nothing at boot reconciliation"
 
-# --- 6b. A service that depends on a stopped one stays stopped ---
+# --- 6b. A service that depends on a stopped one starts without it ---
 # Given the user stopped qbittorrent, and nothing runs
 # When storage is stable
-# Then only jellyfin starts: sonarr, radarr, unpackerr and seerr all depend on qbittorrent
+# Then everything but qbittorrent starts, each dependent with --no-deps, and qbittorrent stays stopped
 fresh
 service_intent_record qbittorrent
 tick ok
-assert_eq "jellyfin" "$(running)" "dependency: no dependent is started as a side effect"
-assert_contains "$(<"$TMP_DIR/watchdog.log")" "leaving unpackerr stopped: it depends on qbittorrent, which you stopped" "dependency: a transitive dependent is skipped and named"
+assert_eq "jellyfin radarr seerr sonarr unpackerr" "$(running)" "dependency: dependents start and the user's stop is not started as a side effect"
+assert_contains "$(<"$TMP_DIR/watchdog.log")" "starting unpackerr without qbittorrent, which you stopped" "dependency: a transitive dependent is started and named"
 
-# Given the user stopped qbittorrent while the rest ran, then NAS fails and recovers
-# Then only jellyfin restarts, and the intent entry survives the next poll
-fresh sonarr radarr unpackerr seerr jellyfin
-service_intent_record qbittorrent
+# Given the user stopped sonarr while the rest ran, then NAS fails and recovers
+# Then unpackerr and seerr (dependents of sonarr) run again, sonarr stays stopped, the intent is intact
+fresh unpackerr qbittorrent radarr seerr jellyfin
+service_intent_record sonarr
 tick ok
 tick bad
-: >"$FAKE_LOG"
 tick ok
-assert_eq "jellyfin" "$(running)" "dependency, recovery: restarts only what does not depend on the user's stop"
 tick ok
-assert_eq "qbittorrent" "$(intent)" "dependency, recovery: the intent entry survives the next poll"
+assert_eq "jellyfin qbittorrent radarr seerr unpackerr" "$(running_data)" "dependency, outage: unpackerr and seerr return while sonarr stays stopped"
+assert_eq "sonarr" "$(intent)" "dependency, outage: the intent still names sonarr after later polls"
 
 # Given the user stopped jellyfin and the Compose configuration cannot be read, after an outage
 # Then nothing starts and the pending recovery is kept; once readable it completes
@@ -279,7 +279,7 @@ assert_contains "$(<"$TMP_DIR/watchdog.log")" "cannot read the Compose configura
 rm -f "$FAKE_CONFIG_BROKEN"
 tick ok
 tick ok
-assert_eq "$(sorted "$(without "$ALL" jellyfin seerr)")" "$(running_data)" "config unreadable: recovery completes once it is readable"
+assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "config unreadable: recovery completes once it is readable"
 
 # Given the user stopped nothing, the graph is not needed: every service starts without it
 fresh
@@ -474,14 +474,14 @@ SCRIPT_DIR="$TMP_DIR/root"
 export REPO_ROOT SCRIPT_DIR
 # Given an outage recovery in progress
 # When the user stops jellyfin after the unpackerr start, before jellyfin's and seerr's
-# Then jellyfin and its dependent seerr stay stopped, and the entry survives
+# Then jellyfin stays stopped, seerr starts without it, and the entry survives
 fresh "${ALL_SERVICES[@]}"
 tick ok
 tick bad
 export FAKE_UP_SVC=unpackerr FAKE_UP_HOOK="$STOP_JELLYFIN"
 tick ok
 unset FAKE_UP_SVC FAKE_UP_HOOK
-assert_eq "$(sorted "$(without "$ALL" jellyfin seerr)")" "$(running_data)" "stop during start loop: the service and its dependent stay stopped"
+assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "stop during start loop: the service stays stopped and its dependent starts without it"
 tick ok
 assert_eq "jellyfin" "$(intent)" "stop during start loop: the intent entry survives the next poll"
 

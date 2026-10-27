@@ -11,8 +11,8 @@
 # the same mount identity and sentinel check, but NFS itself is then not proven.
 #
 # seerr's stand-in depends on jellyfin's, as in docker-compose.yml: `docker compose
-# up -d seerr` would also start a jellyfin the user stopped, so the watchdog must
-# leave seerr stopped as well.
+# up -d seerr` would also start a jellyfin the user stopped, so the watchdog starts
+# seerr with --no-deps: it runs again and jellyfin stays stopped.
 #
 # The restart policy of the data services is taken from the override MediaStack
 # generates for a NAS install (restart: "no"); a `probe` container without that
@@ -189,23 +189,23 @@ run_scenario() {
     nas_intent_mount || return 1
     nas_intent_watchdog_start || return 1
 
-    # Then it starts every data service except the one the user stopped and the one that depends on it
-    nas_intent_wait_count 5 || true
-    nas_intent_expect_running "$(nas_intent_all_but jellyfin seerr)" "NAS intent: after reboot the watchdog starts all data services but the user-stopped one and its dependent"
+    # Then it starts every data service except the one the user stopped, and seerr runs without it
+    nas_intent_wait_count 6 || true
+    nas_intent_expect_running "$(nas_intent_all_but jellyfin)" "NAS intent: after reboot the watchdog starts all data services but the user-stopped one, seerr included"
     if nas_intent_sh <<<'grep -q "leaving jellyfin stopped" /tmp/ms-intent-watchdog.log'; then
         pass "NAS intent: the watchdog log says it left jellyfin stopped"
     else
         fail "NAS intent: the watchdog log says it left jellyfin stopped"
     fi
-    if nas_intent_sh <<<'grep -q "leaving seerr stopped: it depends on jellyfin, which you stopped" /tmp/ms-intent-watchdog.log'; then
-        pass "NAS intent: the watchdog log says it left seerr stopped because it depends on jellyfin"
+    if nas_intent_sh <<<'grep -q "starting seerr without jellyfin, which you stopped" /tmp/ms-intent-watchdog.log'; then
+        pass "NAS intent: the watchdog log says it started seerr without jellyfin"
     else
-        fail "NAS intent: the watchdog log says it left seerr stopped because it depends on jellyfin" "$(nas_intent_sh <<<'tail -n 20 /tmp/ms-intent-watchdog.log')"
+        fail "NAS intent: the watchdog log says it started seerr without jellyfin" "$(nas_intent_sh <<<'tail -n 20 /tmp/ms-intent-watchdog.log')"
     fi
 
-    # And after more polls the dependent is still stopped and jellyfin is still recorded as the user's stop
+    # And after more polls seerr still runs and jellyfin is still recorded as the user's stop
     sleep 5
-    nas_intent_expect_running "$(nas_intent_all_but jellyfin seerr)" "NAS intent: later polls leave the dependent stopped"
+    nas_intent_expect_running "$(nas_intent_all_but jellyfin)" "NAS intent: later polls keep seerr running and jellyfin stopped"
     if nas_intent_sh <<<'grep -qx jellyfin config/state/user-stopped-services'; then
         pass "NAS intent: the user's stop of jellyfin survives later polls"
     else
@@ -219,10 +219,10 @@ run_scenario() {
 
     # When storage returns
     nas_intent_mount || return 1
-    nas_intent_wait_count 5 || true
+    nas_intent_wait_count 6 || true
 
-    # Then the watchdog restarts what it stopped except the user's stop and its dependent
-    nas_intent_expect_running "$(nas_intent_all_but jellyfin seerr)" "NAS intent: after the outage only the services the watchdog stopped come back, minus the user's stop and its dependent"
+    # Then the watchdog restarts what it stopped except the user's stop, seerr included
+    nas_intent_expect_running "$(nas_intent_all_but jellyfin)" "NAS intent: after the outage the services the watchdog stopped come back, minus the user's stop"
 
     # Given the user starts jellyfin again, then the host reboots
     nas_intent_user_start jellyfin || return 1

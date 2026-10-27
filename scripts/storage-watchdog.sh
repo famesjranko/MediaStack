@@ -233,7 +233,9 @@ for name in sys.argv[1:]:
 # $1=boot: every managed service that is not running and not stopped by the user.
 # $1=recover: only the ones this watchdog stopped for the outage, minus the user's.
 # `docker compose up -d <svc>` also starts what <svc> depends on, so a service
-# whose dependencies include one the user stopped stays stopped as well.
+# whose dependencies include one the user stopped is started with --no-deps:
+# it returns to the state the user left (running without that dependency) and
+# the stopped one stays stopped.
 # Callers reach this only after the mount identity and sentinel checks passed.
 # An unreadable intent file, or a Compose configuration that cannot be read
 # while the user has stopped something, means the user's choices cannot be
@@ -286,7 +288,8 @@ start_managed_services() {
             fi
         done
         if [[ -n "$blocker" ]]; then
-            log "leaving $svc stopped: it depends on $blocker, which you stopped"
+            log "starting $svc without $blocker, which you stopped"
+            timeout 60 docker compose up -d --no-deps "$svc" >/dev/null 2>&1 || true
         else
             log "starting $svc"
             timeout 60 docker compose up -d "$svc" >/dev/null 2>&1 || true

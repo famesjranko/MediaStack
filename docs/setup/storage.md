@@ -143,12 +143,13 @@ launcher writes `config/state/user-stopped-services`, one service name per line:
 
 - **Stop a service** adds the service. **Stop all services** adds the whole set above.
 - **Start a service** removes the service. **Start all services** empties the file.
-- At boot and after an outage the watchdog skips every service in the file, and
-  every service that depends on one of them, directly or through another service
-  (for example Seerr when Jellyfin is in the file). `docker compose up -d` starts a
-  service's dependencies, so starting the dependent would start the stopped service.
-  The watchdog reads the dependencies from `docker compose config` once per start
-  and logs `leaving <service> stopped: it depends on <service>, which you stopped`.
+- At boot and after an outage the watchdog skips every service in the file. A
+  service that depends on one of them, directly or through another service (for
+  example Seerr when Jellyfin is in the file), still starts, with
+  `docker compose up -d --no-deps`. It returns to the state you left, running
+  without the stopped service, which stays stopped. The watchdog reads the
+  dependencies from `docker compose config` once per start and logs
+  `starting <service> without <service>, which you stopped`.
   If that configuration cannot be read while the file has entries, the watchdog
   starts nothing and retries. Mount identity and sentinel checks still pass first.
   Nothing starts before they do.

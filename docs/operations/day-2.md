@@ -377,7 +377,7 @@ Every service has `restart: unless-stopped`, including the optional profiles. On
 Docker restarts existing containers that were running before shutdown. On NAS installs, the generated override sets
 `restart: "no"` for the NAS-dependent services, so Docker never starts them at boot. Only the storage watchdog starts
 them, after the mount and sentinel checks pass. It starts the services that are not running during startup or recovery,
-except those stopped from the launcher and those that depend on one of them
+except those stopped from the launcher. A service that depends on a stopped one still starts, without it
 (`config/state/user-stopped-services`; see [storage](../setup/storage.md#guards-and-watchdog)).
 Starting a service from the launcher also starts its stopped dependencies; the watchdog then drops their entries from that file.
 No re-run of `setup.sh` or `configure.sh` is needed; existing `config/` state is preserved.

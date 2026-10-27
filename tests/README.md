@@ -332,8 +332,8 @@ a NAS install (`restart: "no"`), plus a `probe` container with the default
 reboot is `docker restart` of the DinD container.
 The scenario stops jellyfin the way the launcher does, reboots, and checks
 that Docker restores only the probe, that the watchdog then starts every data
-service but jellyfin and its dependent seerr, that both stay stopped and the
-intent entry survives later polls, that an outage stops and restores the same
+service but jellyfin, that seerr starts without it, that jellyfin stays stopped
+and the intent entry survives later polls, that an outage stops and restores the same
 set, and that Start a service lets the next reboot bring jellyfin back. Where the kernel
 cannot run an NFS server in DinD, it uses a tmpfs mount with the same mount
 identity and sentinel gate (a skip line says so). Unit coverage:
