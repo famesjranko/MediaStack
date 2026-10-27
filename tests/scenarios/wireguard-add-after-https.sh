@@ -172,6 +172,20 @@ wireguard_add_scenario_body() {
     assert_contains "$(dind_exec "cat /tmp/wg-add-rerun-wireguard.plain.log")" "already set up" "wireguard add [rerun]: --wireguard reports WireGuard already set up"
     assert_eq "$peers" "$(wireguard_add_peers)" "wireguard add [rerun]: --wireguard leaves peers unchanged"
 
+    # Settings saved but wg-easy down (an earlier run died after the key write):
+    # the same action must start it again and keep the peers.
+    dind_exec "docker compose stop wireguard >/dev/null 2>&1"
+    remote_ready_idempotent_watch_fixture_state
+    wireguard_add_run_pty heal-wireguard --wireguard '[]' || return 1
+    assert_contains "$(dind_exec "cat /tmp/wg-add-heal-wireguard.plain.log")" "wg-easy is not running; starting it now" "wireguard add [heal]: --wireguard says it starts the stopped wg-easy"
+    if wait_healthy wireguard 180; then
+        pass "wireguard add [heal]: --wireguard starts a stopped wg-easy"
+    else
+        fail "wireguard add [heal]: --wireguard starts a stopped wg-easy"
+        return 1
+    fi
+    assert_eq "$peers" "$(wireguard_add_peers)" "wireguard add [heal]: peers unchanged after the restart"
+
     remote_ready_idempotent_watch_fixture_state
     wireguard_add_run_pty rerun-remote --remote '[]' || return 1
     env_after="$(dind_exec "grep -E '^(JELLYFIN_ADMIN_PASSWORD|NPM_ADMIN_EMAIL|WG_[A-Z_]+|DOMAIN|REMOTE_WEB_STATE)=' .env | sort")"

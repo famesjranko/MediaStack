@@ -143,7 +143,7 @@ Menu item: **Features & settings (quality, bandwidth, subtitles, sharing, indexe
 | Item | What it does |
 |:-----|:-------------|
 | Add remote access (HTTPS, domain, WireGuard) | Sets up remote access. See the [remote access guide](remote-access.md) |
-| Add WireGuard VPN | Adds WireGuard to ready HTTPS remote access. See the [remote access guide](remote-access.md#wireguard-vpn) |
+| Add WireGuard VPN | Adds WireGuard to ready HTTPS remote access. If WireGuard is saved but wg-easy is not running, running it again starts wg-easy. See the [remote access guide](remote-access.md#wireguard-vpn) |
 | Subtitles (Bazarr) | Turns subtitles on or off |
 | File sharing (SMB) | Turns the LAN file share on or off |
 | Search indexers | ON adds the example public indexers. OFF stops configuring them; existing indexers remain active until you disable or remove them in Jackett, Sonarr and Radarr |
@@ -332,7 +332,7 @@ A normal install never needs these commands. They are for power users and automa
 | `./setup.sh` | Installs without the menu |
 | `./setup.sh --full` | Also installs Docker on a bare Debian host |
 | `./setup.sh --remote` | Adds or repairs remote access. Repair has no menu item |
-| `./setup.sh --wireguard` | Adds WireGuard to ready HTTPS remote access. Same as **Add WireGuard VPN** |
+| `./setup.sh --wireguard` | Adds WireGuard to ready HTTPS remote access. Same as **Add WireGuard VPN**. Run it again to start wg-easy if it is not running |
 | `./setup.sh --transcoding` | Checks hardware transcoding again |
 | `./scripts/configure.sh [--only svc,...]` | Applies `config.yml` edits to the services |
 | `./scripts/configure.sh --repair-jellyfin-connections` | Same as **Repair Jellyfin connections**. It asks before it changes anything. Do not combine it with `--only` |
