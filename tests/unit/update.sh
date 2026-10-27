@@ -24,9 +24,10 @@ setup_update_sandbox() {
 
     cp "$REPO_ROOT/scripts/update.sh" "$TMP_DIR/sandbox/scripts/update.sh"
     cp "$REPO_ROOT/scripts/lib/common.sh" "$TMP_DIR/sandbox/scripts/lib/common.sh"
-    cp "$REPO_ROOT/scripts/lib/term-caps.sh" "$TMP_DIR/sandbox/scripts/lib/term-caps.sh"   # common.sh sources it
-    cp "$REPO_ROOT/scripts/lib/env-update.sh" "$TMP_DIR/sandbox/scripts/lib/env-update.sh" # common.sh sources it
-    cp "$REPO_ROOT/scripts/lib/profiles.sh" "$TMP_DIR/sandbox/scripts/lib/profiles.sh"     # canonical profile mapping
+    cp "$REPO_ROOT/scripts/lib/term-caps.sh" "$TMP_DIR/sandbox/scripts/lib/term-caps.sh"     # common.sh sources it
+    cp "$REPO_ROOT/scripts/lib/config-read.sh" "$TMP_DIR/sandbox/scripts/lib/config-read.sh" # common.sh sources it
+    cp "$REPO_ROOT/scripts/lib/env-update.sh" "$TMP_DIR/sandbox/scripts/lib/env-update.sh"   # common.sh sources it
+    cp "$REPO_ROOT/scripts/lib/profiles.sh" "$TMP_DIR/sandbox/scripts/lib/profiles.sh"       # canonical profile mapping
     cp "$REPO_ROOT/scripts/setup/override.sh" "$TMP_DIR/sandbox/scripts/setup/override.sh"
     cp "$REPO_ROOT/scripts/setup/gpu/compose.sh" "$TMP_DIR/sandbox/scripts/setup/gpu/compose.sh"
     cp "$REPO_ROOT/docs/operations/image-digests.lock" "$TMP_DIR/sandbox/docs/operations/image-digests.lock"
