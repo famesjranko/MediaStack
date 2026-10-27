@@ -10,6 +10,7 @@
 # configuration, and a stop recorded while the watchdog works have defined outcomes.
 # Stepped one poll at a time (watchdog_tick) against a fake Docker; no containers.
 
+# shellcheck disable=SC2034 # settings consumed by the sourced scripts/storage-watchdog.sh
 set -uo pipefail
 
 UNIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,15 +59,10 @@ PATH="$FAKE_BIN:$PATH"
 # --- Load the real watchdog without running it ---
 export MEDIASTACK_WATCHDOG_SOURCE_ONLY=1
 STORAGE_MODE=nas
-# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_MOUNTPOINT="$TMP_DIR/mnt"
-# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_EXPECTED_SOURCE="192.0.2.10:/exports/mediastack-fixture"
-# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_EXPECTED_FSTYPE="nfs4"
-# shellcheck disable=SC2034 # consumed by scripts/storage-watchdog.sh, sourced below
 STORAGE_SENTINEL="$TMP_DIR/mnt/.mediastack-storage-ready"
-# shellcheck disable=SC2034 # consumed by storage_data_services in scripts/setup/storage/core.sh
 BAZARR_ENABLED=false
 source "$REPO_ROOT/scripts/storage-watchdog.sh"
 set +e
@@ -121,7 +117,6 @@ without() { # $1 = space list, $2.. = names to drop
     echo "$list" | xargs
 }
 intent_raw() { printf '%b' "$1" >"$INTENT_FILE"; }
-
 # --- 1. Manual stop, then boot reconciliation ---
 # Given the host just booted, nothing runs, and the user had stopped jellyfin
 # When storage is stable and the watchdog reconciles, and again on the next poll
@@ -136,7 +131,6 @@ tick ok
 assert_eq "jellyfin" "$(intent)" "boot reconcile: the intent entry survives the next poll"
 assert_eq "qbittorrent radarr seerr sonarr unpackerr" "$(running_data)" "boot reconcile: the next poll starts nothing more"
 assert_contains "$(grep ' config ' "$FAKE_LOG")" "--profile *" "dependencies: the graph is read with every profile enabled, so bazarr is included"
-
 # Given five services run and the user had stopped jellyfin
 # When the watchdog reconciles after its own restart
 # Then jellyfin stays stopped
@@ -145,7 +139,6 @@ service_intent_record jellyfin
 tick ok
 assert_eq "" "$(ups)" "boot reconcile: a partial set with the user's stop is left alone"
 assert_eq "" "$(running | grep -o jellyfin)" "boot reconcile: the user-stopped service is still stopped"
-
 # --- 2. Manual stop, then outage and recovery ---
 # Given storage was healthy, the user stopped jellyfin, the rest run
 # When NAS fails (watchdog stops the rest) and then recovers
@@ -158,7 +151,6 @@ assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(sorted "$(stops)")" "outag
 tick ok
 assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "recovery: restarts what the watchdog stopped, including seerr, not the user's stop"
 assert_eq "" "$(running | grep -o jellyfin)" "recovery: the user-stopped service is still stopped"
-
 # --- 3. Watchdog stop, then recovery ---
 # Given every service runs and the user stopped nothing
 # When NAS fails and recovers
@@ -171,7 +163,6 @@ assert_eq "yes" "$([[ -s "$STATE_FILE" ]] && echo yes)" "outage: writes the stop
 tick ok
 assert_eq "$(sorted "$ALL")" "$(running_data)" "recovery: restarts every service the watchdog stopped, so the stack is running again"
 assert_eq "no" "$([[ -e $STATE_FILE || -e $STOPPED_SERVICES_FILE ]] && echo yes || echo no)" "recovery: clears the stopped state"
-
 # --- 4. Partial outage ---
 # Given storage was verified, then four services were stopped by direct Docker commands
 # When NAS fails and recovers
@@ -183,7 +174,6 @@ tick bad
 assert_eq "jellyfin sonarr" "$(recorded)" "partial outage: records only the services that were running"
 tick ok
 assert_eq "sonarr jellyfin" "$(ups)" "partial outage: restarts only the services the watchdog stopped"
-
 # --- 5. Host boots while the NAS is down ---
 # Given the host booted with nothing running and the user had stopped jellyfin
 # When NAS stays down, then comes up
@@ -195,7 +185,6 @@ tick bad
 assert_eq "" "$(ups)" "boot with NAS down: starts nothing while storage is unavailable"
 tick ok
 assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "boot with NAS down: starts the data services but not the user's stop once NAS is stable"
-
 # --- 6. Intent file edge cases (cold boot, storage stable) ---
 # Given the file is missing / empty
 fresh
@@ -205,23 +194,48 @@ fresh
 : >"$INTENT_FILE"
 tick ok
 assert_eq "$(sorted "$ALL")" "$(running_data)" "intent empty: starts every data service"
-
-# Given a file with damaged lines around one valid name
-# Then the damaged lines are ignored and only the valid name is honoured
-MALFORMED='  jellyfin\nJELLYFIN\n../etc/passwd\na b\n\n$(touch /tmp/x)\nradarr\n'"$(printf 'x%.0s' {1..100})"'\n'
+# Given a file with CRLF endings and padded names
+# Then the stops are honoured after stripping
 fresh
-intent_raw "$MALFORMED"
-assert_eq "radarr" "$(service_intent_list)" "intent malformed: reading the file returns only valid names"
+intent_raw '  jellyfin\r\nradarr  \r\n'
+assert_eq "jellyfin radarr" "$(service_intent_list | paste -sd' ')" "intent CRLF: padding and CR are stripped"
 tick ok
-assert_eq "$(sorted "$(without "$ALL" radarr)")" "$(running_data)" "intent malformed: damaged lines are ignored, valid names are honoured"
-
+assert_eq "$(sorted "$(without "$ALL" jellyfin radarr)")" "$(running_data)" "intent CRLF: both stops are honoured"
+# Given a file that cannot be read for sure (a damaged line, a dangling link, an untraversable parent, over 64 KiB)
+# When storage is stable at boot
+# Then the read fails with one log line, nothing starts, and the writer refuses to touch it
+MALFORMED='jellyfin\nJELLYFIN\n../etc/passwd\nradarr\n'
+for variant in malformed dangling parent oversized; do
+    fresh
+    case "$variant" in
+        malformed) intent_raw "$MALFORMED" ;;
+        dangling) ln -s "$TMP_DIR/nowhere" "$INTENT_FILE" ;;
+        parent) intent_raw 'jellyfin\n' ;;
+        oversized) yes jellyfin | head -c 70000 >"$INTENT_FILE" ;;
+    esac
+    [[ $variant == parent && $EUID -eq 0 ]] && {
+        chmod 755 "${INTENT_FILE%/*}"
+        continue
+    }
+    before=$(cat "$INTENT_FILE" 2>/dev/null)
+    [[ $variant == parent ]] && chmod 000 "${INTENT_FILE%/*}"
+    err=$(service_intent_list 2>&1 >/dev/null)
+    rc=$?
+    service_intent_record sonarr 2>/dev/null
+    rc_write=$?
+    tick ok
+    chmod 755 "${INTENT_FILE%/*}"
+    assert_eq "1 1 " "$rc $rc_write $(ups)" "intent $variant: read fails, write refused, nothing starts"
+    assert_contains "$err" "$INTENT_FILE" "intent $variant: the log line names the file"
+    assert_eq "$before" "$(cat "$INTENT_FILE" 2>/dev/null)" "intent $variant: the file is left as it was"
+    [[ $variant != malformed ]] || assert_contains "$err" "line 2" "intent malformed: the log line names the first bad line"
+done
 # Given names that are not data services of this install (unknown, or disabled bazarr)
 # Then they are ignored and the real entry still applies
 fresh
 intent_raw 'notaservice\nbazarr\nsonarr\n'
 tick ok
 assert_eq "$(sorted "$(without "$ALL" sonarr)")" "$(running_data)" "intent unknown names: ignored, no error, other entries honoured"
-
 # Given the intent file cannot be read as a file (a directory in its place)
 # When storage is stable
 # Then nothing starts and the pending recovery is kept; once readable it completes
@@ -242,7 +256,6 @@ fresh
 mkdir "$INTENT_FILE"
 tick ok
 assert_eq "" "$(ups)" "intent unreadable: starts nothing at boot reconciliation"
-
 # --- 6b. A service that depends on a stopped one starts without it ---
 # Given the user stopped qbittorrent, and nothing runs
 # When storage is stable
@@ -252,7 +265,6 @@ service_intent_record qbittorrent
 tick ok
 assert_eq "jellyfin radarr seerr sonarr unpackerr" "$(running)" "dependency: dependents start and the user's stop is not started as a side effect"
 assert_contains "$(<"$TMP_DIR/watchdog.log")" "starting unpackerr without qbittorrent, which you stopped" "dependency: a transitive dependent is started and named"
-
 # Given the user stopped sonarr while the rest ran, then NAS fails and recovers
 # Then unpackerr and seerr (dependents of sonarr) run again, sonarr stays stopped, the intent is intact
 fresh unpackerr qbittorrent radarr seerr jellyfin
@@ -263,7 +275,6 @@ tick ok
 tick ok
 assert_eq "jellyfin qbittorrent radarr seerr unpackerr" "$(running_data)" "dependency, outage: unpackerr and seerr return while sonarr stays stopped"
 assert_eq "sonarr" "$(intent)" "dependency, outage: the intent still names sonarr after later polls"
-
 # Given the user stopped jellyfin and the Compose configuration cannot be read, after an outage
 # Then nothing starts and the pending recovery is kept; once readable it completes
 fresh "${ALL_SERVICES[@]}"
@@ -280,13 +291,11 @@ rm -f "$FAKE_CONFIG_BROKEN"
 tick ok
 tick ok
 assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "config unreadable: recovery completes once it is readable"
-
 # Given the user stopped nothing, the graph is not needed: every service starts without it
 fresh
 touch "$FAKE_CONFIG_BROKEN"
 tick ok
 assert_eq "$(sorted "$ALL")" "$(running_data)" "config unreadable, no user stop: starts every data service"
-
 # Given the fake graph, then it equals the direct depends_on edges in docker-compose.yml
 real_graph=$(python3 -I -c '
 import sys, yaml
@@ -296,7 +305,6 @@ for name in sys.argv[2:]:
     print(name, *sorted(services[name].get("depends_on") or []))
 ' "$REPO_ROOT/docker-compose.yml" bazarr radarr seerr sonarr unpackerr)
 assert_eq "$DEPS_GRAPH" "$real_graph" "dependencies: the fake graph matches docker-compose.yml"
-
 # --- 7. Storage checks gate every start, whatever the intent file holds ---
 for variant in missing empty malformed unreadable; do
     fresh
@@ -317,19 +325,16 @@ mkdir -p "$TMP_DIR/mnt"
 touch "$STORAGE_SENTINEL"
 tick ok
 assert_eq "" "$(ups)" "mount identity: a wrong live mount starts nothing"
-
 # Given the expected mount but no sentinel
 rm -f "$STORAGE_SENTINEL"
 MOUNT_SOURCE="$STORAGE_EXPECTED_SOURCE"
 tick ok
 assert_eq "" "$(ups)" "sentinel: a missing sentinel starts nothing"
-
 # Given the expected mount and the sentinel (positive control)
 touch "$STORAGE_SENTINEL"
 tick ok
 assert_eq "$(sorted "$ALL")" "$(running_data)" "mount identity and sentinel: both passing starts the data services"
 unset -f findmnt
-
 # --- 8. A running service outranks a stale intent entry ---
 # Given the user stopped jellyfin, then something else (update, docker start) started it
 # When the watchdog polls, and NAS later fails and recovers
@@ -341,7 +346,6 @@ assert_eq "" "$(intent)" "stale intent: dropped once the service is seen running
 tick bad
 tick ok
 assert_eq "$(sorted "$ALL")" "$(running_data)" "stale intent: the service is restarted after the outage"
-
 # --- 9. Launcher hooks ---
 launcher() { # $1 = action, env: CHOICE DOCKER_RC GUARD_RC; prints nothing
     T="$LTMP" STORAGE_MODE="${MODE:-nas}" CHOICE="${CHOICE:-jellyfin}" DOCKER_RC="${DOCKER_RC:-0}" GUARD_RC="${GUARD_RC:-0}" \
@@ -372,14 +376,12 @@ assert_eq "jellyfin" "$(launcher_intent)" "launcher: Stop a service records the 
 launcher_reset
 CHOICE=jellyfin DOCKER_RC=1 launcher action_service_stop
 assert_eq "" "$(launcher_intent)" "launcher: a failed Stop a service records nothing"
-
 # Given a local-storage install, which has no watchdog
 # When the user stops a service
 # Then no intent file is written
 launcher_reset
 MODE=local CHOICE=jellyfin launcher action_service_stop
 assert_eq "no" "$([[ -e $LINTENT ]] && echo yes || echo no)" "launcher: a local install keeps no intent file"
-
 # Given jellyfin and radarr are recorded as stopped
 # When the user starts jellyfin
 # Then only jellyfin is cleared; a refused or failed start clears nothing
@@ -391,7 +393,6 @@ CHOICE=jellyfin GUARD_RC=1 launcher action_service_start
 assert_eq "jellyfin radarr" "$(launcher_intent)" "launcher: a start refused by the NAS guard keeps the intent"
 CHOICE=jellyfin DOCKER_RC=1 launcher action_service_start
 assert_eq "jellyfin radarr" "$(launcher_intent)" "launcher: a failed start keeps the intent"
-
 # Given Stop all, then Start all
 # Then Stop all records the whole data-service set and Start all clears it
 launcher_reset
@@ -399,7 +400,6 @@ launcher action_stack_stop
 assert_eq "$(sorted "$ALL")" "$(launcher_intent)" "launcher: Stop all records the whole data-service set"
 launcher action_stack_start
 assert_eq "" "$(launcher_intent)" "launcher: Start all clears every entry"
-
 # --- 10. The file is replaced atomically and writers do not lose each other's entries ---
 export SCRIPT_DIR="$TMP_DIR/atomic"
 rm -rf "$SCRIPT_DIR"
@@ -410,7 +410,6 @@ for i in $(seq -w 1 24); do service_intent_record "svc$i" & done
 wait
 assert_eq "24" "$(service_intent_list | wc -l | tr -d ' ')" "intent file: concurrent writers lose no entries"
 assert_eq "0" "$(find "$SCRIPT_DIR/config/state" -name '.user-stopped-services.*' | wc -l | tr -d ' ')" "intent file: no temp file is left behind"
-
 # Given a reader polls while a writer adds 60 entries
 # Then the reader only ever sees a complete file that never loses entries
 rm -f "$(service_intent_file)"
@@ -433,7 +432,6 @@ wait
 assert_eq "no" "$shrank" "intent file: a concurrent reader never sees entries disappear"
 assert_eq "no" "$torn" "intent file: a concurrent reader never sees a partial line"
 assert_eq "60" "$(service_intent_list | wc -l | tr -d ' ')" "intent file: all entries from the writer are present"
-
 # --- 11. Uninstall removes the intent file with the rest of config/ ---
 # Given an intent file under config/state and a config/examples directory
 # When the uninstall wipe of config/ runs
@@ -451,7 +449,6 @@ wipe_out=$(REPO_ROOT="$REPO_ROOT" TMP_DIR="$TMP_DIR" bash -c '
 ' 2>&1)
 assert_contains "$wipe_out" "INTENT_GONE" "uninstall: config wipe removes the intent file"
 assert_contains "$wipe_out" "EXAMPLES_KEPT" "uninstall: config wipe keeps config/examples"
-
 # --- 12. NAS data services keep restart "no" in the generated override ---
 # Given a NAS install
 # When the compose override is generated
@@ -467,7 +464,6 @@ restart_out=$(REPO_ROOT="$REPO_ROOT" bash -c '
     rm -rf "$tmp"
 ' 2>&1)
 assert_eq "$(sorted "$ALL bazarr")" "$restart_out" "NAS override: every data service has restart \"no\""
-
 # --- 13. A stop the user records while the watchdog works is not overridden (hooks run inside the fake docker) ---
 STOP_JELLYFIN='docker compose stop jellyfin; bash -c "source \$REPO_ROOT/scripts/lib/service-intent.sh; service_intent_record jellyfin"'
 SCRIPT_DIR="$TMP_DIR/root"
@@ -484,7 +480,6 @@ unset FAKE_UP_SVC FAKE_UP_HOOK
 assert_eq "$(sorted "$(without "$ALL" jellyfin)")" "$(running_data)" "stop during start loop: the service stays stopped and its dependent starts without it"
 tick ok
 assert_eq "jellyfin" "$(intent)" "stop during start loop: the intent entry survives the next poll"
-
 # Given jellyfin runs with a stale intent entry
 # When the user stops it again between the running snapshot and the clearing
 # Then the entry is kept

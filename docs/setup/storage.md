@@ -154,9 +154,12 @@ launcher writes `config/state/user-stopped-services`, one service name per line:
   starts nothing and retries. Mount identity and sentinel checks still pass first.
   Nothing starts before they do.
 - A running service outranks its entry: the watchdog drops the entry.
-- A missing or empty file means no user stops. Lines that are not plain service names
-  and names that are not data services are ignored. If the file exists but cannot be
-  read, the watchdog starts nothing and retries until it can read it.
+- The file is one plain service name per line. Spaces around a name and a trailing
+  carriage return are ignored. A missing or empty file means no user stops. Names
+  that are well formed but not data services are ignored. A file that cannot be read
+  or is malformed (a line that is not a plain name, a broken symlink, an untraversable
+  folder, or a file over 64 KiB) keeps every data service stopped until you fix or
+  remove it. The watchdog logs the file and line, then retries.
 
 **Start a service** in the launcher also starts the service's stopped dependencies.
 The watchdog then finds them running and drops their entries.

@@ -15,20 +15,45 @@ _MS_SERVICE_INTENT_LOADED=1
 
 service_intent_file() { printf '%s\n' "$SCRIPT_DIR/config/state/user-stopped-services"; }
 
-# Print the valid service names in the file, one per line. Missing or empty
-# means "the user stopped nothing" (rc 0). Lines that are not a plain service
-# name (blank, spaces, path characters, over 64 characters) are skipped, so a
-# damaged file cannot inject anything. An entry that exists but cannot be read
-# as a regular file returns rc 1: intent is then unknown, and the caller decides.
+# Print the service names in the file, one per line. Missing or empty means
+# "the user stopped nothing" (rc 0). Surrounding whitespace and a trailing CR
+# are stripped from each line. Intent is unknown (rc 1, one line on stderr, no
+# names printed) when the file cannot be read for sure: a dangling link, a
+# non-regular file, an untraversable parent, a file over 64 KiB, or a line
+# that is not a plain service name. A caller must then start nothing, because
+# the stops the user recorded may be hidden in what cannot be read.
 service_intent_list() {
-    local f line
+    local f dir line n=0
+    local -a names=()
     f="$(service_intent_file)"
-    [[ -e "$f" ]] || return 0
-    [[ -f "$f" && -r "$f" ]] || return 1
-    # The loop body always ends in success, so only a failed open of $f is rc 1.
+    dir="${f%/*}"
+    if [[ ! -e "$f" ]]; then
+        if [[ -L "$f" ]] || [[ -d "$dir" && ! -x "$dir" ]]; then
+            printf 'warning: cannot read %s: not reachable\n' "$f" >&2
+            return 1
+        fi
+        return 0
+    fi
+    if [[ ! -f "$f" || ! -r "$f" ]]; then
+        printf 'warning: cannot read %s: not a readable file\n' "$f" >&2
+        return 1
+    fi
+    if (($(stat -c %s "$f" 2>/dev/null || echo 65537) > 65536)); then
+        printf 'warning: cannot read %s: larger than 64 KiB\n' "$f" >&2
+        return 1
+    fi
     while IFS= read -r line || [[ -n "$line" ]]; do
-        if [[ "$line" =~ ^[a-z0-9][a-z0-9_.-]{0,63}$ ]]; then printf '%s\n' "$line"; fi
-    done <"$f"
+        n=$((n + 1))
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [[ -n "$line" ]] || continue
+        if [[ ! "$line" =~ ^[a-z0-9][a-z0-9_.-]{0,63}$ ]]; then
+            printf 'warning: cannot read %s: line %d is not a service name\n' "$f" "$n" >&2
+            return 1
+        fi
+        names+=("$line")
+    done < <(head -c 65536 "$f")
+    if ((${#names[@]} > 0)); then printf '%s\n' "${names[@]}"; fi
 }
 
 # Read-modify-write under flock. The new content goes to a temp file in the
