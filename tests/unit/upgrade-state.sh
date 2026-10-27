@@ -4,7 +4,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/tests/lib/assert.sh"
 scenario_begin upgrade-state
-if python3 -I - "$REPO_ROOT" <<'PY'
+if python3 -I - "$REPO_ROOT" <<'PY'; then
 import importlib.util
 import io
 import pathlib
@@ -70,7 +70,6 @@ class AuthContract(unittest.TestCase):
 
 unittest.main()
 PY
-then
     pass 'upgrade-state authentication follows the real service contracts'
 else
     fail 'upgrade-state authentication follows the real service contracts'
