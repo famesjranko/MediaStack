@@ -103,7 +103,7 @@ _render_spin() {
     # shellcheck disable=SC2064
     trap "kill $pid 2>/dev/null; printf '\r\033[K'" TERM
     while kill -0 "$pid" 2>/dev/null; do
-        printf '\r  \033[0;36m%s\033[0m %s' "${frames[$((i % frame_count))]}" "$title"
+        printf '\r  \033[0;36m%s\033[0m %s\033[K' "${frames[$((i % frame_count))]}" "$title"
         sleep 0.08 2>/dev/null || sleep 1
         ((i++)) || true
     done
@@ -139,7 +139,7 @@ _render_spin_fg() {
         # INT trap and it exits before we reach the kill below) so the spinner
         # can never orphan and spam the terminal. $$ is the parent shell PID.
         while kill -0 "$$" 2>/dev/null; do
-            printf '\r  \033[0;36m%s\033[0m %s' "${frames[$((i % frame_count))]}" "$title"
+            printf '\r  \033[0;36m%s\033[0m %s\033[K' "${frames[$((i % frame_count))]}" "$title"
             sleep 0.08 2>/dev/null || sleep 1
             ((i++)) || true
         done

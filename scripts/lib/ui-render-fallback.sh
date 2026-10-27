@@ -152,7 +152,7 @@ _render_spin_demo() {
     local cycles=$((${delay_int:-0} * 12 + 6))
     local i=0
     while ((i < cycles)); do
-        echo -ne "\r  ${_UI_CYAN}${frames[$((i % frame_count))]}${_UI_RESET} $title"
+        echo -ne "\r  ${_UI_CYAN}${frames[$((i % frame_count))]}${_UI_RESET} $title\033[K"
         sleep 0.08 2>/dev/null || sleep 1
         ((i++)) || true
     done
@@ -194,7 +194,7 @@ _render_spin() {
     trap "kill $pid 2>/dev/null; echo -ne '\r\033[K'" TERM
 
     while kill -0 "$pid" 2>/dev/null; do
-        echo -ne "\r  ${_UI_CYAN}${frames[$((i % frame_count))]}${_UI_RESET} $title"
+        echo -ne "\r  ${_UI_CYAN}${frames[$((i % frame_count))]}${_UI_RESET} $title\033[K"
         sleep 0.08 2>/dev/null || sleep 1
         ((i++)) || true
     done
@@ -233,7 +233,7 @@ _render_spin_fg() {
         # INT trap and it exits before we reach the kill below) so the spinner
         # can never orphan and spam the terminal. $$ is the parent shell PID.
         while kill -0 "$$" 2>/dev/null; do
-            echo -ne "\r  ${_UI_CYAN}${frames[$((i % frame_count))]}${_UI_RESET} $title"
+            echo -ne "\r  ${_UI_CYAN}${frames[$((i % frame_count))]}${_UI_RESET} $title\033[K"
             sleep 0.08 2>/dev/null || sleep 1
             ((i++)) || true
         done
