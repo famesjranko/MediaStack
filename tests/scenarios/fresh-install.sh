@@ -25,7 +25,7 @@ source tests/assertions/beszel.sh
 source tests/assertions/socket-proxy.sh
 source tests/assertions/install-digest.sh
 
-run_scenario() {
+fresh_install_run() {
     # ------------------------------------------------------------------
     # 0. Prep: data dirs, config dirs, .env
     # ------------------------------------------------------------------
@@ -241,3 +241,5 @@ PYEOF
     assert_uptime_kuma_idempotent
     assert_install_digest_recorded
 }
+
+run_scenario() { fresh_install_run; }

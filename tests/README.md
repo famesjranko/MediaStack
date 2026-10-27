@@ -969,6 +969,15 @@ runner reset and make sure the scenario only runs in a `--reset-between`
 battery (`tests/battery.sh`'s glob-discovered `MAIN` set, or
 `tests/check.sh`'s wizard tier via `tests/ci-scenarios.sh`).
 
+## Existing-install image checks
+
+`upgrade-path` boots the accepted lock, records persistent users and settings, then
+runs the real update script against exact candidate overrides. It checks persistence,
+safe reconfiguration and the launcher's qBittorrent Update/Revert functions. At least
+one digest must differ from the accepted lock. See the
+[compatibility matrix](../docs/operations/image-compatibility.md) for service coverage
+and remaining boundaries.
+
 ## Focused staged-setup scenarios
 
 Use these when changing staged setup, recovery hooks, demo mode, destructive reinstall, or fail2ban filters:
