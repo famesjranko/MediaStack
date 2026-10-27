@@ -92,6 +92,31 @@ print(json.dumps(q, sort_keys=True))' "$STATE"
 }
 logs() { tr '\n' '|' <"$LOGS"; }
 
+# Given a missing quota block and unlimited live quotas.
+live 0 7 0 7
+CFG=()
+
+# When the reconcile runs.
+run_reconcile
+post_result=$(posts)
+log_result=$(logs)
+
+# Then it sends no POST.
+assert_eq "" "$post_result" "missing quotas keep unlimited settings without a POST"
+assert_contains "$log_result" "already match" "missing quotas report the true no-change run"
+
+# Given a missing movie limit and TV days with enabled live quotas.
+live 10 7 5 3
+want 10 7 5 3
+unset 'CFG[seerr.quotas.movie.limit]' 'CFG[seerr.quotas.tv.days]'
+
+# When the reconcile runs.
+run_reconcile
+post_result=$(posts)
+
+# Then it clears the movie limit and uses seven days for TV.
+assert_eq '{"defaultPermissions": 32, "defaultQuotas": {"movie": {"quotaLimit": 0, "quotaDays": 7}, "tv": {"quotaLimit": 5, "quotaDays": 7}}}' "$post_result" "missing keys use template defaults"
+
 # Given 10 per 7 days live for both, and a movie period of 14 wanted.
 # When the reconcile runs.
 # Then it posts both quotas with only the movie period changed, and reports success.

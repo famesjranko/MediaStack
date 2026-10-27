@@ -8,6 +8,8 @@ Top-level source of truth for service configuration. `scripts/configure.sh` read
 
 `config.yml` is a **gitignored live copy** seeded from the tracked template `config/examples/config.yml` on first run (`seed_root_config`, first line of `run_wizard` in `scripts/setup/wizard.sh`), then mutated in place by the wizard (quality preset, `min_free_space_gb`, Jellyfin bitrate, `wizard_completed`). Re-runs keep your edits (seed is "only if absent"); uninstall removes it so a reinstall re-seeds the pristine template. To edit defaults for everyone, edit the template.
 
+Write numbers as plain decimal digits: `010` reads as 10, while `0x10` and `1:30` stay text and the setting that reads them warns that the value is not a number.
+
 ### `indexers`
 
 List of Jackett indexers. Public releases default this to `[]`; add entries only for indexers you are legally allowed to use, or apply the optional preset from `config/examples/public-indexers.yml`. Each entry has `id` (Jackett's internal indexer ID) and `type` — one of `general`, `tv`, `movies`. Consumed by:
@@ -139,7 +141,7 @@ Minimal per-*arr settings — the rest comes from `quality_profile` / `categorie
 
 ### `seerr.quotas`
 
-`movie` and `tv` each have a `limit` (requests per period; `0` means unlimited) and `days` (period length). The template sets both limits to `0` and both periods to `7` days. Consumed by `reconcile_seerr_quotas` (`scripts/services/seerr/quotas.sh`) for default user request quotas. A change to `limit` or `days` is applied on re-run, and a limit of `0` clears an existing limit. `days` is ignored while its `limit` is `0`. Values must be whole numbers, and `days` must be at least `1` when `limit` is above `0`; otherwise the configurator warns and changes nothing.
+`movie` and `tv` each have a `limit` (requests per period; `0` means unlimited) and `days` (period length). The template and missing-key defaults set both limits to `0` and both periods to `7` days. Consumed by `reconcile_seerr_quotas` (`scripts/services/seerr/quotas.sh`) for default user request quotas. A change to `limit` or `days` is applied on re-run, and a limit of `0` clears an existing limit. `days` is ignored while its `limit` is `0`. Values must be whole numbers, and `days` must be at least `1` when `limit` is above `0`; otherwise the configurator warns and changes nothing.
 
 ### `bazarr`
 
