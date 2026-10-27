@@ -143,9 +143,9 @@ To move from local storage to NAS, or to change exports, stop the stack first. M
 
 ## After a reboot
 
-Docker restarts installed services unless you stopped them. Optional services must have been enabled and created first. You do not run `setup.sh` again.
+On local-storage installs, Docker restarts installed services unless you stopped them. Optional services must have been enabled and created first. You do not run `setup.sh` again.
 
-On NAS installs, the running watchdog starts missing NAS-dependent services after its startup storage check, including services stopped before reboot, but not the ones you stopped with **Stop a service** or **Stop all services**. Use **Start a service** or **Start all services** to run those. Docker's restart policy does not wait for NAS verification; the watchdog stops affected services after its failure grace period if storage is unavailable.
+On NAS installs, the running watchdog starts missing NAS-dependent services after its startup storage check, including services stopped before reboot, but not the ones you stopped with **Stop a service** or **Stop all services**. A service that depends on one you stopped (for example Seerr, which needs Jellyfin) also stays stopped. Use **Start a service** or **Start all services** to run those. On NAS installs MediaStack sets `restart: "no"` for these services, so Docker never starts them by itself and the watchdog is the only thing that does, after it verifies the NAS. If storage becomes unavailable, the watchdog stops them after its failure grace period. Starting a service from **Start a service** also starts the services it depends on, and the watchdog then forgets that you stopped them.
 
 1. Wait two minutes after the server starts.
 2. Run `./mediastack`.

@@ -70,7 +70,7 @@ Menu item: **Manage stack (status, stop, start, logs)**. The box at the top show
 | Start all services | Starts the whole stack |
 | Tail logs (live) | Shows live logs for all enabled services |
 
-Use these items instead of raw `docker compose` commands. They start the right optional services. On NAS installs they also tell the NAS watchdog which services you stopped, so it leaves them stopped; **Start a service** and **Start all services** clear that. Stops made with raw `docker` commands are not tracked.
+Use these items instead of raw `docker compose` commands. They start the right optional services. On NAS installs they also tell the NAS watchdog which services you stopped, so it leaves them stopped; **Start a service** and **Start all services** clear that. **Start a service** also starts the services it depends on, and the watchdog then forgets that you stopped them. Stops made with raw `docker` commands are not tracked.
 
 To read logs, pick **Tail logs (live)**. It streams logs for all enabled services. Press `Ctrl+C` to return to the menu. To follow one service, use `docker compose logs -f <service>`. Docker keeps up to 3 files of 10 MB for each service. DDNS Updater is the exception: it keeps 2 files of 1 MB.
 
