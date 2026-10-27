@@ -15,6 +15,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
 fi
 
 source "$SCRIPT_DIR/scripts/setup/storage.sh"
+source "$SCRIPT_DIR/scripts/lib/service-intent.sh"
 
 if ! storage_is_nas; then
     echo "$(date '+%F %T') [storage-watchdog] STORAGE_MODE=${STORAGE_MODE:-local}; exiting"
@@ -29,6 +30,11 @@ fi
 STATE_DIR="$SCRIPT_DIR/config/state"
 LOCKFILE="$STATE_DIR/storage-watchdog.lock"
 STATE_FILE="$STATE_DIR/storage-watchdog-stopped"
+# The services the watchdog stopped in the current outage, one per line. Kept
+# beside STATE_FILE (whose timestamp the launcher shows) so recovery restarts
+# only these. Absent next to a STATE_FILE from an older release: recovery then
+# falls back to the whole managed set.
+STOPPED_SERVICES_FILE="$STATE_DIR/storage-watchdog-stopped-services"
 CHECK_INTERVAL="${STORAGE_CHECK_INTERVAL:-15}"
 FAIL_GRACE="${STORAGE_FAIL_GRACE:-30}"
 OK_STABLE="${STORAGE_OK_STABLE:-60}"
@@ -145,34 +151,151 @@ managed_service_count() {
     storage_data_services | grep -c .
 }
 
-stop_managed_services() {
-    local running svc stopped=false
+# A running service contradicts a recorded user stop (it was started again by
+# a path the launcher does not track, such as update.sh or `docker start`), so
+# the entry is dropped; otherwise it would block the next recovery.
+# Cheap in steady state: Docker is asked only when the intent file has entries.
+watchdog_drop_stale_intent() {
+    local running="${1:-}" svc stale=()
+    local -a intent=()
+    mapfile -t intent < <(service_intent_list 2>/dev/null)
+    ((${#intent[@]} > 0)) || return 0
+    [[ -n "$running" ]] || running="$(compose_running)"
+    for svc in "${intent[@]}"; do
+        service_is_running "$svc" "$running" && stale+=("$svc")
+    done
+    ((${#stale[@]} > 0)) || return 0
+    # The snapshot may be seconds old: a stop the user recorded since then must
+    # keep its entry, so ask Docker again just before removing anything.
     running="$(compose_running)"
+    local -a still=()
+    for svc in "${stale[@]}"; do
+        service_is_running "$svc" "$running" && still+=("$svc")
+    done
+    if ((${#still[@]} > 0)); then
+        log "dropping user-stop intent for running service(s): ${still[*]}"
+        service_intent_clear "${still[@]}" >/dev/null 2>&1 || true
+    fi
+}
+
+# $1 is whether storage has passed a check since this watchdog started. If not
+# (true host boot), a service that is not running was never started rather than
+# stopped by someone; it is recorded too, so recovery starts it once storage is
+# stable.
+stop_managed_services() {
+    local seen_ok="${1:-true}" running svc stopped=false names=()
+    running="$(compose_running)"
+    watchdog_drop_stale_intent "$running"
 
     for svc in $(storage_data_services); do
         if service_is_running "$svc" "$running"; then
             log "stopping $svc because NAS storage is unavailable"
             timeout 30 docker compose stop "$svc" >/dev/null 2>&1 || true
+            names+=("$svc")
             stopped=true
+        elif [[ "$seen_ok" != true ]]; then
+            names+=("$svc")
         fi
     done
+
+    printf '%s\n' "${names[@]}" | sort -u | grep . >"$STOPPED_SERVICES_FILE.tmp" || true
+    mv -f "$STOPPED_SERVICES_FILE.tmp" "$STOPPED_SERVICES_FILE"
 
     if $stopped || [[ ! -f "$STATE_FILE" ]]; then
         date -Is >"$STATE_FILE"
     fi
 }
 
+# Print one line per service named in the arguments: the service, then every
+# service it depends on, directly or through others. The Compose file is the
+# source of the graph. "--profile '*'" keeps profile-gated services (bazarr)
+# in the output. Returns 1 when the configuration cannot be read.
+watchdog_service_dependencies() {
+    local json
+    json="$(timeout 30 docker compose --profile '*' config --format json 2>/dev/null)" || return 1
+    python3 -I -c '
+import json, sys
+try:
+    services = json.load(sys.stdin)["services"]
+except (ValueError, KeyError, TypeError):
+    sys.exit(1)
+for name in sys.argv[1:]:
+    found, todo = [], [name]
+    while todo:
+        for dep in services.get(todo.pop(), {}).get("depends_on") or []:
+            if dep not in found and dep != name:
+                found.append(dep)
+                todo.append(dep)
+    print(name, *found)
+' "$@" <<<"$json"
+}
+
+# $1=boot: every managed service that is not running and not stopped by the user.
+# $1=recover: only the ones this watchdog stopped for the outage, minus the user's.
+# `docker compose up -d <svc>` also starts what <svc> depends on, so a service
+# whose dependencies include one the user stopped is started with --no-deps:
+# it returns to the state the user left (running without that dependency) and
+# the stopped one stays stopped.
+# Callers reach this only after the mount identity and sentinel checks passed.
+# An unreadable intent file, or a Compose configuration that cannot be read
+# while the user has stopped something, means the user's choices cannot be
+# honoured: start nothing, keep the pending state and return 1 so the caller
+# tries again later.
 start_managed_services() {
-    local running svc
+    local mode="${1:-boot}" running svc dep blocker stopped_by_watchdog="" held="" line="" gsvc gdeps have_graph=false
+    local -A depends=()
+    local -a managed=()
     running="$(compose_running)"
+    if [[ "$mode" == recover && -f "$STOPPED_SERVICES_FILE" ]]; then
+        stopped_by_watchdog="$(<"$STOPPED_SERVICES_FILE")"
+    else
+        mode=boot
+    fi
+    if ! held="$(service_intent_list)"; then
+        log "cannot read $(service_intent_file); starting nothing until it is readable or removed"
+        return 1
+    fi
+    mapfile -t managed < <(storage_data_services)
     log "NAS storage stable; ensuring NAS-dependent services are running"
-    for svc in $(storage_data_services); do
-        if ! service_is_running "$svc" "$running"; then
+    for svc in "${managed[@]}"; do
+        if [[ "$mode" == recover ]] && ! grep -qx "$svc" <<<"$stopped_by_watchdog"; then
+            continue
+        fi
+        # Each `up -d` can take a minute, so the user may have stopped something
+        # since the last read; judge every service against the current list.
+        if ! held="$(service_intent_list)"; then
+            log "cannot read $(service_intent_file); starting nothing more until it is readable or removed"
+            return 1
+        fi
+        if [[ -n "$held" && $have_graph == false ]]; then
+            if ! line="$(watchdog_service_dependencies "${managed[@]}")"; then
+                log "cannot read the Compose configuration; starting nothing more because a service you stopped may be a dependency"
+                return 1
+            fi
+            while read -r gsvc gdeps; do depends[$gsvc]=" $gdeps "; done <<<"$line"
+            have_graph=true
+        fi
+        if grep -qx "$svc" <<<"$held"; then
+            log "leaving $svc stopped: you stopped it"
+            continue
+        fi
+        service_is_running "$svc" "$running" && continue
+        blocker=""
+        for dep in ${depends[$svc]:-}; do
+            if grep -qx "$dep" <<<"$held"; then
+                blocker="$dep"
+                break
+            fi
+        done
+        if [[ -n "$blocker" ]]; then
+            log "starting $svc without $blocker, which you stopped"
+            timeout 60 docker compose up -d --no-deps "$svc" >/dev/null 2>&1 || true
+        else
             log "starting $svc"
             timeout 60 docker compose up -d "$svc" >/dev/null 2>&1 || true
         fi
     done
-    rm -f "$STATE_FILE"
+    rm -f "$STOPPED_SERVICES_FILE" "$STATE_FILE"
 }
 
 repair_mount_if_needed() {
@@ -187,6 +310,63 @@ repair_mount_if_needed() {
     timeout 30 sudo -n "$MOUNT_HELPER" repair >/dev/null 2>&1 || true
 }
 
+# One poll. State lives in globals so watchdog_main and the tests step it alike.
+watchdog_tick() {
+    now=$(date +%s)
+
+    if watchdog_storage_nas_ok; then
+        fail_since=0
+        ((ok_since == 0)) && ok_since=$now
+        ok_for=$((now - ok_since))
+        watchdog_drop_stale_intent
+        if ((ok_for >= OK_STABLE)); then
+            storage_seen_ok=true
+            if $stopped_for_failure; then
+                if start_managed_services recover; then
+                    stopped_for_failure=false
+                    boot_recovery_done=true
+                fi
+                ok_since=0
+            elif ! $boot_recovery_done; then
+                # One-time reconciliation once NAS is stable. The managed set
+                # is the user's known NAS-dependent services
+                # (storage_data_services), so ensure ALL of them are running
+                # rather than only recovering the all-stopped case. Something
+                # other than the watchdog can leave a subset stopped (e.g. a
+                # setup re-run that stops services but restarts only jellyfin),
+                # and the old all-or-nothing guard skipped recovery forever
+                # whenever even one service was up. start_managed_services is
+                # idempotent - it starts only the members that are not running -
+                # and leaves alone the ones the user stopped.
+                if (($(protected_running_count) < $(managed_service_count))); then
+                    log "reconciling NAS-dependent services after boot; starting any that are not running"
+                    start_managed_services boot || {
+                        ok_since=0
+                        return 0
+                    }
+                fi
+                ok_since=0
+                boot_recovery_done=true
+            fi
+        fi
+    else
+        ok_since=0
+        boot_recovery_done=false
+        ((fail_since == 0)) && fail_since=$now
+        bad_for=$((now - fail_since))
+        log "NAS check failed (${bad_for}s/${FAIL_GRACE}s)"
+
+        if ((bad_for >= FAIL_GRACE)); then
+            if ! $stopped_for_failure; then
+                stop_managed_services "$storage_seen_ok"
+                stopped_for_failure=true
+            fi
+            repair_mount_if_needed
+            fail_since=0
+        fi
+    fi
+}
+
 watchdog_main() {
     log "starting: data=${DATA_DIR:-/data} mountpoint=$(storage_mountpoint) source=$(storage_expected_source) sentinel=$(storage_sentinel_path)"
 
@@ -194,59 +374,14 @@ watchdog_main() {
     ok_since=0
     stopped_for_failure=false
     boot_recovery_done=false
+    storage_seen_ok=false
     if [[ -s "$STATE_FILE" ]]; then
         stopped_for_failure=true
         log "found pending stopped-service state from a previous watchdog run"
     fi
 
     while true; do
-        now=$(date +%s)
-
-        if watchdog_storage_nas_ok; then
-            fail_since=0
-            ((ok_since == 0)) && ok_since=$now
-            ok_for=$((now - ok_since))
-            if ((ok_for >= OK_STABLE)); then
-                if $stopped_for_failure; then
-                    start_managed_services
-                    stopped_for_failure=false
-                    ok_since=0
-                    boot_recovery_done=true
-                elif ! $boot_recovery_done; then
-                    # One-time reconciliation once NAS is stable. The managed set
-                    # is the user's known NAS-dependent services
-                    # (storage_data_services), so ensure ALL of them are running
-                    # rather than only recovering the all-stopped case. Something
-                    # other than the watchdog can leave a subset stopped (e.g. a
-                    # setup re-run that stops services but restarts only jellyfin),
-                    # and the old all-or-nothing guard skipped recovery forever
-                    # whenever even one service was up. start_managed_services is
-                    # idempotent — it starts only the members that are not running.
-                    if (($(protected_running_count) < $(managed_service_count))); then
-                        log "reconciling NAS-dependent services after boot; starting any that are not running"
-                        start_managed_services
-                    fi
-                    ok_since=0
-                    boot_recovery_done=true
-                fi
-            fi
-        else
-            ok_since=0
-            boot_recovery_done=false
-            ((fail_since == 0)) && fail_since=$now
-            bad_for=$((now - fail_since))
-            log "NAS check failed (${bad_for}s/${FAIL_GRACE}s)"
-
-            if ((bad_for >= FAIL_GRACE)); then
-                if ! $stopped_for_failure; then
-                    stop_managed_services
-                    stopped_for_failure=true
-                fi
-                repair_mount_if_needed
-                fail_since=0
-            fi
-        fi
-
+        watchdog_tick
         sleep "$CHECK_INTERVAL"
     done
 }

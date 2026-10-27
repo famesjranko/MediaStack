@@ -132,9 +132,41 @@ mount is stable:
 - `bazarr` when subtitles are enabled
 
 If the NAS becomes unavailable while services are running, the watchdog stops
-the same data-dependent services and records state in
-`config/state/storage-watchdog-stopped`. When storage recovers, it restarts the
-services it owns.
+the same data-dependent services. It records the stop time in
+`config/state/storage-watchdog-stopped` and the service names in
+`config/state/storage-watchdog-stopped-services`. When storage recovers, it
+restarts only those services. If the watchdog started while the NAS was already
+down (a host boot), it records every data service, because none was running.
+
+The watchdog does not restart a service the user stopped. On NAS installs the
+launcher writes `config/state/user-stopped-services`, one service name per line:
+
+- **Stop a service** adds the service. **Stop all services** adds the whole set above.
+- **Start a service** removes the service. **Start all services** empties the file.
+- At boot and after an outage the watchdog skips every service in the file. A
+  service that depends on one of them, directly or through another service (for
+  example Seerr when Jellyfin is in the file), still starts, with
+  `docker compose up -d --no-deps`. It returns to the state you left, running
+  without the stopped service, which stays stopped. The watchdog reads the
+  dependencies from `docker compose config` once per start and logs
+  `starting <service> without <service>, which you stopped`.
+  If that configuration cannot be read while the file has entries, the watchdog
+  starts nothing and retries. Mount identity and sentinel checks still pass first.
+  Nothing starts before they do.
+- A running service outranks its entry: the watchdog drops the entry.
+- The file is one plain service name per line. Spaces around a name and a trailing
+  carriage return are ignored. A missing or empty file means no user stops. Names
+  that are well formed but not data services are ignored. A file that cannot be read
+  or is malformed (a line that is not a plain name, a broken symlink, an untraversable
+  folder, or a file over 64 KiB) keeps every data service stopped until you fix or
+  remove it. The watchdog logs the file and line, then retries.
+
+**Start a service** in the launcher also starts the service's stopped dependencies.
+The watchdog then finds them running and drops their entries.
+
+Only launcher actions are tracked. Stops made with direct `docker` commands, and
+services that `setup.sh` or `scripts/update.sh` start again, are not. Uninstall
+removes the file with the rest of `config/state/`.
 
 ## Manual App Wiring
 
@@ -187,13 +219,20 @@ Fast coverage:
 
 ```bash
 bash tests/unit/storage.sh
+bash tests/unit/watchdog-intent.sh
 ./tests/run.sh --no-preload nas-storage
+./tests/run.sh --no-preload nas-watchdog-intent
 ```
 
 The DinD `nas-storage` scenario starts a disposable NFS server inside the test
 VM, verifies mount identity and sentinel checks, proves directory creation lands
 on the export, rejects unmounted fallback writes, exercises wrong-mount repair,
-and verifies watchdog restart behavior.
+and verifies watchdog restart behavior. The `nas-watchdog-intent` scenario
+restarts the DinD host (its Docker daemon, watchdog and mount) with real
+containers and shows that a service stopped from the launcher stays stopped, at
+boot and after an outage, while the others come back. On a kernel that cannot run
+an NFS server in DinD it uses a tmpfs mount with the same identity and sentinel
+gate, so it then does not exercise NFS.
 
 DinD does not prove vendor-specific NAS behavior such as Unraid/Synology export
 policy, root-squash variants, or long-running stale file handles. The watchdog
