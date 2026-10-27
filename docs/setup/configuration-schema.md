@@ -245,7 +245,7 @@ When `enabled: false` (the default), each of those steps logs a skip. To re-enab
 | `HARDENING_ENABLED` | Stage 1 prompt + day-2 toggle, default `true` (recommended) | `true` |
 | `ADMIN_PORT_FILTER` | Stage 1 prompt (asked only when the firewall is declined or the filter was previously off) + day-2 toggle, default `true` (recommended) | `true` |
 | `AUTOHEAL_ENABLED` | default `true` | `false` excludes the autoheal profile; stop an existing sidecar too (see [installation guide](../guide/install.md#what-you-get)) |
-| `MS_DISABLE_RESOURCE_LIMITS` | `.env.example` default `false`; setup does not preserve this key when it regenerates `.env` | `true` omits CPU and memory caps from the generated compose override |
+| `MS_DISABLE_RESOURCE_LIMITS` | `.env.example` default `false`; `true` or `false` only (case-insensitive, quotes stripped; empty or absent is `false`; any other value warns and becomes `false`, never `true`); setup preserves it when it regenerates `.env` | `true` omits CPU and memory caps from the generated compose override |
 
 **DDNS credentials:** the Stage 2 DDNS picker writes only the non-secret `DDNS_PROVIDER` to `.env`. The provider's credentials (Dynu username/password, DuckDNS/dynv6/deSEC tokens, Cloudflare zone-id + token, Porkbun API keys) live solely in the chmod-600 `config/ddns-updater/config.json` rendered by `ddns_render_config_json` — never in `.env`. A wizard re-run recalls the provider from `DDNS_PROVIDER` and pre-fills its credential prompts from that config.json.
 

@@ -3,9 +3,9 @@
 # =============================================================================
 # Sourced by scripts/setup/env-gen.sh. Split out once write_env alone reached
 # the line cap. Depends on env-gen.sh's globals/helpers (_ENV_*, _WIZ_*,
-# _env_quote_preserved_secret, _nvidia_resolve_driver_mode,
-# repair_ddns_updater_config_permissions) and ddns_render_config_json from
-# scripts/lib/ddns-providers.sh.
+# _env_quote_preserved_secret, _env_resolve_resource_limits,
+# _nvidia_resolve_driver_mode, repair_ddns_updater_config_permissions) and
+# ddns_render_config_json from scripts/lib/ddns-providers.sh.
 
 write_env() {
     local remote_web_state="${_WIZ_REMOTE_WEB_STATE:-}"
@@ -53,18 +53,14 @@ import shlex
 import sys
 
 wanted = {
-    "SONARR_API_KEY", "RADARR_API_KEY", "JELLYFIN_API_KEY", "BAZARR_API_KEY",
-    "SEERR_API_KEY", "PORTAINER_API_KEY", "BESZEL_AGENT_KEY",
-    "STAGE_1_COMPLETE", "NPM_LE_SERVER", "JELLYFIN_PUBLISHED_URL", "JELLYFIN_GPU", "IMAGE_CHANNEL", "DDNS_PROVIDER",
-    "PUBLIC_INDEXERS_ENABLED", "NVIDIA_DRIVER_MODE", "NVIDIA_PATCH_ENABLED",
-    "STAGE_3_GPU_STATE", "STAGE_3_GPU_VENDOR", "STAGE_3_GPU_ENCODER",
-    "STAGE_3_GPU_HW_DECODING_CODECS", "STAGE_3_GPU_DECODE_HEVC_10BIT",
-    "STAGE_3_GPU_DECODE_VP9_10BIT", "STAGE_3_GPU_ALLOW_HEVC_ENCODING",
-    "STAGE_3_GPU_ALLOW_AV1_ENCODING", "STAGE_3_GPU_RENDER_DEVICE",
-    "STAGE_3_GPU_FALLBACK_REASON",
-    "STORAGE_EXPECTED_SOURCE", "STORAGE_EXPECTED_FSTYPE",
-        "UNPACKERR_TORRENT_PATHS", "MEDIASTACK_NETWORK_PREFIX",
-        "MEDIASTACK_SUBNET", "MEDIASTACK_GATEWAY",
+    "SONARR_API_KEY", "RADARR_API_KEY", "JELLYFIN_API_KEY", "BAZARR_API_KEY", "SEERR_API_KEY", "PORTAINER_API_KEY",
+    "BESZEL_AGENT_KEY", "STAGE_1_COMPLETE", "NPM_LE_SERVER", "JELLYFIN_PUBLISHED_URL", "JELLYFIN_GPU", "IMAGE_CHANNEL",
+    "DDNS_PROVIDER", "PUBLIC_INDEXERS_ENABLED", "NVIDIA_DRIVER_MODE", "NVIDIA_PATCH_ENABLED", "STAGE_3_GPU_STATE",
+    "STAGE_3_GPU_VENDOR", "STAGE_3_GPU_ENCODER", "STAGE_3_GPU_HW_DECODING_CODECS", "STAGE_3_GPU_DECODE_HEVC_10BIT",
+    "STAGE_3_GPU_DECODE_VP9_10BIT", "STAGE_3_GPU_ALLOW_HEVC_ENCODING", "STAGE_3_GPU_ALLOW_AV1_ENCODING",
+    "STAGE_3_GPU_RENDER_DEVICE", "STAGE_3_GPU_FALLBACK_REASON", "STORAGE_EXPECTED_SOURCE", "STORAGE_EXPECTED_FSTYPE",
+    "UNPACKERR_TORRENT_PATHS", "MEDIASTACK_NETWORK_PREFIX", "MEDIASTACK_SUBNET", "MEDIASTACK_GATEWAY",
+    "MS_DISABLE_RESOURCE_LIMITS",
 }
 for raw in pathlib.Path(sys.argv[1]).read_text().splitlines():
     if not raw or raw.startswith("#") or "=" not in raw:
@@ -232,6 +228,7 @@ PY
             ;;
     esac
 
+    _env_resolve_resource_limits
     local public_indexers_enabled="${_WIZ_PUBLIC_INDEXERS_ENABLED:-${prev_public_indexers:-false}}"
     [[ "$public_indexers_enabled" == "true" ]] || public_indexers_enabled="false"
 
@@ -294,6 +291,8 @@ PGID=${_ENV_PGID}
 DATA_DIR='${_WIZ_DATA_DIR}'
 HOST_ADDRESS='${_ENV_HOST_ADDRESS}'
 IMAGE_CHANNEL=${image_channel}
+# Resource-limit opt-out, preserved so a later override regeneration keeps it.
+MS_DISABLE_RESOURCE_LIMITS=${MS_DISABLE_RESOURCE_LIMITS}
 MEDIASTACK_NETWORK_PREFIX=${mediastack_network_prefix}
 MEDIASTACK_SUBNET=${mediastack_subnet}
 MEDIASTACK_GATEWAY=${mediastack_gateway}

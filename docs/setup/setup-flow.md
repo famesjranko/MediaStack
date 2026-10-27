@@ -270,7 +270,7 @@ configuration:
 - **amd** / **intel**: mounts `/dev/dri:/dev/dri` (entire directory), adds `group_add: ["<render_gid>"]`. Render GID is read via `getent group render` — *not* hardcoded to 109; it varies across distro versions.
 - **none**: writes resource limits only, no GPU-specific configuration.
 
-The override is gitignored and regenerated on setup runs. Stage 1 writes resource limits only; the hardware transcoding engine rewrites GPU-specific directives after driver/runtime verification or removes them during software fallback.
+The override is gitignored and regenerated on setup runs. `MS_DISABLE_RESOURCE_LIMITS=true` in `.env` omits the resource limits, and `write_env` preserves that choice across `.env` rewrites. Stage 1 writes resource limits only; the hardware transcoding engine rewrites GPU-specific directives after driver/runtime verification or removes them during software fallback.
 
 ## Pull and start
 
