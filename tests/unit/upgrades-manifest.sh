@@ -188,6 +188,7 @@ SCENARIO_COVERAGE = {
     # scenario -> compose profiles it brings up (override reaches via the patched
     # compose) and/or services it launches standalone (docker run + ms_test_image)
     "fresh-install":  {"profiles": {"default", "proxy", "autoheal"}},
+    "upgrade-path":   {"profiles": {"default", "proxy", "autoheal"}},
     "autoheal":       {"services": {"autoheal"}},
     "bazarr":         {"services": {"bazarr"}},
     "unpackerr":      {"services": {"unpackerr"}},
