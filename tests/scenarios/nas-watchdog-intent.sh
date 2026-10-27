@@ -10,6 +10,10 @@
 # to a tmpfs mount with its own expected source and fstype. The watchdog gate is
 # the same mount identity and sentinel check, but NFS itself is then not proven.
 #
+# seerr's stand-in depends on jellyfin's, as in docker-compose.yml: `docker compose
+# up -d seerr` would also start a jellyfin the user stopped, so the watchdog must
+# leave seerr stopped as well.
+#
 # The restart policy of the data services is taken from the override MediaStack
 # generates for a NAS install (restart: "no"); a `probe` container without that
 # override keeps the default `unless-stopped`, so a daemon restart that does not
@@ -109,7 +113,7 @@ docker compose up -d $1 >/dev/null && service_intent_clear $1
 EOF
 }
 
-# The stand-in project: real watchdog and scripts, six data containers plus a probe.
+# The stand-in project: real watchdog and scripts, six data containers plus a probe; seerr depends on jellyfin.
 nas_intent_build_project() {
     docker save alpine:latest | docker exec -i "$DIND_NAME" docker load >/dev/null || return 1
     docker exec -i -w /root/MediaStack "$DIND_NAME" bash -s <<EOF || return 1
@@ -129,6 +133,7 @@ cp .env $NAS_INTENT_DIR/.env
     echo "services:"
     for svc in $NAS_INTENT_SERVICES probe; do
         printf '  %s:\n    image: alpine:latest\n    command: ["sleep", "86400"]\n    stop_grace_period: 1s\n    container_name: %s\n    restart: unless-stopped\n' "\$svc" "\$svc"
+        if [ "\$svc" = seerr ]; then printf '    depends_on:\n      - jellyfin\n'; fi
     done
 } >$NAS_INTENT_DIR/docker-compose.yml
 {
@@ -184,13 +189,27 @@ run_scenario() {
     nas_intent_mount || return 1
     nas_intent_watchdog_start || return 1
 
-    # Then it starts every data service except the one the user stopped
-    nas_intent_wait_count 6 || true
-    nas_intent_expect_running "$(nas_intent_all_but jellyfin)" "NAS intent: after reboot the watchdog starts all data services but the user-stopped one"
+    # Then it starts every data service except the one the user stopped and the one that depends on it
+    nas_intent_wait_count 5 || true
+    nas_intent_expect_running "$(nas_intent_all_but jellyfin seerr)" "NAS intent: after reboot the watchdog starts all data services but the user-stopped one and its dependent"
     if nas_intent_sh <<<'grep -q "leaving jellyfin stopped" /tmp/ms-intent-watchdog.log'; then
         pass "NAS intent: the watchdog log says it left jellyfin stopped"
     else
         fail "NAS intent: the watchdog log says it left jellyfin stopped"
+    fi
+    if nas_intent_sh <<<'grep -q "leaving seerr stopped: it depends on jellyfin, which you stopped" /tmp/ms-intent-watchdog.log'; then
+        pass "NAS intent: the watchdog log says it left seerr stopped because it depends on jellyfin"
+    else
+        fail "NAS intent: the watchdog log says it left seerr stopped because it depends on jellyfin" "$(nas_intent_sh <<<'tail -n 20 /tmp/ms-intent-watchdog.log')"
+    fi
+
+    # And after more polls the dependent is still stopped and jellyfin is still recorded as the user's stop
+    sleep 5
+    nas_intent_expect_running "$(nas_intent_all_but jellyfin seerr)" "NAS intent: later polls leave the dependent stopped"
+    if nas_intent_sh <<<'grep -qx jellyfin config/state/user-stopped-services'; then
+        pass "NAS intent: the user's stop of jellyfin survives later polls"
+    else
+        fail "NAS intent: the user's stop of jellyfin survives later polls" "$(nas_intent_sh <<<'cat config/state/user-stopped-services')"
     fi
 
     # Given a storage outage while jellyfin is still stopped by the user
@@ -200,10 +219,10 @@ run_scenario() {
 
     # When storage returns
     nas_intent_mount || return 1
-    nas_intent_wait_count 6 || true
+    nas_intent_wait_count 5 || true
 
-    # Then the watchdog restarts what it stopped, and jellyfin stays stopped
-    nas_intent_expect_running "$(nas_intent_all_but jellyfin)" "NAS intent: after the outage only the services the watchdog stopped come back"
+    # Then the watchdog restarts what it stopped except the user's stop and its dependent
+    nas_intent_expect_running "$(nas_intent_all_but jellyfin seerr)" "NAS intent: after the outage only the services the watchdog stopped come back, minus the user's stop and its dependent"
 
     # Given the user starts jellyfin again, then the host reboots
     nas_intent_user_start jellyfin || return 1

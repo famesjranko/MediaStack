@@ -190,8 +190,6 @@ stop_managed_services() {
         fi
     done
 
-    # Union with names from an earlier outage that was not yet recovered.
-    [[ -f "$STOPPED_SERVICES_FILE" ]] && mapfile -t -O "${#names[@]}" names <"$STOPPED_SERVICES_FILE"
     printf '%s\n' "${names[@]}" | sort -u | grep . >"$STOPPED_SERVICES_FILE.tmp" || true
     mv -f "$STOPPED_SERVICES_FILE.tmp" "$STOPPED_SERVICES_FILE"
 
@@ -200,13 +198,43 @@ stop_managed_services() {
     fi
 }
 
+# Print one line per service named in the arguments: the service, then every
+# service it depends on, directly or through others. The Compose file is the
+# source of the graph. "--profile '*'" keeps profile-gated services (bazarr)
+# in the output. Returns 1 when the configuration cannot be read.
+watchdog_service_dependencies() {
+    local json
+    json="$(timeout 30 docker compose --profile '*' config --format json 2>/dev/null)" || return 1
+    python3 -I -c '
+import json, sys
+try:
+    services = json.load(sys.stdin)["services"]
+except (ValueError, KeyError, TypeError):
+    sys.exit(1)
+for name in sys.argv[1:]:
+    found, todo = [], [name]
+    while todo:
+        for dep in services.get(todo.pop(), {}).get("depends_on") or []:
+            if dep not in found and dep != name:
+                found.append(dep)
+                todo.append(dep)
+    print(name, *found)
+' "$@" <<<"$json"
+}
+
 # $1=boot: every managed service that is not running and not stopped by the user.
 # $1=recover: only the ones this watchdog stopped for the outage, minus the user's.
+# `docker compose up -d <svc>` also starts what <svc> depends on, so a service
+# whose dependencies include one the user stopped stays stopped as well.
 # Callers reach this only after the mount identity and sentinel checks passed.
-# An unreadable intent file means the user's choices are unknown: start nothing,
-# keep the pending state and return 1 so the caller tries again later.
+# An unreadable intent file, or a Compose configuration that cannot be read
+# while the user has stopped something, means the user's choices cannot be
+# honoured: start nothing, keep the pending state and return 1 so the caller
+# tries again later.
 start_managed_services() {
-    local mode="${1:-boot}" running svc stopped_by_watchdog="" held=""
+    local mode="${1:-boot}" running svc dep blocker stopped_by_watchdog="" held=""
+    local -A depends=()
+    local -a managed=()
     running="$(compose_running)"
     if [[ "$mode" == recover && -f "$STOPPED_SERVICES_FILE" ]]; then
         stopped_by_watchdog="$(<"$STOPPED_SERVICES_FILE")"
@@ -217,14 +245,35 @@ start_managed_services() {
         log "cannot read $(service_intent_file); starting nothing until it is readable or removed"
         return 1
     fi
+    mapfile -t managed < <(storage_data_services)
+    if [[ -n "$held" ]]; then
+        local line
+        if ! line="$(watchdog_service_dependencies "${managed[@]}")"; then
+            log "cannot read the Compose configuration; starting nothing because a service you stopped may be a dependency"
+            return 1
+        fi
+        while read -r svc dep; do depends[$svc]=" $dep "; done <<<"$line"
+    fi
     log "NAS storage stable; ensuring NAS-dependent services are running"
-    for svc in $(storage_data_services); do
+    for svc in "${managed[@]}"; do
         if [[ "$mode" == recover ]] && ! grep -qx "$svc" <<<"$stopped_by_watchdog"; then
             continue
         fi
         if grep -qx "$svc" <<<"$held"; then
             log "leaving $svc stopped: you stopped it"
-        elif ! service_is_running "$svc" "$running"; then
+            continue
+        fi
+        service_is_running "$svc" "$running" && continue
+        blocker=""
+        for dep in ${depends[$svc]:-}; do
+            if grep -qx "$dep" <<<"$held"; then
+                blocker="$dep"
+                break
+            fi
+        done
+        if [[ -n "$blocker" ]]; then
+            log "leaving $svc stopped: it depends on $blocker, which you stopped"
+        else
             log "starting $svc"
             timeout 60 docker compose up -d "$svc" >/dev/null 2>&1 || true
         fi
