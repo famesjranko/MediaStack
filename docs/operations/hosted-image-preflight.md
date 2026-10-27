@@ -76,3 +76,19 @@ are complete. The existing scheduled alert remains active.
 GitHub must permit the repository's workflow token to create pull requests.
 Publication failures remain visible in the publisher job. The candidate tests do
 not gain write permissions to work around a repository restriction.
+
+## First cold hosted measurement
+
+[Run 40524452417](https://github.com/famesjranko/MediaStack/actions/runs/40524452417)
+tested a qBittorrent candidate on source `eaf53943d82fb7c54492bf6e8f12b4673f100264`
+on 2026-10-27. Both image jobs and the separate verifier passed. Publication was
+disabled; the verifier produced a selective lock artifact for review.
+
+| Scenario | Passed | Failed/skipped | Seconds | Disk growth (bytes) |
+|---|---:|---:|---:|---:|
+| fresh-install | 240 | 0/0 | 286 | 12,220,076,032 |
+| upgrade-path | 326 | 0/0 | 397 | 12,523,839,488 |
+
+These are end-of-run measurements for one candidate combination on hosted
+Ubuntu 24.04. They do not establish peak disk use or a general runtime bound.
+Default-branch PR publication and independent review remain activation gates.
