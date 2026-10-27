@@ -26,13 +26,13 @@ if not isinstance(indexers, list) or any(
     not isinstance(i, dict)
     or not isinstance(i.get("id"), str)
     or not i["id"]
-    or i.get("type") not in ("general", "tv", "movies")
+    or i.get("type", "general") not in ("general", "tv", "movies")
     for i in indexers
 ):
     print("ERR:config.yml indexers must be a list of entries with an id and a valid type")
     sys.exit(0)
 types = set(sys.argv[1].split())
-print(sum(1 for i in indexers if isinstance(i, dict) and i.get("type") in types))
+print(sum(1 for i in indexers if i.get("type", "general") in types))
 PY
 }
 

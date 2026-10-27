@@ -40,4 +40,13 @@ jackett_result=$(jackett_fixture_indexer_ids)
 # Then it remains distinguishable from a failed or malformed fixture.
 assert_eq '0' "$arr_result" 'Arr recognises an explicitly empty fixture'
 assert_eq 'NONE' "$jackett_result" 'Jackett recognises an explicitly empty fixture'
+
+# Given an indexer that uses the product schema's default general type.
+printf 'indexers: [{id: fixture}]\n' >"$TMP_DIR/config.yml"
+
+# When the Arr fixture reader counts eligible indexers.
+result=$(arr_fixture_indexer_total 'general tv')
+
+# Then the fixture is counted using the same default as the configurator.
+assert_eq '1' "$result" 'Arr counts an omitted type as general'
 summary
