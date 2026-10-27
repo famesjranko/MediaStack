@@ -1,3 +1,6 @@
+# shellcheck source=tests/assertions/arr-indexers.sh
+source tests/assertions/arr-indexers.sh
+
 assert_sonarr_configured() {
     local configure_log="$1"
 
@@ -116,68 +119,9 @@ else:
         esac
     fi
 
-    # Lower-bound check: extra indexers are good news (a previously-flaky
-    # tracker came back online between runs). A real regression — silent
-    # config drop, broken parser, all trackers down — would push count BELOW
-    # the floor, which still fails. Hardcoded `==` here was brittle: warns
-    # accumulate across drift re-runs, and a tracker recovering between
-    # runs flipped the equality without anything actually breaking.
-    local sonarr_ix_count sonarr_ix_warned sonarr_ix_floor
-    sonarr_ix_count=$(dind_exec "curl -sf -H 'X-Api-Key: $SONARR_KEY' $sonarr_base/indexer" \
-        | python3 -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null)
-    sonarr_ix_warned=$(sed -r 's/\x1b\[[0-9;]*m//g' "$configure_log" \
-        | { grep -Ec '(Failed:.*-> Sonarr|Indexer unavailable, skipped: .* -> Sonarr)' 2>/dev/null || true; })
-    # Floor = total Sonarr-eligible indexers (general+tv) in config.yml
-    # minus the warned-failures observed in this run. 13 happens to be the
-    # current count (14 in config.yml minus 1 movies-only). Computed from
-    # config.yml so adding/removing trackers won't desync the assertion.
-    local sonarr_ix_total
-    sonarr_ix_total=$(python3 -c "
-import yaml
-with open('config.yml') as f:
-    c = yaml.safe_load(f)
-n = sum(1 for i in (c.get('indexers') or []) if i.get('type') in ('general','tv'))
-print(n)
-" 2>/dev/null)
-    sonarr_ix_floor=$((sonarr_ix_total - sonarr_ix_warned))
-    if ((sonarr_ix_count >= sonarr_ix_floor)); then
-        pass "step 3 Sonarr: $sonarr_ix_count/${sonarr_ix_total} indexers configured${sonarr_ix_warned:+ ($sonarr_ix_warned upstream-blocked, floor=$sonarr_ix_floor)}"
-    else
-        fail "step 3 Sonarr: $sonarr_ix_floor indexers expected (floor)" "got '$sonarr_ix_count' (warned=$sonarr_ix_warned, total=$sonarr_ix_total)"
-    fi
-
-    local sonarr_seed_check
-    sonarr_seed_check=$(dind_exec "curl -sf -H 'X-Api-Key: $SONARR_KEY' $sonarr_base/indexer" \
-        | python3 -c "
-import sys, json
-indexers = json.load(sys.stdin)
-if not indexers:
-    print('SKIP|no indexers')
-    sys.exit()
-wrong = []
-for ix in indexers:
-    fields = {f['name']: f.get('value') for f in ix.get('fields', [])}
-    name = ix['name']
-    ratio = fields.get('seedCriteria.seedRatio')
-    time = fields.get('seedCriteria.seedTime')
-    season = fields.get('seedCriteria.seasonPackSeedTime')
-    if ratio != 1.0:
-        wrong.append('%s: seedRatio=%s want 1.0' % (name, ratio))
-    if time != 1440:
-        wrong.append('%s: seedTime=%s want 1440' % (name, time))
-    if season != 2880:
-        wrong.append('%s: seasonPackSeedTime=%s want 2880' % (name, season))
-if wrong:
-    print('FAIL|' + '; '.join(wrong[:3]))
-else:
-    print('OK|%d indexers checked' % len(indexers))
-" 2>/dev/null)
-    case "$sonarr_seed_check" in
-        OK*) pass "step 3 Sonarr: indexer seed criteria (ratio=1.0, time=24h, season=48h) (${sonarr_seed_check#OK|})" ;;
-        SKIP*) skip "step 3 Sonarr: indexer seed criteria" "${sonarr_seed_check#SKIP|}" ;;
-        FAIL*) fail "step 3 Sonarr: indexer seed criteria" "${sonarr_seed_check#FAIL|}" ;;
-        *) fail "step 3 Sonarr: indexer seed criteria" "parse error" ;;
-    esac
+    # Indexer registration and seed criteria against the DinD fixture (fail-closed,
+    # shared helper in tests/assertions/arr-indexers.sh).
+    arr_assert_indexers "step 3 Sonarr" sonarr "$sonarr_base" "$SONARR_KEY" "$configure_log" "general tv" 1
 
     local sonarr_qd_pref
     sonarr_qd_pref=$(dind_exec "curl -sf -H 'X-Api-Key: $SONARR_KEY' $sonarr_base/qualitydefinition" \

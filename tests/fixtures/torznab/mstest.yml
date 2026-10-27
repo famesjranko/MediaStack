@@ -1,0 +1,62 @@
+# Custom Jackett (Cardigann) definition for the deterministic MediaStack test
+# tracker served by tests/fixtures/torznab/server.py. Seeded into
+# config/jackett/cardigann/definitions/ before Jackett starts, so Jackett
+# offers an indexer with id `mstest` that configure.sh can enable from
+# config.yml and register into Sonarr and Radarr like any public indexer.
+---
+id: mstest
+name: MediaStack Test Fixture
+description: "Deterministic local Torznab fixture for MediaStack tests"
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - http://torznab-fixture:8080/
+
+caps:
+  categorymappings:
+    - {id: tv, cat: TV, desc: "TV"}
+    - {id: tv-hd, cat: TV/HD, desc: "TV/HD"}
+    - {id: movies, cat: Movies, desc: "Movies"}
+    - {id: movies-hd, cat: Movies/HD, desc: "Movies/HD"}
+
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+    movie-search: [q]
+
+settings: []
+
+search:
+  paths:
+    - path: search
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: table.results > tbody > tr
+  fields:
+    category:
+      selector: td.cat
+    title:
+      selector: td.title a
+    details:
+      selector: td.title a
+      attribute: href
+    download:
+      selector: td.dl a
+      attribute: href
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+    leechers:
+      selector: td.leechers
+    date:
+      selector: td.date
+      filters:
+        - name: dateparse
+          args: "yyyy-MM-dd HH:mm:ss"
+    downloadvolumefactor:
+      text: 0
+    uploadvolumefactor:
+      text: 1

@@ -1,3 +1,6 @@
+# shellcheck source=tests/assertions/arr-indexers.sh
+source tests/assertions/arr-indexers.sh
+
 assert_radarr_configured() {
     local configure_log="$1"
 
@@ -114,55 +117,9 @@ else:
         esac
     fi
 
-    # Lower-bound check — see sonarr.sh for rationale.
-    local radarr_ix_count radarr_ix_warned radarr_ix_floor radarr_ix_total
-    radarr_ix_count=$(dind_exec "curl -sf -H 'X-Api-Key: $RADARR_KEY' $radarr_base/indexer" \
-        | python3 -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null)
-    radarr_ix_warned=$(sed -r 's/\x1b\[[0-9;]*m//g' "$configure_log" \
-        | { grep -Ec '(Failed:.*-> Radarr|Indexer unavailable, skipped: .* -> Radarr)' 2>/dev/null || true; })
-    radarr_ix_total=$(python3 -c "
-import yaml
-with open('config.yml') as f:
-    c = yaml.safe_load(f)
-n = sum(1 for i in (c.get('indexers') or []) if i.get('type') in ('general','movies'))
-print(n)
-" 2>/dev/null)
-    radarr_ix_floor=$((radarr_ix_total - radarr_ix_warned))
-    if ((radarr_ix_count >= radarr_ix_floor)); then
-        pass "step 4 Radarr: $radarr_ix_count/${radarr_ix_total} indexers configured${radarr_ix_warned:+ ($radarr_ix_warned upstream-blocked, floor=$radarr_ix_floor)}"
-    else
-        fail "step 4 Radarr: $radarr_ix_floor indexers expected (floor)" "got '$radarr_ix_count' (warned=$radarr_ix_warned, total=$radarr_ix_total)"
-    fi
-
-    local radarr_seed_check
-    radarr_seed_check=$(dind_exec "curl -sf -H 'X-Api-Key: $RADARR_KEY' $radarr_base/indexer" \
-        | python3 -c "
-import sys, json
-indexers = json.load(sys.stdin)
-if not indexers:
-    print('SKIP|no indexers')
-    sys.exit()
-wrong = []
-for ix in indexers:
-    fields = {f['name']: f.get('value') for f in ix.get('fields', [])}
-    name = ix['name']
-    ratio = fields.get('seedCriteria.seedRatio')
-    time = fields.get('seedCriteria.seedTime')
-    if ratio != 1.0:
-        wrong.append('%s: seedRatio=%s want 1.0' % (name, ratio))
-    if time != 1440:
-        wrong.append('%s: seedTime=%s want 1440' % (name, time))
-if wrong:
-    print('FAIL|' + '; '.join(wrong[:3]))
-else:
-    print('OK|%d indexers checked' % len(indexers))
-" 2>/dev/null)
-    case "$radarr_seed_check" in
-        OK*) pass "step 4 Radarr: indexer seed criteria (ratio=1.0, time=24h) (${radarr_seed_check#OK|})" ;;
-        SKIP*) skip "step 4 Radarr: indexer seed criteria" "${radarr_seed_check#SKIP|}" ;;
-        FAIL*) fail "step 4 Radarr: indexer seed criteria" "${radarr_seed_check#FAIL|}" ;;
-        *) fail "step 4 Radarr: indexer seed criteria" "parse error" ;;
-    esac
+    # Indexer registration and seed criteria against the DinD fixture (fail-closed,
+    # shared helper in tests/assertions/arr-indexers.sh).
+    arr_assert_indexers "step 4 Radarr" radarr "$radarr_base" "$RADARR_KEY" "$configure_log" "general movies" 0
 
     # config.yml carries no Remux-1080p at all (real 1080p WEB-DL sizes, no
     # Remux anywhere in the stack). Use Bluray-1080p as the

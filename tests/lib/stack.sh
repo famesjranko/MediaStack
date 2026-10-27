@@ -275,3 +275,55 @@ pebble_down() {
     echo -e "${BLUE}[pebble]${NC} tearing down pebble containers"
     dind_exec 'docker rm -f pebble pebble-challtestsrv 2>/dev/null || true'
 }
+
+# ---------------------------------------------------------------------------
+# Deterministic Torznab fixture (tests/fixtures/torznab/)
+# ---------------------------------------------------------------------------
+# A static tracker site plus a custom Jackett definition (`mstest`), so a
+# scenario proves Jackett -> Sonarr/Radarr registration, caps discovery and a
+# real search round trip without any public tracker.
+
+TORZNAB_FIXTURE_NAME="torznab-fixture"
+TORZNAB_FIXTURE_IMAGE="python:3.12-alpine"
+
+# Seed the Jackett definition and point config.yml at it. Call before Jackett
+# starts (it reads definitions once at startup) and before configure.sh.
+torznab_fixture_seed() {
+    dind_exec 'mkdir -p config/jackett/cardigann/definitions && cp tests/fixtures/torznab/mstest.yml config/jackett/cardigann/definitions/mstest.yml && chown -R 1000:1000 config/jackett/cardigann' || return 1
+    dind_python <<'PY'
+import yaml
+
+with open("config.yml") as fh:
+    cfg = yaml.safe_load(fh) or {}
+cfg["indexers"] = [{"id": "mstest", "type": "general"}]
+with open("config.yml", "w") as fh:
+    yaml.safe_dump(cfg, fh, sort_keys=False)
+PY
+}
+
+# Start the fixture site on the MediaStack network. Call after `compose up`
+# has created the network. Waits until the site answers.
+torznab_fixture_up() {
+    dind_pull_retry "$TORZNAB_FIXTURE_IMAGE" || {
+        echo -e "${BLUE}[torznab]${NC} $TORZNAB_FIXTURE_IMAGE pull failed after retries"
+        return 1
+    }
+    dind_exec "docker rm -f $TORZNAB_FIXTURE_NAME >/dev/null 2>&1; docker run -d --name $TORZNAB_FIXTURE_NAME --network mediastack \
+        -v /root/MediaStack/tests/fixtures/torznab/server.py:/srv/server.py:ro \
+        $TORZNAB_FIXTURE_IMAGE python3 -I /srv/server.py >/dev/null" || return 1
+    local waited=0
+    while ((waited < 30)); do
+        if dind_exec "docker run --rm --network mediastack $TORZNAB_FIXTURE_IMAGE python3 -c 'import urllib.request; urllib.request.urlopen(\"http://$TORZNAB_FIXTURE_NAME:8080/search\", timeout=3).read()'" >/dev/null 2>&1; then
+            echo -e "${BLUE}[torznab]${NC} fixture site ready (${waited}s)"
+            return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+    echo -e "${BLUE}[torznab]${NC} fixture site did not answer within 30s"
+    return 1
+}
+
+torznab_fixture_down() {
+    dind_exec "docker rm -f $TORZNAB_FIXTURE_NAME >/dev/null 2>&1 || true"
+}
