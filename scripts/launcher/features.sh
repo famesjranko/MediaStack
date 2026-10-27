@@ -70,6 +70,7 @@ submenu_features() {
         if ! recovery_menu_remote_available && _ddns_configured; then
             options+=("Update DDNS provider / credentials: ${DDNS_PROVIDER:-}")
         fi
+        options+=("Repair Jellyfin connections (Sonarr, Radarr)")
         options+=("Back")
 
         echo ""
@@ -87,6 +88,7 @@ submenu_features() {
             "NAS storage watchdog:"*) action_toggle_watchdog ;;
             "Change quality profile"*) action_change_quality ;;
             "Adjust bandwidth"*) action_adjust_bandwidth ;;
+            "Repair Jellyfin connections"*) action_repair_jellyfin_connections ;;
             "Update DDNS provider"*) action_change_ddns ;;
             *) return 0 ;;
         esac
@@ -381,6 +383,23 @@ action_toggle_indexers() {
         fi
         _show_action_result "$rc" "Enable public indexers"
     fi
+    launcher_pause_for_menu
+}
+
+# The script checks Sonarr and Radarr, lists what it would change and asks before
+# it changes anything, so the confirmation is shown next to its evidence.
+action_repair_jellyfin_connections() {
+    echo ""
+    if ! _docker_reachable; then
+        ui_log warn "Docker isn't reachable - start the stack first."
+        launcher_pause_for_menu
+        return 0
+    fi
+    ui_log info "Checks the Jellyfin connection in Sonarr and Radarr. After you confirm,"
+    ui_log info "it replaces a stale Jellyfin API key in the connections MediaStack created."
+    local rc=0
+    "$SCRIPT_DIR/scripts/configure.sh" --repair-jellyfin-connections || rc=$?
+    _show_action_result "$rc" "Repair Jellyfin connections"
     launcher_pause_for_menu
 }
 

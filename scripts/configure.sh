@@ -7,6 +7,7 @@
 #
 # Usage: ./scripts/configure.sh
 #        ./scripts/configure.sh --only jellyfin,sonarr
+#        ./scripts/configure.sh --repair-jellyfin-connections
 #
 # To change indexers, quality profiles, paths, etc:
 #   Edit config.yml, then re-run this script.
@@ -76,8 +77,13 @@ fi
 
 # --- Argument parsing ---
 ONLY_SERVICES=""
+REPAIR_JELLYFIN_CONNECTIONS=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --repair-jellyfin-connections)
+            REPAIR_JELLYFIN_CONNECTIONS=1
+            shift
+            ;;
         --only)
             ONLY_SERVICES="$2"
             shift 2
@@ -92,6 +98,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Explicit repair of stale Jellyfin API keys in Sonarr/Radarr. It asks before it
+# changes anything, so it is a separate mode and not part of a normal run.
+if ((REPAIR_JELLYFIN_CONNECTIONS)); then
+    if [[ -n "$ONLY_SERVICES" ]]; then
+        echo "--repair-jellyfin-connections cannot be combined with --only" >&2
+        exit 2
+    fi
+    source "$SCRIPT_DIR/scripts/lib/ui.sh"
+    configure_arr_jellyfin_repair_all
+    exit $?
+fi
 
 _should_configure() {
     [[ -z "$ONLY_SERVICES" ]] && return 0

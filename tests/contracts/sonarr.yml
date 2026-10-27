@@ -24,5 +24,8 @@ endpoints:
   - {id: download-client-create, method: POST, path: /downloadclient, sends: [enable, protocol, priority, name, implementation, configContract, removeCompletedDownloads, removeFailedDownloads, fields], reads: [id, name], callers: [scripts/lib/arr/storage.sh]}
   - {id: host-config-get, method: GET, path: /config/host, sends: [], reads: [authenticationMethod], callers: [scripts/lib/arr/connections.sh]}
   - {id: host-config-update, method: PUT, path: /config/host, sends: [authenticationMethod, authenticationRequired, username, password, passwordConfirmation], reads: [authenticationMethod], callers: [scripts/lib/arr/connections.sh]}
-  - {id: notification-list, method: GET, path: /notification, sends: [], reads: [id, name, implementation], callers: [scripts/lib/arr/connections.sh]}
+  - {id: notification-list, method: GET, path: /notification, sends: [], reads: [id, name, implementation, "fields[].name", "fields[].value"], callers: [scripts/lib/arr/connections.sh]}
   - {id: notification-create, method: POST, path: /notification, sends: [name, implementation, configContract, fields, onImportComplete, onDownload], reads: [id, name], callers: [scripts/lib/arr/connections.sh]}
+  - {id: notification-get, method: GET, path: "/notification/{id}", sends: [], reads: [id, name, implementation, "fields[].name", "fields[].value"], callers: [scripts/lib/arr/connections.sh]}
+  - {id: notification-update, method: PUT, path: "/notification/{id}", sends: [id, name, implementation, configContract, fields], reads: [id], callers: [scripts/lib/arr/connections.sh]}
+  - {id: notification-test, method: POST, path: /notification/test, sends: [id, name, implementation, configContract, fields], reads: [], callers: [scripts/lib/arr/connections.sh]}

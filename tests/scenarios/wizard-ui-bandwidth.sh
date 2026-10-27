@@ -60,7 +60,7 @@ chmod +x $fixture"
   {"expect": "Press Enter to return to menu"},
   {"send": "\n"},
   {"expect": "Manage features & settings"},
-  {"send": "9\n"}
+  {"send": "10\n"}
 ]
 JSON'
 
