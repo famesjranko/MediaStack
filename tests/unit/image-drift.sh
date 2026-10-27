@@ -331,12 +331,12 @@ data = [line.split("\t") for line in out.read_text().splitlines() if not line.st
 
 # Then appending its digest for Revert creates exactly one valid digest separator.
 expected = [["sonarr", "lscr.io/x/sonarr:latest", "sha256:" + "b" * 64]]
-print("PINNED_RECORD_OK" if data == expected else "PINNED_RECORD_BAD")
+print("PINNED_IMAGE_NORMALIZED" if data == expected else "PINNED_IMAGE_INVALID")
 PY
 )
 assert_contains "$rec_out" "POLICY_OK" "image-drift read_policy accepts a digest pin value"
 assert_contains "$rec_out" "RECORD_OK" "image-drift --record-install writes the service/image/digest set, skipping undigestable services"
-assert_contains "$rec_out" "PINNED_RECORD_OK" "image-drift --record-install normalizes already pinned compose images for Revert"
+assert_contains "$rec_out" "PINNED_IMAGE_NORMALIZED" "image-drift --record-install normalizes already pinned compose images for Revert"
 
 # --- preflight-receipt accept gate ------------------------------------------
 # image_drift.py refuses to accept a drifted digest into the lock unless
