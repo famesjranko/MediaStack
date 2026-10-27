@@ -76,8 +76,8 @@ source "$REPO_ROOT/scripts/lib/config-read.sh"
 # When the adapters read the scores and quality IDs and the renderer compares scores.
 scores=$(cfg_custom_format_scores)
 ids=$(cfg_quality_ids sonarr)
-rendered=$(printf '%s\n' '{"id":1,"formatItems":[{"format":1,"score":1000}]}' |
-    SCORES="$scores" FORMAT_MAP='{"x264":1}' python3 "$REPO_ROOT/scripts/lib/arr/render/format_scores.py")
+rendered=$(printf '%s\n' '{"id":1,"formatItems":[{"format":1,"score":1000}]}' \
+    | SCORES="$scores" FORMAT_MAP='{"x264":1}' python3 "$REPO_ROOT/scripts/lib/arr/render/format_scores.py")
 
 # Then their JSON retains safe_load numeric values and the live score matches.
 assert_eq '{"x264": 1000}' "$scores" "format scores preserve YAML numeric resolution"
