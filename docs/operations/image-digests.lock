@@ -3,9 +3,9 @@
 service	image	digest	tested_at_utc	preflight
 jellyfin	jellyfin/jellyfin:latest	sha256:2038fe038ab3876a80f6e7b7e0aef6607b032c7dc0c9b3ad3296d0b2eba3bbb5	2026-10-25T06:18:34Z	scenario:fresh-install
 sonarr	linuxserver/sonarr:latest	sha256:48e36b608b461273b9dae857725cd0561a127f2c694b687318f6d0c5ce63e5c9	2026-10-25T06:18:34Z	scenario:fresh-install
-radarr	linuxserver/radarr:latest	sha256:fc0ae3c50f8128b97e84381903ec8d6845c3a569641cb7117c124376cccb57c1	2026-10-22T10:18:13Z	scenario:fresh-install
-jackett	linuxserver/jackett:latest	sha256:047a28f2493d04a95d5a6bc5670a68c9bce99159e6a9ddf8ff9d564fc0b27bd7	2026-10-25T06:18:34Z	scenario:fresh-install
-qbittorrent	linuxserver/qbittorrent:latest	sha256:e887804fa9de4c60f5f0fb1f3a7e4febe40a8f69fe736f70c4e8589b1f868dab	2026-10-22T10:18:13Z	scenario:fresh-install
+radarr	linuxserver/radarr:latest	sha256:084b3b2ab1d0ef930660727259546a241f2bdf67c9ed085d54bf1486a6887c9b	2026-10-27T11:05:51Z	scenario:fresh-install
+jackett	linuxserver/jackett:latest	sha256:402bfdc5f132dd89a9019d15a756079a7822843b465ee9e4e7c996f1ecb9bc49	2026-10-27T11:05:51Z	scenario:fresh-install
+qbittorrent	linuxserver/qbittorrent:latest	sha256:75ecbb1c89ab7b0a21c4bde40b4820e4f1649d2d56d83b91913422155e8d2a5f	2026-10-27T11:05:51Z	scenario:fresh-install
 flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:c80ae007ce2ccdcd217a12426e4f039ef763ff90738c808d38810c3e59323767	2026-10-20T03:25:34Z	scenario:fresh-install
 seerr	ghcr.io/seerr-team/seerr:latest	sha256:d8fab675b55ad293ded98fd71efcfd46054cbad9746534ae1cc4794a88c0b3be	2026-10-22T10:18:13Z	scenario:fresh-install
 unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:724c702e81727e3d90c42cf2b3d900674203906a6d135ba07416c9a3f9f67fbb	2026-09-07T16:47:56Z	scenario:unpackerr
@@ -19,5 +19,5 @@ uptime-kuma	louislam/uptime-kuma:2	sha256:4b95dbe7ac5343b768f8e04e3035ccd5999787
 beszel	henrygd/beszel:latest	sha256:8514a69d9bbbcb74f371a3205561ee231fc0289739cea64e8131f341d695b770	2026-10-25T06:18:34Z	scenario:fresh-install
 beszel-agent	henrygd/beszel-agent:alpine	sha256:4100e26f7b5e6ab89e73699b2366417795f5046ab36bc452daf1f105766b40a0	2026-10-25T06:18:34Z	scenario:fresh-install
 wireguard	ghcr.io/wg-easy/wg-easy:15	sha256:071f79a639e9361123a5e57733107320207b844ddbbd92dfa6962f541fe8aac8	2026-10-25T06:18:34Z	scenario:wireguard
-autoheal	willfarrell/autoheal:latest	sha256:2db3cd6c7cd730bfd6467e176ddaa4f2658e87d5a3ad95e1ec30652de023afcf	2026-10-25T06:18:34Z	scenario:autoheal
+autoheal	willfarrell/autoheal:latest	sha256:df19e62e64c515d914a67d7ad4e45351e31cb44482de60c58c8bfa1181bd0b03	2026-10-27T11:05:51Z	scenario:autoheal
 socket-proxy	wollomatic/socket-proxy:1	sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848	2026-10-25T06:18:34Z	scenario:fresh-install
