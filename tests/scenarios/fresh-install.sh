@@ -24,6 +24,7 @@ source tests/assertions/drift.sh
 source tests/assertions/beszel.sh
 source tests/assertions/socket-proxy.sh
 source tests/assertions/install-digest.sh
+source tests/assertions/remote-gating.sh
 
 fresh_install_run() {
     # ------------------------------------------------------------------
@@ -212,12 +213,39 @@ PYEOF
     # ------------------------------------------------------------------
     # 4. Per-step evidence assertions
     # ------------------------------------------------------------------
+    fresh_install_assert_services "$configure_log" "$jf_password" ready
+    NPM_TOKEN=""
+    F2B_STATUS=""
+    assert_npm_configured "$jf_password"
+    assert_fail2ban_configured
+    assert_fail2ban_rotation
+    assert_ratelimit_disabled
+    assert_jellyfin_encoding
+    assert_port_check
+    assert_drift_regression
+    assert_uptime_kuma_idempotent
+    assert_install_digest_recorded
+}
+
+# Configured state of every default-profile service, as configure.sh leaves it.
+# Shared with install-e2e, which reaches the same state through the real
+# installer. Args: <configure log> <admin password> <ready|lan>. "ready" is
+# this scenario's Pebble-backed HTTPS fixture; "lan" is a LAN-only install,
+# where the proxy-trust and external-URL checks become LAN-state checks.
+fresh_install_assert_services() {
+    local configure_log="$1" jf_password="$2"
+    ASSERT_REMOTE_STATE="$3"
+    case "$ASSERT_REMOTE_STATE" in
+        ready | lan) ;;
+        *)
+            fail "fresh-install assertions: remote state is ready or lan" "got '$ASSERT_REMOTE_STATE'"
+            return 1
+            ;;
+    esac
     SONARR_KEY=""
     RADARR_KEY=""
     JF_TOKEN=""
     JF_AUTH_HEADER=""
-    NPM_TOKEN=""
-    F2B_STATUS=""
 
     assert_qbittorrent_configured
     assert_jackett_configured
@@ -230,16 +258,11 @@ PYEOF
     assert_uptime_kuma_configured "$configure_log"
     assert_beszel_configured "$configure_log" "$jf_password"
     assert_socket_proxy_policy
-    assert_npm_configured "$jf_password"
-    assert_fail2ban_configured
-    assert_fail2ban_rotation
-    assert_ratelimit_disabled
     assert_env_backpopulation
-    assert_jellyfin_encoding
-    assert_port_check
-    assert_drift_regression
-    assert_uptime_kuma_idempotent
-    assert_install_digest_recorded
+    if [[ "$ASSERT_REMOTE_STATE" == lan ]]; then
+        remote_gating_assert_jellyfin_lan_only lan
+        remote_gating_assert_homepage_lan_only lan
+    fi
 }
 
 run_scenario() { fresh_install_run; }

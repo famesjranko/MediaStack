@@ -50,17 +50,21 @@ except Exception: pass' 2>/dev/null | tr -d '\r\n')
         jf_known_proxies=$(echo "$jf_netcfg" | python3 -c 'import sys,json; print(",".join(json.load(sys.stdin).get("KnownProxies",[])))' 2>/dev/null | tr -d '\r\n')
         jf_published=$(echo "$jf_netcfg" | python3 -c 'import sys,json; print("|".join(json.load(sys.stdin).get("PublishedServerUriBySubnet",[])))' 2>/dev/null | tr -d '\r\n')
         assert_eq "True" "$jf_auto_disc" "step 5 Jellyfin: AutoDiscovery enabled"
-        local remote_state
-        remote_state=$(env_get REMOTE_WEB_STATE)
-        if [[ "$remote_state" != "ready" ]]; then
-            fail "step 5 Jellyfin: ready-state HTTPS assertions require REMOTE_WEB_STATE=ready" "DOMAIN=fresh.test REMOTE_WEB_STATE=${remote_state:-unset}"
+        # A LAN-only install has no proxy to trust; its caller checks the LAN
+        # network state instead (remote_gating_assert_jellyfin_lan_only).
+        if [[ "${ASSERT_REMOTE_STATE:-ready}" == ready ]]; then
+            local remote_state
+            remote_state=$(env_get REMOTE_WEB_STATE)
+            if [[ "$remote_state" != "ready" ]]; then
+                fail "step 5 Jellyfin: ready-state HTTPS assertions require REMOTE_WEB_STATE=ready" "DOMAIN=fresh.test REMOTE_WEB_STATE=${remote_state:-unset}"
+            fi
+            local expected_npm_ip
+            expected_npm_ip=$(env_get MEDIASTACK_NPM_IP)
+            expected_npm_ip="${expected_npm_ip:-172.28.0.10}"
+            assert_eq "$expected_npm_ip" "$jf_known_proxies" "step 5 Jellyfin: ready-state KnownProxies set to npm pinned IP"
+            assert_contains "$jf_published" "external=https://jellyfin.fresh.test" "step 5 Jellyfin: ready-state PublishedServerUriBySubnet external URL"
+            assert_contains "$jf_published" "internal=http://127.0.0.1:8096" "step 5 Jellyfin: PublishedServerUriBySubnet internal URL"
         fi
-        local expected_npm_ip
-        expected_npm_ip=$(env_get MEDIASTACK_NPM_IP)
-        expected_npm_ip="${expected_npm_ip:-172.28.0.10}"
-        assert_eq "$expected_npm_ip" "$jf_known_proxies" "step 5 Jellyfin: ready-state KnownProxies set to npm pinned IP"
-        assert_contains "$jf_published" "external=https://jellyfin.fresh.test" "step 5 Jellyfin: ready-state PublishedServerUriBySubnet external URL"
-        assert_contains "$jf_published" "internal=http://127.0.0.1:8096" "step 5 Jellyfin: PublishedServerUriBySubnet internal URL"
 
         local jf_servercfg jf_bitrate_limit
         jf_servercfg=$(dind_exec "curl -sf -H 'Authorization: $JF_AUTH_HEADER, Token=\"$JF_TOKEN\"' http://localhost:8096/System/Configuration")

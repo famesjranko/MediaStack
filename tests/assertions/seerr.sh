@@ -222,13 +222,18 @@ print(",".join(names))' 2>/dev/null)
 
     # trustProxy ("Enable Proxy Support") must be on behind NPM so Seerr
     # reads the real client IP. It lives in settings.network (NOT settings.main)
-    # and is enabled only when remote-ready — which this scenario is.
-    local seerr_net seerr_trust
+    # and is enabled only when remote-ready. A LAN-only install has no proxy,
+    # so there it must stay off.
+    local seerr_net seerr_trust want_trust="True" trust_label="enabled (remote-ready)"
+    if [[ "${ASSERT_REMOTE_STATE:-ready}" != ready ]]; then
+        want_trust="False"
+        trust_label="disabled (LAN-only)"
+    fi
     seerr_net=$(dind_exec "curl -sf --max-time 20 -c $seerr_cookie -b $seerr_cookie $seerr_url/api/v1/settings/network")
     seerr_trust=$(echo "$seerr_net" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("trustProxy"))' 2>/dev/null)
-    if [[ "$seerr_trust" == "True" ]]; then
-        pass "step 6 Seerr: trustProxy enabled (remote-ready)"
+    if [[ "$seerr_trust" == "$want_trust" ]]; then
+        pass "step 6 Seerr: trustProxy $trust_label"
     else
-        fail "step 6 Seerr: trustProxy enabled (remote-ready)" "settings/network trustProxy=$seerr_trust"
+        fail "step 6 Seerr: trustProxy $trust_label" "settings/network trustProxy=$seerr_trust"
     fi
 }

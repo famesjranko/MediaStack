@@ -88,16 +88,20 @@ assert_homepage_configured() {
         fail "step 8 Homepage: conditional services use internal URLs" "missing: ${missing_conditional[*]}"
     fi
 
-    local remote_state
-    remote_state=$(env_get REMOTE_WEB_STATE)
-    if [[ "$remote_state" != "ready" ]]; then
-        fail "step 8 Homepage: ready-state HTTPS assertions require REMOTE_WEB_STATE=ready" "DOMAIN=fresh.test REMOTE_WEB_STATE=${remote_state:-unset}"
-    fi
+    # A LAN-only install keeps LAN hrefs; its caller checks them instead
+    # (remote_gating_assert_homepage_lan_only).
+    if [[ "${ASSERT_REMOTE_STATE:-ready}" == ready ]]; then
+        local remote_state
+        remote_state=$(env_get REMOTE_WEB_STATE)
+        if [[ "$remote_state" != "ready" ]]; then
+            fail "step 8 Homepage: ready-state HTTPS assertions require REMOTE_WEB_STATE=ready" "DOMAIN=fresh.test REMOTE_WEB_STATE=${remote_state:-unset}"
+        fi
 
-    if echo "$services_yaml" | grep -q "jellyfin.fresh.test"; then
-        pass "step 8 Homepage: ready-state HTTPS URLs used"
-    else
-        fail "step 8 Homepage: ready-state HTTPS URLs used" "expected jellyfin.fresh.test in href"
+        if echo "$services_yaml" | grep -q "jellyfin.fresh.test"; then
+            pass "step 8 Homepage: ready-state HTTPS URLs used"
+        else
+            fail "step 8 Homepage: ready-state HTTPS URLs used" "expected jellyfin.fresh.test in href"
+        fi
     fi
 
     # Verify default bookmarks were removed. Homepage truncates bookmarks.yaml on
