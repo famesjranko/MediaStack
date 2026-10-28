@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 from typing import Any
 
+from . import contracts
 from .model import (
     ROOT,
     build_plan,
@@ -19,6 +21,7 @@ from .model import (
     one_line,
     rows,
 )
+from .status import contract_lines, coverage_lines
 
 # Any malformed artifact classifies its job as failed instead of stopping selection.
 MALFORMED = (ValueError, OSError, KeyError, TypeError, AttributeError)
@@ -31,6 +34,14 @@ RESOURCES = (
     "disk_growth_bytes",
     "disk_samples",
 )
+
+
+# Contract messages can quote artifact text (an unlisted path, an unknown entry
+# id). They reach Markdown tables and logs, so only these characters pass, and
+# each service reports a bounded number of them.
+UNSAFE_TEXT = re.compile(r"[^A-Za-z0-9 ._/{}()\[\],:=@#+\u00d7-]")
+MESSAGES_PER_SERVICE = 20
+CONTRACTS_FILE = "contracts.json"
 
 
 class RunnerDiskError(ValueError):
@@ -144,13 +155,97 @@ def check_runtime_evidence(
             raise ValueError("runtime inspection architecture differs from linux/amd64")
 
 
+def safe_text(text: str) -> str:
+    return UNSAFE_TEXT.sub("?", one_line(text))[:300]
+
+
+def _add_message(failed: dict[str, list[str]], service: str, message: str) -> None:
+    messages = failed.setdefault(service, [])
+    if len(messages) < MESSAGES_PER_SERVICE:
+        messages.append(safe_text(message))
+    elif len(messages) == MESSAGES_PER_SERVICE:
+        messages.append("further contract failures omitted; see the artifacts")
+
+
+def contract_verdict(
+    plan: dict[str, Any], jobs: list[dict[str, Any]], results: pathlib.Path, services: list[str]
+) -> dict[str, Any]:
+    """Judge the contract evidence of ``jobs`` for the candidate ``services``.
+
+    The rules are tests/preflight/contracts.py, against the verifier's own
+    inventory: this checkout is the plan's source. Only jobs of the traced
+    scenarios carry evidence. A traced job whose contracts.json is missing,
+    malformed or not its own fails every candidate it ran. Only the other
+    services get the per-entry verdict, so that incomplete evidence never reads
+    as an unexercised entry. A service without entries and without a traced job
+    has nothing to judge; it is reported. Returns JSON data: contract failures
+    by service, and the exempt entries, stale exemptions and services without
+    entries that the reports list.
+    """
+    found, own = contracts.own_inventory()
+    failed: dict[str, list[str]] = {}
+    evidence = []
+    traced = [job for job in jobs if job["scenario"] in contracts.TRACED_SCENARIOS]
+    untraced = [
+        service
+        for service in services
+        if not any(service in job["services"] for job in traced)
+        and not any(entry.service == service for entry in found)
+    ]
+    for job in traced:
+        try:
+            data = contracts.read_contracts(folder_of(results, job) / CONTRACTS_FILE)
+        except (OSError, ValueError):
+            problems = [f"{CONTRACTS_FILE} is missing or unreadable"]
+        else:
+            problems = contracts.check_job(job, data, plan["candidates"], own, found)
+            if not problems:
+                evidence.append((job, data))
+        for service in job["combination"]:
+            for problem in problems:
+                _add_message(failed, service, f"{job['id']}: {problem}")
+    judged = contracts.verdict(
+        evidence,
+        [s for s in services if s not in failed and s not in untraced],
+        plan["candidates"],
+        own,
+        found,
+    )
+    judged.uncovered += [
+        f"{service}: no contract entries and no traced scenario; acceptance rests on its scenarios"
+        for service in untraced
+    ]
+    for failure in judged.failures:
+        service, message = failure.scope, failure.message
+        named = message.startswith((service + " ", service + ":"))
+        _add_message(failed, service, message if named else f"{service}: {message}")
+    return {
+        "failed": {service: failed[service] for service in sorted(failed)},
+        "exempt": judged.exempt,
+        "stale": [safe_text(text) for text in judged.stale],
+        "uncovered": judged.uncovered,
+    }
+
+
 def select_combination(plan: dict[str, Any], results: pathlib.Path) -> dict[str, Any]:
-    """Freeze phase 2 from phase-1 results; a candidate passes only if all its jobs qualify."""
+    """Freeze phase 2 from phase-1 results; a candidate passes only if all its jobs qualify.
+
+    A candidate whose jobs all passed must also pass the contract verdict over
+    those jobs. A contract failure is an image failure, never undecided.
+    """
     if plan["phase"] != 1:
         raise ValueError("selection needs the phase-1 plan")
     failed, runner = job_failures(plan, results)
-    passed = [s for s in plan["selected"] if s not in failed and s not in runner]
-    return combination_plan(plan, passed, failed, runner)
+    judged = [s for s in plan["selected"] if s not in failed and s not in runner]
+    jobs = [job for job in plan["jobs"] if set(job["combination"]) <= set(judged)]
+    report = contract_verdict(plan, jobs, results, judged)
+    for service in report["failed"]:
+        print(f"{service}: contract coverage failed", file=sys.stderr)
+        failed[service] = sorted(job["scenario"] for job in jobs if service in job["services"])
+    passed = [s for s in judged if s not in failed]
+    selection = combination_plan(plan, passed, failed, runner)
+    selection["contracts"] = report
+    return selection
 
 
 def job_failures(
@@ -187,6 +282,23 @@ def phase_two_undecided(
     """
     failed, runner = job_failures(selection, results)
     return {service: scenarios for service, scenarios in runner.items() if service not in failed}
+
+
+def phase_two_contract_failures(
+    selection: dict[str, Any], results: pathlib.Path
+) -> dict[str, list[str]]:
+    """The contract failures of a combination whose phase-2 jobs all passed.
+
+    Final verification refuses such a combination; the status report names
+    each failed entry. These results are data only; they never change the lock.
+    """
+    if selection["authority"] != "phase-2":
+        return {}
+    failed, runner = job_failures(selection, results)
+    if failed or runner:
+        return {}
+    report = contract_verdict(selection, selection["jobs"], results, selection["selected"])
+    return dict(report["failed"])
 
 
 def authorized_jobs(
@@ -231,6 +343,11 @@ def accept(
         raise ValueError("phase-2 plan is stale or does not follow from the phase-1 results")
     evidence = authorized_jobs(phase1, phase2)
     receipts = [check_result(p, job, folder_of(results, job)).read_text() for p, job in evidence]
+    report = contract_verdict(
+        evidence[0][0], [job for _, job in evidence], results, phase2["selected"]
+    )
+    if report["failed"]:
+        raise ValueError("contract coverage failed: " + "; ".join(contract_lines(report)))
     # Validate the complete combination before writing any publication file.
     output.mkdir(parents=True, exist_ok=False)
     receipt_path = output / "receipts.tsv"
@@ -253,13 +370,14 @@ def accept(
         output / "image-digests.lock",
         drift.merge_selective(list(baseline.values()), enriched, selected),
     )
-    write_body(phase2, evidence, results, output / "body.md")
+    write_body(phase2, evidence, results, report, output / "body.md")
 
 
 def write_body(
     phase2: dict[str, Any],
     evidence: list[tuple[dict[str, Any], dict[str, Any]]],
     results: pathlib.Path,
+    report: dict[str, Any],
     path: pathlib.Path,
 ) -> None:
     # No artifact value becomes a shell command, branch name or executable path.
@@ -290,6 +408,9 @@ def write_body(
         "Results bind the source commit, workflow run, architecture, companions and exact digests. "
         "Resource measurements and sanitized logs are in the workflow artifacts. "
         "Candidates that failed phase 1: " + failed + ".\n" + "\n".join(lines) + "\n\n"
+        "Every inventoried API call of each candidate was made on its candidate digest with "
+        "an accepted status, every declared read was seen, and no unlisted call was made. "
+        "These are the limits of that proof:\n\n" + "\n".join(coverage_lines(report)) + "\n\n"
         "## Notes\n\nOther lock rows and timestamps are preserved. Image updates can migrate "
         "persistent databases; reverting the lock alone does not undo those migrations. "
         "Review the compatibility matrix and artifacts before merging. A later accepted run "

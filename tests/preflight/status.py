@@ -17,11 +17,33 @@ def runner_text(phase: int, details: dict[str, str], link: str) -> str:
     return f"undecided in phase {phase}: {jobs} ({link})"
 
 
+def contract_lines(report: dict[str, Any]) -> list[str]:
+    """Every contract failure; each names its service, entry or job."""
+    return [message for messages in report["failed"].values() for message in messages]
+
+
+def coverage_lines(report: dict[str, Any]) -> list[str]:
+    """What the contract verdict did not prove: exemptions, stale ones, uncovered services."""
+    exempt = "; ".join(
+        f"{service}: {', '.join(entries)}" for service, entries in sorted(report["exempt"].items())
+    )
+    return [
+        "- Exempt contract entries, not exercised by the image jobs: " + (exempt or "none"),
+        "- Stale exemptions, exercised on the candidate: " + ("; ".join(report["stale"]) or "none"),
+        "- No contract entries: " + ("; ".join(report["uncovered"]) or "none"),
+    ]
+
+
+def contract_text(messages: list[str]) -> str:
+    return "; contract: " + "; ".join(f"`{message}`" for message in messages) if messages else ""
+
+
 def phase_one_status(service: str, selection: dict[str, Any], link: str) -> str | None:
     # An image failure outranks exhausted headroom in another job of the same candidate.
     if service in selection["failed"]:
         names = ", ".join(f"`result-p1-{service}.{s}`" for s in selection["failed"][service])
-        return f"failed in phase 1 ({link}; {names})"
+        messages = selection.get("contracts", {}).get("failed", {}).get(service, [])
+        return f"failed in phase 1 ({link}; {names}){contract_text(messages)}"
     if service in selection["runner_failed"]:
         details = {
             f"result-p1-{service}.{scenario}": detail
@@ -38,6 +60,7 @@ def selected_status(
     publication: dict[str, str],
     link: str,
     runner: dict[str, dict[str, str]],
+    contract: dict[str, list[str]],
 ) -> str:
     if selection is None:
         return f"undecided: phase 1 or the selection did not complete ({link})"
@@ -50,7 +73,7 @@ def selected_status(
                 details = {f"result-p2-{s}": d for s, d in runner[service].items()}
                 return runner_text(2, details, link)
             return f"failed in phase 2 ({link}; `result-p2-*`)"
-        return f"failed final verification ({link})"
+        return f"failed final verification ({link}){contract_text(contract.get(service, []))}"
     if publication["outcome"] in PROPOSED and publication["pr"] and jobs["publish"] == "success":
         return f"proposed in PR #{publication['pr']}"
     if jobs["publish"] == "skipped":
@@ -87,14 +110,17 @@ def render(
     publication: dict[str, str],
     run: dict[str, str],
     runner: dict[str, dict[str, str]] | None = None,
+    contract: dict[str, list[str]] | None = None,
 ) -> str:
     """``jobs`` maps combine, verify and publish to their job results.
 
-    ``runner`` is ``verify.phase_two_undecided`` for a failed phase 2.
+    ``runner`` is ``verify.phase_two_undecided`` for a failed phase 2, and
+    ``contract`` is ``verify.phase_two_contract_failures`` for a failed final
+    verification.
     """
     link = f"[run]({run['url']}), [artifacts]({run['url']}#artifacts)"
     status = {
-        s: selected_status(s, selection, jobs, publication, link, runner or {})
+        s: selected_status(s, selection, jobs, publication, link, runner or {}, contract or {})
         for s in plan["selected"]
     }
     for service, reason in plan["pending"].items():
@@ -103,6 +129,8 @@ def render(
     lines += [f"| {service} | {text} |" for service, text in sorted(status.items())]
     if not status:
         lines.append("| none | no drifted service |")
+    if selection and "contracts" in selection:
+        lines += ["", "Contract coverage in phase 1:", "", *coverage_lines(selection["contracts"])]
     lines += ["", f"Publication: {publication_line(jobs['publish'], publication)}."]
     return "\n".join(lines) + "\n"
 

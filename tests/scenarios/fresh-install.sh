@@ -196,7 +196,7 @@ PYEOF
     # regardless of the DinD locale — without it the glyph markers (✓/→/!) added in
     # the terminal-capability work make those greps silently miss. See
     # scripts/lib/term-caps.sh (UI_ASCII).
-    if dind_exec "UI_ASCII=1 ./scripts/configure.sh" >"$configure_log" 2>&1; then
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh" >"$configure_log" 2>&1; then
         pass "configure.sh exits 0"
     else
         fail "configure.sh exits 0"

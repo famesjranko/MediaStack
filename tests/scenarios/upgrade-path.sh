@@ -7,7 +7,7 @@ upgrade_state() { dind_exec "python3 -I tests/fixtures/upgrade_state.py $1"; }
 # Invoke the production update/revert functions. Only menu input is supplied by
 # the fixture; Docker, snapshots, policy writes and authentication stay real.
 upgrade_launcher() {
-    docker exec -i -w /root/MediaStack "$DIND_NAME" bash -s -- "$1" <<'BASH'
+    docker exec -i -e "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-}" -w /root/MediaStack "$DIND_NAME" bash -s -- "$1" <<'BASH'
 set -euo pipefail
 SCRIPT_DIR=/root/MediaStack
 CONFIG_FILE=$SCRIPT_DIR/config.yml
@@ -99,7 +99,7 @@ run_scenario() {
         return 1
     }
     pass 'upgrade-path returns to the candidate after verified revert'
-    if dind_exec 'UI_ASCII=1 ./scripts/update.sh' >"$log" 2>&1; then
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/update.sh" >"$log" 2>&1; then
         pass 'upgrade-path real scripts/update.sh succeeds'
     else
         fail 'upgrade-path real scripts/update.sh succeeds'
@@ -138,7 +138,7 @@ run_scenario() {
     else
         fail 'upgrade-path preserves users, settings, IDs, categories, and credentials'
     fi
-    if dind_exec 'UI_ASCII=1 ./scripts/configure.sh --only qbittorrent,jackett,sonarr,radarr,jellyfin,seerr' >"$log" 2>&1 \
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only qbittorrent,jackett,sonarr,radarr,jellyfin,seerr" >"$log" 2>&1 \
         && upgrade_state check; then
         pass 'upgrade-path reconfiguration preserves intentional user changes'
     else
