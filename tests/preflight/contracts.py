@@ -26,10 +26,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "contracts"))
+import inventory
 from inventory import Endpoint
 
 SCHEMA = 1
 MAX_BYTES = 1_000_000
+# The scenarios that set MS_CONTRACT_TRACE on the commands that start product
+# code. Only their jobs carry contract evidence; the others make no traced call.
+TRACED_SCENARIOS = frozenset({"fresh-install", "install-e2e", "upgrade-path"})
 TIMES = chr(0xD7)  # the multiplication sign, as in "seen 404 times 2"
 Job = dict[str, Any]
 
@@ -50,6 +54,11 @@ class Verdict:
     exempt: dict[str, list[str]] = field(default_factory=dict)
     stale: list[str] = field(default_factory=list)
     uncovered: list[str] = field(default_factory=list)
+
+
+def own_inventory() -> tuple[list[Endpoint], str]:
+    """The verifier's inventory and fingerprint, from the checkout under test."""
+    return inventory.load_endpoints(), inventory.fingerprint()
 
 
 def read_contracts(path: pathlib.Path) -> Any:

@@ -35,6 +35,25 @@ The scenario reports fresh configuration checks and migration checks separately.
 Both installations use the current MediaStack configurators. This tests image
 changes, not configurator changes from an older MediaStack release.
 
+## API contracts and other touchpoints
+
+`tests/contracts/*.yml` lists every HTTP API call that MediaStack makes to a
+service. The hosted preflight requires proof that each call still works on the
+candidate digest. See
+[the contract gate](hosted-image-preflight.md#contract-gate).
+
+MediaStack also touches images in ways that are not HTTP calls. These
+touchpoints have no contract entries. This table gives the evidence for each:
+
+| Touchpoint | Evidence |
+|---|---|
+| Files that an image writes and MediaStack reads, for example `config.xml` API keys | Indirect: each configurator reads the key from the file, then authenticates with it. An authenticated 2xx response on the candidate proves the read. |
+| Files that MediaStack writes for an image | The Homepage assertions, `ddns-verify` and the fail2ban assertions. The service must load the file and behave as configured. |
+| Environment, ports and healthchecks | The compose render check, the receipts' health rule (the candidate container must end running or healthy), and the `install-e2e` check of health on the exact digest. |
+| fail2ban log formats | Live Jellyfin and Seerr authentication failures in `fresh-install`. fail2ban must ban the source address. |
+| Data paths and UID/GID | The persistence assertions in `upgrade-path` and `install-e2e`. Saved state must survive Update and Revert. |
+| Uptime Kuma (socket.io API) | Held for operator review. Only its scenario assertions run. |
+
 ## Real installer and day-2 menu: `install-e2e`
 
 `install-e2e` runs the installer and the launcher that a user runs. It does not

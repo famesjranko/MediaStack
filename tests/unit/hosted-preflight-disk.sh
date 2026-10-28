@@ -18,6 +18,9 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(sys.argv.pop()) / "tests"))
+sys.path.insert(0, sys.path[0] + "/fixtures")
+from contract_evidence import covering
+from preflight.contracts import TRACED_SCENARIOS
 from preflight import publish
 from preflight.model import (FIXTURES, HEADROOM_BYTES, ROOT, build_plan, combination_plan, drift,
                              effective, fingerprint, headroom_error, rows, source_sha)
@@ -83,6 +86,8 @@ class RunnerDisk(unittest.TestCase):
                                job["run_id"], "x86_64", "2026-01-01T00:00:00Z"])
                     for s in job["services"]]
         (folder / "receipts.tsv").write_text("\n".join(receipts) + "\n")
+        if job["scenario"] in TRACED_SCENARIOS:
+            (folder / "contracts.json").write_text(json.dumps(covering(plan, job)))
         return folder
 
     def test_unmeasured_result_is_rejected(self):

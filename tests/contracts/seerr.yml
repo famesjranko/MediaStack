@@ -5,7 +5,10 @@ endpoints:
   - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: public-settings, method: GET, path: /settings/public, sends: [], reads: [mediaServerType, initialized], callers: [scripts/services/seerr/main.sh]}
   - {id: jellyfin-auth, method: POST, path: /auth/jellyfin, sends: [username, password, hostname, port, useSsl, urlBase, serverType], reads: [], callers: [scripts/services/seerr/main.sh]}
-  - {id: local-auth-probe, method: POST, path: /auth/local, sends: [email, password], reads: [], callers: [scripts/lib/health.sh]}
+  # The fail2ban probe ignores the status (scripts/lib/health.sh
+  # _health_f2b_probe). It needs a refused login, which writes the denial line
+  # that the jail filter matches, so any refusal status counts.
+  - {id: local-auth-probe, method: POST, path: /auth/local, expect: [400, 401, 403], sends: [email, password], reads: [], callers: [scripts/lib/health.sh]}
   - {id: current-user, method: GET, path: /auth/me, sends: [], reads: [id, email], callers: [scripts/services/seerr/main.sh]}
   - {id: jellyfin-settings, method: GET, path: /settings/jellyfin, sends: [], reads: [apiKey], callers: [scripts/services/seerr/main.sh]}
   - {id: jellyfin-library-sync, method: POST, path: /settings/jellyfin/library/sync, sends: [], reads: [id], callers: [scripts/services/seerr/main.sh]}

@@ -72,6 +72,8 @@ receipts_scenario_begin() { :; }
 receipts_scenario_end() { :; }
 receipts_run_end() { :; }
 STUB
+    # The real contract-trace hooks: without MS_CONTRACTS_FILE they must do nothing.
+    cp "$REPO_ROOT/tests/lib/contract-trace.sh" "$TMP_DIR/sandbox/tests/lib/contract-trace.sh"
 
     cat >"$TMP_DIR/sandbox/bin/docker" <<'STUB'
 #!/usr/bin/env bash

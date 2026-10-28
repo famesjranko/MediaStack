@@ -14,7 +14,7 @@ PY
 
     local rerun_log=/tmp/configure-rerun.out
     # UI_ASCII=1: deterministic [WARN] markers for the drift greps below (term-caps.sh).
-    if dind_exec "UI_ASCII=1 ./scripts/configure.sh --only sonarr,radarr,jellyfin" >"$rerun_log" 2>&1; then
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only sonarr,radarr,jellyfin" >"$rerun_log" 2>&1; then
         pass "configure.sh re-run exits 0"
     else
         fail "configure.sh re-run exits 0"

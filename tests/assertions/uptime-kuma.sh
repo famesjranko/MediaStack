@@ -50,7 +50,7 @@ assert_uptime_kuma_idempotent() {
 
     local rerun_log=/tmp/configure-rerun.out
     # UI_ASCII=1: deterministic [SKIP]/[OK] markers for the grep below (term-caps.sh).
-    dind_exec "UI_ASCII=1 ./scripts/configure.sh --only uptime-kuma" >"$rerun_log" 2>&1
+    dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only uptime-kuma" >"$rerun_log" 2>&1
 
     local skip_count
     skip_count=$(grep -c '\[SKIP\].*Monitors already exist' "$rerun_log" 2>/dev/null) || skip_count=0

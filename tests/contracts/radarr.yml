@@ -4,11 +4,16 @@ auth: {type: header, name: X-Api-Key}
 openapi: https://raw.githubusercontent.com/Radarr/Radarr/develop/src/Radarr.Api.V3/openapi.json
 endpoints:
   - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh, scripts/lib/arr/connections.sh]}
+  # The login check after a Manage updates Revert. install-e2e makes it on the
+  # accepted image; fresh-install calls the same function on the candidate.
+  - {id: system-status, method: GET, path: /system/status, sends: [], reads: [], callers: [scripts/lib/update-restore.sh]}
   - {id: config-naming-get, method: GET, path: /config/naming, sends: [], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: config-naming-update, method: PUT, path: /config/naming, sends: [renameMovies, replaceIllegalCharacters, standardMovieFormat, movieFolderFormat], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: quality-profile-list, method: GET, path: /qualityprofile, sends: [], reads: [id, name, cutoff, upgradeAllowed, "items[].quality.id", "items[].allowed", "formatItems[].score"], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh, scripts/services/seerr/arr-connect.sh]}
   - {id: quality-profile-create, method: POST, path: /qualityprofile, sends: [name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/quality.sh]}
-  - {id: quality-profile-get, method: GET, path: "/qualityprofile/{id}", sends: [], reads: [id, name, "formatItems[].score"], callers: [scripts/lib/arr/quality.sh]}
+  # Only the launcher's quality-size change renames a profile in place
+  # (QP_RENAME_FROM, scripts/launcher/quality.sh) and reads it back by id.
+  - {id: quality-profile-get, method: GET, path: "/qualityprofile/{id}", unexercised: launcher-menu, sends: [], reads: [id, name, "formatItems[].score"], callers: [scripts/lib/arr/quality.sh]}
   - {id: quality-profile-update, method: PUT, path: "/qualityprofile/{id}", sends: [id, name, cutoff, upgradeAllowed, items, minFormatScore, formatItems], reads: [id, name], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh]}
   - {id: quality-definition-list, method: GET, path: /qualitydefinition, sends: [], reads: [id, quality.name, minSize, maxSize, preferredSize], callers: [scripts/lib/arr/quality.sh]}
   - {id: quality-definition-update, method: PUT, path: "/qualitydefinition/{id}", sends: [id, quality, minSize, maxSize, preferredSize], reads: [id, quality.name], callers: [scripts/lib/arr/quality.sh]}
@@ -27,5 +32,7 @@ endpoints:
   - {id: notification-list, method: GET, path: /notification, sends: [], reads: [id, name, implementation, "fields[].name", "fields[].value"], callers: [scripts/lib/arr/connections.sh]}
   - {id: notification-create, method: POST, path: /notification, sends: [name, implementation, configContract, fields, onDownload], reads: [id, name], callers: [scripts/lib/arr/connections.sh]}
   - {id: notification-get, method: GET, path: "/notification/{id}", sends: [], reads: [id, name, implementation, "fields[].name", "fields[].value"], callers: [scripts/lib/arr/connections.sh]}
-  - {id: notification-update, method: PUT, path: "/notification/{id}", sends: [id, name, implementation, configContract, fields], reads: [id], callers: [scripts/lib/arr/connections.sh]}
+  # Only Repair Jellyfin connections (launcher Features & settings, or
+  # configure.sh --repair-jellyfin-connections) rewrites a stale key.
+  - {id: notification-update, method: PUT, path: "/notification/{id}", unexercised: launcher-menu, sends: [id, name, implementation, configContract, fields], reads: [id], callers: [scripts/lib/arr/connections.sh]}
   - {id: notification-test, method: POST, path: /notification/test, sends: [id, name, implementation, configContract, fields], reads: [], callers: [scripts/lib/arr/connections.sh]}

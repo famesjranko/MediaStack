@@ -111,7 +111,8 @@ assert_jackett_configured() {
 # session, so the configurator must authenticate again with the admin password
 # that the first run set. A fresh install keeps the seed and skips that repair.
 # Clear the URL and run the configurator again, as a re-run does after an
-# update that dropped the URL.
+# update that dropped the URL. The run is traced, so the contract gate sees
+# the server-config calls and the restart wait on the candidate.
 assert_jackett_flaresolverr_repair() {
     local log=/tmp/configure-jackett-flaresolverr.out url ids_raw idx missing=""
     if ! dind_python <<'PY'; then
@@ -127,7 +128,7 @@ PY
         fail "Jackett repair: FlareSolverr URL cleared"
         return 0
     fi
-    if dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jackett" >"$log" 2>&1 \
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only jackett" >"$log" 2>&1 \
         && grep -q 'FlareSolverr connected' "$log"; then
         pass "Jackett repair: configure.sh restores a dropped FlareSolverr URL through the API"
     else

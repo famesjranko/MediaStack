@@ -25,6 +25,7 @@ declare -A IE2E_INSTALLED=() IE2E_TARGET=() # data service -> image@digest
 
 ie2e_user_exec() {
     docker exec -u "$IE2E_USER" -e "HOME=/home/$IE2E_USER" -e "USER=$IE2E_USER" -e UI_ASCII=1 \
+        -e "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-}" \
         -w /root/MediaStack "$DIND_NAME" bash -c "$1"
 }
 

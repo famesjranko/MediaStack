@@ -536,9 +536,10 @@ jobs:
         with:
           name: preflight-selection
           path: /tmp/preflight-selection
-      # A failed phase 2 may be a full runner disk; its results are read as data only.
+      # A failed phase 2 may be a full runner disk, and a refused one may name
+      # contract failures; its results are read as data only.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: needs.preflight-select.result == 'success' && needs.preflight-combine.result == 'failure'
+        if: needs.preflight-select.result == 'success' && (needs.preflight-combine.result == 'failure' || needs.preflight-verify.result == 'failure')
         continue-on-error: true
         with:
           pattern: result-p2-*

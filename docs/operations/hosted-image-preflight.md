@@ -56,6 +56,59 @@ service requires three scenarios. A selection of five data-owning candidates
 therefore runs fifteen phase-1 jobs, two at a time. Select fewer services to
 shorten a run.
 
+## Contract gate
+
+Passing scenarios do not prove that each API call of MediaStack still works. A
+JSON helper can return a default value when a field has a new name. The contract
+gate closes this gap. `tests/contracts/*.yml` lists each API call, the statuses
+that it accepts and the response fields (`reads`) that MediaStack uses. See
+[tests/contracts/README.md](../../tests/contracts/README.md).
+
+Capture:
+
+1. `fresh-install`, `upgrade-path` and `install-e2e` are the traced scenarios.
+   They set `MS_CONTRACT_TRACE` only on the commands that start product code.
+   Assertion requests are not traced.
+2. In DinD, a `curl` wrapper writes a trace of each product request.
+3. At scenario end, `tests/contracts/observe.py` runs in DinD. It connects each
+   request to its inventory entry, and to the candidate image or to another
+   image, through the container start events. It writes `contracts.json` to the
+   job artifact. This file holds counts, statuses and the names of the reads
+   seen. It holds no values, headers or bodies.
+4. The raw traces stay in DinD and are deleted there.
+
+Verdict (`tests/preflight/contracts.py`):
+
+- Each traced job must upload its own `contracts.json`, for its scenario, run
+  and candidates, with the inventory of the tested source. It must trace at
+  least one request and parse all of them.
+- For each candidate, the gate uses all of its traced jobs together. Each entry
+  must have a call on the candidate digest with an accepted status. Each
+  declared read must appear in an accepted response. No call to the candidate
+  can be outside the inventory.
+- An entry with `unexercised` (`gpu`, `remote-profile`, `launcher-menu`, `nas`
+  or `held-profile`) is exempt. An exempt entry that has a call on the candidate
+  is reported as stale. It does not fail.
+- A contract failure is an image failure. It is never undecided. In phase 1, it
+  removes the candidate from the combination. In phase 2, final verification
+  refuses the combination and nothing is published.
+
+Failure messages name the exact entry:
+
+| Message | Meaning |
+|---|---|
+| `sonarr quality-profile-list: not exercised on candidate (seen 404×2 in fresh-install)` | No call had an accepted status on the candidate. The message shows what was seen. |
+| `sonarr quality-profile-list: missing reads items[].quality.id` | No accepted response had that field with a value. |
+| `sonarr GET /api/v3/system/status: unlisted call (upgrade-path)` | MediaStack called a route that the inventory does not list. |
+| `p1-sonarr.fresh-install: contracts.json is missing or unreadable` | The traced job uploaded no usable evidence. |
+| `p1-sonarr.fresh-install: contract trace inactive: no product request was traced` | The wrapper recorded nothing. |
+| `p1-sonarr.fresh-install: contract trace has 3 unparsed requests` | A local request has no known target or no request line. |
+| `p1-sonarr.fresh-install: contract inventory fingerprint does not match the tested source` | The evidence comes from another inventory. |
+
+A candidate without entries, for example socket-proxy, passes the gate. The
+digest PR body and the status report say that its acceptance rests on its
+scenarios. Both also list the exempt entries and the stale exemptions.
+
 ## Boundaries
 
 The pipeline has these boundaries:
@@ -150,15 +203,19 @@ than the default branch is marked as a trial run. The comment gives one state
 for each drifted service:
 
 - proposed in PR #N;
-- failed in phase 1 or phase 2, with links to the run and its artifacts;
+- failed in phase 1 or phase 2, with links to the run and its artifacts. A
+  [contract](#contract-gate) failure also names each failed entry;
 - undecided because the disk headroom was exhausted in phase 1 or phase 2.
   The comment names each such job with its peak disk growth and the free bytes
   at the peak. The cause is not determined: the runner or the image can fill
   the disk;
 - failed final verification, when the image jobs passed but the verifier
-  refused the evidence;
+  refused the evidence. A phase-2 contract failure names each failed entry;
 - held, with the reason from the compatibility hold list;
 - not selected.
+
+The comment also lists the phase-1 contract coverage limits: exempt entries,
+stale exemptions and candidates without contract entries.
 
 When the planner fails, for example on a registry outage, an invalid `services`
 input or a lock that differs from compose, the comment says so and links the
@@ -172,9 +229,11 @@ Artifacts are retained for 14 days:
 
 - `preflight-plan`: the immutable candidate snapshot and the phase-1 JSON plan.
 - `preflight-selection`: the phase-2 JSON plan, with the passed and failed
-  candidates and the authorizing evidence.
+  candidates, the authorizing evidence and the phase-1 contract report.
 - `result-<job>`: sanitized assertion/service logs, selected Docker event
-  fields, image IDs/digests/platforms, exact receipts and `result.json`. Phase-1
+  fields (bare actions only, so that no exec command line is exported),
+  image IDs/digests/platforms, exact receipts, `result.json` and, for traced
+  scenarios, `contracts.json`. Phase-1
   jobs are named `p1-<service>.<scenario>`. Phase-2 jobs are named
   `p2-<scenario>`.
 - `preflight-accepted`: the proposed lock, combined receipts and PR description.

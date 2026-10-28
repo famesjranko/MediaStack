@@ -30,6 +30,9 @@
 #   MS_TEST_RUN_ID=run-<yyyymmddThhmmssZ>-<8 hex>  # stamp receipt rows with this
 #       run id instead of a generated one (a hosted workflow passes its own). A
 #       malformed value is refused and the run writes no receipts.
+#   MS_CONTRACTS_FILE=/path/contracts.json  # trace product curls and write the
+#       scenario's contract-coverage evidence there (needs a digest override);
+#       see tests/lib/contract-trace.sh. One scenario per run: each replaces it.
 #   MS_CACHE_MIRROR_KEEP=1   # keep ms-registry-mirror running after normal exits
 #
 # Each scenario file in tests/scenarios/<name>.sh must define run_scenario().
@@ -109,6 +112,8 @@ source tests/lib/dind.sh
 source tests/lib/stack.sh
 # shellcheck source=lib/receipts.sh
 source tests/lib/receipts.sh
+# shellcheck source=lib/contract-trace.sh
+source tests/lib/contract-trace.sh
 
 # --- Trap cleanup ---
 runner_should_keep_dind_after_exit() {
@@ -192,6 +197,7 @@ for s in "${SCENARIOS[@]}"; do
     _ran_one=1
     scenario_begin "$s"
     receipts_scenario_begin
+    contract_trace_begin
     unset -f run_scenario 2>/dev/null || true
     # shellcheck disable=SC1090
     source_rc=0
@@ -206,6 +212,7 @@ for s in "${SCENARIOS[@]}"; do
     scenario_end "$s"
     # Before the next scenario or --reset-between wipes the evidence's containers.
     receipts_scenario_end "$s"
+    contract_trace_end "$s"
 done
 
 # summary + exit handled by trap

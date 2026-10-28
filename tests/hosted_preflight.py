@@ -77,6 +77,7 @@ def run(args: argparse.Namespace) -> None:
 
 
 def select(args: argparse.Namespace) -> None:
+    from preflight.status import contract_lines
     from preflight.verify import select_combination
 
     selection = select_combination(checked(args.plan, args, args.hash), args.results)
@@ -91,6 +92,8 @@ def select(args: argparse.Namespace) -> None:
         "",
         "Undecided, disk headroom exhausted (cause not determined): "
         + (", ".join(selection["runner_failed"]) or "none"),
+        "",
+        "Contract failures: " + ("; ".join(contract_lines(selection["contracts"])) or "none"),
         "",
         "Authorizing evidence: " + selection["authority"],
         "",
@@ -123,6 +126,20 @@ def undecided(
     return {}
 
 
+def contract_failures(
+    selection: dict[str, Any] | None, args: argparse.Namespace
+) -> dict[str, list[str]]:
+    """Contract failures of a passing phase 2 that final verification refused.
+
+    Phase-2 results are read as data only, and they never change the lock.
+    """
+    from preflight.verify import phase_two_contract_failures
+
+    if selection and args.combined == "success" and args.verified == "failure" and args.results:
+        return phase_two_contract_failures(selection, args.results)
+    return {}
+
+
 def decide(args: argparse.Namespace) -> None:
     from preflight.publish import decide, read_facts, rejected
 
@@ -149,7 +166,8 @@ def report(args: argparse.Namespace) -> None:
     jobs = {"combine": args.combined, "verify": args.verified, "publish": args.publish_result}
     publication = {"outcome": args.outcome, "pr": args.pr, "reason": args.reason}
     runner = undecided(selection, args)
-    print(render(plan, selection, jobs, publication, run_context(args), runner), end="")
+    contract = contract_failures(selection, args)
+    print(render(plan, selection, jobs, publication, run_context(args), runner, contract), end="")
 
 
 def abort(args: argparse.Namespace) -> None:

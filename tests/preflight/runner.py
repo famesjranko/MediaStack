@@ -13,9 +13,11 @@ import threading
 import time
 from typing import Any, Callable
 
+from .contracts import TRACED_SCENARIOS
 from .model import ROOT, canonical, effective, fingerprint, headroom_error
 
 SAMPLE_SECONDS = 2.0
+INHERITED_NEVER = ("GH_TOKEN", "GITHUB_TOKEN", "MS_CONTRACTS_FILE", "MS_CONTRACT_CANDIDATES")
 
 
 def docker(*args: str) -> str:
@@ -29,8 +31,12 @@ def sanitize(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
 
 
-def evidence(name: str, output: pathlib.Path) -> None:
-    raw = docker("exec", name, "cat", "/tmp/ms-receipt-events.jsonl")
+def lifecycle_events(raw: str) -> list[dict[str, Any]]:
+    """Container events from docker events JSON lines, reduced to their identity.
+
+    Only the bare action is kept: "exec_create: <argv>" carries the exec command
+    line, and beszel passes a password in its argv.
+    """
     events = []
     for line in raw.splitlines():
         event = json.loads(line)
@@ -40,12 +46,18 @@ def evidence(name: str, output: pathlib.Path) -> None:
         attrs = actor["Attributes"]
         events.append(
             {
-                "action": event["Action"],
+                "action": event["Action"].partition(":")[0].strip(),
                 "id": actor["ID"],
                 "service": attrs.get("com.docker.compose.service"),
                 "image": attrs.get("image"),
             }
         )
+    return events
+
+
+def evidence(name: str, output: pathlib.Path) -> None:
+    raw = docker("exec", name, "cat", "/tmp/ms-receipt-events.jsonl")
+    events = lifecycle_events(raw)
     (output / "events.json").write_bytes(canonical(events))
     ids = docker("exec", name, "docker", "image", "ls", "-q").split()
     images = []
@@ -160,6 +172,41 @@ def run_with_deadline(child_env: dict[str, str], scenario: str, log: Any) -> int
         return 124
 
 
+def job_environment(
+    plan: dict[str, Any], job: dict[str, Any], name: str, output: pathlib.Path
+) -> dict[str, str]:
+    """The environment of tests/run.sh for one job.
+
+    The GitHub tokens never reach it, and contract capture is set only here.
+    """
+    overrides = ",".join(f"{s}={ref}" for s, ref in sorted(effective(plan, job).items()))
+    child_env = {k: v for k, v in os.environ.items() if k not in INHERITED_NEVER}
+    child_env.update(
+        {
+            "DIND_NAME": name,
+            "DIND_IMAGE": "ms-hosted-dind:debian",
+            "KEEP_ALWAYS": "1",
+            "MS_TEST_IMAGE_OVERRIDES": overrides,
+            "MS_TEST_RUN_ID": job["run_id"],
+            "RECEIPTS_FILE": str(output / "receipts.tsv"),
+            "MS_TEST_NO_CACHE": "1",
+            "MS_TEST_STRIP_SERVICES": "",
+            "MS_TEST_PEBBLE_IMAGE": plan["fixtures"]["pebble"],
+            "MS_TEST_CHALLTESTSRV_IMAGE": plan["fixtures"]["challtestsrv"],
+            "MS_TEST_TORZNAB_IMAGE": plan["fixtures"]["torznab"],
+        }
+    )
+    if job["scenario"] in TRACED_SCENARIOS:
+        # contracts.json goes straight to the artifact, unsanitized: the
+        # reducer writes no values, and sanitize would mangle entry ids. It
+        # names only this job's candidates, not the accepted companions.
+        child_env["MS_CONTRACTS_FILE"] = str(output / "contracts.json")
+        child_env["MS_CONTRACT_CANDIDATES"] = ",".join(
+            f"{s}={plan['candidates'][s]}" for s in sorted(job["combination"])
+        )
+    return child_env
+
+
 def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
     jobs = [j for j in plan["jobs"] if j["id"] == job_id]
     if len(jobs) != 1:
@@ -171,24 +218,7 @@ def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
         raise ValueError("hosted preflight must run from a clean source checkout")
     name = "ms-hosted-" + fingerprint([plan["run"], job_id])[:12]
     output.mkdir(parents=True, exist_ok=False)
-    receipts = output / "receipts.tsv"
-    overrides = ",".join(f"{s}={ref}" for s, ref in sorted(effective(plan, job).items()))
-    child_env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
-    child_env.update(
-        {
-            "DIND_NAME": name,
-            "DIND_IMAGE": "ms-hosted-dind:debian",
-            "KEEP_ALWAYS": "1",
-            "MS_TEST_IMAGE_OVERRIDES": overrides,
-            "MS_TEST_RUN_ID": job["run_id"],
-            "RECEIPTS_FILE": str(receipts),
-            "MS_TEST_NO_CACHE": "1",
-            "MS_TEST_STRIP_SERVICES": "",
-            "MS_TEST_PEBBLE_IMAGE": plan["fixtures"]["pebble"],
-            "MS_TEST_CHALLTESTSRV_IMAGE": plan["fixtures"]["challtestsrv"],
-            "MS_TEST_TORZNAB_IMAGE": plan["fixtures"]["torznab"],
-        }
-    )
+    child_env = job_environment(plan, job, name, output)
     result: dict[str, Any] = {
         "schema": 1,
         "plan": fingerprint(plan),

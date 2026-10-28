@@ -1,6 +1,33 @@
 # Owns: stage1_* — Stage 1 baseline installation, health proof, marker, and LAN integration.
 # Sources: env generation, storage, hardening, stack, configure.sh, `SCRIPT_DIR`/`_ENV_HOST_ADDRESS`, color globals, and Stage 1 state.
 
+# Stronger probe than /health to gate the STAGE_1_COMPLETE flip. /health
+# returns 200 well before the admin user is created, so a half-broken
+# configure.sh (warnings, not hard failure) could leave the admin user
+# uncreated and we'd still flip the marker — locking the user out of their
+# "complete" install. Probing /Users with JELLYFIN_API_KEY proves Jellyfin is
+# alive AND the admin user exists AND the API key works. Falls back to /health
+# if the API key wasn't saved (rare — would mean configure.sh hard-failed
+# before reaching jellyfin). Returns 0 only for an authenticated /Users.
+_stage1_jellyfin_probe() {
+    if [[ -n "${JELLYFIN_API_KEY:-}" ]]; then
+        if curl --max-time 5 -fsS \
+            -H "Authorization: MediaBrowser Token=\"${JELLYFIN_API_KEY}\"" \
+            "http://${_ENV_HOST_ADDRESS}:8096/Users" >/dev/null 2>&1; then
+            log_ok "Jellyfin admin user authenticated at http://${_ENV_HOST_ADDRESS}:8096"
+            return 0
+        fi
+        log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set - setup may have left services half-configured. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
+    elif curl --max-time 5 -fsS "http://${_ENV_HOST_ADDRESS}:8096/health" >/dev/null 2>&1; then
+        # Fallback only — JELLYFIN_API_KEY missing means configure.sh did
+        # not reach the jellyfin step, so do not flip the marker.
+        log_warn "Jellyfin /health responded but JELLYFIN_API_KEY is empty - admin user was not created. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
+    else
+        log_warn "Jellyfin didn't respond at http://${_ENV_HOST_ADDRESS}:8096/health within 5s. View logs from the menu: Manage stack -> Tail logs (live)"
+    fi
+    return 1
+}
+
 _stage1_install() {
     log_info "Installing your core media server..."
     # Global read by setup.sh::main() to decide post-install steps, not here.
@@ -77,37 +104,14 @@ _stage1_install() {
         log_warn "LAN IP not detected (hostname -I returned nothing). Probe will use localhost; LAN access from phones/TVs may not work until you assign a routable IP."
     fi
 
-    # Stronger probe than /health to gate STAGE_1_COMPLETE flip.
-    # /health returns 200 well before the admin user is created, so a
-    # half-broken configure.sh (warnings, not hard failure) could leave the
-    # admin user uncreated and we'd still flip the marker — locking the user
-    # out of their "complete" install. Re-source .env to pick up
-    # JELLYFIN_API_KEY (configure_jellyfin saves it after authenticating
-    # against /Users/AuthenticateByName), then probe /Users with that key.
-    # This proves Jellyfin is alive AND the admin user exists AND the API
-    # key works. Falls back to /health if the API key wasn't saved (rare —
-    # would mean configure.sh hard-failed before reaching jellyfin).
+    # Re-source .env to pick up JELLYFIN_API_KEY: configure_jellyfin saves it
+    # after authenticating against /Users/AuthenticateByName.
     set -a
     source "$SCRIPT_DIR/.env"
     set +a
 
     local probe_ok=false
-    if [[ -n "${JELLYFIN_API_KEY:-}" ]]; then
-        if curl --max-time 5 -fsS \
-            -H "Authorization: MediaBrowser Token=\"${JELLYFIN_API_KEY}\"" \
-            "http://${_ENV_HOST_ADDRESS}:8096/Users" >/dev/null 2>&1; then
-            probe_ok=true
-            log_ok "Jellyfin admin user authenticated at http://${_ENV_HOST_ADDRESS}:8096"
-        else
-            log_warn "Jellyfin /Users probe failed despite JELLYFIN_API_KEY being set - setup may have left services half-configured. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
-        fi
-    elif curl --max-time 5 -fsS "http://${_ENV_HOST_ADDRESS}:8096/health" >/dev/null 2>&1; then
-        # Fallback only — JELLYFIN_API_KEY missing means configure.sh did
-        # not reach the jellyfin step, so do not flip the marker.
-        log_warn "Jellyfin /health responded but JELLYFIN_API_KEY is empty - admin user was not created. View logs from the menu (Manage stack -> Tail logs (live)), then choose Install MediaStack to re-run setup."
-    else
-        log_warn "Jellyfin didn't respond at http://${_ENV_HOST_ADDRESS}:8096/health within 5s. View logs from the menu: Manage stack -> Tail logs (live)"
-    fi
+    _stage1_jellyfin_probe && probe_ok=true
 
     # Fail closed: only an authenticated /Users 200 followed by a persisted marker
     # counts as success. Everything else is returned as non-zero after the rest
