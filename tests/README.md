@@ -247,6 +247,42 @@ Total: 54 hard assertions at current scope.
 
 If you add new assertions that detect a known `configure.sh` bug, use `skip` with a bug-ref so the scenario still runs. Convert back to `pass`/`fail` once the bug is fixed.
 
+The per-service part of that block is `fresh_install_assert_services` in
+`tests/scenarios/fresh-install.sh`. `install-e2e` calls it in `lan` mode, where the
+ready-state HTTPS checks become the LAN-state checks from
+`tests/assertions/remote-gating.sh`.
+
+### `install-e2e` — real installer and Manage updates menu
+
+```bash
+./tests/run.sh install-e2e   # ~15 min warm / 25+ min cold
+```
+
+Nothing in the product is stubbed. A non-root user with sudo runs
+`DEMO=1 ./setup.sh --full`, which installs base packages, generates the Stable
+override, and pulls, starts and configures the LAN stack. The scenario then:
+
+1. checks that every default-profile and autoheal-profile service is healthy, runs
+   its Stable lock image and has a recorded install digest, and that no proxy,
+   remote or subtitles service started;
+2. runs the installer again through `tests/lib/wizard_pty.py` (**Use existing
+   install**, **Continue without changes**) and requires unchanged containers
+   (ID and start time), `.env`, `config.yml`, override and install record, and
+   unchanged user state (`tests/fixtures/upgrade_state.py`);
+3. opens `./mediastack` → **Manage updates** in a pseudo-terminal, checks each
+   data-owning service's status, and moves each one that has a different
+   candidate through **Update a service**, **Revert a service to its installed
+   image** and **Update a service** again;
+4. runs the `fresh-install` service checks in `lan` mode on the final stack.
+
+The PTY steps choose menu items by label (`"choose"` steps), because item numbers
+change with install state. Jellyfin, Sonarr, Radarr, Jackett, qBittorrent and Seerr
+install on their accepted digest and reach their candidate through the menu. Every
+other candidate is pulled by the installer. DinD has no systemd host, so the admin-port
+filter, UFW and kernel hardening are off. GPU, NAS, remote access and host
+hardening stay out of scope. See
+[image compatibility evidence](../docs/operations/image-compatibility.md#real-installer-and-day-2-menu-install-e2e).
+
 ### `bazarr` — subtitles-profile oracle
 
 Starts the `subtitles` profile target (`docker compose --profile subtitles up -d bazarr`)
@@ -552,7 +588,7 @@ overrides switch the DinD copy to `IMAGE_CHANNEL=latest` so the compose patch re
 MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.sh wireguard
 ```
 
-Most services have no dedicated scenario — use `fresh-install` (which does **not** start the `remote`/wireguard or `subtitles`/bazarr profiles; those use `wireguard` and `bazarr`). Autoheal uses its own focused `autoheal` scenario because a running-state check cannot prove a heal. `docs/operations/upgrades.md` lists each
+Most services have no dedicated scenario — use `fresh-install` (which does **not** start the `remote`/wireguard or `subtitles`/bazarr profiles; those use `wireguard` and `bazarr`). Rows that name `fresh-install+install-e2e` also need the real-installer run. Autoheal uses its own focused `autoheal` scenario because a running-state check cannot prove a heal. `docs/operations/upgrades.md` lists each
 service's pin policy and preflight command; the "Bumping a Service Version" playbook in `docs/project/structure.md`
 walks the full ritual. The `image-override` scenario is a fast (~15s, config-only) proof that an
 override actually reaches compose:
