@@ -239,7 +239,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -285,4 +284,3 @@ jobs:
           gh pr create --base "$DEFAULT_BRANCH" --head "$branch" \
             --title 'chore: refresh tested Stable image digests' \
             --body-file /tmp/preflight-accepted/body.md
-          gh workflow run ci.yml --ref "$branch"

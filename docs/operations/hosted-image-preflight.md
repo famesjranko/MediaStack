@@ -50,8 +50,25 @@ The pipeline has four boundaries:
    original artifacts using trusted source code, refuses an advanced default
    branch, and opens an ordinary PR. It never runs candidate images, executes
    artifact code, pushes to `main`, or merges. Its write token exists only in
-   this job. It dispatches the independent CI workflow because PR events created
-   with `GITHUB_TOKEN` do not start another workflow automatically.
+   this job. GitHub creates the PR-triggered CI run in an approval-required
+   state. A maintainer must approve that run before the PR gate can pass.
+
+Open the generated PR and select **Approve workflows to run** in its merge box.
+Review the diff before approval. This starts CI; it does not approve or merge
+the PR. A manually dispatched CI run can pass on the same commit without
+satisfying the ruleset. See [GitHub's token behavior](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs)
+and [required-check event restrictions](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#checks-from-some-workflow-jobs-are-not-evaluated).
+
+A maintainer can also approve the pending PR run through the API, after checking
+its event, source commit and associated PR:
+
+```bash
+gh api --method POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
+```
+
+Check for an existing open digest PR before another publishing trial. Current
+manual runs create separate branches; they do not replace or deduplicate open
+proposals. Scheduled publication needs an explicit policy for this case.
 
 Artifacts are retained for 14 days:
 
@@ -67,19 +84,27 @@ Logs mask the fixture password, credential assignments and long generated values
 Missing or malformed artifacts prevent publication. A job killed before it can
 write evidence also prevents publication; the disposable VM provides cleanup.
 
+These are functional drift tests of trusted upstream images. Privileged DinD
+is not a security sandbox for a malicious image. A runner escape could corrupt
+its evidence or write Actions caches used by other runs, despite a read-only
+repository token. Python tool versions are pinned, but their shared CI caches
+are not independently hash-verified by this repository. Review this boundary
+before enabling unattended image tests.
+
 On a feature branch, use `publish=false` to measure the proposed workflow. The
 publisher cannot run there. Review cold time/disk results and the artifact logs
 before enabling recurring image acceptance. Scheduled acceptance is deliberately
-absent until both that measurement and an independent permissions/test review
-are complete. The existing scheduled alert remains active.
+absent until the measurements, independent permissions/test review, hosted
+failure proof and open-proposal policy are complete. The existing scheduled
+alert remains active.
 
 GitHub must permit the repository's workflow token to create pull requests.
 The [repository Actions setting](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)
 is **Allow GitHub Actions to create and approve pull requests**. Keep default
 workflow permissions read-only; the publisher requests its own job permissions.
 The workflow never approves or merges a PR. At the first measurement, the
-repository reported `can_approve_pull_request_reviews: false`; publication needs
-an approved settings change before its default-branch trial. Publication failures
+repository reported `can_approve_pull_request_reviews: false`. This was enabled
+separately for the default-branch publisher trial. Publication failures
 remain visible in the publisher job. The candidate tests do not gain write
 permissions to work around a repository restriction.
 
@@ -97,4 +122,18 @@ disabled; the verifier produced a selective lock artifact for review.
 
 These are end-of-run measurements for one candidate combination on hosted
 Ubuntu 24.04. They do not establish peak disk use or a general runtime bound.
-Default-branch PR publication and independent review remain activation gates.
+These measurements cover one candidate combination. Scheduled publication has
+the additional gates described above.
+
+## Default-branch publisher trial
+
+[Run 40611106158](https://github.com/famesjranko/MediaStack/actions/runs/40611106158)
+tested qBittorrent on source `0c05f639e4e5e55d2207d508e48bf48e28d33f93`
+and opened [PR #139](https://github.com/famesjranko/MediaStack/pull/139) on
+2026-10-28. Fresh-install passed 240 assertions in 287 seconds; upgrade-path
+passed 326 in 341 seconds. Both had zero failures or skips. The complete artifact
+set passed the pinned secret scan. Only qBittorrent's lock row changed.
+
+The trial exposed the CI handoff defect: its manually dispatched CI passed all
+seven jobs but did not satisfy the PR ruleset. The PR-triggered run was waiting
+for approval. The operator approval step above replaces that redundant dispatch.

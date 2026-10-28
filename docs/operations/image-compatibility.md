@@ -33,6 +33,8 @@ Update and Revert functions. Menu input and presentation are covered separately 
 the image-free wizard tests.
 
 The scenario reports fresh configuration checks and migration checks separately.
+Both installations use the current MediaStack configurators. This tests image
+changes, not configurator changes from an older MediaStack release.
 It does not execute the complete `setup.sh --full` host installation. GPU drivers,
 NAS mounts, host hardening, WAN routing and third-party accounts stay in the
 separately invoked host/lab tests. A finite test suite cannot guarantee that every
