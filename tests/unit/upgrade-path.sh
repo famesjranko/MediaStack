@@ -43,6 +43,8 @@ upgrade_state() {
     esac
 }
 probe() (
+    PASS_COUNT=0 FAIL_COUNT=0 SKIP_COUNT=0
+    FAILED_TESTS=()
     scenario_begin candidate-inspection
     flipped=0
     run_scenario
@@ -60,6 +62,20 @@ run_cmd probe
 
 # Then successful image evidence allows the scenario to pass.
 assert_rc 0 'upgrade-path accepts the exact requested image'
+
+# Given an earlier caller case has already recorded failed assertions.
+OUT=$(
+    PASS_COUNT=4 FAIL_COUNT=2 SKIP_COUNT=1
+    FAILED_TESTS=('previous case failed')
+
+    # When an otherwise passing probe starts its own scenario.
+    probe
+)
+RC=$?
+
+# Then the probe result does not inherit the caller's counts or failure list.
+assert_rc 0 'upgrade-path probes isolate earlier caller failures'
+assert_not_contains "$OUT" 'previous case failed' 'upgrade-path probes isolate earlier failure details'
 
 # Given the selected service runs a floating tag instead of the candidate.
 inspection=wrong
