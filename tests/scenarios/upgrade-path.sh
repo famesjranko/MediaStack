@@ -75,6 +75,18 @@ run_scenario() {
         pass 'upgrade-path detects overwritten user settings'
     fi
     upgrade_state flip && upgrade_state check || return 1
+    # The same proof for records that an upgrade can lose outright: a Seerr
+    # user and a Jellyfin API key. Their re-created copies get new IDs, so the
+    # restored state becomes the new baseline before the upgrade starts.
+    local dropped rc
+    upgrade_state drop || return 1
+    dropped=$(upgrade_state check 2>&1) && rc=0 || rc=$?
+    if ((rc != 0)) && [[ "$dropped" == *jellyfin/api-keys* && "$dropped" == *seerr/users* ]]; then
+        pass 'upgrade-path detects a lost Seerr user and a removed Jellyfin API key'
+    else
+        fail 'upgrade-path detects a lost Seerr user and a removed Jellyfin API key' "$dropped"
+    fi
+    upgrade_state restore && upgrade_state save && upgrade_state check || return 1
 
     dind_exec 'cp /tmp/upgrade-target.lock docs/operations/image-digests.lock' || return 1
     local log=/tmp/ms-upgrade-update.log
@@ -150,5 +162,6 @@ run_scenario() {
     assert_sonarr_configured "$log"
     assert_radarr_configured "$log"
     assert_seerr_configured "$(env_get JELLYFIN_ADMIN_PASSWORD)"
-
+    # The Stage 1 gate and the post-Revert login check, now on the candidate.
+    fresh_install_assert_product_probes 'upgrade-path candidate: '
 }
