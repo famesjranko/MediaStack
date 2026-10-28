@@ -5,7 +5,7 @@ jellyfin	jellyfin/jellyfin:latest	sha256:2038fe038ab3876a80f6e7b7e0aef6607b032c7
 sonarr	linuxserver/sonarr:latest	sha256:48e36b608b461273b9dae857725cd0561a127f2c694b687318f6d0c5ce63e5c9	2026-10-25T06:18:34Z	scenario:fresh-install+upgrade-path
 radarr	linuxserver/radarr:latest	sha256:fc0ae3c50f8128b97e84381903ec8d6845c3a569641cb7117c124376cccb57c1	2026-10-22T10:18:13Z	scenario:fresh-install+upgrade-path
 jackett	linuxserver/jackett:latest	sha256:047a28f2493d04a95d5a6bc5670a68c9bce99159e6a9ddf8ff9d564fc0b27bd7	2026-10-25T06:18:34Z	scenario:fresh-install+upgrade-path
-qbittorrent	linuxserver/qbittorrent:latest	sha256:e887804fa9de4c60f5f0fb1f3a7e4febe40a8f69fe736f70c4e8589b1f868dab	2026-10-22T10:18:13Z	scenario:fresh-install+upgrade-path
+qbittorrent	linuxserver/qbittorrent:latest	sha256:75ecbb1c89ab7b0a21c4bde40b4820e4f1649d2d56d83b91913422155e8d2a5f	2026-10-28T00:55:49Z	scenario:fresh-install+upgrade-path
 flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:c80ae007ce2ccdcd217a12426e4f039ef763ff90738c808d38810c3e59323767	2026-10-20T03:25:34Z	scenario:fresh-install
 seerr	ghcr.io/seerr-team/seerr:latest	sha256:d8fab675b55ad293ded98fd71efcfd46054cbad9746534ae1cc4794a88c0b3be	2026-10-22T10:18:13Z	scenario:fresh-install+upgrade-path
 unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:724c702e81727e3d90c42cf2b3d900674203906a6d135ba07416c9a3f9f67fbb	2026-09-07T16:47:56Z	scenario:unpackerr
