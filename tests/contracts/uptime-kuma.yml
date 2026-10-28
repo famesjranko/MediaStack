@@ -1,7 +1,9 @@
 # Configured over socket.io (see scripts/services/uptime-kuma/main.sh), not
-# REST: no HTTP API endpoints exist to contract. File kept so the per-service
-# inventory stays complete and check.py can prove the zero explicitly.
+# REST: no HTTP API endpoints exist to contract. The one HTTP touchpoint is
+# configure.sh's readiness poll, which wait_for_healthy makes only when the
+# container has no healthcheck.
 service: uptime-kuma
 base_path: /
 auth: {type: none}
-endpoints: []
+endpoints:
+  - {id: readiness, method: GET, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}

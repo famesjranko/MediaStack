@@ -2,6 +2,7 @@ service: jackett
 base_path: /
 auth: {type: query, name: apikey}
 endpoints:
+  - {id: readiness, method: GET, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: dashboard-get, method: GET, path: /UI/Dashboard, sends: [], reads: [], callers: [scripts/services/jackett/main.sh]}
   - {id: dashboard-login, method: POST, path: /UI/Dashboard, sends: [], reads: [], callers: [scripts/services/jackett/main.sh]}
   - {id: server-config-get, method: GET, path: /api/v2.0/server/config, sends: [], reads: [api_key, blackholedir], callers: [scripts/services/jackett/main.sh]}

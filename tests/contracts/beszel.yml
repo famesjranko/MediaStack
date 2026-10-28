@@ -2,6 +2,7 @@ service: beszel
 base_path: /api
 auth: {type: bearer, name: Authorization}
 endpoints:
+  - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: superuser-authenticate, method: POST, path: /collections/_superusers/auth-with-password, sends: [identity, password], reads: [], callers: [scripts/services/beszel/main.sh]}
   - {id: user-authenticate, method: POST, path: /collections/users/auth-with-password, sends: [identity, password], reads: [token, record.id], callers: [scripts/services/beszel/main.sh]}
   - {id: agent-key, method: GET, path: /beszel/getkey, sends: [], reads: [key], callers: [scripts/services/beszel/main.sh]}

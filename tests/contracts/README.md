@@ -1,7 +1,8 @@
 # Service API contracts
 
 These files describe only the HTTP API calls made by MediaStack. Each service
-file has exactly these top-level keys:
+file has the top-level keys `service`, `base_path`, `auth` and `endpoints`,
+plus an optional `openapi`:
 
 ```yaml
 service: sonarr
@@ -24,8 +25,8 @@ describes the service's normal request authentication shape. The inventory is
 per service, and helpers under `scripts/lib/` are attributed to the service
 whose API they call.
 
-`auth.type` is one of `header`, `bearer`, `cookie`, `query`, or `none` (the
-default when the block is absent) — `tests/contracts/replay.py`'s live mode
+`auth.type` is one of `header`, `bearer`, `cookie`, `query`, `basic`, or `none`
+(the default when the block is absent; `basic` is sent as no auth) — `tests/contracts/replay.py`'s live mode
 reads this generically, never with a per-service branch. `header` sets header
 `auth.name` to the caller's credential verbatim, unless `auth.format` is also
 given: a literal header-value template with the substring `{key}` replaced by
@@ -46,9 +47,41 @@ single path segment. No other path construction is part of this format.
 
 `sends` lists the JSON or form fields MediaStack sets. `reads` lists the
 response fields it consumes. Both use dotted object paths. `[]` means an item
-inside an array, so `items[].quality.id` means the `quality.id` field of every
-element in `items`. These are field paths, not JSONPath: there are no filters,
-wildcards, indexes, or other addressing syntax.
+inside an array, so `items[].quality.id` means the `quality.id` field of the
+elements in `items`. These are field paths, not JSONPath: there are no filters,
+wildcards, indexes, or other addressing syntax. When the response is a list,
+the paths apply to its elements; an object whose values are all objects (a
+collection keyed by name) is read the same way.
+
+A recorded response shows a read only when the path is found in it and every
+array along the path, including a top-level list, is non-empty. An empty list
+therefore proves no read. Reads may be shown by different calls to the same
+entry, so a list that is empty before a create and filled after it proves its
+reads. `tests/contracts/inventory.py` owns this rule for every consumer.
+
+Three optional endpoint keys serve the image acceptance gate:
+
+- `expect` lists the HTTP statuses that count as a successful call, as
+  integers from 100 to 599. Without it, any 2xx counts.
+- `base_path` overrides the file's `base_path` for one entry, for example a
+  readiness probe at the service root.
+- `unexercised` names why the image jobs cannot reach the entry. It is one of
+  `gpu`, `remote-profile`, `launcher-menu`, `nas`, or `held-profile`. Such an
+  entry does not block acceptance; if a job does exercise it, the gate reports
+  the exemption as stale.
+
+```yaml
+  - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
+```
+
+Readiness probes are calls too. `check.py` reads the polled URL from
+`wait_for_service`, `wait_for_healthy` and `post_restart_wait`. The URL should
+be `"$(service_local_url NAME)"`, optionally with a path suffix, or a variable
+assigned from it. A URL whose route the check cannot resolve fails as an
+`unrecognised probe`. The same
+`service_local_url` form attributes any other call to service NAME. A bare
+service root is reachable only through such a named service, because a root
+path alone names no service.
 
 `callers` lists repository-relative script files that make the call. The
 inventory is deliberately only-what-we-call: do not copy a service's full
@@ -56,8 +89,10 @@ published API into these files. `tests/contracts/check.py` enforces that every
 literal endpoint call has an entry, every entry has a caller, and each caller
 list matches the tree.
 
-Its two failure kinds are opposite directions of that check. `missing contract`
-means a call in the tree has no entry covering it — add the endpoint and its
-caller to the service's file here, or fix the call if the route it names is
-malformed. `dead contract entry` means the call an entry covered is gone —
-delete the entry. Neither is fixed by loosening the check.
+Its two main failure kinds are opposite directions of that check. `missing
+contract` means a call in the tree has no entry covering it — add the endpoint
+and its caller to the service's file here, or fix the call if the route it
+names is malformed. `dead contract entry` means the call an entry covered is
+gone — delete the entry. Neither is fixed by loosening the check. A `caller
+mismatch` names an entry whose `callers` differ from the tree, and a `schema:`
+error names an entry that breaks this format.

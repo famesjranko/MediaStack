@@ -10,6 +10,7 @@ auth: {type: header, name: Authorization, format: 'MediaBrowser Client="Contract
 # by replay.py spec mode 2026-08-04. Restore an openapi: URL if upstream
 # documents them.
 endpoints:
+  - {id: readiness, method: GET, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: public-system-info, method: GET, path: /System/Info/Public, sends: [], reads: [Version], callers: [scripts/services/homepage/main.sh]}
   - {id: startup-configuration-get, method: GET, path: /Startup/Configuration, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: startup-configuration-update, method: POST, path: /Startup/Configuration, sends: [UICulture, MetadataCountry, PreferredMetadataLanguage], reads: [], callers: [scripts/services/jellyfin/main.sh]}
@@ -23,8 +24,8 @@ endpoints:
   - {id: virtual-folders-list, method: GET, path: /Library/VirtualFolders, sends: [], reads: [Name, "Locations[]"], callers: [scripts/services/jellyfin/wizard.sh]}
   - {id: virtual-folder-create, method: POST, path: /Library/VirtualFolders, sends: [name, collectionType, refreshLibrary, "LibraryOptions.PathInfos[].Path"], reads: [], callers: [scripts/services/jellyfin/wizard.sh]}
   - {id: media-folders-list, method: GET, path: /Library/MediaFolders, sends: [], reads: ["Items[].Name"], callers: [scripts/services/seerr/main.sh]}
-  - {id: encoding-config-get, method: GET, path: /System/Configuration/encoding, sends: [], reads: [HardwareAccelerationType], callers: [scripts/launcher/hardware.sh, scripts/services/jellyfin/encoding.sh]}
-  - {id: encoding-config-update, method: POST, path: /System/Configuration/encoding, sends: [HardwareAccelerationType, EnableHardwareEncoding, HardwareDecodingCodecs, EnableDecodingColorDepth10Hevc, EnableDecodingColorDepth10Vp9, AllowHevcEncoding, AllowAv1Encoding, QsvDevice, VaapiDevice], reads: [], callers: [scripts/services/jellyfin/encoding.sh]}
+  - {id: encoding-config-get, method: GET, path: /System/Configuration/encoding, sends: [], reads: [HardwareAccelerationType], callers: [scripts/launcher/hardware.sh, scripts/services/jellyfin/encoding.sh, scripts/setup/stage3/jellyfin.sh]}
+  - {id: encoding-config-update, method: POST, path: /System/Configuration/encoding, sends: [HardwareAccelerationType, EnableHardwareEncoding, HardwareDecodingCodecs, EnableDecodingColorDepth10Hevc, EnableDecodingColorDepth10Vp9, AllowHevcEncoding, AllowAv1Encoding, QsvDevice, VaapiDevice], reads: [], callers: [scripts/services/jellyfin/encoding.sh, scripts/setup/stage3/jellyfin.sh]}
   - {id: server-config-get, method: GET, path: /System/Configuration, sends: [], reads: [ServerName, RemoteClientBitrateLimit], callers: [scripts/services/jellyfin/server.sh]}
   - {id: server-config-update, method: POST, path: /System/Configuration, sends: [ServerName, RemoteClientBitrateLimit], reads: [], callers: [scripts/services/jellyfin/server.sh]}
   # reads/sends corrected 2026-08-05 by replay.py live mode: the previous

@@ -2,6 +2,7 @@ service: seerr
 base_path: /api/v1
 auth: {type: cookie, name: connect.sid}
 endpoints:
+  - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: public-settings, method: GET, path: /settings/public, sends: [], reads: [mediaServerType, initialized], callers: [scripts/services/seerr/main.sh]}
   - {id: jellyfin-auth, method: POST, path: /auth/jellyfin, sends: [username, password, hostname, port, useSsl, urlBase, serverType], reads: [], callers: [scripts/services/seerr/main.sh]}
   - {id: local-auth-probe, method: POST, path: /auth/local, sends: [email, password], reads: [], callers: [scripts/lib/health.sh]}
