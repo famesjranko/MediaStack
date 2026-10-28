@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import signal
 import subprocess
 import tempfile
@@ -29,6 +30,17 @@ def sanitize(text: str) -> str:
     text = re.sub(r"(?i)(password|api.?key|token)([=:]\s*)[^\s,;]+", r"\1\2[redacted]", text)
     text = re.sub(r"[A-Za-z0-9_+/=-]{24,}", "[redacted value]", text)
     return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+
+
+def quoted_log(text: str) -> str:
+    """The log tail for the job log, with workflow commands turned off.
+
+    A candidate image writes to the scenario log, so it could print a workflow
+    command such as ``::error::`` or ``::add-mask::``. The token is drawn after
+    the scenario ended, so no image can print it to turn commands on early.
+    """
+    token = secrets.token_hex(16)
+    return f"::stop-commands::{token}\n{text[-12000:]}\n::{token}::"
 
 
 def lifecycle_events(raw: str) -> list[dict[str, Any]]:
@@ -245,7 +257,7 @@ def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
         sampler.stop()
     print(json.dumps(result, indent=2))
     if result["runner_error"]:
-        print(text[-12000:])
+        print(quoted_log(text))
         raise ValueError(f"{job_id}: undecided: {result['runner_error']}")
     if (
         result["rc"]
@@ -255,7 +267,7 @@ def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
         or result["evidence_error"]
         or result["disk_error"]
     ):
-        print(text[-12000:])
+        print(quoted_log(text))
         raise ValueError(
             f"{job_id} did not produce complete passing evidence; inspect its artifact"
         )

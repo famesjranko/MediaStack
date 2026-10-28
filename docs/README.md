@@ -50,4 +50,4 @@ Code and compose files are authoritative. When docs disagree with code, update
 the docs.
 
 Image validation: [compatibility evidence](operations/image-compatibility.md) and
-[manual hosted preflight](operations/hosted-image-preflight.md).
+[hosted preflight](operations/hosted-image-preflight.md).

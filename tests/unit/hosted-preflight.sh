@@ -304,12 +304,11 @@ class HostedEvidence(unittest.TestCase):
         for job in image_jobs:
             self.assertEqual(job["permissions"], {"contents": "read"})
             self.assertEqual(job["runs-on"], "ubuntu-24.04")
-            self.assertEqual((job["strategy"]["max-parallel"], job["timeout-minutes"]), (2, 85))
+            self.assertEqual((job["strategy"]["max-parallel"], job["timeout-minutes"]), (4, 85))
             self.assertNotIn("secrets.", json.dumps(job))
         # And the planner, selector and verifier are read-only too.
         for name in ("preflight-plan", "preflight-select", "preflight-verify"):
             self.assertEqual(jobs[name]["permissions"], {"contents": "read"})
-        self.assertIn("workflow_dispatch", jobs["preflight-plan"]["if"])
         # And only the separate default-branch publisher can write repository content.
         self.assertIn("github.event.repository.default_branch", publisher["if"])
         self.assertEqual(publisher["permissions"], {"contents": "write", "pull-requests": "write"})
@@ -365,7 +364,7 @@ class HostedEvidence(unittest.TestCase):
                 facts = publish.Facts(prs, HEAD, compare, "old", gone)
 
                 # When a passing run decides how to publish its lock.
-                decision = publish.decide("proposed", {}, facts)
+                decision = publish.decide("proposed", [], facts)
 
                 # Then it refuses for that reason and changes nothing.
                 self.assertEqual(decision.action, "refuse")
@@ -393,7 +392,7 @@ class HostedEvidence(unittest.TestCase):
             with self.subTest(name):
                 # Given the rolling PR state and this run's proposal.
                 # When the publisher decides.
-                decision = publish.decide(proposed, {}, facts)
+                decision = publish.decide(proposed, [], facts)
 
                 # Then it makes exactly the expected change under a lease on the observed head.
                 self.assertEqual((decision.action, decision.pr, decision.lease), expected)
@@ -431,7 +430,7 @@ class HostedEvidence(unittest.TestCase):
         plan["pending"] = {"bazarr": "subtitle database migration is not covered",
                            "lidarr": "not selected"}
         selection = combination_plan(plan, ["sonarr"], {"radarr": ["upgrade-path"]})
-        decided = publish.decide("new", {}, publish.Facts([], "", {}, None, []))
+        decided = publish.decide("new", [], publish.Facts([], "", {}, None, []))
         publication = {"outcome": decided.action, "pr": "12", "reason": decided.reason}
         jobs = {"combine": "skipped", "verify": "success", "publish": "success"}
 
