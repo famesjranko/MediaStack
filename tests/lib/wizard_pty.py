@@ -10,8 +10,9 @@ Step kinds:
   {"expect": regex, "fresh": true}  wait only in output after the last menu or
                                     fresh match (for prompts that repeat).
   {"choose": {"prompt": regex, "item": regex}}  wait for the next numbered menu
-                                    and send the number of the first item that
-                                    matches; fail when no item matches.
+                                    and send the number of the one item that
+                                    matches; fail when no item or more than one
+                                    item matches.
 """
 
 from __future__ import annotations
@@ -171,12 +172,19 @@ def wait_for_menu(
 
 
 def choose_item(items: list[str], wanted: str, prompt: str) -> int:
-    """1-based index of the first item matching ``wanted``; fail when none does."""
+    """1-based index of the one item matching ``wanted``.
+
+    More than one match fails: picking the first would let a new or renamed
+    menu item silently change which action a test runs.
+    """
     pattern = re.compile(wanted)
-    for index, item in enumerate(items, start=1):
-        if pattern.search(item):
-            return index
-    raise RuntimeError(f"menu {prompt!r} does not offer {wanted!r}; it offers {items!r}")
+    matches = [index for index, item in enumerate(items, start=1) if pattern.search(item)]
+    if not matches:
+        raise RuntimeError(f"menu {prompt!r} does not offer {wanted!r}; it offers {items!r}")
+    if len(matches) > 1:
+        names = [items[index - 1] for index in matches]
+        raise RuntimeError(f"menu {prompt!r} offers {wanted!r} more than once: {names!r}")
+    return matches[0]
 
 
 def kill_process_group(proc: subprocess.Popen[bytes]) -> None:
