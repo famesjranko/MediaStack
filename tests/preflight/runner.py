@@ -13,7 +13,7 @@ import tempfile
 import time
 from typing import Any
 
-from .model import ROOT, canonical, fingerprint
+from .model import ROOT, canonical, effective, fingerprint
 
 
 def docker(*args: str) -> str:
@@ -94,18 +94,19 @@ def run_with_deadline(child_env: dict[str, str], scenario: str, log: Any) -> int
         return 124
 
 
-def execute(plan: dict[str, Any], scenario: str, output: pathlib.Path) -> None:
-    jobs = [j for j in plan["jobs"] if j["scenario"] == scenario]
+def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
+    jobs = [j for j in plan["jobs"] if j["id"] == job_id]
     if len(jobs) != 1:
-        raise ValueError("scenario is absent or ambiguous in the frozen plan")
+        raise ValueError("job is absent or ambiguous in the frozen plan")
     job = jobs[0]
+    scenario = job["scenario"]
     dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True)
     if dirty:
         raise ValueError("hosted preflight must run from a clean source checkout")
-    name = "ms-hosted-" + fingerprint([plan["run"], scenario])[:12]
+    name = "ms-hosted-" + fingerprint([plan["run"], job_id])[:12]
     output.mkdir(parents=True, exist_ok=False)
     receipts = output / "receipts.tsv"
-    overrides = ",".join(f"{s}={ref}" for s, ref in sorted(plan["effective"].items()))
+    overrides = ",".join(f"{s}={ref}" for s, ref in sorted(effective(plan, job).items()))
     child_env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_TOKEN")}
     child_env.update(
         {
@@ -128,6 +129,7 @@ def execute(plan: dict[str, Any], scenario: str, output: pathlib.Path) -> None:
         "plan": fingerprint(plan),
         "source": plan["source"],
         "run": plan["run"],
+        "job": job_id,
         "scenario": scenario,
         "run_id": job["run_id"],
         "architecture": os.uname().machine,
@@ -166,5 +168,5 @@ def execute(plan: dict[str, Any], scenario: str, output: pathlib.Path) -> None:
     ):
         print(text[-12000:])
         raise ValueError(
-            f"{scenario} did not produce complete passing evidence; inspect its artifact"
+            f"{job_id} did not produce complete passing evidence; inspect its artifact"
         )

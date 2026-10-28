@@ -3,9 +3,27 @@
 from __future__ import annotations
 
 import pathlib
+import sys
 from typing import Any
 
-from .model import ROOT, build_plan, canonical, drift, fingerprint, load_json, rows
+from .model import (
+    ROOT,
+    build_plan,
+    canonical,
+    combination_plan,
+    drift,
+    effective,
+    fingerprint,
+    load_json,
+    rows,
+)
+
+# Any malformed artifact classifies its job as failed instead of stopping selection.
+MALFORMED = (ValueError, OSError, KeyError, TypeError, AttributeError)
+
+
+def folder_of(results: pathlib.Path, job: dict[str, Any]) -> pathlib.Path:
+    return results / ("result-" + str(job["id"]))
 
 
 def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path) -> pathlib.Path:
@@ -15,6 +33,7 @@ def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path
         "plan": fingerprint(plan),
         "source": plan["source"],
         "run": plan["run"],
+        "job": job["id"],
         "scenario": job["scenario"],
         "run_id": job["run_id"],
         "architecture": plan["architecture"],
@@ -24,7 +43,7 @@ def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path
         "evidence_error": None,
     }
     if any(result.get(k) != v for k, v in expected.items()):
-        raise ValueError(f"{job['scenario']}: stale, failed, skipped, or mismatched result")
+        raise ValueError(f"{job['id']}: stale, failed, skipped, or mismatched result")
     if type(result.get("passes")) is not int or result["passes"] < 1:
         raise ValueError("result contains no passing assertions")
     for field in ("elapsed_seconds", "disk_growth_bytes"):
@@ -34,15 +53,14 @@ def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path
     events = load_json(folder / "events.json")
     if not images or not events:
         raise ValueError("result lacks runtime image and event evidence")
-    check_runtime_evidence(plan, events, images, job["services"])
+    check_runtime_evidence(plan, job, events, images)
     receipt_path = folder / "receipts.tsv"
     if receipt_path.is_symlink() or receipt_path.stat().st_size > 1_000_000:
         raise ValueError("invalid receipt artifact")
     receipts = drift.read_pass_receipts(receipt_path)
     policy = drift.ReceiptPolicy(plan["source"], frozenset([job["run_id"]]), plan["architecture"])
     for service in job["services"]:
-        ref = plan["effective"][service]
-        image, digest = ref.rsplit("@", 1)
+        image, digest = plan["candidates"][service].rsplit("@", 1)
         row = drift.ImageDigest(service, image, digest)
         why = drift._receipt_failure(receipts.get(service, []), row, job["scenario"], policy)
         if why:
@@ -55,20 +73,21 @@ def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path
 
 
 def check_runtime_evidence(
-    plan: dict[str, Any], events: list[Any], images: list[Any], required_services: list[str]
+    plan: dict[str, Any], job: dict[str, Any], events: list[Any], images: list[Any]
 ) -> None:
+    refs = effective(plan, job)
     latest = {
         event["service"]: event["image"]
         for event in events
-        if event["action"] == "start" and event["service"] in plan["effective"]
+        if event["action"] == "start" and event["service"] in refs
     }
     if not latest:
         raise ValueError("no known service started in the scenario")
-    missing = sorted(set(required_services) - latest.keys())
+    missing = sorted(set(job["services"]) - latest.keys())
     if missing:
         raise ValueError(f"{', '.join(missing)}: candidate has no runtime start event")
     for service, ref in latest.items():
-        if ref != plan["effective"][service]:
+        if ref != refs[service]:
             raise ValueError(f"{service}: runtime companion differs from the frozen combination")
     fixtures = {drift.repo_of(ref): ref for ref in plan["fixtures"].values()}
     for event in events:
@@ -84,27 +103,69 @@ def check_runtime_evidence(
             raise ValueError("runtime inspection architecture differs from linux/amd64")
 
 
+def select_combination(plan: dict[str, Any], results: pathlib.Path) -> dict[str, Any]:
+    """Freeze phase 2 from phase-1 results; a candidate passes only if all its jobs qualify."""
+    if plan["phase"] != 1:
+        raise ValueError("selection needs the phase-1 plan")
+    failed: dict[str, list[str]] = {}
+    for job in plan["jobs"]:
+        try:
+            check_result(plan, job, folder_of(results, job))
+        except MALFORMED as exc:
+            # The log may quote artifact text; the plan carries only frozen names.
+            print(f"{job['id']}: {exc}", file=sys.stderr)
+            failed.setdefault(job["combination"][0], []).append(job["scenario"])
+    passed = [s for s in plan["selected"] if s not in failed]
+    return combination_plan(plan, passed, failed)
+
+
+def authorized_jobs(
+    phase1: dict[str, Any], phase2: dict[str, Any]
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Return the only jobs whose evidence may change the lock.
+
+    Evidence authorizes exactly the combination it ran. Phase-1 jobs ran one
+    candidate each, so they can authorize only a single-candidate combination.
+    """
+    combination = phase2["selected"]
+    if phase2["authority"] == "phase-1" and len(combination) == 1:
+        source = phase1
+    elif phase2["authority"] == "phase-2" and len(combination) > 1:
+        source = phase2
+    else:
+        raise ValueError(
+            f"{phase2['authority']} evidence cannot authorize the combination "
+            + (", ".join(combination) or "of no candidates")
+        )
+    jobs = [(source, job) for job in source["jobs"] if job["combination"] == combination]
+    if not jobs:
+        raise ValueError("no job tested the exact combination")
+    return jobs
+
+
 def accept(
-    plan: dict[str, Any], snapshot: pathlib.Path, results: pathlib.Path, output: pathlib.Path
+    phase1: dict[str, Any],
+    phase2: dict[str, Any],
+    snapshot: pathlib.Path,
+    results: pathlib.Path,
+    output: pathlib.Path,
 ) -> None:
     baseline = rows(ROOT / "docs/operations/image-digests.lock")
     current = rows(snapshot)
     rebuilt = build_plan(
-        baseline, current, plan["selected"], plan["source"], plan["run"], plan["fixtures"]
+        baseline, current, phase1["selected"], phase1["source"], phase1["run"], phase1["fixtures"]
     )
-    if canonical(rebuilt) != canonical(plan):
+    if canonical(rebuilt) != canonical(phase1):
         raise ValueError("snapshot and selection do not reproduce the trusted plan")
-    if not plan["selected"]:
-        raise ValueError("no candidates selected")
-    receipts = []
-    for job in plan["jobs"]:
-        path = check_result(plan, job, results / ("result-" + job["scenario"]))
-        receipts.append(path.read_text())
+    if canonical(select_combination(phase1, results)) != canonical(phase2):
+        raise ValueError("phase-2 plan is stale or does not follow from the phase-1 results")
+    evidence = authorized_jobs(phase1, phase2)
+    receipts = [check_result(p, job, folder_of(results, job)).read_text() for p, job in evidence]
     # Validate the complete combination before writing any publication file.
     output.mkdir(parents=True, exist_ok=False)
     receipt_path = output / "receipts.tsv"
     receipt_path.write_text("\n".join(receipts))
-    selected = set(plan["selected"])
+    selected = set(phase2["selected"])
     manifest = drift.read_preflights(ROOT / "docs/operations/upgrades.md")
     enriched = drift.enrich_rows(
         list(current.values()),
@@ -113,7 +174,7 @@ def accept(
         drift.datetime.now(drift.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     policy = drift.ReceiptPolicy(
-        plan["source"], frozenset(j["run_id"] for j in plan["jobs"]), plan["architecture"]
+        phase2["source"], frozenset(job["run_id"] for _, job in evidence), phase2["architecture"]
     )
     drift.verify_preflight_receipts(
         selected, list(baseline.values()), enriched, drift.read_pass_receipts(receipt_path), policy
@@ -122,30 +183,43 @@ def accept(
         output / "image-digests.lock",
         drift.merge_selective(list(baseline.values()), enriched, selected),
     )
+    write_body(phase2, evidence, results, output / "body.md")
+
+
+def write_body(
+    phase2: dict[str, Any],
+    evidence: list[tuple[dict[str, Any], dict[str, Any]]],
+    results: pathlib.Path,
+    path: pathlib.Path,
+) -> None:
     # No artifact value becomes a shell command, branch name or executable path.
-    services = ", ".join(sorted(selected))
-    evidence = [
+    services = ", ".join(phase2["selected"])
+    lines = [
         "",
-        "Source: `" + plan["source"] + "`; workflow run: `" + plan["run"] + "`.",
+        "Source: `" + phase2["source"] + "`; workflow run: `" + phase2["run"] + "`; "
+        "authorizing evidence: " + phase2["authority"] + ".",
         "",
-        "| Scenario | Passed | Seconds | Disk growth (bytes) |",
-        "|---|---:|---:|---:|",
+        "| Job | Scenario | Passed | Seconds | Disk growth (bytes) |",
+        "|---|---|---:|---:|---:|",
     ]
-    for job in plan["jobs"]:
-        result = load_json(results / ("result-" + job["scenario"]) / "result.json")
-        evidence.append(
-            f"| {job['scenario']} | {result['passes']} | {result['elapsed_seconds']} | "
-            f"{result['disk_growth_bytes']} |"
+    for _, job in evidence:
+        result = load_json(folder_of(results, job) / "result.json")
+        lines.append(
+            f"| {job['id']} | {job['scenario']} | {result['passes']} | "
+            f"{result['elapsed_seconds']} | {result['disk_growth_bytes']} |"
         )
-    (output / "body.md").write_text(
+    failed = ", ".join(sorted(phase2["failed"])) or "none"
+    path.write_text(
         "## What & why\n\nUpdate tested Stable digests for " + services + ".\n\n"
         "## Linked issue\n\nPart of #134.\n\n## How it was verified\n\n"
-        "Every required scenario passed without skips on the frozen candidate combination. "
+        "Each selected candidate first ran alone with the accepted companions. "
+        "The candidates that passed then ran together, unless only one passed. "
+        "Every required scenario of this exact combination passed without skips. "
         "Results bind the source commit, workflow run, architecture, companions and exact digests. "
-        "Resource measurements and sanitized logs are in the workflow artifacts.\n"
-        + "\n".join(evidence)
-        + "\n\n"
+        "Resource measurements and sanitized logs are in the workflow artifacts. "
+        "Candidates that failed phase 1: " + failed + ".\n" + "\n".join(lines) + "\n\n"
         "## Notes\n\nOther lock rows and timestamps are preserved. Image updates can migrate "
         "persistent databases; reverting the lock alone does not undo those migrations. "
-        "Review the compatibility matrix and artifacts before merging.\n"
+        "Review the compatibility matrix and artifacts before merging. A later accepted run "
+        "replaces this proposal on the same branch.\n"
     )
