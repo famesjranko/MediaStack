@@ -5,9 +5,13 @@
 # runs through tests/lib/contract-trace-curl.sh against a stdlib http.server
 # fixture that answers as Sonarr, in each call style the product uses (-o with
 # -w, -K - config on stdin, --data-binary @-, a chunked response, a 100
-# Continue POST, and -L through a 302). tests/contracts/observe.py then reduces
-# the traces, and the assertions read its contracts.json. No stored traces, no
-# Docker and no network beyond 127.0.0.1.
+# Continue POST, and -L through a 302). A second fixture pair proves that a
+# reused connection and a redirect back to the first server are attributed by
+# the Host header. tests/contracts/observe.py then reduces the traces, and the
+# assertions read its contracts.json. No stored traces and no network beyond
+# 127.0.0.1. When Docker works, the suite runs again in a bookworm-slim
+# container with curl 7.88, the DinD image's curl; otherwise that step skips.
+# tests/unit/contracts-observe-rules.sh covers the reducer rules in process.
 
 set -uo pipefail
 
@@ -24,8 +28,8 @@ if [[ ! -x /usr/bin/curl ]]; then
     exit 1
 fi
 
-results=$(
-    python3 -I - "$REPO_ROOT" <<'PY'
+SUITE=$(
+    cat <<'PY'
 import http.server
 import json
 import os
@@ -54,9 +58,14 @@ GETS = {
 }
 
 
+NOTIFICATION = {"id": 7, "name": "n", "implementation": "Emby", "fields": [{"name": "h", "value": "x"}]}
+
+
 class Sonarr(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     bodies: dict[str, bytes] = {}
+    # Absolute redirect targets by path, set once the fixture servers have ports.
+    redirects: dict[str, str] = {}
 
     def _send(self, status, payload, chunked=False):
         data = json.dumps(payload).encode()
@@ -72,16 +81,25 @@ class Sonarr(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self):
         if self.path == f"/api/v3/legacy/{LONG_SEGMENT}":
-            self.send_response(302)
-            self.send_header("Location", "/api/v3/config/naming")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+            self._redirect("/api/v3/config/naming")
+        elif self.path in Sonarr.redirects:
+            self._redirect(Sonarr.redirects[self.path])
+        elif self.path == "/api/v3/downloadclient":
+            self.close_connection = True  # an empty reply: no status line at all
+        elif self.path == "/api/v3/notification/7":
+            self._send(404, NOTIFICATION)
         elif self.path == "/api/v3/customformat":
             self._send(200, [{"id": 5, "name": "x265-fixture"}], chunked=True)
-        elif self.path in GETS:
-            self._send(200, GETS[self.path])
+        elif self.path.split("?", 1)[0] in GETS:
+            self._send(200, GETS[self.path.split("?", 1)[0]])
         else:
             self._send(404, {"message": "NotFound"})
 
@@ -95,9 +113,9 @@ class Sonarr(http.server.BaseHTTPRequestHandler):
 
 
 class Fixture:
-    """One recorded session: the fixture server, the shim on PATH, and the traces."""
+    """One recorded session: fixture servers by service, the shim on PATH, and the traces."""
 
-    def __init__(self, folder):
+    def __init__(self, folder, names=("sonarr",)):
         self.folder = folder
         self.traces = folder / "traces"
         self.traces.mkdir()
@@ -107,28 +125,40 @@ class Fixture:
         self.env = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy")}
         self.env.update(PATH=f"{shim_bin}:{os.environ['PATH']}", NO_PROXY="127.0.0.1",
                         MS_CONTRACT_TRACE=str(self.traces))
-        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Sonarr)
-        self.url = f"http://127.0.0.1:{self.server.server_port}"
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.servers = {name: http.server.ThreadingHTTPServer(("127.0.0.1", 0), Sonarr)
+                        for name in names}
+        for server in self.servers.values():
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.url = self.url_of("sonarr")
+
+    def url_of(self, name):
+        return f"http://127.0.0.1:{self.servers[name].server_port}"
+
+    def close(self):
+        for server in self.servers.values():
+            server.shutdown()
+            server.server_close()
 
     def curl(self, *args, stdin="", env=None):
         return subprocess.run(["curl", *args], input=stdin, capture_output=True, text=True,
                               env=env or self.env, timeout=30)
 
     def events(self, *starts):
+        """Start events from (time, image) for Sonarr, or (time, image, service)."""
         lines = [json.dumps({"Type": "container", "Action": "start", "timeNano": t,
                              "Actor": {"ID": f"id{t}", "Attributes": {
-                                 "com.docker.compose.service": "sonarr", "image": image}}})
-                 for t, image in starts]
+                                 "com.docker.compose.service": (rest or ["sonarr"])[0],
+                                 "image": image}}})
+                 for t, image, *rest in starts]
         path = self.folder / f"events-{len(lines)}-{starts[-1][0]}.jsonl"
         path.write_text("\n".join(lines) + "\n")
         return path
 
-    def reduce(self, events):
+    def reduce(self, events, mapped=("sonarr",)):
         out = subprocess.run(
             [sys.executable, "-I", str(ROOT / "tests/contracts/observe.py"),
              "--traces", str(self.traces), "--events", str(events),
-             "--ports", json.dumps({"sonarr": self.server.server_port}),
+             "--ports", json.dumps({name: self.servers[name].server_port for name in mapped}),
              "--candidates", f"sonarr={CANDIDATE}", "--scenario", "fresh-install",
              "--run-id", "run-fixture"],
             capture_output=True, text=True, timeout=60, check=True)
@@ -155,18 +185,19 @@ class ObserveContract(unittest.TestCase):
         cls.fx.curl("-sS", "-H", "Expect: 100-continue", "-H", "Content-Type: application/json",
                     "--data-binary", json.dumps({"name": "Jackett-fixture", "pad": "x" * 2048}),
                     f"{url}/api/v3/indexer")
-        cls.fx.curl("-sS", f"{url}/api/v3/indexer")
+        cls.fx.curl("-sS", f"{url}/api/v3/indexer?apikey={SECRET}")
         cls.fx.curl("-sS", f"{url}/api/v3/qualityprofile/1")
         cls.fx.curl("-sSL", f"{url}/api/v3/legacy/{LONG_SEGMENT}")
         cls.failed_call = cls.fx.curl("-sf", f"{url}/api/v3/missing")
+        cls.fx.curl("-sS", f"{url}/api/v3/downloadclient")
+        cls.fx.curl("-sS", f"{url}/api/v3/notification/7")
         cls.finished = time.time_ns()
         cls.report = json.loads(cls.fx.reduce(cls.fx.events((cls.started - 1, CANDIDATE))))
         cls.sonarr = cls.report["entries"]["sonarr"]
 
     @classmethod
     def tearDownClass(cls):
-        cls.fx.server.shutdown()
-        cls.fx.server.server_close()
+        cls.fx.close()
         cls.tmp.cleanup()
 
     def test_output_file_style_keeps_curl_output_and_records_reads(self):
@@ -281,6 +312,41 @@ class ObserveContract(unittest.TestCase):
         entry = report["entries"]["sonarr"]["quality-profile-list"]
         self.assertEqual(entry, {"candidate": {}, "other": {"200": 1}, "reads": []})
 
+    def test_query_string_is_not_part_of_the_route(self):
+        # Given a GET whose URL carries an apikey query string.
+        # When observe.py reduces the trace.
+        unmatched = [call for call in self.report["unmatched"] if "/indexer" in call]
+
+        # Then the call is matched to its entry, not reported as unlisted.
+        self.assertEqual(self.sonarr["indexer-list"]["candidate"], {"200": 1})
+        self.assertEqual(unmatched, [])
+
+    def test_request_without_response_counts_as_000(self):
+        # Given a GET that the fixture answers by closing the connection.
+        # When observe.py reduces the trace.
+        entry = self.sonarr["download-client-list"]
+
+        # Then the call counts as status 000, not as a success.
+        self.assertEqual(entry["candidate"], {"000": 1})
+
+    def test_reads_come_only_from_accepted_statuses(self):
+        # Given a GET answered 404 with a body that holds every declared read.
+        # When observe.py reduces the trace.
+        entry = self.sonarr["notification-get"]
+
+        # Then the 404 is counted and no read is taken from its body.
+        self.assertEqual(entry, {"candidate": {"404": 1}, "other": {}, "reads": []})
+
+    def test_report_counts_requests_and_names_the_candidates(self):
+        # Given eleven curls, one of which follows a redirect.
+        # When observe.py reduces the traces.
+        report = self.report
+
+        # Then all twelve requests are counted and each was parsed.
+        self.assertEqual((report["requests"], report["unparsed"]), (12, 0))
+        # And the report names the candidate ref it bound requests to.
+        self.assertEqual(report["candidates"], {"sonarr": CANDIDATE})
+
     def test_unset_trace_directory_records_nothing(self):
         # Given the shim on PATH without MS_CONTRACT_TRACE.
         env = {k: v for k, v in self.fx.env.items() if k != "MS_CONTRACT_TRACE"}
@@ -295,6 +361,61 @@ class ObserveContract(unittest.TestCase):
         self.assertEqual(sorted(self.fx.traces.iterdir()), before)
         # And curl got no trace option: one it cannot open would dump the trace to stderr.
         self.assertEqual(call.stderr, "")
+
+
+class HostAttribution(unittest.TestCase):
+    """Sonarr and Radarr fixtures, plus a stray server that no service owns."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.fx = Fixture(pathlib.Path(cls.tmp.name), ("sonarr", "radarr", "stray"))
+        sonarr, radarr = cls.fx.url_of("sonarr"), cls.fx.url_of("radarr")
+        Sonarr.redirects.update({"/api/v3/hopa": f"{radarr}/api/v3/hopb",
+                                 "/api/v3/hopb": f"{sonarr}/api/v3/config/naming"})
+        started = time.time_ns()
+        cls.fx.curl("-sSL", f"{sonarr}/api/v3/hopa")
+        cls.fx.curl("-sS", f"{sonarr}/api/v3/qualityprofile", f"{radarr}/api/v3/rootfolder",
+                    f"{sonarr}/api/v3/customformat")
+        cls.fx.curl("-sS", f"{cls.fx.url_of('stray')}/api/v3/indexer")
+        events = cls.fx.events((started - 1, CANDIDATE), (started - 1, ACCEPTED, "radarr"))
+        cls.report = json.loads(cls.fx.reduce(events, mapped=("sonarr", "radarr")))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fx.close()
+        cls.tmp.cleanup()
+
+    def test_redirect_back_to_the_first_server_is_attributed_to_it(self):
+        # Given a -L GET from Sonarr to Radarr and back to Sonarr on the reused connection.
+        # When observe.py reduces the trace.
+        entries, unmatched = self.report["entries"], self.report["unmatched"]
+
+        # Then the last hop counts for Sonarr and not for Radarr.
+        self.assertEqual(entries["sonarr"]["config-naming-get"]["candidate"], {"200": 1})
+        self.assertNotIn("config-naming-get", entries["radarr"])
+        # And each unlisted hop is reported for its own service.
+        self.assertEqual(unmatched["sonarr GET /api/v3/hopa"], {"candidate": 1, "other": 0})
+        self.assertEqual(unmatched["radarr GET /api/v3/hopb"], {"candidate": 0, "other": 1})
+
+    def test_reused_connection_is_attributed_by_host(self):
+        # Given one curl that fetches Sonarr, then Radarr, then Sonarr again.
+        # When observe.py reduces the trace.
+        sonarr, radarr = self.report["entries"]["sonarr"], self.report["entries"]["radarr"]
+
+        # Then each request counts for the service it was sent to.
+        self.assertEqual(sonarr["quality-profile-list"]["candidate"], {"200": 1})
+        self.assertEqual(radarr["root-folder-list"]["other"], {"200": 1})
+        self.assertEqual(sonarr["custom-format-list"]["candidate"], {"200": 1})
+        self.assertNotIn("custom-format-list", radarr)
+
+    def test_request_to_a_local_port_no_service_owns_is_unparsed(self):
+        # Given a GET to a local server whose port is not in the service port map.
+        # When observe.py reduces the trace.
+        report = self.report
+
+        # Then it counts as unparsed among the seven requests.
+        self.assertEqual((report["requests"], report["unparsed"]), (7, 1))
 
 
 class Lines(unittest.TestResult):
@@ -316,20 +437,41 @@ class Lines(unittest.TestResult):
 
 
 result = Lines()
-unittest.defaultTestLoader.loadTestsFromTestCase(ObserveContract).run(result)
+unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__]).run(result)
 sys.exit(0 if result.wasSuccessful() and result.testsRun else 1)
 PY
 )
-rc=$?
+CURL_IMAGE="ms-contracts-curl:bookworm"
+CURL_DOCKERFILE='FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends curl python3 python3-yaml \
+    && rm -rf /var/lib/apt/lists/*'
 
-while IFS=$'\t' read -r status name; do
-    case "$status" in
-        PASS) pass "$name" ;;
-        FAIL) fail "$name" ;;
-    esac
-done <<<"$results"
-[[ "$results" == *PASS* ]] || fail "contract observe cases ran" "no case reported a result"
-((rc == 0)) || fail "contract observe suite exits cleanly" "python exited $rc"
+# Records one suite run's results under a label: the curl that ran it.
+record_suite() {
+    local label="$1" results="$2" rc="$3" status name
+    while IFS=$'\t' read -r status name; do
+        case "$status" in
+            PASS) pass "$label: $name" ;;
+            FAIL) fail "$label: $name" ;;
+        esac
+    done <<<"$results"
+    [[ "$results" == *PASS* ]] || fail "$label: contract observe cases ran" "no case reported a result"
+    ((rc == 0)) || fail "$label: contract observe suite exits cleanly" "python exited $rc"
+}
+
+results=$(python3 -I - "$REPO_ROOT" <<<"$SUITE")
+record_suite "host curl" "$results" "$?"
+
+if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    skip "curl 7.88: the suite in a bookworm-slim container" "Docker not available"
+elif ! docker build -q -t "$CURL_IMAGE" - <<<"$CURL_DOCKERFILE" >/dev/null 2>&1; then
+    skip "curl 7.88: the suite in a bookworm-slim container" "image build failed (offline?)"
+else
+    # The DinD image's curl, whose trace observe.py must parse once PR 2 records in DinD.
+    results=$(docker run --rm -i --network none -v "$REPO_ROOT:/repo:ro" "$CURL_IMAGE" \
+        python3 -I - /repo <<<"$SUITE")
+    record_suite "curl 7.88" "$results" "$?"
+fi
 
 scenario_end "$CURRENT_SCENARIO"
 summary
