@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hosted preflight: freeze inputs, run one job, select, verify, publish, report."""
+"""Hosted preflight: freeze inputs, run one job, select, verify, publish, report, notify."""
 
 from __future__ import annotations
 
@@ -176,13 +176,28 @@ def abort(args: argparse.Namespace) -> None:
     print(render_abort(args.plan_result, run_context(args)), end="")
 
 
+def drift_changed(args: argparse.Namespace) -> None:
+    from preflight.notify import drift_changed as changed
+
+    print(str(changed(args.previous.read_text(), args.report.read_text())).lower())
+
+
+def report_changed(args: argparse.Namespace) -> None:
+    from preflight.notify import report_changed as changed
+
+    comments = json.loads(args.comments.read_text())
+    if not isinstance(comments, list):
+        raise ValueError("issue comments are not a list of pages")
+    print(str(changed(comments, args.report.read_text())).lower())
+
+
 def parse() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
 
     def command(name: str, *flags: str, planned: bool = True) -> argparse.ArgumentParser:
         sub = commands.add_parser(name)
-        sub.set_defaults(func=globals()[name])
+        sub.set_defaults(func=globals()[name.replace("-", "_")])
         if planned:
             for flag in ("--run", "--source", "--hash"):
                 sub.add_argument(flag, required=True)
@@ -219,6 +234,8 @@ def parse() -> argparse.Namespace:
         status.add_argument(flag, default="")
     failed = command("abort", planned=False)
     failed.add_argument("--plan-result", required=True)
+    command("drift-changed", "--previous", "--report", planned=False)
+    command("report-changed", "--comments", "--report", planned=False)
     for sub in (status, failed):
         for flag in ("--run-url", "--ref", "--default-branch"):
             sub.add_argument(flag, required=True)

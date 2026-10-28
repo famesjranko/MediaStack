@@ -131,7 +131,7 @@ class RunnerDisk(unittest.TestCase):
                       + FULL_DISK + " (", text)
         # And the full-disk result authorizes nothing and refuses no open PR.
         self.assertEqual(selection["selected"], ["radarr"])
-        self.assertEqual(publish.rejected(self.plan, selection, "success"), {})
+        self.assertEqual(publish.rejected(self.plan, selection, "success"), [])
 
     def test_full_disk_in_phase_two_is_a_runner_problem(self):
         # Given both candidates passed phase 1 and phase-2 upgrade-path ran out of disk.
@@ -241,7 +241,8 @@ class RunnerDisk(unittest.TestCase):
         # Then Sonarr failed in phase 1.
         self.assertIn("| sonarr | failed in phase 1 (", text)
         # And the publisher counts it as refused.
-        self.assertIn("sonarr", publish.rejected(self.plan, selection, "success"))
+        self.assertIn({"sonarr": self.plan["candidates"]["sonarr"]},
+                      publish.rejected(self.plan, selection, "success"))
 
     def test_image_failure_outranks_full_disk_in_phase_two(self):
         # Given phase-2 upgrade-path ran out of disk and fresh-install failed on the image.

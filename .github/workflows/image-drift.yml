@@ -150,10 +150,15 @@ jobs:
           } >body.md
           existing=$(gh issue list --label image-drift --state open --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
+            # Held services keep drift open for weeks; comment only on a new drift set.
+            gh issue view "$existing" --json body --jq .body >previous.md
+            changed=$(python3 tests/hosted_preflight.py drift-changed --previous previous.md --report drift.md)
             gh issue edit "$existing" --body-file body.md
-            gh issue comment "$existing" \
-              --body "Drift re-detected $(date -u '+%Y-%m-%d %H:%M UTC') — body refreshed. [Run]($RUN_URL)"
-            echo "Updated existing drift issue #$existing"
+            if [ "$changed" = true ]; then
+              gh issue comment "$existing" \
+                --body "Drift set changed $(date -u '+%Y-%m-%d %H:%M UTC') — body refreshed. [Run]($RUN_URL)"
+            fi
+            echo "Updated existing drift issue #$existing (drift set changed: $changed)"
           else
             url=$(gh issue create --title "$title" --body-file body.md --label image-drift)
             echo "Opened drift issue: $url"
@@ -572,8 +577,8 @@ jobs:
           gh api --method POST "repos/$GH_REPO/issues/$PR/labels" -f "labels[]=$LABEL" >/dev/null
           echo "pr=$PR" >>"$GITHUB_OUTPUT"
 
-  # Posts one status comment per run, also when the planner failed. It never
-  # runs images or artifact code; the weekly alert keeps owning the issue body.
+  # Comments when the per-service status changed, and on every failure notice.
+  # It never runs images or artifact code; the weekly alert owns the issue body.
   preflight-report:
     needs: [mode, preflight-plan, preflight-select, preflight-combine, preflight-verify, preflight-publish]
     if: ${{ !cancelled() && needs.mode.outputs.task == 'preflight' }}
@@ -647,8 +652,15 @@ jobs:
         run: |
           cat /tmp/preflight-report.md >>"$GITHUB_STEP_SUMMARY"
           issue=$(gh issue list --label image-drift --state open --json number --jq '.[0].number // empty')
-          if [ -n "$issue" ]; then
+          if [ -z "$issue" ]; then
+            echo 'No open image-drift issue; the report is in the step summary only.'
+            exit 0
+          fi
+          gh api --paginate --slurp "repos/$GH_REPO/issues/$issue/comments" >/tmp/comments.json
+          changed=$(python3 tests/hosted_preflight.py report-changed \
+            --comments /tmp/comments.json --report /tmp/preflight-report.md)
+          if [ "$changed" = true ]; then
             gh issue comment "$issue" --body-file /tmp/preflight-report.md
           else
-            echo 'No open image-drift issue; the report is in the step summary only.'
+            echo "The status table equals the last report on #$issue; the report is in the step summary only."
           fi

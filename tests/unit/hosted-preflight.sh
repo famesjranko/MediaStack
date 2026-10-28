@@ -364,7 +364,7 @@ class HostedEvidence(unittest.TestCase):
                 facts = publish.Facts(prs, HEAD, compare, "old", gone)
 
                 # When a passing run decides how to publish its lock.
-                decision = publish.decide("proposed", {}, facts)
+                decision = publish.decide("proposed", [], facts)
 
                 # Then it refuses for that reason and changes nothing.
                 self.assertEqual(decision.action, "refuse")
@@ -392,7 +392,7 @@ class HostedEvidence(unittest.TestCase):
             with self.subTest(name):
                 # Given the rolling PR state and this run's proposal.
                 # When the publisher decides.
-                decision = publish.decide(proposed, {}, facts)
+                decision = publish.decide(proposed, [], facts)
 
                 # Then it makes exactly the expected change under a lease on the observed head.
                 self.assertEqual((decision.action, decision.pr, decision.lease), expected)
@@ -430,7 +430,7 @@ class HostedEvidence(unittest.TestCase):
         plan["pending"] = {"bazarr": "subtitle database migration is not covered",
                            "lidarr": "not selected"}
         selection = combination_plan(plan, ["sonarr"], {"radarr": ["upgrade-path"]})
-        decided = publish.decide("new", {}, publish.Facts([], "", {}, None, []))
+        decided = publish.decide("new", [], publish.Facts([], "", {}, None, []))
         publication = {"outcome": decided.action, "pr": "12", "reason": decided.reason}
         jobs = {"combine": "skipped", "verify": "success", "publish": "success"}
 

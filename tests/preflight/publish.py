@@ -97,50 +97,64 @@ def rejected(
     selection: dict[str, Any],
     verified: str,
     undecided: frozenset[str] = frozenset(),
-) -> dict[str, str]:
-    """Candidate references that this run tested and did not accept.
+) -> list[dict[str, str]]:
+    """Groups of candidate references that this run tested and refused.
 
-    A phase-1 failure rejects its candidate. When final verification did not
-    succeed, every candidate of the frozen combination was refused with it,
-    except the ``undecided`` ones: their failed phase-2 jobs only ran out of
-    disk headroom, so this run decided nothing about them.
+    Each group failed as a whole. A phase-1 failure refuses its candidate alone:
+    that job ran the exact digest with the accepted companions. When final
+    verification did not succeed, the frozen combination failed as one group,
+    except the ``undecided`` candidates: their failed phase-2 jobs only ran out
+    of disk headroom, so this run decided nothing about them. A failed
+    combination says nothing about a subset of it.
     """
-    refused = set(selection["failed"])
-    if verified != "success":
-        refused |= set(selection["selected"]) - undecided
-    return {service: plan["candidates"][service] for service in sorted(refused)}
+    refs = plan["candidates"]
+    groups = [{service: refs[service]} for service in sorted(selection["failed"])]
+    together = sorted(set(selection["selected"]) - undecided) if verified != "success" else []
+    if together:
+        groups.append({service: refs[service] for service in together})
+    return groups
 
 
-def contradicted(branch_lock: str | None, refused: dict[str, str]) -> list[str]:
-    """Services whose exact digest the rolling branch proposes and this run refused."""
+def contradicted(branch_lock: str | None, refused: list[dict[str, str]]) -> list[list[str]]:
+    """The refused groups whose every exact digest the rolling branch proposes.
+
+    Phase 1 is not retried. A flaky phase-1 failure of the PR's exact digest
+    closes the PR, and the next run that passes opens a new one. A job whose
+    disk headroom ran out refuses nothing, so it never closes the PR.
+    """
     proposed = {(row[0], f"{row[1]}@{row[2]}") for row in lock_rows(branch_lock or "")}
-    return [service for service, ref in refused.items() if (service, ref) in proposed]
+    return [
+        sorted(group)
+        for group in refused
+        if all((service, ref) in proposed for service, ref in group.items())
+    ]
 
 
-def without_proposal(pr: int | None, refused: dict[str, str], facts: Facts) -> Decision:
+def without_proposal(pr: int | None, refused: list[dict[str, str]], facts: Facts) -> Decision:
     if pr is None:
         return Decision(
             "none", "this run accepted no candidate and no digest PR is open", None, facts.head
         )
     failed = contradicted(facts.branch_lock, refused)
     if failed:
+        names = ", ".join(" + ".join(group) for group in failed)
         return Decision(
             "close",
-            f"this run refused {', '.join(failed)} at the exact digest that PR #{pr} proposes; "
+            f"this run refused {names} at the exact digests that PR #{pr} proposes; "
             "the PR is closed and its branch deleted",
             pr,
             facts.head,
         )
     return Decision(
         "keep",
-        f"this run accepted no candidate and refused none of PR #{pr}'s digests; the PR is "
-        "unchanged, and its evidence is the source and run that its description cites",
+        f"this run accepted no candidate and refused nothing that PR #{pr} proposes in full; "
+        "the PR is unchanged, and its evidence is the source and run that its description cites",
         pr,
         facts.head,
     )
 
 
-def decide(proposed: str | None, refused: dict[str, str], facts: Facts) -> Decision:
+def decide(proposed: str | None, refused: list[dict[str, str]], facts: Facts) -> Decision:
     """Choose the single change to the rolling PR; ``proposed`` is None when nothing passed."""
     problem = ownership_problem(facts)
     if problem:

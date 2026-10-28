@@ -55,14 +55,15 @@ group, `tested-digests-publisher`. Because preflights do not overlap, that
 group never holds two publishers from different runs; it is a second guard.
 
 The alert at 03:17 runs first. It opens, updates or closes the `image-drift`
-issue. The preflight at 04:17 then comments on that issue. If the alert closed
-the issue because no image drifted, the preflight has no work and writes its
-report to the step summary only.
+issue. The preflight at 04:17 then comments on that issue when a service status
+changed. If the alert closed the issue because no image drifted, the preflight
+has no work and writes its report to the step summary only.
 
 ### What the maintainer does each week
 
-1. Read the newest status comment on the open `image-drift` issue. See
-   [Status report](#status-report).
+1. Read the newest status comment on the open `image-drift` issue. If no
+   status changed this week, no new comment is posted; the newest comment is
+   still current. See [Status report](#status-report).
 2. If the comment names a proposed PR, open the PR with the label
    `tested-digests`. Review its diff: only the digest record and the README
    badges change.
@@ -250,9 +251,19 @@ gh api --method POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
 With `publish=true`, the publisher keeps one open digest PR. The PR head is the branch
 `chore/tested-images`, and the PR has the label `tested-digests`. A newer
 accepted run replaces the proposal: the newest run's tested combination is the
-only proposal. A failed phase 2 accepts nothing. A run refuses a candidate when
-the candidate fails phase 1, or when final verification of its combination does
-not succeed. The publisher makes one decision per run:
+only proposal. A failed phase 2 accepts nothing.
+
+A run refuses a candidate alone when the candidate fails phase 1. That job ran
+the exact digest with the accepted companions. A run refuses a combination as
+a whole when its phase 2 or its final verification does not succeed. A failed
+combination is not evidence against a part of it. For example, the PR proposes
+Sonarr, which passed alone in an earlier run. This run, Radarr and Sonarr each
+pass phase 1 but fail together in phase 2. The PR stays open, because Sonarr
+with the accepted companions is still proven. Phase 1 is not retried: a flaky
+phase-1 failure of the PR's exact digest closes the PR, and the next run that
+passes opens a new PR. A job whose disk headroom ran out refuses nothing.
+
+The publisher makes one decision per run:
 
 | This run | Branch `chore/tested-images` and its PR | Action |
 |---|---|---|
@@ -261,8 +272,8 @@ not succeed. The publisher makes one decision per run:
 | Accepted a combination | No branch, a branch from a merged PR, or a publisher branch with no PR | Rebuild the branch from the default branch, push it with a lease, and open the PR. |
 | Accepted a combination | Publisher-owned PR, different lock | Rebuild the branch from the default branch, force-update it with a lease, and refresh the PR body. |
 | Accepted a combination | Publisher-owned PR, same lock | Keep the branch. Refresh the PR body so that it cites this run. Test timestamps are ignored. |
-| Accepted nothing; refused an exact digest that the PR proposes | Publisher-owned PR | Comment on the PR with the run link, close it, and delete the branch with a lease. The next accepted run opens a new PR. |
-| Accepted nothing; refused none of the PR's digests | Publisher-owned PR | Do nothing. The PR's evidence is the source and run that its description cites, not this run. |
+| Accepted nothing; refused a candidate or combination whose every exact digest the PR proposes | Publisher-owned PR | Comment on the PR with the run link, close it, and delete the branch with a lease. The next accepted run opens a new PR. |
+| Accepted nothing; refused nothing that the PR proposes in full | Publisher-owned PR | Do nothing. The PR's evidence is the source and run that its description cites, not this run. |
 | Accepted nothing | No PR | Do nothing. |
 
 A publisher-owned branch has exactly one commit on top of the default branch.
@@ -278,8 +289,16 @@ permits this force-update.
 
 ## Status report
 
-The status job posts one comment for each preflight run on the open
-`image-drift` issue. The comment names the ref of the run. A run on a ref other
+The status job writes a report for each preflight run to the step summary. It
+also posts the report as a comment on the open `image-drift` issue, but only
+when the per-service status table differs from the newest report that the
+workflow posted on that issue. Held services keep drift open for weeks, so an
+unchanged table gets no comment. Links to the run are not compared. A failure
+notice has no table and is always posted. The weekly alert also comments only
+when the set of drifted digests differs from the issue body that it refreshes.
+`tests/preflight/notify.py` makes both decisions.
+
+The report names the ref of the run. A run on a ref other
 than the default branch is marked as a trial run. The comment gives one state
 for each drifted service:
 
@@ -322,7 +341,7 @@ Publication: the publisher did not finish; see the run.
 ```
 
 1. The heading names the run ID and attempt. The newest comment is the current
-   status.
+   status. Later runs with the same status table post no comment.
 2. `Ref` must be `refs/heads/main` for a scheduled run. Any other ref is a
    trial run and never proposes a PR.
 3. Each row is one drifted service. `proposed in PR #N` is the only state that
@@ -351,18 +370,40 @@ The result records elapsed seconds and the disk measurements in
 [Runner disk](#runner-disk). Raw `.env`, databases, service configuration and
 container environment dumps are never exported.
 Logs mask the fixture password, credential assignments and long generated values.
+The job log shows the end of the scenario log between `::stop-commands::` markers
+with a random token. Thus a candidate image cannot issue workflow commands, such
+as `::error::` or `::add-mask::`, through its output.
 Missing or malformed artifacts prevent publication. A job killed before it can
 write evidence also prevents publication; the disposable VM provides cleanup.
 
-These are functional drift tests of trusted upstream images. Privileged DinD
-is not a security sandbox for a malicious image. A runner escape could corrupt
-its evidence or write Actions cache entries, despite a read-only repository
-token. A forged cache entry can overwrite any workspace file when a later job
-restores it, including the scripts that verify tool hashes. For this reason, no
-workflow in this repository restores an Actions cache, and each CI job fetches
-and verifies its pinned tools. `tests/unit/workflow-caches.sh` enforces this.
-Corrupted evidence can still reach a proposed PR. The maintainer review of that
-PR remains the final gate.
+These are functional drift tests of upstream images. Privileged DinD is not a
+security sandbox. Assume that a malicious candidate image can get root on the
+runner VM. This is a realistic path: `socket-proxy` is not held, and it mounts
+the raw Docker socket of DinD. An image with that socket can start a privileged
+container, and DinD itself runs privileged on the VM.
+
+With root on the VM, an image can read the artifact token of the workflow run
+from the runner process. It can then upload `result-*` artifacts for the other
+image jobs of the same run before those jobs upload theirs. An artifact name is
+unique in a run, so the upload of the real job fails and the forged result
+stays. Every candidate in that run can then appear to pass. The image can also
+write Actions cache entries, despite the read-only repository token. A forged
+cache entry can overwrite any workspace file when a later job restores it,
+including the scripts that verify tool hashes. For this reason, no workflow in
+this repository restores an Actions cache, and each CI job fetches and verifies
+its pinned tools. `tests/unit/workflow-caches.sh` enforces this. Every action is
+pinned to a commit SHA; `tests/unit/workflow-pins.sh` enforces this.
+
+The damage has limits:
+
+- The plan hash and the selection hash go through job outputs, not artifacts.
+  Forged artifacts cannot add a candidate or change a digest. Each proposed
+  digest is one that the planner froze from the registry. Forged artifacts can
+  make a failed candidate look passed.
+- The publisher validates the artifacts again with trusted source code.
+- The image jobs have no write token for the repository.
+- The maintainer review of the digest PR is the last gate. A forged pass can
+  still reach a proposed PR.
 
 On a feature branch, use `publish=false` to measure the proposed workflow. The
 publisher cannot run there. A scheduled run always uses the default branch.
