@@ -226,7 +226,69 @@ PYEOF
     assert_uptime_kuma_idempotent
     assert_jackett_flaresolverr_repair
     assert_seerr_quota_update
+    fresh_install_assert_product_probes
     assert_install_digest_recorded
+}
+
+# Run one product probe in DinD, traced, on whatever image the service runs,
+# as a real install does. Here that is the candidate, so the contract gate
+# sees these calls on it. The modules and their HTTP calls are the product's
+# own; only their inputs come from .env.
+#   jellyfin-users   Stage 1 gate for STAGE_1_COMPLETE (scripts/setup/stage1/install.sh)
+#   jellyfin-health  the same probe's /health fallback when no API key was saved
+#   sonarr | radarr  the login check after a Revert (scripts/lib/update-restore.sh)
+fresh_install_product_probe() {
+    docker exec -i -e "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-}" -e UI_ASCII=1 -w /root/MediaStack "$DIND_NAME" bash -s -- "$1" <<'BASH'
+set -euo pipefail
+SCRIPT_DIR=/root/MediaStack
+set -a
+source .env
+set +a
+source scripts/lib/common.sh
+case "$1" in
+    jellyfin-users | jellyfin-health)
+        source scripts/setup/stage1/install.sh
+        # .env HOST_ADDRESS is written from _ENV_HOST_ADDRESS (env-write.sh).
+        _ENV_HOST_ADDRESS=$HOST_ADDRESS
+        [[ "$1" == jellyfin-users ]] || JELLYFIN_API_KEY=
+        _stage1_jellyfin_probe
+        ;;
+    sonarr | radarr)
+        source scripts/lib/update-restore.sh
+        _service_login_check "$1"
+        ;;
+    *) exit 2 ;;
+esac
+BASH
+}
+
+fresh_install_assert_product_probes() {
+    local out svc rc
+    if svc_stripped jellyfin; then
+        skip "Stage 1 Jellyfin probes" "stripped via MS_TEST_STRIP_SERVICES"
+    else
+        if out=$(fresh_install_product_probe jellyfin-users 2>&1); then
+            pass "Stage 1 Jellyfin /Users probe authenticates with the saved API key"
+        else
+            fail "Stage 1 Jellyfin /Users probe authenticates with the saved API key" "$out"
+        fi
+        # Without a key the probe must refuse the marker, after /health answers.
+        out=$(fresh_install_product_probe jellyfin-health 2>&1) && rc=0 || rc=$?
+        if [[ $rc -eq 1 && "$out" == *"/health responded but JELLYFIN_API_KEY is empty"* ]]; then
+            pass "Stage 1 Jellyfin probe without an API key reaches /health and refuses the marker"
+        else
+            fail "Stage 1 Jellyfin probe without an API key reaches /health and refuses the marker" "$out"
+        fi
+    fi
+    for svc in sonarr radarr; do
+        if svc_stripped "$svc"; then
+            skip "$svc post-Revert login check" "stripped via MS_TEST_STRIP_SERVICES"
+        elif out=$(fresh_install_product_probe "$svc" 2>&1); then
+            pass "$svc post-Revert login check succeeds with the saved API key"
+        else
+            fail "$svc post-Revert login check succeeds with the saved API key" "$out"
+        fi
+    done
 }
 
 # Configured state of every default-profile service, as configure.sh leaves it.

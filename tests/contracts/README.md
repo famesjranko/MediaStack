@@ -78,11 +78,7 @@ Three optional endpoint keys serve the image acceptance gate:
 - `base_path` overrides the file's `base_path` for one entry, for example a
   readiness probe at the service root.
 - `unexercised` names why the image jobs cannot reach the entry. It is one of
-  `gpu`, `remote-profile`, `launcher-menu`, `nas`, `held-profile`, or
-  `accepted-image-only`. `accepted-image-only` means that the required
-  scenarios make the call, but only while the service runs its accepted image,
-  never the candidate. Examples are the installer's `GET /Users` in
-  `install-e2e` and the system-status check after a Revert.
+  `gpu`, `remote-profile`, `launcher-menu`, `nas`, or `held-profile`.
   `held-profile` is valid only for a service in `HELD` in
   `tests/preflight/model.py`. Such an entry does not block acceptance; if a job
   does exercise it, the gate reports the exemption as stale.

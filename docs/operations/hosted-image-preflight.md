@@ -86,11 +86,8 @@ Verdict (`tests/preflight/contracts.py`):
   must have a call on the candidate digest with an accepted status. Each
   declared read must appear in an accepted response. No call to the candidate
   can be outside the inventory.
-- An entry with `unexercised` (`gpu`, `remote-profile`, `launcher-menu`, `nas`,
-  `held-profile` or `accepted-image-only`) is exempt. `accepted-image-only`
-  means that the required scenarios make the call only while the service runs
-  its accepted image, never the candidate. Examples are the installer's
-  `GET /Users` in `install-e2e` and the system-status check after a Revert. An exempt entry that has a call on the candidate
+- An entry with `unexercised` (`gpu`, `remote-profile`, `launcher-menu`, `nas`
+  or `held-profile`) is exempt. An exempt entry that has a call on the candidate
   is reported as stale. It does not fail.
 - A contract failure is an image failure. It is never undecided. In phase 1, it
   removes the candidate from the combination. In phase 2, final verification

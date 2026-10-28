@@ -115,7 +115,7 @@ run_gate
 assert_rc 1 "an unexercised reason outside the closed set fails"
 assert_contains "$OUT" "schema: sonarr indexer-list: unexercised must be one of" \
     "the failure names the entry and the unexercised rule"
-assert_contains "$OUT" "'accepted-image-only', 'gpu', 'held-profile', 'launcher-menu', 'nas', 'remote-profile'" \
+assert_contains "$OUT" "'held-profile', 'launcher-menu', 'nas', 'remote-profile'" \
     "the failure lists the closed set of reasons"
 printf '%s\n' "$contract_backup" >"$PROBED_CONTRACT"
 

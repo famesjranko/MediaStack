@@ -19,11 +19,7 @@ import yaml
 CONTRACT_DIR = Path(__file__).resolve().parent
 METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 # The closed set of reasons an entry may stay unexercised by the image jobs.
-# accepted-image-only: the required scenarios do make the call, but only while
-# the service runs its accepted image, never the candidate.
-EXEMPT_REASONS = frozenset(
-    {"gpu", "remote-profile", "launcher-menu", "nas", "held-profile", "accepted-image-only"}
-)
+EXEMPT_REASONS = frozenset({"gpu", "remote-profile", "launcher-menu", "nas", "held-profile"})
 ENDPOINT_KEYS = frozenset(
     {"id", "method", "path", "base_path", "expect", "unexercised", "sends", "reads", "callers"}
 )

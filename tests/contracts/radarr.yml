@@ -4,9 +4,9 @@ auth: {type: header, name: X-Api-Key}
 openapi: https://raw.githubusercontent.com/Radarr/Radarr/develop/src/Radarr.Api.V3/openapi.json
 endpoints:
   - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh, scripts/lib/arr/connections.sh]}
-  # Only the check after a Manage updates Revert calls it. In install-e2e the
-  # Revert runs the accepted image, never the candidate.
-  - {id: system-status, method: GET, path: /system/status, unexercised: accepted-image-only, sends: [], reads: [], callers: [scripts/lib/update-restore.sh]}
+  # The login check after a Manage updates Revert. install-e2e makes it on the
+  # accepted image; fresh-install calls the same function on the candidate.
+  - {id: system-status, method: GET, path: /system/status, sends: [], reads: [], callers: [scripts/lib/update-restore.sh]}
   - {id: config-naming-get, method: GET, path: /config/naming, sends: [], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: config-naming-update, method: PUT, path: /config/naming, sends: [renameMovies, replaceIllegalCharacters, standardMovieFormat, movieFolderFormat], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: quality-profile-list, method: GET, path: /qualityprofile, sends: [], reads: [id, name, cutoff, upgradeAllowed, "items[].quality.id", "items[].allowed", "formatItems[].score"], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh, scripts/services/seerr/arr-connect.sh]}
