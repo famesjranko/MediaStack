@@ -21,11 +21,18 @@ assert_env_backpopulation() {
 
     local env_remote_web_state
     env_remote_web_state=$(env_get REMOTE_WEB_STATE)
-    assert_eq "ready" "$env_remote_web_state" ".env REMOTE_WEB_STATE populated for ready-state HTTPS"
+    if [[ "${ASSERT_REMOTE_STATE:-ready}" == ready ]]; then
+        assert_eq "ready" "$env_remote_web_state" ".env REMOTE_WEB_STATE populated for ready-state HTTPS"
 
-    local env_jf_pub
-    env_jf_pub=$(env_get JELLYFIN_PUBLISHED_URL)
-    assert_eq "https://jellyfin.fresh.test" "$env_jf_pub" ".env JELLYFIN_PUBLISHED_URL populated for ready-state HTTPS"
+        local env_jf_pub
+        env_jf_pub=$(env_get JELLYFIN_PUBLISHED_URL)
+        assert_eq "https://jellyfin.fresh.test" "$env_jf_pub" ".env JELLYFIN_PUBLISHED_URL populated for ready-state HTTPS"
+    elif [[ "$env_remote_web_state" == ready ]]; then
+        # The LAN published URL is checked by remote_gating_assert_jellyfin_lan_only.
+        fail ".env REMOTE_WEB_STATE is not ready on a LAN-only install" "got ready"
+    else
+        pass ".env REMOTE_WEB_STATE is not ready on a LAN-only install (${env_remote_web_state:-empty})"
+    fi
 
     # Bazarr — only asserted if the subtitles profile is active
     if dind_exec "docker compose ps --format '{{.Names}}' 2>/dev/null" | tr -d '\r' | grep -qx bazarr; then

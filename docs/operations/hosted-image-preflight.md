@@ -50,9 +50,10 @@ A qualifying job has a nonempty assertion population and no failed or skipped
 assertions. If phase 2 fails, the run publishes nothing. The status report names
 the failure.
 
-Phase 1 runs one job for each candidate and required scenario. A selection of
-five candidates with two scenarios each runs ten phase-1 jobs, two at a time.
-Select fewer services to shorten a run.
+Phase 1 runs one job for each candidate and required scenario. A data-owning
+service requires three scenarios. A selection of five data-owning candidates
+therefore runs fifteen phase-1 jobs, two at a time. Select fewer services to
+shorten a run.
 
 ## Boundaries
 

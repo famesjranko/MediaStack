@@ -4,6 +4,15 @@
 The DinD scenario harness uses this for UI/UX flows where a plain pipe is not
 representative enough. Steps wait for text/regex in the ANSI-stripped transcript
 before sending input, which keeps prompt tests deterministic and catches hangs.
+
+Step kinds:
+  {"expect": regex, "send": text}  wait for regex anywhere in the transcript.
+  {"expect": regex, "fresh": true}  wait only in output after the last menu or
+                                    fresh match (for prompts that repeat).
+  {"choose": {"prompt": regex, "item": regex}}  wait for the next numbered menu
+                                    and send the number of the one item that
+                                    matches; fail when no item or more than one
+                                    item matches.
 """
 
 from __future__ import annotations
@@ -20,6 +29,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -94,6 +104,89 @@ def wait_for_pattern(
     )
 
 
+def wait_for_new(
+    proc: subprocess.Popen[bytes],
+    master_fd: int,
+    pattern: str,
+    timeout: float,
+    raw_parts: list[str],
+    start: int,
+) -> int:
+    """Wait for ``pattern`` in output after ``start``; return the end of the match."""
+    compiled = re.compile(pattern, re.MULTILINE | re.DOTALL)
+    deadline = time.monotonic() + timeout
+    while True:
+        raw = read_available(master_fd)
+        if raw:
+            raw_parts.append(raw)
+        plain = strip_ansi("".join(raw_parts))
+        found = compiled.search(plain, start)
+        if found:
+            return found.end()
+        if proc.poll() is not None or time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"no new output matched {pattern!r}\n"
+                f"--- transcript tail ---\n{tail_lines(plain[start:])}"
+            )
+        time.sleep(0.05)
+
+
+def wait_for_menu(
+    proc: subprocess.Popen[bytes],
+    master_fd: int,
+    prompt: str,
+    timeout: float,
+    raw_parts: list[str],
+    start: int,
+) -> tuple[list[str], int]:
+    """Wait for a numbered ui_choose menu after ``start``; return its items and end offset.
+
+    The fallback renderer prints the prompt, one ``N) label`` line per item and
+    then ``Choice ...:``. Menus repeat in one transcript (the launcher redraws
+    after every action), so the search starts at the end of the previous menu.
+    """
+    menu = re.compile(
+        rf"(?:{prompt})[^\n]*\r?\n(?P<items>(?:[ \t]*\d+\) [^\n]*\r?\n)+)[ \t]*Choice [^:\n]*: ",
+        re.MULTILINE,
+    )
+    deadline = time.monotonic() + timeout
+    while True:
+        raw = read_available(master_fd)
+        if raw:
+            raw_parts.append(raw)
+        plain = strip_ansi("".join(raw_parts))
+        found = menu.search(plain, start)
+        if found:
+            items = [
+                re.sub(r"^\s*\d+\) ", "", line).rstrip("\r")
+                for line in found.group("items").splitlines()
+            ]
+            return items, found.end()
+        if proc.poll() is not None or time.monotonic() >= deadline:
+            what = "process exited" if proc.poll() is not None else "timed out"
+            raise RuntimeError(
+                f"{what} before menu {prompt!r} appeared\n"
+                f"--- transcript tail ---\n{tail_lines(plain[start:])}"
+            )
+        time.sleep(0.05)
+
+
+def choose_item(items: list[str], wanted: str, prompt: str) -> int:
+    """1-based index of the one item matching ``wanted``.
+
+    More than one match fails: picking the first would let a new or renamed
+    menu item silently change which action a test runs.
+    """
+    pattern = re.compile(wanted)
+    matches = [index for index, item in enumerate(items, start=1) if pattern.search(item)]
+    if not matches:
+        raise RuntimeError(f"menu {prompt!r} does not offer {wanted!r}; it offers {items!r}")
+    if len(matches) > 1:
+        names = [items[index - 1] for index in matches]
+        raise RuntimeError(f"menu {prompt!r} offers {wanted!r} more than once: {names!r}")
+    return matches[0]
+
+
 def kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     try:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -104,6 +197,35 @@ def kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     except subprocess.TimeoutExpired:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGKILL)
+
+
+def run_step(
+    proc: subprocess.Popen[bytes],
+    master_fd: int,
+    step: dict[str, Any],
+    timeout: float,
+    raw_parts: list[str],
+    cursor: int,
+) -> int:
+    """Run one step and return the new cursor (see the step kinds above)."""
+    expect = step.get("expect")
+    send = str(step["send"]).encode("utf-8") if "send" in step else None
+    if "choose" in step:
+        # Select a menu item by its label, not by a position that changes
+        # with install state.
+        prompt, wanted = step["choose"]["prompt"], step["choose"]["item"]
+        items, cursor = wait_for_menu(proc, master_fd, prompt, timeout, raw_parts, cursor)
+        send = f"{choose_item(items, wanted, prompt)}\n".encode()
+    elif expect and step.get("fresh"):
+        cursor = wait_for_new(proc, master_fd, expect, timeout, raw_parts, cursor)
+    elif expect:
+        optional = bool(step.get("optional", False))
+        # Skip the send for an optional step whose prompt never appeared.
+        if wait_for_pattern(proc, master_fd, expect, timeout, raw_parts, optional) is None:
+            send = None
+    if send is not None:
+        os.write(master_fd, send)
+    return cursor
 
 
 def run(args: argparse.Namespace) -> int:
@@ -123,20 +245,13 @@ def run(args: argparse.Namespace) -> int:
     os.close(slave_fd)
 
     exit_code: int | None = None
+    # End of the last menu or "fresh" match: later "choose" and "fresh" steps
+    # only look at output produced after it.
+    cursor = 0
     try:
         for step in steps:
             timeout = float(step.get("timeout", args.step_timeout))
-            expect = step.get("expect")
-            optional = bool(step.get("optional", False))
-            matched = True
-            if expect:
-                result = wait_for_pattern(
-                    proc, master_fd, expect, timeout, raw_parts, optional=optional
-                )
-                matched = result is not None
-            # Skip the send for an optional step whose prompt never appeared.
-            if matched and "send" in step:
-                os.write(master_fd, str(step["send"]).encode("utf-8"))
+            cursor = run_step(proc, master_fd, step, timeout, raw_parts, cursor)
 
         deadline = time.monotonic() + float(args.exit_timeout)
         while time.monotonic() < deadline:

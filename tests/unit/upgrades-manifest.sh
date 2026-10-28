@@ -189,6 +189,8 @@ SCENARIO_COVERAGE = {
     # compose) and/or services it launches standalone (docker run + ms_test_image)
     "fresh-install":  {"profiles": {"default", "proxy", "autoheal"}},
     "upgrade-path":   {"profiles": {"default", "proxy", "autoheal"}},
+    # The DEMO=1 installer is LAN-only: no DOMAIN, so no proxy profile.
+    "install-e2e":    {"profiles": {"default", "autoheal"}},
     "autoheal":       {"services": {"autoheal"}},
     "bazarr":         {"services": {"bazarr"}},
     "unpackerr":      {"services": {"unpackerr"}},
