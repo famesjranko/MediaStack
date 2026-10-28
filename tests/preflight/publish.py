@@ -92,15 +92,22 @@ def lock_rows(text: str) -> list[tuple[str, ...]]:
     return found
 
 
-def rejected(plan: dict[str, Any], selection: dict[str, Any], verified: str) -> dict[str, str]:
+def rejected(
+    plan: dict[str, Any],
+    selection: dict[str, Any],
+    verified: str,
+    undecided: frozenset[str] = frozenset(),
+) -> dict[str, str]:
     """Candidate references that this run tested and did not accept.
 
     A phase-1 failure rejects its candidate. When final verification did not
-    succeed, every candidate of the frozen combination was refused with it.
+    succeed, every candidate of the frozen combination was refused with it,
+    except the ``undecided`` ones: their failed phase-2 jobs only ran out of
+    disk headroom, so this run decided nothing about them.
     """
     refused = set(selection["failed"])
     if verified != "success":
-        refused |= set(selection["selected"])
+        refused |= set(selection["selected"]) - undecided
     return {service: plan["candidates"][service] for service in sorted(refused)}
 
 

@@ -179,6 +179,11 @@ jobs:
           path: /tmp/preflight-plan
       - name: Install YAML reader
         run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      # A cleanup failure must not skip the scenario and read as an image
+      # failure; the headroom rule judges a disk that is still too full.
+      - name: Free runner disk before DinD starts
+        continue-on-error: true
+        run: bash tests/preflight/free-runner-disk.sh
       - name: Run one candidate with accepted companions, without publishing credentials
         env:
           SOURCE_SHA: ${{ github.sha }}
@@ -267,6 +272,11 @@ jobs:
           path: /tmp/preflight-selection
       - name: Install YAML reader
         run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      # A cleanup failure must not skip the scenario and read as an image
+      # failure; the headroom rule judges a disk that is still too full.
+      - name: Free runner disk before DinD starts
+        continue-on-error: true
+        run: bash tests/preflight/free-runner-disk.sh
       - name: Run the frozen combination without publishing credentials
         env:
           SOURCE_SHA: ${{ github.sha }}
@@ -332,7 +342,7 @@ jobs:
   # Owns one rolling PR on a bot-owned branch. It runs even when this run
   # accepted nothing, so that the report can name the PR it left unchanged.
   preflight-publish:
-    needs: [preflight-plan, preflight-select, preflight-verify]
+    needs: [preflight-plan, preflight-select, preflight-combine, preflight-verify]
     if: ${{ !cancelled() && inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.preflight-select.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -368,6 +378,14 @@ jobs:
         if: needs.preflight-verify.result == 'success'
         with:
           pattern: result-p*
+          path: /tmp/preflight-results
+      # A failed phase 2 may only have run out of disk headroom. Its results are
+      # read as data, so that such a candidate does not close an open PR.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.preflight-combine.result == 'failure'
+        continue-on-error: true
+        with:
+          pattern: result-p2-*
           path: /tmp/preflight-results
       - name: Revalidate original data using trusted source code
         if: needs.preflight-verify.result == 'success'
@@ -412,11 +430,13 @@ jobs:
           PLAN_HASH: ${{ needs.preflight-plan.outputs.plan_hash }}
           SELECTION_HASH: ${{ needs.preflight-select.outputs.plan_hash }}
           VERIFIED: ${{ needs.preflight-verify.result }}
+          COMBINED: ${{ needs.preflight-combine.result }}
         run: |
           python3 tests/hosted_preflight.py decide --run "$RUN_ID" --source "$SOURCE_SHA" \
             --hash "$PLAN_HASH" --plan /tmp/preflight-plan/plan.json \
             --selection-hash "$SELECTION_HASH" --selection /tmp/preflight-selection/plan.json \
-            --verified "$VERIFIED" --facts /tmp/publish-facts \
+            --verified "$VERIFIED" --combined "$COMBINED" --results /tmp/preflight-results \
+            --facts /tmp/publish-facts \
             --proposed /tmp/preflight-accepted/image-digests.lock >/tmp/publish-facts/decision
           cat /tmp/publish-facts/decision >>"$GITHUB_OUTPUT"
           cat /tmp/publish-facts/decision >>"$GITHUB_STEP_SUMMARY"
@@ -516,6 +536,13 @@ jobs:
         with:
           name: preflight-selection
           path: /tmp/preflight-selection
+      # A failed phase 2 may be a full runner disk; its results are read as data only.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.preflight-select.result == 'success' && needs.preflight-combine.result == 'failure'
+        continue-on-error: true
+        with:
+          pattern: result-p2-*
+          path: /tmp/preflight-results
       - name: Write the per-service status
         id: status
         if: needs.preflight-plan.result == 'success'
@@ -536,6 +563,7 @@ jobs:
             --selection-hash "$SELECTION_HASH" --selection /tmp/preflight-selection/plan.json \
             --combined "$COMBINED" --verified "$VERIFIED" --publish-result "$PUBLISH_RESULT" \
             --outcome "$OUTCOME" --pr "$PR" --reason "$REASON" --run-url "$RUN_URL" \
+            --results /tmp/preflight-results \
             --ref "$REF" --default-branch "$DEFAULT_BRANCH" >/tmp/preflight-report.md
       - name: Write a failure notice when no status is available
         if: ${{ !cancelled() && steps.status.outcome != 'success' }}

@@ -30,6 +30,10 @@ FIXTURES = {
     "challtestsrv": "ghcr.io/letsencrypt/pebble-challtestsrv:latest",
     "torznab": "python:3.12-alpine",
 }
+# Free space that a job must keep at its peak. Below this, a failure can come
+# from the runner disk or from an image that writes much more data; the job
+# cannot tell which, so it decides nothing.
+HEADROOM_BYTES = 2 * 1024**3
 
 
 def canonical(value: Any) -> bytes:
@@ -44,6 +48,26 @@ def load_json(path: pathlib.Path) -> Any:
     if path.is_symlink() or path.stat().st_size > 2_000_000:
         raise ValueError(f"invalid evidence file: {path.name}")
     return json.loads(path.read_text())
+
+
+def headroom_error(result: dict[str, Any]) -> str | None:
+    """Describe a job whose peak disk use left less than HEADROOM_BYTES free.
+
+    The text shows the peak growth, so that an image that bloats the disk stays visible.
+    """
+    start, peak = result.get("disk_free_start_bytes"), result.get("disk_peak_growth_bytes")
+    if type(start) is not int or type(peak) is not int or start - peak >= HEADROOM_BYTES:
+        return None
+    return (
+        f"disk headroom exhausted (peak growth {peak} bytes, {start - peak} bytes free at "
+        f"peak, below the {HEADROOM_BYTES}-byte minimum); cause not determined"
+    )
+
+
+def one_line(text: object) -> str:
+    """Artifact text on one line. Callers print a trusted label first, so that
+    no line of the log can start a workflow command."""
+    return " ".join(str(text).split())
 
 
 def source_sha() -> str:
@@ -154,9 +178,16 @@ def build_plan(
 
 
 def combination_plan(
-    parent: dict[str, Any], passed: list[str], failed: dict[str, list[str]]
+    parent: dict[str, Any],
+    passed: list[str],
+    failed: dict[str, list[str]],
+    runner: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Phase 2: freeze the combination of every candidate that passed phase 1.
+
+    ``failed`` holds image failures. ``runner`` maps a candidate to the scenarios
+    whose disk headroom ran out, with the measurement; those candidates neither
+    pass nor fail.
 
     ``authority`` names the only evidence that may change the lock. A single
     passing candidate already ran as this exact combination in phase 1, so it
@@ -173,6 +204,7 @@ def combination_plan(
             "fixtures": parent["fixtures"],
             "pending": parent["pending"],
             "failed": failed,
+            "runner_failed": runner or {},
             "authority": authority,
         }
     )

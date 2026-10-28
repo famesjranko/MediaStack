@@ -77,8 +77,9 @@ class HostedEvidence(unittest.TestCase):
         return {"schema": 1, "plan": fingerprint(plan), "source": SOURCE, "run": RUN,
                 "job": job["id"], "scenario": job["scenario"], "run_id": job["run_id"],
                 "architecture": "x86_64", "rc": 0, "passes": 240, "failures": 0, "skips": 0,
-                "evidence_error": None, "elapsed_seconds": 600,
-                "disk_growth_bytes": 2_000_000_000}
+                "evidence_error": None, "elapsed_seconds": 600, "disk_error": None,
+                "runner_error": None, "disk_samples": 300, "disk_free_start_bytes": 30_000_000_000,
+                "disk_peak_growth_bytes": 13_000_000_000, "disk_growth_bytes": 12_000_000_000}
 
     def write_evidence(self, plan, job, folder=None, result=None, events=None, images=None):
         folder = folder or self.results / ("result-" + job["id"])

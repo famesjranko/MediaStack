@@ -8,20 +8,47 @@ from typing import Any
 PROPOSED = ("create", "update", "unchanged")
 
 
+def runner_text(phase: int, details: dict[str, str], link: str) -> str:
+    """Name each job whose disk headroom ran out, with its measurement.
+
+    The cause can be the runner or the image, so the candidate stays undecided.
+    """
+    jobs = "; ".join(f"`{name}`: {detail}" for name, detail in sorted(details.items()))
+    return f"undecided in phase {phase}: {jobs} ({link})"
+
+
+def phase_one_status(service: str, selection: dict[str, Any], link: str) -> str | None:
+    # An image failure outranks exhausted headroom in another job of the same candidate.
+    if service in selection["failed"]:
+        names = ", ".join(f"`result-p1-{service}.{s}`" for s in selection["failed"][service])
+        return f"failed in phase 1 ({link}; {names})"
+    if service in selection["runner_failed"]:
+        details = {
+            f"result-p1-{service}.{scenario}": detail
+            for scenario, detail in selection["runner_failed"][service].items()
+        }
+        return runner_text(1, details, link)
+    return None
+
+
 def selected_status(
     service: str,
     selection: dict[str, Any] | None,
     jobs: dict[str, str],
     publication: dict[str, str],
     link: str,
+    runner: dict[str, dict[str, str]],
 ) -> str:
     if selection is None:
         return f"undecided: phase 1 or the selection did not complete ({link})"
-    if service in selection["failed"]:
-        names = ", ".join(f"`result-p1-{service}.{s}`" for s in selection["failed"][service])
-        return f"failed in phase 1 ({link}; {names})"
+    first = phase_one_status(service, selection, link)
+    if first:
+        return first
     if jobs["verify"] != "success":
         if selection["authority"] == "phase-2" and jobs["combine"] != "success":
+            if service in runner:
+                details = {f"result-p2-{s}": d for s, d in runner[service].items()}
+                return runner_text(2, details, link)
             return f"failed in phase 2 ({link}; `result-p2-*`)"
         return f"failed final verification ({link})"
     if publication["outcome"] in PROPOSED and publication["pr"] and jobs["publish"] == "success":
@@ -59,10 +86,17 @@ def render(
     jobs: dict[str, str],
     publication: dict[str, str],
     run: dict[str, str],
+    runner: dict[str, dict[str, str]] | None = None,
 ) -> str:
-    """``jobs`` maps combine, verify and publish to their job results."""
+    """``jobs`` maps combine, verify and publish to their job results.
+
+    ``runner`` is ``verify.phase_two_undecided`` for a failed phase 2.
+    """
     link = f"[run]({run['url']}), [artifacts]({run['url']}#artifacts)"
-    status = {s: selected_status(s, selection, jobs, publication, link) for s in plan["selected"]}
+    status = {
+        s: selected_status(s, selection, jobs, publication, link, runner or {})
+        for s in plan["selected"]
+    }
     for service, reason in plan["pending"].items():
         status[service] = "not selected" if reason == "not selected" else "held: " + reason
     lines = [*heading(f"`{plan['run']}`", run), "| Service | Status |", "|---|---|"]

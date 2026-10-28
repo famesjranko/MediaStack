@@ -14,21 +14,42 @@ from .model import (
     drift,
     effective,
     fingerprint,
+    headroom_error,
     load_json,
+    one_line,
     rows,
 )
 
 # Any malformed artifact classifies its job as failed instead of stopping selection.
 MALFORMED = (ValueError, OSError, KeyError, TypeError, AttributeError)
+# Every result must carry these non-negative integers. A disk sampler that could
+# not measure the whole run writes null, so its result never qualifies.
+RESOURCES = (
+    "elapsed_seconds",
+    "disk_free_start_bytes",
+    "disk_peak_growth_bytes",
+    "disk_growth_bytes",
+    "disk_samples",
+)
+
+
+class RunnerDiskError(ValueError):
+    """The disk headroom ran out, so the job decides nothing about its images.
+
+    The cause can be the runner or an image that writes much more data.
+    """
+
+    def __init__(self, job_id: str, detail: str) -> None:
+        super().__init__(f"{job_id}: undecided: {detail}")
+        self.detail = detail
 
 
 def folder_of(results: pathlib.Path, job: dict[str, Any]) -> pathlib.Path:
     return results / ("result-" + str(job["id"]))
 
 
-def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path) -> pathlib.Path:
-    result = load_json(folder / "result.json")
-    expected = {
+def check_status(plan: dict[str, Any], job: dict[str, Any], result: dict[str, Any]) -> None:
+    identity = {
         "schema": 1,
         "plan": fingerprint(plan),
         "source": plan["source"],
@@ -37,18 +58,38 @@ def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path
         "scenario": job["scenario"],
         "run_id": job["run_id"],
         "architecture": plan["architecture"],
-        "rc": 0,
-        "failures": 0,
-        "skips": 0,
-        "evidence_error": None,
     }
-    if any(result.get(k) != v for k, v in expected.items()):
-        raise ValueError(f"{job['id']}: stale, failed, skipped, or mismatched result")
+    if any(result.get(k) != v for k, v in identity.items()):
+        raise ValueError(f"{job['id']}: stale or mismatched result")
+    check_measured(result)
+    # Before the outcome: a full disk can also fail the scenario. The numbers
+    # decide, not the runner's own runner_error field.
+    exhausted = headroom_error(result)
+    if exhausted:
+        raise RunnerDiskError(job["id"], exhausted)
+    # An absent error field is not a null one: it comes from a runner that did not measure.
+    outcome = {"rc": 0, "failures": 0, "skips": 0, "evidence_error": None, "runner_error": None}
+    if any(k not in result or result[k] != v for k, v in outcome.items()):
+        raise ValueError(f"{job['id']}: failed, skipped, or unmeasured result")
     if type(result.get("passes")) is not int or result["passes"] < 1:
         raise ValueError("result contains no passing assertions")
-    for field in ("elapsed_seconds", "disk_growth_bytes"):
+
+
+def check_measured(result: dict[str, Any]) -> None:
+    """Refuse a result whose disk use was not measured over the whole run."""
+    if "disk_error" not in result or result["disk_error"] is not None:
+        raise ValueError("result is unmeasured: the disk sampler failed or did not report")
+    for field in RESOURCES:
         if type(result.get(field)) is not int or result[field] < 0:
             raise ValueError("result lacks resource measurements")
+    if result["disk_samples"] < 1:
+        raise ValueError("result lacks resource measurements: no disk sample")
+    if result["disk_peak_growth_bytes"] < result["disk_growth_bytes"]:
+        raise ValueError("result has inconsistent resource measurements: peak below end growth")
+
+
+def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path) -> pathlib.Path:
+    check_status(plan, job, load_json(folder / "result.json"))
     images = load_json(folder / "images.json")
     events = load_json(folder / "events.json")
     if not images or not events:
@@ -107,16 +148,45 @@ def select_combination(plan: dict[str, Any], results: pathlib.Path) -> dict[str,
     """Freeze phase 2 from phase-1 results; a candidate passes only if all its jobs qualify."""
     if plan["phase"] != 1:
         raise ValueError("selection needs the phase-1 plan")
+    failed, runner = job_failures(plan, results)
+    passed = [s for s in plan["selected"] if s not in failed and s not in runner]
+    return combination_plan(plan, passed, failed, runner)
+
+
+def job_failures(
+    plan: dict[str, Any], results: pathlib.Path
+) -> tuple[dict[str, list[str]], dict[str, dict[str, str]]]:
+    """Map each candidate to its failed scenarios, and to those whose disk headroom ran out.
+
+    A missing or malformed result counts as failed.
+    """
     failed: dict[str, list[str]] = {}
+    runner: dict[str, dict[str, str]] = {}
     for job in plan["jobs"]:
         try:
             check_result(plan, job, folder_of(results, job))
+        except RunnerDiskError as exc:
+            print(exc, file=sys.stderr)
+            for service in job["combination"]:
+                runner.setdefault(service, {})[job["scenario"]] = exc.detail
         except MALFORMED as exc:
-            # The log may quote artifact text; the plan carries only frozen names.
-            print(f"{job['id']}: {exc}", file=sys.stderr)
-            failed.setdefault(job["combination"][0], []).append(job["scenario"])
-    passed = [s for s in plan["selected"] if s not in failed]
-    return combination_plan(plan, passed, failed)
+            # The text may quote artifact data; the frozen job id comes first.
+            print(f"{job['id']}: {one_line(exc)}", file=sys.stderr)
+            for service in job["combination"]:
+                failed.setdefault(service, []).append(job["scenario"])
+    return failed, runner
+
+
+def phase_two_undecided(
+    selection: dict[str, Any], results: pathlib.Path
+) -> dict[str, dict[str, str]]:
+    """Candidates whose failed phase-2 jobs ran out of disk headroom and did nothing else.
+
+    An image failure or a missing or malformed result in any job keeps the
+    candidate refused. These results are data only; they never change the lock.
+    """
+    failed, runner = job_failures(selection, results)
+    return {service: scenarios for service, scenarios in runner.items() if service not in failed}
 
 
 def authorized_jobs(
@@ -199,14 +269,16 @@ def write_body(
         "Source: `" + phase2["source"] + "`; workflow run: `" + phase2["run"] + "`; "
         "authorizing evidence: " + phase2["authority"] + ".",
         "",
-        "| Job | Scenario | Passed | Seconds | Disk growth (bytes) |",
-        "|---|---|---:|---:|---:|",
+        "| Job | Scenario | Passed | Seconds | Peak disk growth (bytes) "
+        "| End disk growth (bytes) |",
+        "|---|---|---:|---:|---:|---:|",
     ]
     for _, job in evidence:
         result = load_json(folder_of(results, job) / "result.json")
         lines.append(
             f"| {job['id']} | {job['scenario']} | {result['passes']} | "
-            f"{result['elapsed_seconds']} | {result['disk_growth_bytes']} |"
+            f"{result['elapsed_seconds']} | {result['disk_peak_growth_bytes']} | "
+            f"{result['disk_growth_bytes']} |"
         )
     failed = ", ".join(sorted(phase2["failed"])) or "none"
     path.write_text(
