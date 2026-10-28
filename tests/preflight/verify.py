@@ -16,6 +16,7 @@ from .model import (
     fingerprint,
     headroom_error,
     load_json,
+    one_line,
     rows,
 )
 
@@ -33,7 +34,14 @@ RESOURCES = (
 
 
 class RunnerDiskError(ValueError):
-    """The runner could not decide the job; this is not evidence about an image."""
+    """The disk headroom ran out, so the job decides nothing about its images.
+
+    The cause can be the runner or an image that writes much more data.
+    """
+
+    def __init__(self, job_id: str, detail: str) -> None:
+        super().__init__(f"{job_id}: undecided: {detail}")
+        self.detail = detail
 
 
 def folder_of(results: pathlib.Path, job: dict[str, Any]) -> pathlib.Path:
@@ -53,28 +61,31 @@ def check_status(plan: dict[str, Any], job: dict[str, Any], result: dict[str, An
     }
     if any(result.get(k) != v for k, v in identity.items()):
         raise ValueError(f"{job['id']}: stale or mismatched result")
-    # Before the outcome: a full disk can also fail the scenario.
-    if result.get("runner_error") is not None or headroom_error(result):
-        raise RunnerDiskError(
-            f"{job['id']}: runner disk headroom exhausted; this is a runner problem, "
-            "not an image result"
-        )
+    check_measured(result)
+    # Before the outcome: a full disk can also fail the scenario. The numbers
+    # decide, not the runner's own runner_error field.
+    exhausted = headroom_error(result)
+    if exhausted:
+        raise RunnerDiskError(job["id"], exhausted)
     # An absent error field is not a null one: it comes from a runner that did not measure.
-    outcome = {
-        "rc": 0,
-        "failures": 0,
-        "skips": 0,
-        "evidence_error": None,
-        "disk_error": None,
-        "runner_error": None,
-    }
+    outcome = {"rc": 0, "failures": 0, "skips": 0, "evidence_error": None, "runner_error": None}
     if any(k not in result or result[k] != v for k, v in outcome.items()):
         raise ValueError(f"{job['id']}: failed, skipped, or unmeasured result")
     if type(result.get("passes")) is not int or result["passes"] < 1:
         raise ValueError("result contains no passing assertions")
+
+
+def check_measured(result: dict[str, Any]) -> None:
+    """Refuse a result whose disk use was not measured over the whole run."""
+    if "disk_error" not in result or result["disk_error"] is not None:
+        raise ValueError("result is unmeasured: the disk sampler failed or did not report")
     for field in RESOURCES:
         if type(result.get(field)) is not int or result[field] < 0:
             raise ValueError("result lacks resource measurements")
+    if result["disk_samples"] < 1:
+        raise ValueError("result lacks resource measurements: no disk sample")
+    if result["disk_peak_growth_bytes"] < result["disk_growth_bytes"]:
+        raise ValueError("result has inconsistent resource measurements: peak below end growth")
 
 
 def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path) -> pathlib.Path:
@@ -144,24 +155,38 @@ def select_combination(plan: dict[str, Any], results: pathlib.Path) -> dict[str,
 
 def job_failures(
     plan: dict[str, Any], results: pathlib.Path
-) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-    """Map each candidate to its failed scenarios, and to those the runner did not decide."""
+) -> tuple[dict[str, list[str]], dict[str, dict[str, str]]]:
+    """Map each candidate to its failed scenarios, and to those whose disk headroom ran out.
+
+    A missing or malformed result counts as failed.
+    """
     failed: dict[str, list[str]] = {}
-    runner: dict[str, list[str]] = {}
+    runner: dict[str, dict[str, str]] = {}
     for job in plan["jobs"]:
         try:
             check_result(plan, job, folder_of(results, job))
-            continue
         except RunnerDiskError as exc:
             print(exc, file=sys.stderr)
-            found = runner
+            for service in job["combination"]:
+                runner.setdefault(service, {})[job["scenario"]] = exc.detail
         except MALFORMED as exc:
-            # The log may quote artifact text; the plan carries only frozen names.
-            print(f"{job['id']}: {exc}", file=sys.stderr)
-            found = failed
-        for service in job["combination"]:
-            found.setdefault(service, []).append(job["scenario"])
+            # The text may quote artifact data; the frozen job id comes first.
+            print(f"{job['id']}: {one_line(exc)}", file=sys.stderr)
+            for service in job["combination"]:
+                failed.setdefault(service, []).append(job["scenario"])
     return failed, runner
+
+
+def phase_two_undecided(
+    selection: dict[str, Any], results: pathlib.Path
+) -> dict[str, dict[str, str]]:
+    """Candidates whose failed phase-2 jobs ran out of disk headroom and did nothing else.
+
+    An image failure or a missing or malformed result in any job keeps the
+    candidate refused. These results are data only; they never change the lock.
+    """
+    failed, runner = job_failures(selection, results)
+    return {service: scenarios for service, scenarios in runner.items() if service not in failed}
 
 
 def authorized_jobs(

@@ -18,6 +18,7 @@ from preflight.model import (
     drift,
     fingerprint,
     load_json,
+    one_line,
     resolve,
     rows,
     source_sha,
@@ -88,7 +89,7 @@ def select(args: argparse.Namespace) -> None:
         "",
         "Failed phase 1: " + (", ".join(selection["failed"]) or "none"),
         "",
-        "Runner disk headroom exhausted, not an image result: "
+        "Undecided, disk headroom exhausted (cause not determined): "
         + (", ".join(selection["runner_failed"]) or "none"),
         "",
         "Authorizing evidence: " + selection["authority"],
@@ -108,13 +109,28 @@ def verify(args: argparse.Namespace) -> None:
     accept(phase1, phase2, args.plan.parent / "current.tsv", args.results, args.output)
 
 
+def undecided(
+    selection: dict[str, Any] | None, args: argparse.Namespace
+) -> dict[str, dict[str, str]]:
+    """Candidates of a failed phase 2 whose failed jobs only ran out of disk headroom.
+
+    Phase-2 results are read as data only, and they never change the lock.
+    """
+    from preflight.verify import phase_two_undecided
+
+    if selection and args.combined == "failure" and args.results:
+        return phase_two_undecided(selection, args.results)
+    return {}
+
+
 def decide(args: argparse.Namespace) -> None:
     from preflight.publish import decide, read_facts, rejected
 
     plan = checked(args.plan, args, args.hash)
     selection = checked(args.selection, args, args.selection_hash)
     proposed = args.proposed.read_text() if args.proposed and args.proposed.is_file() else None
-    decision = decide(proposed, rejected(plan, selection, args.verified), read_facts(args.facts))
+    refused = rejected(plan, selection, args.verified, frozenset(undecided(selection, args)))
+    decision = decide(proposed, refused, read_facts(args.facts))
     print("action=" + decision.action)
     print("pr=" + (str(decision.pr) if decision.pr else ""))
     print("lease=" + decision.lease)
@@ -127,18 +143,12 @@ def run_context(args: argparse.Namespace) -> dict[str, str]:
 
 def report(args: argparse.Namespace) -> None:
     from preflight.status import render
-    from preflight.verify import job_failures
 
     plan = checked(args.plan, args, args.hash)
     selection = checked(args.selection, args, args.selection_hash) if args.selection_hash else None
     jobs = {"combine": args.combined, "verify": args.verified, "publish": args.publish_result}
     publication = {"outcome": args.outcome, "pr": args.pr, "reason": args.reason}
-    runner: frozenset[str] = frozenset()
-    if selection and args.combined == "failure" and args.results:
-        # Phase-2 results are read as data only, so that a full runner disk does
-        # not read as an image failure. They never change the lock.
-        failed, undecided = job_failures(selection, args.results)
-        runner = frozenset(undecided.keys() - failed.keys())
+    runner = undecided(selection, args)
     print(render(plan, selection, jobs, publication, run_context(args), runner), end="")
 
 
@@ -174,6 +184,8 @@ def parse() -> argparse.Namespace:
     decision.add_argument("--selection-hash", required=True)
     decision.add_argument("--verified", required=True)
     decision.add_argument("--proposed", type=pathlib.Path)
+    decision.add_argument("--combined", default="")
+    decision.add_argument("--results", type=pathlib.Path)
     status = command("report")
     status.add_argument("--selection", type=pathlib.Path)
     status.add_argument("--results", type=pathlib.Path)
@@ -200,5 +212,6 @@ if __name__ == "__main__":
         arguments = parse()
         arguments.func(arguments)
     except (ValueError, OSError, KeyError) as exc:
-        print(f"preflight refused: {exc}", file=sys.stderr)
+        # The text may quote artifact data; the fixed prefix comes first.
+        print(f"preflight refused: {one_line(exc)}", file=sys.stderr)
         raise SystemExit(1) from exc

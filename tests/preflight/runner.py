@@ -116,11 +116,14 @@ class DiskSampler:
                 self.error = "disk sampler stopped: " + sanitize(str(exc))
                 return
 
-    def finish(self) -> dict[str, Any]:
-        """Stop sampling and return the result fields, including end-of-run growth."""
+    def stop(self) -> None:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join()
+
+    def finish(self) -> dict[str, Any]:
+        """Stop sampling and return the result fields, including end-of-run growth."""
+        self.stop()
         if self.error is None:
             try:
                 self._sample()
@@ -202,17 +205,18 @@ def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
         "evidence_error": None,
     }
     start, sampler = time.monotonic(), DiskSampler(data_root)
-    with tempfile.TemporaryFile(mode="w+") as log:
-        try:
-            result["rc"] = run_with_deadline(child_env, scenario, log)
-        finally:
-            text = record(result, name, output, log, sampler, start)
+    try:
+        with tempfile.TemporaryFile(mode="w+") as log:
+            try:
+                result["rc"] = run_with_deadline(child_env, scenario, log)
+            finally:
+                text = record(result, name, output, log, sampler, start)
+    finally:
+        sampler.stop()
     print(json.dumps(result, indent=2))
     if result["runner_error"]:
         print(text[-12000:])
-        raise ValueError(
-            f"{job_id}: {result['runner_error']}; this is a runner problem, not an image result"
-        )
+        raise ValueError(f"{job_id}: undecided: {result['runner_error']}")
     if (
         result["rc"]
         or result["failures"]

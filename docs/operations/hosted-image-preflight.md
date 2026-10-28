@@ -151,8 +151,10 @@ for each drifted service:
 
 - proposed in PR #N;
 - failed in phase 1 or phase 2, with links to the run and its artifacts;
-- undecided because the runner disk headroom was exhausted in phase 1 or
-  phase 2. This is a runner problem, not an image result;
+- undecided because the disk headroom was exhausted in phase 1 or phase 2.
+  The comment names each such job with its peak disk growth and the free bytes
+  at the peak. The cause is not determined: the runner or the image can fill
+  the disk;
 - failed final verification, when the image jobs passed but the verifier
   refused the evidence;
 - held, with the reason from the compatibility hold list;
@@ -214,16 +216,19 @@ permissions to work around a repository restriction.
 
 A cold scenario can fill most of the free disk of a hosted runner. GitHub
 documents about 14 GB of free SSD space for these runners. A full disk must not
-look like an image failure. Each image job runs on its own VM, so the disk need
-of a job does not change with the number of candidates.
+authorize a candidate, and it must not be recorded as an image failure. Each
+image job runs on its own VM, so the disk need of a job does not change with the
+number of candidates.
 
 Before DinD starts, each image job runs `tests/preflight/free-runner-disk.sh`.
 The script removes preinstalled toolchains that MediaStack does not use: the
 Android SDK, .NET, GHC and GHCup, the CodeQL bundle and Swift. It also removes
 all preinstalled Docker images. The job keeps docker, python3, git, curl and
 apt. The step summary records the free bytes on the filesystem of the Docker
-data root before and after the cleanup. The script refuses to run outside
-GitHub Actions.
+data root before and after the cleanup. The script refuses to run unless both
+`GITHUB_ACTIONS=true` and `RUNNER_ENVIRONMENT=github-hosted` are set, because
+self-hosted runners also set `GITHUB_ACTIONS`. A cleanup failure does not stop
+the job: the scenario still runs, and the headroom rule below judges the disk.
 
 During the scenario, the runner reads the free space of the Docker data root
 filesystem every 2 seconds. DinD keeps its inner Docker data in a volume under
@@ -240,25 +245,31 @@ this root. `result.json` records these fields:
 
 Samples are 2 seconds apart, so a shorter spike can stay unseen. If the sampler
 cannot measure the whole run, it writes `disk_error` and no numbers. The
-selection job and the verifier refuse a result that has a `disk_error` or that
-lacks a disk field.
+selection job and the verifier refuse a result that has a `disk_error`, that
+lacks a disk field or `runner_error`, that has no sample, or whose peak growth
+is less than its end-of-run growth.
 
 If the free space at the peak is less than 2 GiB, the job fails with
-`runner disk headroom exhausted`, followed by the free bytes and the minimum.
-This rule applies also when the scenario failed, because a full disk can cause
-the scenario failure. The runner removes DinD before it writes `result.json`, so
+`undecided: disk headroom exhausted`, followed by the peak growth, the free
+bytes at the peak and the minimum, and `cause not determined`. The runner or the
+image can cause this; for example, a new image release can write much more
+data. The peak growth stays visible so that such an image can be found. This
+rule applies also when the scenario failed, because a full disk can cause the
+scenario failure. The runner removes DinD before it writes `result.json`, so
 that it can write the result after the disk was full. The selection job and the
-verifier apply the same rule to the numbers in each result. Such a job decides
-nothing:
+verifier recompute the rule from the numbers in each result, and do not trust
+`runner_error`. Such a job decides nothing:
 
 - Its candidate does not pass, and it is not recorded as failed.
-- The selection plan records it under `runner_failed`.
+- The selection plan records it under `runner_failed`, with the measurement.
 - The status report marks the candidate as undecided. For a failed phase 2, the
   status job reads the phase-2 results as data to find this case.
-- A phase-1 runner problem does not cause the publisher to close an open PR. A
-  phase-2 runner problem does, because the publisher does not read the phase-2
-  results of a failed phase 2. It treats every candidate of that combination as
-  refused.
+- The publisher does not close an open PR because of it. For a failed phase 2,
+  the publisher reads the phase-2 results as data, with the same rule as the
+  status job. A candidate stays refused if any of its jobs failed for another
+  reason, or if a result is missing or malformed.
+- An image failure in another job of the same candidate takes precedence: the
+  candidate is failed.
 
 ## First cold hosted measurement
 

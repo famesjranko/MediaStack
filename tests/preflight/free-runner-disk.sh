@@ -6,7 +6,8 @@
 # none of them is under these paths.
 set -euo pipefail
 
-if [[ "${GITHUB_ACTIONS:-}" != true ]]; then
+# Self-hosted runners also set GITHUB_ACTIONS; only a GitHub-hosted VM is disposable.
+if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then
     echo "free-runner-disk: refused; this deletes system directories on a disposable runner only" >&2
     exit 2
 fi

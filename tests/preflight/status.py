@@ -8,22 +8,26 @@ from typing import Any
 PROPOSED = ("create", "update", "unchanged")
 
 
-def runner_text(phase: int, names: str, link: str) -> str:
-    return (
-        f"undecided: runner disk headroom exhausted in phase {phase}; "
-        f"this is not an image result ({link}; {names})"
-    )
+def runner_text(phase: int, details: dict[str, str], link: str) -> str:
+    """Name each job whose disk headroom ran out, with its measurement.
+
+    The cause can be the runner or the image, so the candidate stays undecided.
+    """
+    jobs = "; ".join(f"`{name}`: {detail}" for name, detail in sorted(details.items()))
+    return f"undecided in phase {phase}: {jobs} ({link})"
 
 
 def phase_one_status(service: str, selection: dict[str, Any], link: str) -> str | None:
-    def names(key: str) -> str:
-        return ", ".join(f"`result-p1-{service}.{s}`" for s in selection[key][service])
-
-    # An image failure outranks a runner problem in another job of the same candidate.
+    # An image failure outranks exhausted headroom in another job of the same candidate.
     if service in selection["failed"]:
-        return f"failed in phase 1 ({link}; {names('failed')})"
+        names = ", ".join(f"`result-p1-{service}.{s}`" for s in selection["failed"][service])
+        return f"failed in phase 1 ({link}; {names})"
     if service in selection["runner_failed"]:
-        return runner_text(1, names("runner_failed"), link)
+        details = {
+            f"result-p1-{service}.{scenario}": detail
+            for scenario, detail in selection["runner_failed"][service].items()
+        }
+        return runner_text(1, details, link)
     return None
 
 
@@ -33,7 +37,7 @@ def selected_status(
     jobs: dict[str, str],
     publication: dict[str, str],
     link: str,
-    runner: frozenset[str],
+    runner: dict[str, dict[str, str]],
 ) -> str:
     if selection is None:
         return f"undecided: phase 1 or the selection did not complete ({link})"
@@ -43,7 +47,8 @@ def selected_status(
     if jobs["verify"] != "success":
         if selection["authority"] == "phase-2" and jobs["combine"] != "success":
             if service in runner:
-                return runner_text(2, "`result-p2-*`", link)
+                details = {f"result-p2-{s}": d for s, d in runner[service].items()}
+                return runner_text(2, details, link)
             return f"failed in phase 2 ({link}; `result-p2-*`)"
         return f"failed final verification ({link})"
     if publication["outcome"] in PROPOSED and publication["pr"] and jobs["publish"] == "success":
@@ -81,16 +86,16 @@ def render(
     jobs: dict[str, str],
     publication: dict[str, str],
     run: dict[str, str],
-    runner: frozenset[str] = frozenset(),
+    runner: dict[str, dict[str, str]] | None = None,
 ) -> str:
     """``jobs`` maps combine, verify and publish to their job results.
 
-    ``runner`` names the services whose phase-2 jobs the runner did not decide
-    and that no phase-2 job failed.
+    ``runner`` is ``verify.phase_two_undecided`` for a failed phase 2.
     """
     link = f"[run]({run['url']}), [artifacts]({run['url']}#artifacts)"
     status = {
-        s: selected_status(s, selection, jobs, publication, link, runner) for s in plan["selected"]
+        s: selected_status(s, selection, jobs, publication, link, runner or {})
+        for s in plan["selected"]
     }
     for service, reason in plan["pending"].items():
         status[service] = "not selected" if reason == "not selected" else "held: " + reason
