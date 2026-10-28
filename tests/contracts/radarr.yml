@@ -3,6 +3,7 @@ base_path: /api/v3
 auth: {type: header, name: X-Api-Key}
 openapi: https://raw.githubusercontent.com/Radarr/Radarr/develop/src/Radarr.Api.V3/openapi.json
 endpoints:
+  - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh, scripts/lib/arr/connections.sh]}
   - {id: config-naming-get, method: GET, path: /config/naming, sends: [], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: config-naming-update, method: PUT, path: /config/naming, sends: [renameMovies, replaceIllegalCharacters, standardMovieFormat, movieFolderFormat], reads: [renameMovies, replaceIllegalCharacters], callers: [scripts/services/radarr/main.sh]}
   - {id: quality-profile-list, method: GET, path: /qualityprofile, sends: [], reads: [id, name, cutoff, upgradeAllowed, "items[].quality.id", "items[].allowed", "formatItems[].score"], callers: [scripts/lib/arr/formats.sh, scripts/lib/arr/quality.sh, scripts/services/seerr/arr-connect.sh]}

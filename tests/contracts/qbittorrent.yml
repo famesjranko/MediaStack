@@ -7,6 +7,7 @@ base_path: /api/v2
 # too, not actually port-dynamic for us.
 auth: {type: cookie, name: QBT_SID_8080}
 endpoints:
+  - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: auth-login, method: POST, path: /auth/login, sends: [username, password], reads: [], callers: [scripts/services/qbittorrent/main.sh]}
   - {id: preferences-update, method: POST, path: /app/setPreferences, sends: [web_ui_username, web_ui_password, max_ratio, max_seeding_time, max_seeding_time_enabled, dl_limit, up_limit, max_connec, max_connec_per_torrent, max_uploads, max_uploads_per_torrent, queueing_enabled, max_active_downloads, max_active_uploads, max_active_torrents, upnp, preallocate_all, bypass_auth_subnet_whitelist], reads: [], callers: [scripts/services/qbittorrent/main.sh]}
   - {id: preferences-read, method: GET, path: /app/preferences, sends: [], reads: [bypass_auth_subnet_whitelist, bypass_auth_subnet_whitelist_enabled], callers: [scripts/services/qbittorrent/main.sh]}

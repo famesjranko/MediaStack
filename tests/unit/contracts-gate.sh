@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # tests/unit/contracts-gate.sh
 #
-# Regression proof for the steering on the failure paths of
-# tests/contracts/check.py: a call with no contract entry, and a contract entry
-# no call reaches. A gate that only names its symptom leaves the reader to
-# guess the remedy, so each failure is probed with one fabricated violation and
-# asserted to route somewhere.
+# Regression proof for the failure paths of tests/contracts/check.py: a call
+# with no contract entry, a contract entry no call reaches, a readiness probe
+# whose URL cannot be attributed or whose service has no entry, a service URL
+# with a braced variable in its suffix, a service URL variable reused in
+# another function, and schema violations of the optional `expect` and
+# `unexercised` keys. A gate that only names its symptom leaves the
+# reader to guess the remedy, so each failure is probed with one fabricated
+# violation and asserted to route somewhere.
 #
 # The fixture is a throwaway copy of the tree from `git archive HEAD`: the
 # checker resolves everything relative to its own location, so the real tree is
@@ -24,8 +27,8 @@ FIXTURE=$(mktemp -d)
 trap 'rm -rf "$FIXTURE"' EXIT
 
 export_fixture_tree "$REPO_ROOT" "$FIXTURE"
-# The checker under test is the working-tree copy, not HEAD's.
-cp "$REPO_ROOT/tests/contracts/check.py" "$FIXTURE/tests/contracts/check.py"
+# The checker and the inventory it reads are the working-tree copies, not HEAD's.
+cp "$REPO_ROOT"/tests/contracts/*.py "$REPO_ROOT"/tests/contracts/*.yml "$FIXTURE/tests/contracts/"
 
 # A `cd` first, so this cannot just be run_cmd's argv form.
 run_gate() {
@@ -58,13 +61,123 @@ printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
 
 # --- a contract entry no call reaches ---------------------------------------
 
-printf '  - method: GET\n    path: /steeringprobe\n    callers: []\n' >>"$PROBED_CONTRACT"
+printf '  - {id: steering-probe, method: GET, path: /steeringprobe, sends: [], reads: [], callers: []}\n' \
+    >>"$PROBED_CONTRACT"
 run_gate
 assert_rc 1 "a contract entry nothing calls fails"
 assert_contains "$OUT" "dead contract entry" "the failure names the dead entry"
 assert_contains "$OUT" "the call it covered is gone" "the failure explains what dead means"
 assert_contains "$OUT" "delete the entry" "the failure steers to deleting the entry"
 assert_contains "$OUT" "tests/contracts/README.md" "the dead-entry failure points at the contract docs"
+printf '%s\n' "$contract_backup" >"$PROBED_CONTRACT"
+
+# --- a readiness probe whose URL names no service ---------------------------
+
+# Given a probe that polls a URL from a variable no assignment attributes.
+printf '\ncontracts_gate_probe() { wait_for_service "Probe" "$contracts_gate_url"; }\n' \
+    >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then it fails, names the probe, and says which URL form it can attribute.
+assert_rc 1 "a probe with an unattributable URL fails"
+assert_contains "$OUT" "unrecognised probe: scripts/lib/health.sh: wait_for_service" \
+    "the failure names the unrecognised probe and its file"
+assert_contains "$OUT" "service_local_url NAME" "the failure names the URL form to use"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
+
+# --- an expect status outside 100-599 ---------------------------------------
+
+# Given an entry whose expect list holds a value that is not an HTTP status.
+sed -i 's/{id: indexer-list, method: GET,/{id: indexer-list, method: GET, expect: [200, 700],/' \
+    "$PROBED_CONTRACT"
+
+# When the gate runs.
+run_gate
+
+# Then it fails as a schema error that names the entry.
+assert_rc 1 "an expect value outside 100-599 fails"
+assert_contains "$OUT" "schema: sonarr indexer-list: expect values must be integers from 100 to 599" \
+    "the failure names the entry and the expect rule"
+printf '%s\n' "$contract_backup" >"$PROBED_CONTRACT"
+
+# --- an unexercised reason outside the closed set ---------------------------
+
+# Given an entry exempted for a reason that is not in the closed set.
+sed -i 's/{id: indexer-list, method: GET,/{id: indexer-list, method: GET, unexercised: flaky,/' \
+    "$PROBED_CONTRACT"
+
+# When the gate runs.
+run_gate
+
+# Then it fails as a schema error that names the entry and the allowed reasons.
+assert_rc 1 "an unexercised reason outside the closed set fails"
+assert_contains "$OUT" "schema: sonarr indexer-list: unexercised must be one of" \
+    "the failure names the entry and the unexercised rule"
+assert_contains "$OUT" "'held-profile', 'launcher-menu', 'nas', 'remote-profile'" \
+    "the failure lists the closed set of reasons"
+printf '%s\n' "$contract_backup" >"$PROBED_CONTRACT"
+
+# --- a readiness probe for a service with no entry --------------------------
+
+# Given a probe that polls the root of a service no contract file lists.
+printf '\ncontracts_gate_probe() {\n    wait_for_service "Probe" "$(service_local_url gateprobe)"\n}\n' \
+    >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then it fails and names the probe as a missing contract for that service.
+assert_rc 1 "a probe of a service without entries fails"
+assert_contains "$OUT" "missing contract: scripts/lib/health.sh gateprobe GET /" \
+    "the failure names the probed service and route"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
+
+# --- a braced variable inside a service URL suffix --------------------------
+
+# Given a call whose service URL suffix holds a braced variable before a further segment.
+printf '\ncontracts_gate_probe() { curl "$(service_local_url sonarr)/api/v3/notification/${gate_id}/test"; }\n' \
+    >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then the whole suffix is read, so the call is not taken for the notification entry.
+assert_rc 1 "a call to an unlisted route below an id fails"
+assert_contains "$OUT" "missing contract: scripts/lib/health.sh sonarr GET /api/v3/notification/{id}/test" \
+    "the failure names the full route after the braced variable"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
+
+# --- a service URL variable reused in another function ----------------------
+
+# Given one function that assigns a service URL and another that reuses the name for a call.
+printf '\ngate_one() { local gate_url; gate_url="$(service_local_url sonarr)"; }\n' >>"$PROBED_CALLER"
+printf 'gate_two() { curl "${gate_url}/api/gatescope"; }\n' >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then the call in the second function is not attributed to Sonarr.
+assert_rc 1 "an unlisted call through a reused variable fails"
+assert_contains "$OUT" "missing contract: scripts/lib/health.sh GET /api/gatescope" \
+    "the failure names the call without a service"
+assert_not_contains "$OUT" "sonarr GET /api/gatescope" "the other function's service URL is not used"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
+
+# --- held-profile on a service that is not held -----------------------------
+
+# Given an entry of Sonarr, which is not a held service, exempted as held-profile.
+sed -i 's/{id: indexer-list, method: GET,/{id: indexer-list, method: GET, unexercised: held-profile,/' \
+    "$PROBED_CONTRACT"
+
+# When the gate runs.
+run_gate
+
+# Then it fails as a schema error that names the entry.
+assert_rc 1 "held-profile on a service that is not held fails"
+assert_contains "$OUT" "schema: sonarr indexer-list: unexercised held-profile is only for held services" \
+    "the failure names the entry and the held-profile rule"
 printf '%s\n' "$contract_backup" >"$PROBED_CONTRACT"
 
 run_gate

@@ -168,7 +168,7 @@ adding the next gate.
 | Python passes ruff lint and format check, including PEP 8 naming (`N`) | `./tests/check.sh ruff` | `lint-ruff` |
 | Python function complexity is at or under 10, with no `C901`, bare, or file-level `noqa` suppression | `./tests/check.sh ruff` → `tests/python-complexity.sh`, reconciled against `tests/python-complexity.allowlist` — see [Complexity cap](#complexity-cap) | `lint-ruff` |
 | Python type-checks under the pinned mypy | `./tests/check.sh mypy` | `type-mypy` |
-| API endpoint literals and contract entries match | `./tests/check.sh contracts` (also part of `fast`), with the missing/dead-entry failure paths proved by `tests/unit/contracts-gate.sh` | — |
+| API endpoint literals, readiness probes and contract entries match, and entries follow the schema | `./tests/check.sh contracts` (also part of `fast`), with the missing/dead-entry, unrecognised-probe and schema failure paths proved by `tests/unit/contracts-gate.sh` | — |
 | No secret in the tree | `./tests/check.sh secrets` → `tests/secret-scan.sh`, reconciled by `tests/lib/secret_scan_reconcile.py` against `tests/secret-scan.expected` | `secret-scan` |
 | No secret in reachable history | `./tests/check.sh secrets-history` — run before a push that publishes new history, not in any tier | — |
 | Shell parses, Python byte-compiles, compose renders across profiles | `./tests/check.sh unit` → `tests/unit.sh` tiers 1, 3, 5 | `unit-host` |

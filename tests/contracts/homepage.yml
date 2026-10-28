@@ -1,0 +1,7 @@
+# MediaStack writes Homepage's configuration as files; its only HTTP touchpoint
+# is the readiness poll before configuration.
+service: homepage
+base_path: /
+auth: {type: none}
+endpoints:
+  - {id: readiness, method: GET, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
