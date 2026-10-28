@@ -8,8 +8,8 @@ on:
   push:
     branches: [main]
   pull_request:
-  # A PR created with GITHUB_TOKEN does not trigger pull_request workflows.
-  # The controlled image publisher dispatches this same independent fast gate.
+  # Manual diagnostics do not satisfy PR rulesets. A maintainer must approve
+  # the pull_request run that GitHub withholds for a GITHUB_TOKEN-created PR.
   workflow_dispatch:
 
 # Cancel a superseded run for the same ref, including main: a newer push

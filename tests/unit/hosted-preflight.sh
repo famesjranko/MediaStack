@@ -15,7 +15,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(sys.argv.pop()) / "tests"))
 from preflight.model import FIXTURES, ROOT, build_plan, drift, fingerprint, rows, source_sha
-from preflight.verify import accept, check_companions, check_result
+from preflight.verify import accept, check_runtime_evidence, check_result
 from preflight.runner import sanitize
 import yaml
 
@@ -84,7 +84,18 @@ class HostedEvidence(unittest.TestCase):
         # When the companion combination is checked.
         # Then the passing candidate cannot authorize a different installation.
         with self.assertRaisesRegex(ValueError, "runtime companion"):
-            check_companions(self.plan, self.events, self.images)
+            check_runtime_evidence(self.plan, self.events, self.images, self.job["services"])
+
+    def test_missing_candidate_start_blocks(self):
+        # Given valid receipts and inspections but only a companion started.
+        self.events = [{"action": "start", "id": "companion", "service": "radarr",
+                        "image": self.plan["effective"]["radarr"]}]
+        self.write_result()
+
+        # When the candidate's runtime evidence is checked.
+        # Then a pulled image and receipt cannot replace its start event.
+        with self.assertRaisesRegex(ValueError, "sonarr.*start"):
+            check_result(self.plan, self.job, self.folder)
 
     def test_wrong_fixture_blocks(self):
         # Given the fixture used a floating image instead of its frozen digest.
@@ -94,7 +105,7 @@ class HostedEvidence(unittest.TestCase):
         # When fixture provenance is checked.
         # Then the result is refused even though service evidence matches.
         with self.assertRaisesRegex(ValueError, "fixture image"):
-            check_companions(self.plan, self.events, self.images)
+            check_runtime_evidence(self.plan, self.events, self.images, self.job["services"])
 
     def test_wrong_scenario_receipt_blocks(self):
         # Given a receipt from a scenario that did not test the required behavior.
@@ -141,6 +152,8 @@ class HostedEvidence(unittest.TestCase):
         self.assertEqual(image_job["runs-on"], "ubuntu-24.04")
         self.assertNotIn("secrets.", json.dumps(image_job))
         self.assertIn("github.event.repository.default_branch", publisher["if"])
+        self.assertEqual(publisher["permissions"], {"contents": "write", "pull-requests": "write"})
+        self.assertNotIn("gh workflow run", json.dumps(publisher))
 
     def test_log_export_masks_fixture_credentials(self):
         # Given log text containing a fixture password and generated API key.

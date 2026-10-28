@@ -34,7 +34,7 @@ def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path
     events = load_json(folder / "events.json")
     if not images or not events:
         raise ValueError("result lacks runtime image and event evidence")
-    check_companions(plan, events, images)
+    check_runtime_evidence(plan, events, images, job["services"])
     receipt_path = folder / "receipts.tsv"
     if receipt_path.is_symlink() or receipt_path.stat().st_size > 1_000_000:
         raise ValueError("invalid receipt artifact")
@@ -54,13 +54,19 @@ def check_result(plan: dict[str, Any], job: dict[str, Any], folder: pathlib.Path
     return receipt_path
 
 
-def check_companions(plan: dict[str, Any], events: list[Any], images: list[Any]) -> None:
-    latest = {}
-    for event in events:
-        if event["action"] == "start" and event["service"] in plan["effective"]:
-            latest[event["service"]] = event["image"]
+def check_runtime_evidence(
+    plan: dict[str, Any], events: list[Any], images: list[Any], required_services: list[str]
+) -> None:
+    latest = {
+        event["service"]: event["image"]
+        for event in events
+        if event["action"] == "start" and event["service"] in plan["effective"]
+    }
     if not latest:
         raise ValueError("no known service started in the scenario")
+    missing = sorted(set(required_services) - latest.keys())
+    if missing:
+        raise ValueError(f"{', '.join(missing)}: candidate has no runtime start event")
     for service, ref in latest.items():
         if ref != plan["effective"][service]:
             raise ValueError(f"{service}: runtime companion differs from the frozen combination")

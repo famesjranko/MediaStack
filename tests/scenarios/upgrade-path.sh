@@ -114,12 +114,23 @@ run_scenario() {
             fail "upgrade-path: $svc ready after accepted-to-candidate update"
         fi
     done
-    local pair ref actual
+    local pair ref actual accepted
     for pair in $(echo "$MS_TEST_IMAGE_OVERRIDES" | tr ',' ' '); do
         svc=${pair%%=*}
         ref=${pair#*=}
+        # These profiles are absent from fresh-install. Hosted plans still pin
+        # their accepted companion refs, but neither can be tested here.
+        if [[ "$svc" == bazarr || "$svc" == wireguard ]]; then
+            accepted=$(awk -F '\t' -v svc="$svc" '$1 == svc { print $2 "@" $3 }' "$REPO_ROOT/docs/operations/image-digests.lock")
+            if [[ "$ref" != "$accepted" ]]; then
+                fail "upgrade-path: $svc candidate is outside active profiles"
+            fi
+            continue
+        fi
         if actual=$(dind_exec "docker inspect --format '{{.Config.Image}}' $svc" 2>/dev/null); then
             assert_eq "$ref" "$actual" "upgrade-path: $svc actually runs the requested image"
+        else
+            fail "upgrade-path: $svc image inspection failed"
         fi
     done
     if upgrade_state check; then
