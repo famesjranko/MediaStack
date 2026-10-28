@@ -286,7 +286,8 @@ def _unlisted(service: str, evidence: list[tuple[Job, dict[str, Any]]]) -> list[
         f"{call}: unlisted call ({', '.join(sorted(names))})"
         for call, names in sorted(calls.items())
     ] + [
-        f"{service}: unlisted exec {call.split(' ', 1)[1]} ({', '.join(sorted(names))})"
+        f"{service}: unlisted exec {call.partition(' ')[2] or '(no command)'} "
+        f"({', '.join(sorted(names))})"
         for call, names in sorted(execs.items())
     ]
 

@@ -232,9 +232,33 @@ def validate(service: str, contract: dict[str, Any]) -> list[str]:
     if not isinstance(contract.get("base_path", "/"), str):
         return [f"{service}: base_path must be a string"]
     seen: set[str] = set()
-    return _items_errors(service, "endpoint", endpoints, seen) + _items_errors(
-        service, "exec", execs, seen
-    )
+    errors = _items_errors(service, "endpoint", endpoints, seen)
+    errors += _items_errors(service, "exec", execs, seen)
+    return errors or _exec_overlaps(service, execs)
+
+
+def _exec_overlaps(service: str, execs: list[dict[str, Any]]) -> list[str]:
+    """Pairs of valid exec entries where every call one matches also matches the other.
+
+    A longer command, or a ``match`` over the same command, wins a call, so
+    only entries with the same command and both with or both without
+    ``match`` can tie. Without ``match`` they are one entry written twice;
+    with a ``match`` that holds the other's, every call of the narrower one
+    also matches the wider one. Two other ``match`` strings can still meet in
+    one script; exec_match makes such a call hit neither.
+    """
+    errors = []
+    for index, first in enumerate(execs):
+        for second in execs[index + 1 :]:
+            one, other = first.get("match"), second.get("match")
+            if first["command"] != second["command"] or (one is None) != (other is None):
+                continue
+            if one is None or other is None or one in other or other in one:
+                errors.append(
+                    f"{service} {second['id']}: overlaps {first['id']}: "
+                    "every call one of them matches also matches the other"
+                )
+    return errors
 
 
 def endpoints(contracts: dict[str, dict[str, Any]]) -> list[Endpoint]:
@@ -293,10 +317,22 @@ def load_exec(directory: Path = CONTRACT_DIR) -> list[ExecEntry]:
     return exec_entries(_load_valid(directory))
 
 
+def _rank(item: ExecEntry) -> tuple[int, bool]:
+    return len(item.command), item.match is not None
+
+
 def exec_match(found: list[ExecEntry], service: str, argv: list[str]) -> ExecEntry | None:
-    """The entry an exec hits: the longest command prefix, then one with ``match``."""
+    """The entry an exec hits: the longest command prefix, then one with ``match``.
+
+    A call that two equally specific entries match hits neither, so it counts
+    as unlisted: a script that holds the ``match`` of two entries with the same
+    command is not credited to either.
+    """
     hits = [item for item in found if item.service == service and item.matches(argv)]
-    return max(hits, key=lambda item: (len(item.command), item.match is not None), default=None)
+    best = max(hits, key=_rank, default=None)
+    if best is None or sum(_rank(item) == _rank(best) for item in hits) > 1:
+        return None
+    return best
 
 
 def match(found: list[Endpoint], service: str, method: str, path: str) -> Endpoint | None:

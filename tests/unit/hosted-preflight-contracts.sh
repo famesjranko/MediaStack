@@ -103,6 +103,19 @@ class ContractGate(unittest.TestCase):
     def phase1(self, selected):
         return build_plan(self.old, self.current, selected, SOURCE, RUN, self.fixtures)
 
+    def test_fail2ban_candidate_needs_upgrade_path(self):
+        # Given a changed fail2ban candidate, whose regex-count exec runs only in update.sh.
+        prior = self.old["fail2ban"]
+        self.current["fail2ban"] = drift.ImageDigest("fail2ban", prior.image, "sha256:" + "6" * 64)
+
+        # When its phase-1 jobs are planned.
+        plan = self.phase1(["fail2ban"])
+
+        # Then it runs exactly drift, fresh-install and upgrade-path.
+        self.assertEqual(sorted(job["id"] for job in plan["jobs"]),
+                         ["p1-fail2ban.fail2ban-drift", "p1-fail2ban.fresh-install",
+                          "p1-fail2ban.upgrade-path"])
+
     def write(self, plan, job, contracts):
         """Passing job artifacts; ``contracts`` None writes no contracts.json."""
         folder = self.results / ("result-" + job["id"])

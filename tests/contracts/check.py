@@ -461,6 +461,15 @@ def _steer(errors: list[str]) -> None:
             "or a variable assigned one literal service name — see tests/contracts/README.md.",
             file=sys.stderr,
         )
+    if any(error.startswith("possible exec call not parsed:") for error in errors):
+        print(
+            "contract: a possible exec call not parsed is a line that names docker and exec "
+            "in a form this check does not read: write `docker exec [flags] <container> "
+            "<command...>`; a line that only prints the command goes in MESSAGES in "
+            "tests/contracts/exec_scan.py after you check that it runs nothing — "
+            "see tests/contracts/README.md.",
+            file=sys.stderr,
+        )
     if any(error.startswith("schema:") for error in errors):
         print(
             f"contract: a schema error means a file in {contract_dir}/ breaks the format "

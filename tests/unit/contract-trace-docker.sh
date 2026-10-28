@@ -4,7 +4,9 @@
 # Proves tests/lib/contract-trace-docker.sh, the docker exec recorder installed
 # in DinD: it passes stdin, stdout and the exit status through, records one
 # exec only while MS_CONTRACT_TRACE is set, records the container and the argv
-# after it, and never records an -e value. The shim calls /usr/bin/docker by
+# after it past docker's global flags and the exec flags, never records an -e
+# value, and adds nothing to stderr when it cannot write the record. The shim
+# calls /usr/bin/docker by
 # its absolute path, so each case runs against a copy whose real docker is a
 # stub that runs the command locally. When Docker works, the same cases run
 # again against the real /usr/bin/docker and a throwaway container.
@@ -27,10 +29,13 @@ SECRET="shim-secret-value-$RANDOM"
 # A stand-in for /usr/bin/docker: `exec [flags] CONTAINER CMD...` runs CMD here.
 cat >"$TMP_DIR/docker-stub" <<'STUB'
 #!/usr/bin/env bash
+while [[ "$1" == -* ]]; do
+    case "$1" in -H | --context | -l) shift 2 ;; *) shift ;; esac
+done
 [[ "$1" == exec ]] || { echo "stub: $*"; exit 0; }
 shift
 while [[ "$1" == -* ]]; do
-    case "$1" in -u | -e | -w) shift 2 ;; *) shift ;; esac
+    case "$1" in -u | -e | -w | --workdir | --env-file) shift 2 ;; *) shift ;; esac
 done
 shift
 exec "$@"
@@ -75,6 +80,56 @@ shim_cases() {
     assert_not_contains "$record" "$SECRET" "$label: the record never holds an -e value"
     assert_contains "$record" "\"container\": \"$container\"" "$label: the container follows the exec flags"
 
+    # Given the shim with a trace directory.
+    rm -f "$TRACES"/*.exec
+
+    # When an exec sets its working directory with --workdir.
+    traced "$shim" exec --workdir / "$container" true
+
+    # Then the record names the container after the directory.
+    assert_contains "$(cat "$TRACES"/*.exec)" "\"container\": \"$container\"" \
+        "$label: --workdir takes a value"
+
+    # Given the shim with a trace directory and an environment file.
+    rm -f "$TRACES"/*.exec
+    printf 'MS_SHIM_FILE=1\n' >"$TMP_DIR/shim.env"
+
+    # When an exec reads the file with --env-file.
+    traced "$shim" exec --env-file "$TMP_DIR/shim.env" "$container" true
+
+    # Then the record names the container after the file.
+    assert_contains "$(cat "$TRACES"/*.exec)" "\"container\": \"$container\"" \
+        "$label: --env-file takes a value"
+
+    # Given the shim with a trace directory.
+    rm -f "$TRACES"/*.exec
+
+    # When an exec follows docker's global flag -l with its value.
+    traced "$shim" -l error exec "$container" true
+
+    # Then the exec is recorded with its container.
+    assert_contains "$(cat "$TRACES"/*.exec 2>/dev/null)" "\"container\": \"$container\"" \
+        "$label: an exec after a global flag is recorded"
+
+    # Given a trace directory that is missing, and one that is not writable.
+    mkdir -p "$TMP_DIR/locked-$label"
+    chmod 555 "$TMP_DIR/locked-$label"
+    for trace in "$TMP_DIR/missing-$label" "$TMP_DIR/locked-$label"; do
+        if [[ -d "$trace" && -w "$trace" ]]; then
+            skip "$label: an unwritable trace directory adds no stderr" "the directory is writable (root?)"
+            continue
+        fi
+
+        # When an exec prints to stdout and stderr and exits 5.
+        out=$(MS_CONTRACT_TRACE="$trace" "$shim" exec "$container" sh -c 'echo out; echo err >&2; exit 5' \
+            2>"$TMP_DIR/stderr")
+        rc=$?
+
+        # Then stdout, stderr and the exit status are exactly the child's.
+        assert_eq "out|err|5" "$out|$(cat "$TMP_DIR/stderr")|$rc" \
+            "$label: ${trace##*/}: the shim adds nothing when it cannot record"
+    done
+
     # Given the shim without MS_CONTRACT_TRACE.
     rm -f "$TRACES"/*.exec
 
@@ -95,6 +150,18 @@ shim_cases() {
 }
 
 shim_cases stub "$TMP_DIR/shim-stub" stub-container
+
+# Given the stub shim with a trace directory.
+TRACES="$TMP_DIR/traces-stub"
+rm -f "$TRACES"/*.exec
+
+# When an exec follows the global flags -H, --context, -l and --tlsverify.
+traced "$TMP_DIR/shim-stub" -H unix:///run/x.sock --context remote -l error --tlsverify \
+    exec stub-container true
+
+# Then the exec is recorded with its container.
+assert_contains "$(cat "$TRACES"/*.exec 2>/dev/null)" '"container": "stub-container"' \
+    "stub: an exec after several global flags is recorded"
 
 # Given the stub shim without MS_CONTRACT_TRACE.
 # When an exec prints the parent of the command it runs, beside the caller's own pid.

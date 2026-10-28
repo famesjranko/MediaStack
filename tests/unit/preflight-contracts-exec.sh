@@ -118,6 +118,36 @@ class ExecVerdict(unittest.TestCase):
         # Then the failure names the unlisted exec and the scenario.
         self.assertEqual(failures, ["fail2ban: unlisted exec fail2ban-client ... (fresh-install)"])
 
+    def test_unlisted_exec_on_another_image_fails_the_service(self):
+        # Given an unlisted exec into fail2ban made only while another image ran.
+        evidence = data(COMPLETE, {"fail2ban fail2ban-client ...": {"candidate": 0, "other": 1}})
+
+        # When the verdict judges fail2ban.
+        _, failures = judge(evidence)
+
+        # Then it fails as for an unlisted HTTP call.
+        self.assertEqual(failures, ["fail2ban: unlisted exec fail2ban-client ... (fresh-install)"])
+
+    def test_unlisted_exec_without_a_command_is_named(self):
+        # Given an unlisted exec into fail2ban that has no command.
+        evidence = data(COMPLETE, {"fail2ban": {"candidate": 1, "other": 0}})
+
+        # When the verdict judges fail2ban.
+        _, failures = judge(evidence)
+
+        # Then the failure says it had no command.
+        self.assertEqual(failures, ["fail2ban: unlisted exec (no command) (fresh-install)"])
+
+    def test_exit_key_that_is_not_a_status_is_malformed(self):
+        # Given evidence that counts an exit key that is not a number.
+        evidence = data(dict(COMPLETE, **{"client-reload": exits({"ok": 1})}))
+
+        # When the verdict judges fail2ban.
+        _, failures = judge(evidence)
+
+        # Then the job fails as malformed.
+        self.assertIn("contracts.json is malformed", failures)
+
     def test_unexercised_entry_that_runs_is_stale(self):
         # Given the exempt unban entry did run on the candidate.
         evidence = data(dict(COMPLETE, **{"client-unban": exits({"0": 1})}))

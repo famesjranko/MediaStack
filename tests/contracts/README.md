@@ -124,27 +124,43 @@ exec:
   after its service.
 - `command` is a prefix of the words after the container name. Each word is a
   literal: no variable, quote or space. A call matches the entry with the
-  longest prefix.
+  longest prefix, and then an entry with `match` over one without.
 - `match` is for an `sh -c` script: a substring of the word after the prefix.
+  It is broad: a `match` entry credits any `sh -c` script of its service that
+  contains the substring. A script that contains the `match` of two entries
+  with the same command matches neither, and so counts as unlisted. Two
+  entries with the same command must not overlap: both without `match`, or
+  with one `match` inside the other, is a `schema:` error.
 - `expect_exit` lists the accepted exit statuses, from 0 to 255. Without it,
   only 0 counts.
 - `unexercised` uses the same closed set of reasons as an endpoint.
 - Ids are unique across `endpoints` and `exec` in one file.
 
 `check.py` reads each `docker exec [flags] CONTAINER COMMAND...` in
-`scripts/`. The flags `-u`, `-e`, `-w` and their long forms take a value. The
-container must be a literal service name, or a variable whose assignments in
-the same function, or at file level, all give one literal name. A command
-array, as in `docker "${cmd[@]}"`, is read from its literal assignment. A call
-that the check cannot read fails as an `unparseable exec`, and so does
-`docker container exec` or `docker compose exec`. The only exclusion is the
-dry-run sandbox container in `scripts/lib/dry-run.sh`, which is not a service.
+`scripts/`. The flags `-u`, `-e`, `-w` and their long forms take a value; an
+unknown flag makes the call unreadable. The container must be a literal service
+name, or a variable that takes only that one literal name in the same function,
+or at file level: from its assignments and `for` lists. A variable that is also
+set by `read`, `printf -v`, `+=` or a nameref cannot be read. A command array,
+as in `docker "${cmd[@]}"` or `sudo docker "${cmd[@]}"`, is read from its one
+literal assignment. A call that the check cannot read fails as an
+`unparseable exec`, and so does `docker container exec` or
+`docker compose exec`. The only exclusion is the dry-run sandbox container,
+`$cname` in `scripts/lib/dry-run.sh`, which is not a service.
+
+Any other line that names docker and then the word `exec` fails as a
+`possible exec call not parsed`: for example `docker -H host exec`,
+`$DOCKER exec`, or `sh -c "docker exec ..."`. Write the call in the form above.
+A comment line is passed over. A line that only prints a docker exec command
+goes in `MESSAGES` in `exec_scan.py`, after you make sure that it runs nothing.
 `missing contract` and `dead contract entry` mean the same for exec entries as
 for endpoints.
 
 In the image jobs, `tests/lib/contract-trace-docker.sh` records each product
-`docker exec`: the container, the words after it and the exit status. The
+`docker exec`, also one after docker's global flags such as `-H` or
+`--context`: the container, the words after it and the exit status. The
 verdict needs each exec entry without `unexercised` to exit with an accepted
-status on the candidate, and no unlisted exec into the candidate. The evidence
-holds no argument values: `contracts.json` keeps exit counts per entry, and an
-unlisted exec keeps only its first word and the inventory words after it.
+status on the candidate, and no unlisted exec into the candidate on any image.
+The evidence holds no argument values: `contracts.json` keeps exit counts per
+entry, and an unlisted exec keeps only its first word and the inventory words
+after it.

@@ -178,6 +178,41 @@ class ExecContract(unittest.TestCase):
         # Then only the first one hits the entry.
         self.assertEqual((hit and hit.id, miss), ("regex", None))
 
+    def test_match_reads_only_the_script_argument(self):
+        # Given an sh -c entry that requires fail2ban-regex in its script.
+        found = [exec_entry("regex", ["sh", "-c"], match="fail2ban-regex")]
+
+        # When a call has fail2ban-regex only in an argument after the script.
+        hit = inventory.exec_match(found, "fail2ban", ["sh", "-c", "date", "fail2ban-regex"])
+
+        # Then it does not hit the entry.
+        self.assertIsNone(hit)
+
+    def test_script_with_two_entries_matches_hits_neither(self):
+        # Given two sh -c entries with different match strings.
+        found = [exec_entry("regex", ["sh", "-c"], match="fail2ban-regex"),
+                 exec_entry("newest", ["sh", "-c"], match="stat -c %Y")]
+
+        # When a script holds both strings.
+        hit = inventory.exec_match(found, "fail2ban", ["sh", "-c", "stat -c %Y x; fail2ban-regex"])
+
+        # Then it is credited to neither entry.
+        self.assertIsNone(hit)
+
+    def test_overlapping_match_entries_are_refused(self):
+        # Given two sh -c entries where one match string holds the other.
+        contract = {"endpoints": [], "exec": [
+            {"id": "regex", "command": ["sh", "-c"], "match": "regex", "callers": []},
+            {"id": "f2b-regex", "command": ["sh", "-c"], "match": "fail2ban-regex",
+             "callers": []}]}
+
+        # When the contract is validated.
+        errors = inventory.validate("fail2ban", contract)
+
+        # Then the second entry is refused as overlapping the first.
+        self.assertEqual(errors, ["fail2ban f2b-regex: overlaps regex: "
+                                  "every call one of them matches also matches the other"])
+
     def test_command_with_a_variable_is_refused(self):
         # Given an exec entry whose command holds a shell variable.
         contract = {"endpoints": [], "exec": [

@@ -141,6 +141,28 @@ class ExecReduction(unittest.TestCase):
         for value in ("create", "admin@x.test", "pw-Secret-123"):
             self.assertNotIn(value, text)
 
+    def test_unlisted_container_name_is_redacted(self):
+        # Given an exec record whose container word is not a name.
+        call = record("token=Secret-123", "true")
+
+        # When the record is reduced.
+        text = json.dumps(self.reduce(call))
+
+        # Then the container is redacted.
+        self.assertIn('"{redacted} true": {"candidate": 0, "other": 1}', text)
+        self.assertNotIn("Secret-123", text)
+
+    def test_record_whose_status_is_not_an_integer_is_unparsed(self):
+        # Given exec records whose status is a string and a boolean.
+        texts = [json.dumps({"t": 500, "container": "fail2ban", "argv": [], "rc": rc})
+                 for rc in ("0", True)]
+
+        # When each record is read.
+        records = [observe._exec_record(text) for text in texts]
+
+        # Then neither is a record.
+        self.assertEqual(records, [None, None])
+
     def test_listed_exec_reports_no_argument_values(self):
         # Given the listed superuser upsert with an email and a password.
         call = record("beszel", "/beszel", "superuser", "upsert", "admin@x.test", "pw-Secret-123")
