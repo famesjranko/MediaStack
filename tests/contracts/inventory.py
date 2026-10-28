@@ -52,10 +52,34 @@ def join_path(base_path: str, path: str) -> str:
     return "/" + "/".join(part for part in f"{base_path}/{path}".split("/") if part)
 
 
+# ``{id}`` stands for a generated identifier: digits, a UUID, or 16 or more hex
+# digits. A word such as ``about`` or ``schema`` is a sibling route, not an id.
+# ``{key}`` stands for any one segment, for an API keyed by name or by an
+# opaque key (Jackett indexer names, PocketBase record ids).
+PLACEHOLDERS = frozenset({"{id}", "{key}"})
+_ID_SEGMENT_RE = re.compile(
+    r"\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}",
+    re.IGNORECASE,
+)
+
+
+def _segment_matches(pattern: str, segment: str) -> bool:
+    if pattern == "{key}":
+        return bool(segment)
+    if pattern == "{id}":
+        # check.py writes each shell variable in a scanned path as ``{id}``.
+        return segment == "{id}" or _ID_SEGMENT_RE.fullmatch(segment) is not None
+    return pattern.lower() == segment.lower()
+
+
 def route_matches(pattern: str, path: str) -> bool:
-    """``{id}`` matches one non-empty segment; a trailing slash is not significant."""
-    regex = re.escape(pattern.rstrip("/")).replace(r"\{id\}", r"[^/]+")
-    return re.fullmatch(regex, path.rstrip("/"), re.IGNORECASE) is not None
+    """Each placeholder matches exactly one segment; a trailing slash is not significant."""
+    wanted, got = pattern.rstrip("/").split("/"), path.rstrip("/").split("/")
+    return len(wanted) == len(got) and all(map(_segment_matches, wanted, got))
+
+
+def placeholder_count(route: str) -> int:
+    return sum(segment in PLACEHOLDERS for segment in route.split("/"))
 
 
 def load(directory: Path = CONTRACT_DIR) -> tuple[dict[str, dict[str, Any]], list[str]]:
@@ -99,6 +123,11 @@ def _endpoint_errors(item: dict[str, Any]) -> list[str]:
     for key in ("path", "base_path"):
         if key in item and not (isinstance(item[key], str) and item[key].startswith("/")):
             errors.append(f"{key} must be a string starting with /")
+        elif key in item and any(
+            ("{" in part or "}" in part) and part not in PLACEHOLDERS
+            for part in item[key].split("/")
+        ):
+            errors.append(f"{key} may hold only whole {{id}} or {{key}} segments")
     if "expect" in item:
         errors.append(_expect_error(item["expect"]) or "")
     if "unexercised" in item and item["unexercised"] not in EXEMPT_REASONS:
@@ -170,7 +199,7 @@ def match(found: list[Endpoint], service: str, method: str, path: str) -> Endpoi
         for item in found
         if item.service == service and item.method == method and route_matches(item.route, path)
     ]
-    return min(hits, key=lambda item: item.route.count("{id}"), default=None)
+    return min(hits, key=lambda item: placeholder_count(item.route), default=None)
 
 
 def fingerprint(directory: Path = CONTRACT_DIR) -> str:
@@ -181,9 +210,15 @@ def fingerprint(directory: Path = CONTRACT_DIR) -> str:
     return digest.hexdigest()
 
 
+def _present(value: Any) -> bool:
+    # The product's JSON helpers print their default for null and print nothing
+    # useful for an empty string or container, so those values prove no read.
+    return value is not None and value != "" and value != [] and value != {}
+
+
 def _found(value: Any, parts: list[str]) -> bool:
     if not parts:
-        return True
+        return _present(value)
     head, rest = parts[0], parts[1:]
     is_array = head.endswith("[]")
     key = head[:-2] if is_array else head
@@ -212,7 +247,8 @@ def read_present(body: Any, read: str) -> bool:
 
     A top-level list must be non-empty and the path must be found in at least
     one member; each ``[]`` step must likewise pass through a non-empty array.
-    An empty list therefore satisfies no read.
+    An empty list therefore satisfies no read, and neither does a value of
+    null, an empty string, or an empty list or object.
     """
     parts = read.split(".")
     return any(_found(member, parts) for member in _members(body))

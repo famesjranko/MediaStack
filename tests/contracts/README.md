@@ -42,8 +42,18 @@ NAME:RAW_COOKIE_HEADER` flag rather than a new auth type.
 
 Endpoint `id` values are kebab-case and unique within a service. `method` is
 the HTTP method and `path` is the route after `base_path`; query strings are
-not part of the path. A path may contain `{id}` for one caller-substituted
-single path segment. No other path construction is part of this format.
+not part of the path. A path may contain two placeholders, each for exactly one
+caller-substituted segment:
+
+- `{id}` is a generated identifier: digits, a UUID, or 16 or more hex digits.
+  It does not match a word, so `/settings/{id}` does not cover an unlisted
+  sibling such as `/settings/about`.
+- `{key}` is any one segment, for an API keyed by a name or an opaque key, such
+  as Jackett indexer names and PocketBase record ids.
+
+When the caller names the segment literally, give each name its own entry, as
+`seerr.yml` does for `/settings/sonarr` and `/settings/radarr`. No other path
+construction is part of this format.
 
 `sends` lists the JSON or form fields MediaStack sets. `reads` lists the
 response fields it consumes. Both use dotted object paths. `[]` means an item
@@ -53,9 +63,11 @@ wildcards, indexes, or other addressing syntax. When the response is a list,
 the paths apply to its elements; an object whose values are all objects (a
 collection keyed by name) is read the same way.
 
-A recorded response shows a read only when the path is found in it and every
-array along the path, including a top-level list, is non-empty. An empty list
-therefore proves no read. Reads may be shown by different calls to the same
+A recorded response shows a read only when the path is found in it, every
+array along the path, including a top-level list, is non-empty, and the value
+is not null, an empty string, or an empty list or object. The JSON helpers in
+`scripts/lib/json.sh` turn null into their default, so such a value proves no
+read. An empty list therefore proves no read. Reads may be shown by different calls to the same
 entry, so a list that is empty before a create and filled after it proves its
 reads. `tests/contracts/inventory.py` owns this rule for every consumer.
 
@@ -66,9 +78,10 @@ Three optional endpoint keys serve the image acceptance gate:
 - `base_path` overrides the file's `base_path` for one entry, for example a
   readiness probe at the service root.
 - `unexercised` names why the image jobs cannot reach the entry. It is one of
-  `gpu`, `remote-profile`, `launcher-menu`, `nas`, or `held-profile`. Such an
-  entry does not block acceptance; if a job does exercise it, the gate reports
-  the exemption as stale.
+  `gpu`, `remote-profile`, `launcher-menu`, `nas`, or `held-profile`.
+  `held-profile` is valid only for a service in `HELD` in
+  `tests/preflight/model.py`. Such an entry does not block acceptance; if a job
+  does exercise it, the gate reports the exemption as stale.
 
 ```yaml
   - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
@@ -77,8 +90,8 @@ Three optional endpoint keys serve the image acceptance gate:
 Readiness probes are calls too. `check.py` reads the polled URL from
 `wait_for_service`, `wait_for_healthy` and `post_restart_wait`. The URL should
 be `"$(service_local_url NAME)"`, optionally with a path suffix, or a variable
-assigned from it. A URL whose route the check cannot resolve fails as an
-`unrecognised probe`. The same
+assigned from it in the same function or at file level. A URL whose route the
+check cannot resolve fails as an `unrecognised probe`. The same
 `service_local_url` form attributes any other call to service NAME. A bare
 service root is reachable only through such a named service, because a root
 path alone names no service.

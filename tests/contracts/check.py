@@ -8,11 +8,15 @@ import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Optional
 
 import inventory
 from inventory import Endpoint
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tests"))
+from preflight.model import HELD  # noqa: E402
+
 CONTRACT_DIR = inventory.CONTRACT_DIR
 CALL_RE = re.compile(
     r"\b(?P<function>curl|curl_basic_auth|curl_data_stdin|curl_data_urlencode_stdin|"
@@ -33,7 +37,16 @@ PROBE_DEFINITION_RE = re.compile(
 )
 # The position of the polled URL among each probe's arguments.
 PROBE_URL_ARG = {"wait_for_service": 1, "wait_for_healthy": 2, "post_restart_wait": 0}
-SERVICE_URL_RE = re.compile(r"\$\(service_local_url\s+(?P<name>[^)\s]+)\s*\)(?P<suffix>[^\s\"'}]*)")
+SERVICE_URL_RE = re.compile(
+    r"\$\(service_local_url\s+(?P<name>[^)\s]+)\s*\)(?P<suffix>(?:\$\{[^}\s]*\}|[^\s\"'}])*)"
+)
+# A variable holds a service URL only when its value starts with one, maybe as
+# the default of a positional parameter: local api="${2:-$(service_local_url npm)/api}".
+SERVICE_VALUE_RE = re.compile(r"[\"']?(?:\$\{\w+:-)?(?=\$\(service_local_url\b)")
+FUNCTION_RE = re.compile(
+    r"^[ \t]*(?:function[ \t]+)?[A-Za-z_][\w:-]*[ \t]*\(\)[ \t]*\{(?P<rest>[^\n]*)$", re.MULTILINE
+)
+FUNCTION_END_RE = re.compile(r"^\}[ \t]*$", re.MULTILINE)
 SERVICE_NAME_RE = re.compile(r"[a-z][a-z0-9-]*")
 SHELL_OPERATOR_RE = re.compile(r"^(?:\|\||&&|;|\||\d*[<>].*)$")
 QUOTED_RE = re.compile(r"(?P<quote>['\"])(?P<value>.*?)(?P=quote)")
@@ -83,13 +96,30 @@ class Call:
     dynamic: bool
 
 
+# A variable's service URL, (service, path suffix), or None where the variable
+# is assigned something else or more than one service URL in that scope.
+ServiceUrl = Optional[tuple[str, str]]
+
+
 @dataclass(frozen=True)
 class ScriptFile:
-    """What one script's assignments say about the URLs its calls use."""
+    """What one script's assignments say about the URLs its calls use.
+
+    Service URL variables are resolved per function, so a local reused in
+    another function does not carry the first function's service.
+    """
 
     relative: str
-    prefixes: dict[str, str]
-    service_urls: dict[str, tuple[str, str]]
+    prefixes: dict[str, tuple[str, ...]]
+    spans: list[tuple[int, int]]
+    service_urls: dict[tuple[int | None, str], ServiceUrl]
+
+    def service_url(self, name: str, position: int) -> ServiceUrl:
+        """The variable's service URL in the function at ``position``, else at file level."""
+        scope = _scope(self.spans, position)
+        if (scope, name) in self.service_urls:
+            return self.service_urls[(scope, name)]
+        return self.service_urls.get((None, name))
 
 
 @dataclass
@@ -102,33 +132,54 @@ class Scan:
     errors: list[str] = field(default_factory=list)
 
 
-def _variable_prefixes(text: str) -> dict[str, str]:
-    prefixes: dict[str, str] = {}
+def _variable_prefixes(text: str) -> dict[str, tuple[str, ...]]:
+    """URL-like variables and every path prefix the file assigns each one."""
+    prefixes: dict[str, set[str]] = {}
     for match in ASSIGN_RE.finditer(text):
         value = match.group("value")
         route = PATH_RE.search(value)
         if route and re.search(r"(?:url|api|base)", match.group("name"), re.IGNORECASE):
-            prefixes[match.group("name")] = route.group("path").rstrip("}")
-    return prefixes
+            prefixes.setdefault(match.group("name"), set()).add(route.group("path").rstrip("}"))
+    return {name: tuple(sorted(paths)) for name, paths in prefixes.items()}
 
 
-def _service_variables(text: str) -> dict[str, tuple[str, str]]:
-    """Variables assigned from ``$(service_local_url NAME)``: name -> (service, path suffix).
+def _function_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of top-level function definitions, in order."""
+    spans: list[tuple[int, int]] = []
+    for match in FUNCTION_RE.finditer(text):
+        if spans and match.start() < spans[-1][1]:
+            continue
+        # A one-line definition ends on its own line; any other at the next column-0 brace.
+        one_line = match.group("rest").rstrip().endswith("}")
+        end = None if one_line else FUNCTION_END_RE.search(text, match.end())
+        spans.append((match.start(), end.end() if end else match.end()))
+    return spans
 
-    A variable assigned more than one service URL in a file is ambiguous and dropped.
-    """
-    seen: dict[str, set[tuple[str, str]]] = {}
+
+def _scope(spans: list[tuple[int, int]], position: int) -> int | None:
+    """The index of the function span holding ``position``; None at file level."""
+    return next(
+        (index for index, (start, end) in enumerate(spans) if start <= position < end), None
+    )
+
+
+def _assigned_service_url(value: str) -> ServiceUrl:
+    start = SERVICE_VALUE_RE.match(value)
+    url = start and SERVICE_URL_RE.match(value, start.end())
+    return (url.group("name"), url.group("suffix")) if url else None
+
+
+def _script_file(relative: str, text: str) -> ScriptFile:
+    spans = _function_spans(text)
+    seen: dict[tuple[int | None, str], set[ServiceUrl]] = {}
     for match in ASSIGN_RE.finditer(text):
-        url = SERVICE_URL_RE.search(match.group("value"))
-        if url:
-            seen.setdefault(match.group("name"), set()).add(
-                (url.group("name"), url.group("suffix"))
-            )
-    return {
-        name: next(iter(values))
-        for name, values in seen.items()
-        if len(values) == 1 and SERVICE_NAME_RE.fullmatch(next(iter(values))[0])
-    }
+        key = (_scope(spans, match.start()), match.group("name"))
+        seen.setdefault(key, set()).add(_assigned_service_url(match.group("value")))
+    service_urls: dict[tuple[int | None, str], ServiceUrl] = {}
+    for key, values in seen.items():
+        only = next(iter(values)) if len(values) == 1 else None
+        service_urls[key] = only if only and SERVICE_NAME_RE.fullmatch(only[0]) else None
+    return ScriptFile(relative, _variable_prefixes(text), spans, service_urls)
 
 
 def _normalize(text: str, services: tuple[str, ...] = ()) -> Route | None:
@@ -147,19 +198,21 @@ def _normalize(text: str, services: tuple[str, ...] = ()) -> Route | None:
     return Route(path or "/", dynamic, services)
 
 
-def _path_from_token(token: str, prefixes: dict[str, str]) -> Route | None:
+def _paths_from_token(token: str, prefixes: dict[str, tuple[str, ...]]) -> list[Route]:
+    """The routes a URL token can reach: one per path its leading variable is assigned."""
     token = token.split("?", 1)[0].split("#", 1)[0]
     token = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/]+", "", token)
     variable = VARIABLE_RE.search(token)
+    tokens = [token]
     if variable:
         name = variable.group("braced") or variable.group("plain")
         suffix = token[variable.end() :]
-        prefix = prefixes.get(name, "")
-        if not prefix and not suffix.startswith("/"):
-            return None
+        known = prefixes.get(name, ())
+        if not known and not suffix.startswith("/"):
+            return []
         # A prefix of "/" is a bare origin such as http://localhost:8096.
-        token = f"{prefix.rstrip('/')}{suffix}"
-    return _normalize(token)
+        tokens = [f"{prefix.rstrip('/')}{suffix}" for prefix in known or ("",)]
+    return [route for route in map(_normalize, tokens) if route]
 
 
 def _named_services(name: str, caller: str) -> tuple[str, ...]:
@@ -170,7 +223,7 @@ def _named_services(name: str, caller: str) -> tuple[str, ...]:
     return ARR_SERVICES if caller in _ARR_CONTRACT_CALLERS else ()
 
 
-def _service_route(token: str, script: ScriptFile, probe: bool) -> Route | None:
+def _service_route(token: str, script: ScriptFile, position: int, probe: bool) -> Route | None:
     """Resolve ``$(service_local_url NAME)SUFFIX``, directly or through a variable.
 
     An empty suffix is the bare service URL. A probe polls it; any other helper
@@ -182,10 +235,10 @@ def _service_route(token: str, script: ScriptFile, probe: bool) -> Route | None:
     else:
         variable = VARIABLE_RE.match(token)
         name = variable and (variable.group("braced") or variable.group("plain"))
-        if not variable or name not in script.service_urls:
+        assigned = script.service_url(str(name), position) if variable else None
+        if not variable or assigned is None:
             return None
-        service, prefix = script.service_urls[str(name)]
-        services, rest = (service,), prefix + token[variable.end() :]
+        services, rest = (assigned[0],), assigned[1] + token[variable.end() :]
     if not services or not (rest or probe):
         return None
     return _normalize(rest or "/", services)
@@ -213,11 +266,12 @@ def _method(function: str, args: str) -> str:
 
 
 def _most_specific(hits: list[Endpoint]) -> list[Endpoint]:
-    """One entry per service: a literal segment wins over ``{id}``, then file order."""
+    """One entry per service: a literal segment wins over a placeholder, then file order."""
     best: dict[str, Endpoint] = {}
     for item in hits:
         held = best.get(item.service)
-        if held is None or item.route.count("{id}") < held.route.count("{id}"):
+        rank = inventory.placeholder_count(item.route)
+        if held is None or rank < inventory.placeholder_count(held.route):
             best[item.service] = item
     return list(best.values())
 
@@ -294,22 +348,22 @@ def _requires_contract(caller: str) -> bool:
     return caller.startswith("scripts/services/") or caller in _CONTRACT_REQUIRED_CALLERS
 
 
-def _direct_call_route(args: str, script: ScriptFile) -> Route | None:
+def _direct_call_routes(args: str, script: ScriptFile, position: int) -> list[Route]:
     tokens = [item.group("value") for item in QUOTED_RE.finditer(args)]
     tokens += [item for item in args.split() if "/" in item]
     for token in tokens:
-        resolved = _service_route(token, script, probe=False)
+        resolved = _service_route(token, script, position, probe=False)
         if resolved:
-            return resolved
-        candidate = _path_from_token(token, script.prefixes)
+            return [resolved]
+        candidates = _paths_from_token(token, script.prefixes)
         likely_url = (
             VARIABLE_RE.search(token)
             or "service_local_url" in token
             or re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", token)
         )
-        if candidate and likely_url:
-            return candidate
-    return None
+        if candidates and likely_url:
+            return candidates
+    return []
 
 
 def _probe_url(function: str, args: str) -> str | None:
@@ -334,16 +388,17 @@ def _scan_probes(scan: Scan, script: ScriptFile, text: str) -> None:
         if text[line_start : match.start()].lstrip().startswith("#"):
             continue
         token = _probe_url(match.group("function"), match.group("args"))
-        route = token and (
-            _service_route(token, script, probe=True) or _path_from_token(token, script.prefixes)
-        )
-        if not route:
+        token = token or ""
+        service_route = _service_route(token, script, match.start(), probe=True)
+        routes = [service_route] if service_route else _paths_from_token(token, script.prefixes)
+        if not routes:
             scan.errors.append(
                 f"unrecognised probe: {script.relative}: "
                 f"{match.group('function')} {match.group('args').strip()}"
             )
             continue
-        _record_route(scan, script.relative, "GET", route, require_contract=True)
+        for route in routes:
+            _record_route(scan, script.relative, "GET", route, require_contract=True)
 
 
 def _scan_curl_args(scan: Scan, script: ScriptFile, text: str) -> None:
@@ -356,20 +411,18 @@ def _scan_curl_args(scan: Scan, script: ScriptFile, text: str) -> None:
     for args in argument_lists:
         method = _method("curl", args)
         for token_match in QUOTED_RE.finditer(args):
-            route = _path_from_token(token_match.group("value"), script.prefixes)
-            if route is not None:
+            for route in _paths_from_token(token_match.group("value"), script.prefixes):
                 _record_route(scan, script.relative, method, route, require_contract=False)
 
 
 def _scan_file(scan: Scan, path: Path) -> None:
     relative = path.relative_to(ROOT).as_posix()
     text = path.read_text(encoding="utf-8").replace("\\\n", " ")
-    script = ScriptFile(relative, _variable_prefixes(text), _service_variables(text))
+    script = _script_file(relative, text)
     for match in CALL_RE.finditer(text):
         args = match.group("args")
-        route = _direct_call_route(args, script)
-        if route is not None:
-            method = _method(match.group("function"), args)
+        method = _method(match.group("function"), args)
+        for route in _direct_call_routes(args, script, match.start()):
             _record_route(scan, relative, method, route, _requires_contract(relative))
     _scan_probes(scan, script, text)
     _scan_curl_args(scan, script, text)
@@ -407,12 +460,25 @@ def _steer(errors: list[str]) -> None:
         )
 
 
+def _held_profile_errors(service: str, contract: dict[str, Any]) -> list[str]:
+    """``held-profile`` exempts only entries of a service the preflight holds back."""
+    if service in HELD:
+        return []
+    return [
+        f"{service} {item['id']}: unexercised held-profile is only for held services "
+        f"({', '.join(sorted(HELD))})"
+        for item in contract["endpoints"]
+        if item.get("unexercised") == "held-profile"
+    ]
+
+
 def _load() -> tuple[list[Endpoint], dict[tuple[str, str], set[str]], list[str]]:
     contracts, errors = inventory.load(CONTRACT_DIR)
     if not contracts:
         errors.append("no contract files found")
     for service, contract in contracts.items():
-        errors += [f"schema: {error}" for error in inventory.validate(service, contract)]
+        problems = inventory.validate(service, contract) or _held_profile_errors(service, contract)
+        errors += [f"schema: {error}" for error in problems]
     if errors:
         return [], {}, errors
     expected = {
