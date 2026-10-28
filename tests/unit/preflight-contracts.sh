@@ -2,7 +2,8 @@
 # tests/unit/preflight-contracts.sh
 #
 # Proves each contract-coverage acceptance rule in tests/preflight/contracts.py
-# can fail, and that exemptions and held services do not block. The evidence is
+# can fail, that exemptions and held services do not block, and that a
+# candidate without entries passes only with an explicit report. The evidence is
 # contracts.json data in the shape tests/contracts/observe.py writes, judged
 # against a small Sonarr and Portainer inventory. Pure python3, no Docker.
 
@@ -19,6 +20,7 @@ results=$(
     python3 -I - "$REPO_ROOT" <<'PY'
 import copy
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -32,6 +34,9 @@ from preflight import contracts  # noqa: E402
 
 FINGERPRINT = "f" * 64
 TIMES = "×"
+CANDIDATES = {"sonarr": "lscr.io/linuxserver/sonarr@sha256:" + "c" * 64,
+              "radarr": "lscr.io/linuxserver/radarr@sha256:" + "b" * 64,
+              "ddns-updater": "qmcgaw/ddns-updater@sha256:" + "d" * 64}
 
 
 def entry(service, entry_id, method, base, path, reads=(), expect=(), unexercised=None):
@@ -54,9 +59,12 @@ def job(job_id, scenario, services=("sonarr",)):
             "combination": list(services), "services": list(services)}
 
 
-def data(the_job, entries, unmatched=None):
+def data(the_job, entries, unmatched=None, requests=5, unparsed=0):
     return {"schema": 1, "inventory": FINGERPRINT, "scenario": the_job["scenario"],
-            "run_id": the_job["run_id"], "entries": entries, "unmatched": unmatched or {}}
+            "run_id": the_job["run_id"],
+            "candidates": {s: CANDIDATES[s] for s in the_job["combination"]},
+            "requests": requests, "unparsed": unparsed,
+            "entries": entries, "unmatched": unmatched or {}}
 
 
 def seen(candidate=None, other=None, reads=()):
@@ -72,7 +80,7 @@ COMPLETE = {"sonarr": {
 
 
 def judge(*evidence, services=("sonarr",)):
-    result = contracts.verdict(list(evidence), list(services), FINGERPRINT, FOUND)
+    result = contracts.verdict(list(evidence), list(services), CANDIDATES, FINGERPRINT, FOUND)
     return result, [failure.message for failure in result.failures]
 
 
@@ -147,16 +155,153 @@ class VerdictContract(unittest.TestCase):
         self.assertEqual(failures, ["sonarr indexer-list: not exercised on candidate "
                                     f"(seen 200{TIMES}3 on another image in fresh-install)"])
 
-    def test_no_product_traffic_is_an_inactive_trace(self):
-        # Given a job whose evidence shows calls on other images only.
-        evidence = data(FRESH, {"sonarr": {"readiness": seen(other={"200": 1})}})
+    def test_no_traced_request_is_an_inactive_trace(self):
+        # Given a job whose trace recorded no product request at all.
+        evidence = data(FRESH, {}, requests=0)
 
         # When the verdict judges the job.
-        result, failures = judge((FRESH, evidence))
+        result, _ = judge((FRESH, evidence))
 
         # Then the job fails as an inactive trace.
-        self.assertIn(contracts.Failure(FRESH["id"], "contract trace inactive: no product "
-                                        "request reached a candidate"), result.failures)
+        self.assertIn(contracts.Failure(FRESH["id"], "contract trace inactive: "
+                                        "no product request was traced"), result.failures)
+
+    def test_traffic_on_other_images_only_is_an_active_trace(self):
+        # Given a ddns-updater job whose traced requests all reached other services.
+        ddns = job("p1-ddns-updater.fresh-install", "fresh-install", services=("ddns-updater",))
+        evidence = data(ddns, {"sonarr": {"readiness": seen(other={"200": 1})}}, requests=1)
+
+        # When the verdict judges ddns-updater.
+        result, _ = judge((ddns, evidence), services=("ddns-updater",))
+
+        # Then nothing fails.
+        self.assertEqual(result.failures, [])
+
+    def test_service_without_entries_passes_and_is_reported(self):
+        # Given an active ddns-updater job, and no inventory entry for ddns-updater.
+        ddns = job("p1-ddns-updater.fresh-install", "fresh-install", services=("ddns-updater",))
+
+        # When the verdict judges ddns-updater.
+        result, _ = judge((ddns, data(ddns, {})), services=("ddns-updater",))
+
+        # Then nothing fails.
+        self.assertEqual(result.failures, [])
+        # And the verdict says acceptance rests on the scenarios.
+        self.assertEqual(result.uncovered,
+                         ["ddns-updater: no contract entries; acceptance rests on its scenarios"])
+
+    def test_unparsed_request_fails_the_job(self):
+        # Given complete evidence from a job in which one traced request could not be parsed.
+        evidence = data(FRESH, COMPLETE, unparsed=1)
+
+        # When the verdict judges the job.
+        result, _ = judge((FRESH, evidence))
+
+        # Then the job fails and gives Sonarr no evidence.
+        self.assertEqual(result.failures, [
+            contracts.Failure(FRESH["id"], "contract trace has 1 unparsed request"),
+            contracts.Failure("sonarr", "no qualifying contract evidence")])
+
+    def test_other_candidate_ref_fails_the_job(self):
+        # Given complete evidence bound to a Sonarr ref that is not the plan's candidate.
+        evidence = dict(data(FRESH, COMPLETE), candidates={"sonarr": "sonarr@sha256:" + "e" * 64})
+
+        # When the verdict judges the job.
+        result, _ = judge((FRESH, evidence))
+
+        # Then the job fails on the candidate refs.
+        self.assertIn(contracts.Failure(FRESH["id"], "contracts.json candidates do not match the "
+                                        "job's planned candidates"), result.failures)
+
+    def test_other_run_id_fails_the_job(self):
+        # Given complete evidence that names another run.
+        evidence = dict(data(FRESH, COMPLETE), run_id="run-other")
+
+        # When the verdict judges the job.
+        result, _ = judge((FRESH, evidence))
+
+        # Then the job fails as evidence from another run.
+        self.assertIn(contracts.Failure(FRESH["id"], "contracts.json comes from another run"),
+                      result.failures)
+
+    def test_other_scenario_fails_the_job(self):
+        # Given complete evidence that names another scenario.
+        evidence = dict(data(FRESH, COMPLETE), scenario="upgrade-path")
+
+        # When the verdict judges the job.
+        result, _ = judge((FRESH, evidence))
+
+        # Then the job fails on the scenario.
+        self.assertIn(contracts.Failure(FRESH["id"], "contracts.json schema or scenario does not "
+                                        "match the job"), result.failures)
+
+    def test_boolean_schema_is_refused(self):
+        # Given complete evidence whose schema is true, which equals 1 in Python.
+        evidence = dict(data(FRESH, COMPLETE), schema=True)
+
+        # When the verdict judges the job.
+        result, _ = judge((FRESH, evidence))
+
+        # Then the job fails as malformed.
+        self.assertIn(contracts.Failure(FRESH["id"], "contracts.json is malformed"), result.failures)
+
+    def test_entry_without_reads_is_malformed(self):
+        # Given evidence with an entry record that lacks its reads list.
+        evidence = with_entries(lambda s: s.update({"indexer-list": {"candidate": {"200": 1},
+                                                                     "other": {}}}))
+
+        # When the verdict judges the job.
+        result, _ = judge((FRESH, evidence))
+
+        # Then the job fails as malformed.
+        self.assertIn(contracts.Failure(FRESH["id"], "contracts.json is malformed"), result.failures)
+
+    def test_undeclared_read_fails_the_job(self):
+        # Given evidence that reports a read the indexer list entry does not declare.
+        evidence = with_entries(
+            lambda s: s.update({"indexer-list": seen({"200": 1}, reads=("id", "name", "secret"))}))
+
+        # When the verdict judges the job.
+        result, _ = judge((FRESH, evidence))
+
+        # Then the job fails and names the entry.
+        self.assertIn(contracts.Failure(FRESH["id"], "sonarr indexer-list: reports reads it does "
+                                        "not declare"), result.failures)
+
+    def test_redirect_is_not_accepted_without_expect(self):
+        # Given the quality profile list, which has no expect list, answered only 302.
+        evidence = with_entries(lambda s: s.update({"quality-profile-list": seen(
+            {"302": 1}, reads=("id", "name", "items[].quality.id"))}))
+
+        # When the verdict judges Sonarr.
+        _, failures = judge((FRESH, evidence))
+
+        # Then the entry is not exercised on the candidate.
+        self.assertEqual(failures, [f"sonarr quality-profile-list: not exercised on candidate "
+                                    f"(seen 302{TIMES}1 in fresh-install)"])
+
+    def test_job_for_another_service_does_not_count(self):
+        # Given Sonarr's own job lacks the indexer list and a Radarr job called it.
+        radarr = job("p1-radarr.fresh-install", "fresh-install", services=("radarr",))
+        radarr_data = data(radarr, COMPLETE)
+        own = with_entries(lambda s: s.pop("indexer-list"))
+
+        # When the verdict judges Sonarr over both jobs.
+        _, failures = judge((FRESH, own), (radarr, radarr_data))
+
+        # Then Sonarr's indexer list is still not exercised.
+        self.assertEqual(failures, ["sonarr indexer-list: not exercised on candidate (never called)"])
+
+    def test_unlisted_call_on_another_image_fails_the_service(self):
+        # Given complete evidence plus an unlisted Sonarr call made while another image ran.
+        evidence = data(FRESH, COMPLETE, {"sonarr GET /api/v3/system/status": {"candidate": 0,
+                                                                               "other": 1}})
+
+        # When the verdict judges Sonarr.
+        _, failures = judge((FRESH, evidence))
+
+        # Then the unlisted call fails Sonarr.
+        self.assertEqual(failures, ["sonarr GET /api/v3/system/status: unlisted call (fresh-install)"])
 
     def test_fingerprint_mismatch_fails_the_job(self):
         # Given evidence recorded against another inventory.
@@ -242,6 +387,19 @@ class VerdictContract(unittest.TestCase):
             # Then it is refused before parsing.
             with self.assertRaises(ValueError):
                 contracts.read_contracts(path)
+
+    def test_symlinked_evidence_file_is_refused(self):
+        # Given a contracts.json that is a symlink to a well-formed file.
+        with tempfile.TemporaryDirectory() as folder:
+            real = pathlib.Path(folder) / "real.json"
+            real.write_text(json.dumps(data(FRESH, COMPLETE)))
+            link = pathlib.Path(folder) / "contracts.json"
+            os.symlink(real, link)
+
+            # When the verifier reads it.
+            # Then it is refused.
+            with self.assertRaises(ValueError):
+                contracts.read_contracts(link)
 
 
 class Lines(unittest.TestResult):

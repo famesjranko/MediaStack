@@ -1,14 +1,19 @@
 """Contract-coverage acceptance: pure rules over parsed contracts.json evidence.
 
 Each image job uploads one contracts.json (tests/contracts/observe.py). A job
-qualifies when its file is well formed, matches the job and the verifier's own
-inventory fingerprint, and shows product traffic on a candidate. A candidate
-service qualifies when, over every job whose ``services`` include it, each of
-its entries without ``unexercised`` was called on the candidate with an
-accepted status, every declared read was seen, and nothing called it outside
-the inventory. An entry belongs to its file's service, so an entry or an
-unlisted call of one service never blocks another; held services are never
-candidates, so their entries block nothing.
+qualifies when its file is well formed, matches the job, its planned candidate
+refs and the verifier's own inventory fingerprint, traced at least one product
+request, and parsed every traced request. A candidate service qualifies when,
+over every job whose ``services`` include it, each of its entries without
+``unexercised`` was called on the candidate with an accepted status, every
+declared read was seen, and nothing called it outside the inventory. An entry
+belongs to its file's service, so an entry or an unlisted call of one service
+never blocks another; held services are never candidates, so their entries
+block nothing.
+
+Some candidates (socket-proxy, fail2ban, ddns-updater, ...) have no HTTP API
+that MediaStack calls, so no entries. Such a service passes this verdict, and
+the verdict says so in ``uncovered``: its acceptance rests on its scenarios.
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ class Verdict:
     failures: list[Failure] = field(default_factory=list)
     exempt: dict[str, list[str]] = field(default_factory=dict)
     stale: list[str] = field(default_factory=list)
+    uncovered: list[str] = field(default_factory=list)
 
 
 def read_contracts(path: pathlib.Path) -> Any:
@@ -75,17 +81,26 @@ def _unmatched_ok(value: Any) -> bool:
     return (
         isinstance(value, dict)
         and set(value) == {"candidate", "other"}
-        and all(type(count) is int and count >= 0 for count in value.values())
+        and all(_count_ok(count) for count in value.values())
     )
 
 
+def _count_ok(value: Any) -> bool:
+    return type(value) is int and value >= 0
+
+
 def _shape_ok(data: Any) -> bool:
-    keys = {"schema", "inventory", "scenario", "run_id", "entries", "unmatched"}
-    if not isinstance(data, dict) or set(data) != keys:
+    keys = {"schema", "inventory", "scenario", "run_id", "candidates", "requests", "unparsed"}
+    if not isinstance(data, dict) or set(data) != keys | {"entries", "unmatched"}:
         return False
-    entries, unmatched = data["entries"], data["unmatched"]
+    entries, unmatched, candidates = data["entries"], data["unmatched"], data["candidates"]
     return (
-        isinstance(entries, dict)
+        type(data["schema"]) is int
+        and _count_ok(data["requests"])
+        and _count_ok(data["unparsed"])
+        and isinstance(candidates, dict)
+        and all(isinstance(ref, str) for ref in candidates.values())
+        and isinstance(entries, dict)
         and all(
             isinstance(by_id, dict) and all(_entry_ok(item) for item in by_id.values())
             for by_id in entries.values()
@@ -108,29 +123,37 @@ def _unknown(data: dict[str, Any], found: list[Endpoint]) -> list[str]:
     return unknown
 
 
-def _candidate_requests(data: dict[str, Any]) -> int:
-    from_entries: int = sum(
-        sum(item["candidate"].values())
-        for by_id in data["entries"].values()
-        for item in by_id.values()
-    )
-    from_unmatched: int = sum(item["candidate"] for item in data["unmatched"].values())
-    return from_entries + from_unmatched
+def _identity_problem(job: Job, data: dict[str, Any], candidates: dict[str, str]) -> str | None:
+    """Why the evidence is not this job's own: another schema, scenario, run or image."""
+    if data["schema"] != SCHEMA or data["scenario"] != job["scenario"]:
+        return "contracts.json schema or scenario does not match the job"
+    if data["run_id"] != job["run_id"]:
+        return "contracts.json comes from another run"
+    if data["candidates"] != {service: candidates[service] for service in job["combination"]}:
+        return "contracts.json candidates do not match the job's planned candidates"
+    return None
 
 
-def check_job(job: Job, data: Any, fingerprint: str, found: list[Endpoint]) -> list[str]:
-    """Why one job's contract evidence does not qualify; empty when it does."""
+def check_job(
+    job: Job, data: Any, candidates: dict[str, str], fingerprint: str, found: list[Endpoint]
+) -> list[str]:
+    """Why one job's contract evidence does not qualify; empty when it does.
+
+    ``candidates`` are the plan's candidate refs by service.
+    """
     if not _shape_ok(data):
         return ["contracts.json is malformed"]
-    if data["schema"] != SCHEMA or data["scenario"] != job["scenario"]:
-        return ["contracts.json schema or scenario does not match the job"]
-    if data["run_id"] != job["run_id"]:
-        return ["contracts.json comes from another run"]
+    problem = _identity_problem(job, data, candidates)
+    if problem:
+        return [problem]
     if data["inventory"] != fingerprint:
         return ["contract inventory fingerprint does not match the tested source"]
     problems = _unknown(data, found)
-    if _candidate_requests(data) == 0:
-        problems.append("contract trace inactive: no product request reached a candidate")
+    if data["requests"] == 0:
+        problems.append("contract trace inactive: no product request was traced")
+    if data["unparsed"]:
+        plural = "" if data["unparsed"] == 1 else "s"
+        problems.append(f"contract trace has {data['unparsed']} unparsed request{plural}")
     return problems
 
 
@@ -192,8 +215,13 @@ def _check_service(
     evidence: list[tuple[Job, dict[str, Any]]],
     found: list[Endpoint],
 ) -> None:
+    entries = [item for item in found if item.service == service]
+    if not entries:
+        verdict.uncovered.append(
+            f"{service}: no contract entries; acceptance rests on its scenarios"
+        )
     messages = []
-    for entry in (item for item in found if item.service == service):
+    for entry in entries:
         if entry.unexercised:
             verdict.exempt.setdefault(service, []).append(f"{entry.id} ({entry.unexercised})")
             exercised = _accepted_in(entry, _observations(entry, evidence))
@@ -211,18 +239,21 @@ def _check_service(
 def verdict(
     evidence: list[tuple[Job, Any]],
     services: list[str],
+    candidates: dict[str, str],
     fingerprint: str,
     found: list[Endpoint],
 ) -> Verdict:
     """Judge every job's evidence, then each candidate service over its qualifying jobs.
 
     ``evidence`` pairs each plan job with its parsed contracts.json; ``services``
-    are the candidates under acceptance.
+    are the candidates under acceptance; ``candidates`` is the plan's ref for
+    each candidate service, which each job's evidence must name for the
+    services in its ``combination``.
     """
     result = Verdict()
     qualified = []
     for job, data in evidence:
-        problems = check_job(job, data, fingerprint, found)
+        problems = check_job(job, data, candidates, fingerprint, found)
         result.failures += [Failure(job["id"], problem) for problem in problems]
         if not problems:
             qualified.append((job, data))
