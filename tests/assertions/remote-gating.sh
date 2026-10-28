@@ -113,12 +113,15 @@ json.dump(data, sys.stdout)
 
 remote_gating_assert_jellyfin_lan_only() {
     local state="$1"
-    local network_json host_addr known_proxies published published_env published_container managed_npm_ip
+    local network_json host_addr domain known_proxies published published_env published_container managed_npm_ip
     if ! network_json="$(remote_gating_fetch_jellyfin_network)"; then
         fail "remote gating: $state Jellyfin network configuration is readable"
         return 1
     fi
     host_addr="$(remote_gating_env HOST_ADDRESS)"
+    # The installed domain, not a fixture constant: a scenario with another
+    # DOMAIN would otherwise never see the URL this check forbids.
+    domain="$(remote_gating_env DOMAIN)"
     managed_npm_ip="$(remote_gating_env MEDIASTACK_NPM_IP)"
     managed_npm_ip="${managed_npm_ip:-172.28.0.10}"
 
@@ -155,7 +158,9 @@ except Exception:
     data = {}
 print("|".join(data.get("PublishedServerUriBySubnet") or []))
 ' 2>/dev/null)"
-    if [[ "$published" == *"external=https://jellyfin.gate.test"* ]]; then
+    if [[ -z "$domain" ]]; then
+        fail "remote gating: $state Jellyfin omits external HTTPS URL" "DOMAIN is not set in .env"
+    elif [[ "$published" == *"external=https://jellyfin.${domain}"* ]]; then
         fail "remote gating: $state Jellyfin omits external HTTPS URL" "$published"
     else
         pass "remote gating: $state Jellyfin omits external HTTPS URL"
@@ -201,8 +206,14 @@ print("|".join(data.get("PublishedServerUriBySubnet") or []))
 }
 
 remote_gating_assert_homepage_lan_only() {
-    local state="$1" homepage_check
-    homepage_check="$(dind_exec "python3 - <<'PY'
+    local state="$1" domain homepage_check
+    domain="$(remote_gating_env DOMAIN)"
+    if [[ -z "$domain" ]]; then
+        fail "remote gating: $state Homepage uses LAN hrefs" "DOMAIN is not set in .env"
+        return 1
+    fi
+    homepage_check="$(dind_exec "DOMAIN='$domain' python3 - <<'PY'
+import os
 import pathlib
 import sys
 import yaml
@@ -222,10 +233,10 @@ for group in data:
                 for details in svc.values():
                     if isinstance(details, dict) and details.get('href'):
                         hrefs.append(str(details['href']))
-bad = [h for h in hrefs if h in ('https://jellyfin.gate.test', 'https://seerr.gate.test')]
-needles = ('http://127.0.0.1:8096', ':8096', 'http://127.0.0.1:5055', ':5055')
-has_jellyfin_lan = any('jellyfin.gate.test' not in h and (h.endswith(':8096') or ':8096/' in h) for h in hrefs)
-has_seerr_lan = any('seerr.gate.test' not in h and (h.endswith(':5055') or ':5055/' in h) for h in hrefs)
+domain = os.environ['DOMAIN']
+bad = [h for h in hrefs if h in ('https://jellyfin.' + domain, 'https://seerr.' + domain)]
+has_jellyfin_lan = any('jellyfin.' + domain not in h and (h.endswith(':8096') or ':8096/' in h) for h in hrefs)
+has_seerr_lan = any('seerr.' + domain not in h and (h.endswith(':5055') or ':5055/' in h) for h in hrefs)
 if bad:
     print('bad_https=' + ','.join(bad))
 elif not (has_jellyfin_lan and has_seerr_lan):

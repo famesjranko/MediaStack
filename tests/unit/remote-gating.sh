@@ -103,8 +103,13 @@ PORT="$(<"$PORT_FILE")"
 DIND_NAME="test-dind"
 JELLYFIN_API_KEY="dummy-api-key"
 
+# The remote-gating scenario's .env: the LAN checks read DOMAIN to name the
+# external URL they forbid.
 env_get() {
-    [[ "$1" == "JELLYFIN_API_KEY" ]] && printf '%s\n' "${JELLYFIN_API_KEY:-}"
+    case "$1" in
+        JELLYFIN_API_KEY) printf '%s\n' "${JELLYFIN_API_KEY:-}" ;;
+        DOMAIN) printf 'gate.test\n' ;;
+    esac
 }
 
 # The adapter preserves docker exec's stdin boundary while executing the
