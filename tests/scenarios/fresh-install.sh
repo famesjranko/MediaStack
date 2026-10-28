@@ -224,6 +224,7 @@ PYEOF
     assert_port_check
     assert_drift_regression
     assert_uptime_kuma_idempotent
+    assert_jackett_flaresolverr_repair
     assert_install_digest_recorded
 }
 

@@ -104,3 +104,71 @@ assert_jackett_configured() {
             "${caps_ok} ok, ${caps_fail} failed: ${caps_fail_names}"
     fi
 }
+
+# Jackett's first start can drop the pre-seeded FlareSolverrUrl, so the
+# configurator restores it through the server-config API
+# (scripts/services/jackett/main.sh). The save restarts Jackett and ends the
+# session, so the configurator must authenticate again with the admin password
+# that the first run set. A fresh install keeps the seed and skips that repair.
+# Clear the URL and run the configurator again, as a re-run does after an
+# update that dropped the URL.
+assert_jackett_flaresolverr_repair() {
+    local log=/tmp/configure-jackett-flaresolverr.out url ids_raw idx missing=""
+    if ! dind_python <<'PY'; then
+import json
+
+path = "config/jackett/Jackett/ServerConfig.json"
+with open(path, encoding="utf-8-sig") as fh:
+    config = json.load(fh)
+config["FlareSolverrUrl"] = ""
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(config, fh, indent=2)
+PY
+        fail "Jackett repair: FlareSolverr URL cleared"
+        return 0
+    fi
+    if dind_exec "UI_ASCII=1 ./scripts/configure.sh --only jackett" >"$log" 2>&1 \
+        && grep -q 'FlareSolverr connected' "$log"; then
+        pass "Jackett repair: configure.sh restores a dropped FlareSolverr URL through the API"
+    else
+        fail "Jackett repair: configure.sh restores a dropped FlareSolverr URL through the API"
+        tail -20 "$log"
+    fi
+    url=$(
+        dind_python <<'PY' | tr -d '\r\n'
+import json
+
+with open("config/jackett/Jackett/ServerConfig.json", encoding="utf-8-sig") as fh:
+    print(json.load(fh).get("FlareSolverrUrl") or "")
+PY
+    )
+    assert_eq "http://flaresolverr:8191" "$url" "Jackett repair: the restored FlareSolverr URL is saved"
+
+    # After the restart, the indexer list must come from an authenticated
+    # session: every fixture indexer is found as already configured.
+    if grep -q 'not available in Jackett' "$log"; then
+        fail "Jackett repair: no indexer is reported not available after the restart" \
+            "$(sed -r 's/\x1b\[[0-9;]*m//g' "$log" | grep 'not available in Jackett' | head -3 | tr '\n' ' ')"
+    else
+        pass "Jackett repair: no indexer is reported not available after the restart"
+    fi
+    ids_raw=$(jackett_fixture_indexer_ids)
+    case "$ids_raw" in
+        ERR:* | "")
+            fail "Jackett repair: indexer fixture (config.yml in DinD) readable" "${ids_raw:-no output}"
+            return 0
+            ;;
+        NONE)
+            skip "Jackett repair: fixture indexers found after the restart" "fixture config.yml lists no indexers"
+            return 0
+            ;;
+    esac
+    for idx in $ids_raw; do
+        grep -qF "$idx already configured" "$log" || missing="${missing:+$missing, }$idx"
+    done
+    if [[ -z "$missing" ]]; then
+        pass "Jackett repair: every fixture indexer is found configured after the restart"
+    else
+        fail "Jackett repair: every fixture indexer is found configured after the restart" "not found: $missing"
+    fi
+}
