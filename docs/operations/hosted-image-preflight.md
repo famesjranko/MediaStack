@@ -46,9 +46,10 @@ run. The phase-2 plan records this as `authority: phase-1`, and the verifier
 accepts phase-1 evidence only for a single-candidate combination. When no
 candidate passes, the plan records `authority: none` and nothing is published.
 
-A qualifying job has a nonempty assertion population and no failed or skipped
-assertions. If phase 2 fails, the run publishes nothing. The status report names
-the failure.
+A qualifying job has a nonempty assertion population, no failed or skipped
+assertions, complete disk measurements and sufficient
+[disk headroom](#runner-disk). If phase 2 fails, the run publishes nothing. The
+status report names the failure.
 
 Phase 1 runs one job for each candidate and required scenario. A data-owning
 service requires three scenarios. A selection of five data-owning candidates
@@ -71,7 +72,7 @@ The pipeline has these boundaries:
 3. The read-only selection job and the read-only verifier check each plan hash
    and validate result data, exact-digest receipts, source/run identity,
    architecture, actual companion and fixture references, image inspections,
-   pass/skip counts and resource fields. The verifier recomputes the selection
+   pass/skip counts, resource fields and disk headroom. The verifier recomputes the selection
    from the phase-1 results and refuses a stale or different phase-2 plan. It
    writes a selective lock only after every authorizing result qualifies.
 4. A separate publisher runs only on the default branch. It revalidates the
@@ -150,6 +151,8 @@ for each drifted service:
 
 - proposed in PR #N;
 - failed in phase 1 or phase 2, with links to the run and its artifacts;
+- undecided because the runner disk headroom was exhausted in phase 1 or
+  phase 2. This is a runner problem, not an image result;
 - failed final verification, when the image jobs passed but the verifier
   refused the evidence;
 - held, with the reason from the compatibility hold list;
@@ -174,9 +177,9 @@ Artifacts are retained for 14 days:
   `p2-<scenario>`.
 - `preflight-accepted`: the proposed lock, combined receipts and PR description.
 
-The result records elapsed seconds and disk growth before DinD cleanup. Disk
-growth is an end-of-run measurement, not peak usage. Raw `.env`, databases,
-service configuration and container environment dumps are never exported.
+The result records elapsed seconds and the disk measurements in
+[Runner disk](#runner-disk). Raw `.env`, databases, service configuration and
+container environment dumps are never exported.
 Logs mask the fixture password, credential assignments and long generated values.
 Missing or malformed artifacts prevent publication. A job killed before it can
 write evidence also prevents publication; the disposable VM provides cleanup.
@@ -207,6 +210,56 @@ separately for the default-branch publisher trial. Publication failures
 remain visible in the publisher job. The candidate tests do not gain write
 permissions to work around a repository restriction.
 
+## Runner disk
+
+A cold scenario can fill most of the free disk of a hosted runner. GitHub
+documents about 14 GB of free SSD space for these runners. A full disk must not
+look like an image failure. Each image job runs on its own VM, so the disk need
+of a job does not change with the number of candidates.
+
+Before DinD starts, each image job runs `tests/preflight/free-runner-disk.sh`.
+The script removes preinstalled toolchains that MediaStack does not use: the
+Android SDK, .NET, GHC and GHCup, the CodeQL bundle and Swift. It also removes
+all preinstalled Docker images. The job keeps docker, python3, git, curl and
+apt. The step summary records the free bytes on the filesystem of the Docker
+data root before and after the cleanup. The script refuses to run outside
+GitHub Actions.
+
+During the scenario, the runner reads the free space of the Docker data root
+filesystem every 2 seconds. DinD keeps its inner Docker data in a volume under
+this root. `result.json` records these fields:
+
+| Field | Meaning |
+|---|---|
+| `disk_free_start_bytes` | Free bytes when the scenario starts, after the cleanup |
+| `disk_peak_growth_bytes` | The largest growth that a sample saw |
+| `disk_growth_bytes` | Growth at the end of the run, before DinD is removed |
+| `disk_samples` | The number of samples |
+| `disk_error` | Null, or the reason that the sampler could not measure the run |
+| `runner_error` | Null, or the headroom failure below |
+
+Samples are 2 seconds apart, so a shorter spike can stay unseen. If the sampler
+cannot measure the whole run, it writes `disk_error` and no numbers. The
+selection job and the verifier refuse a result that has a `disk_error` or that
+lacks a disk field.
+
+If the free space at the peak is less than 2 GiB, the job fails with
+`runner disk headroom exhausted`, followed by the free bytes and the minimum.
+This rule applies also when the scenario failed, because a full disk can cause
+the scenario failure. The runner removes DinD before it writes `result.json`, so
+that it can write the result after the disk was full. The selection job and the
+verifier apply the same rule to the numbers in each result. Such a job decides
+nothing:
+
+- Its candidate does not pass, and it is not recorded as failed.
+- The selection plan records it under `runner_failed`.
+- The status report marks the candidate as undecided. For a failed phase 2, the
+  status job reads the phase-2 results as data to find this case.
+- A phase-1 runner problem does not cause the publisher to close an open PR. A
+  phase-2 runner problem does, because the publisher does not read the phase-2
+  results of a failed phase 2. It treats every candidate of that combination as
+  refused.
+
 ## First cold hosted measurement
 
 [Run 40524452417](https://github.com/famesjranko/MediaStack/actions/runs/40524452417)
@@ -221,8 +274,7 @@ disabled; the verifier produced a selective lock artifact for review.
 
 These are end-of-run measurements for one candidate combination on hosted
 Ubuntu 24.04. They do not establish peak disk use or a general runtime bound.
-These measurements cover one candidate combination. Scheduled publication has
-the additional gates described above.
+Scheduled publication has the additional gates described above.
 
 ## Default-branch publisher trial
 
@@ -236,3 +288,24 @@ set passed the pinned secret scan. Only qBittorrent's lock row changed.
 The trial exposed the CI handoff defect: its manually dispatched CI passed all
 seven jobs but did not satisfy the PR ruleset. The PR-triggered run was waiting
 for approval. The operator approval step above replaces that redundant dispatch.
+
+## Isolation trial
+
+[Run 40645429539](https://github.com/famesjranko/MediaStack/actions/runs/40645429539)
+ran on 2026-10-28, before the disk cleanup and the peak measurement existed. It
+ran 9 image jobs, and the complete run took 30 minutes.
+
+| Measurement | Value |
+|---|---|
+| Image jobs | 9 |
+| Failed/skipped assertions | 0/0 in every job |
+| Seconds per job | 249 to 352 |
+| End-of-run disk growth per job | 10.9 GB to 13.1 GB |
+| Largest end-of-run growth | `upgrade-path`: 13,055,971,328 bytes |
+| Other scenarios, largest growth | `fresh-install`: 12.5 GB; `install-e2e`: 11.1 GB |
+
+The largest end-of-run growth is close to the documented 14 GB of free space,
+and the peak can be larger. This trial is the reason for the
+[runner disk](#runner-disk) cleanup and headroom rule. Before scheduled
+acceptance is enabled, a hosted run must measure the peak and the space that the
+cleanup frees.

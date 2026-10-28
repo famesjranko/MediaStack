@@ -88,6 +88,9 @@ def select(args: argparse.Namespace) -> None:
         "",
         "Failed phase 1: " + (", ".join(selection["failed"]) or "none"),
         "",
+        "Runner disk headroom exhausted, not an image result: "
+        + (", ".join(selection["runner_failed"]) or "none"),
+        "",
         "Authorizing evidence: " + selection["authority"],
         "",
         "Jobs: " + (", ".join(j["id"] for j in selection["jobs"]) or "none"),
@@ -124,12 +127,19 @@ def run_context(args: argparse.Namespace) -> dict[str, str]:
 
 def report(args: argparse.Namespace) -> None:
     from preflight.status import render
+    from preflight.verify import job_failures
 
     plan = checked(args.plan, args, args.hash)
     selection = checked(args.selection, args, args.selection_hash) if args.selection_hash else None
     jobs = {"combine": args.combined, "verify": args.verified, "publish": args.publish_result}
     publication = {"outcome": args.outcome, "pr": args.pr, "reason": args.reason}
-    print(render(plan, selection, jobs, publication, run_context(args)), end="")
+    runner: frozenset[str] = frozenset()
+    if selection and args.combined == "failure" and args.results:
+        # Phase-2 results are read as data only, so that a full runner disk does
+        # not read as an image failure. They never change the lock.
+        failed, undecided = job_failures(selection, args.results)
+        runner = frozenset(undecided.keys() - failed.keys())
+    print(render(plan, selection, jobs, publication, run_context(args), runner), end="")
 
 
 def abort(args: argparse.Namespace) -> None:
@@ -166,6 +176,7 @@ def parse() -> argparse.Namespace:
     decision.add_argument("--proposed", type=pathlib.Path)
     status = command("report")
     status.add_argument("--selection", type=pathlib.Path)
+    status.add_argument("--results", type=pathlib.Path)
     for flag in (
         "--selection-hash",
         "--combined",

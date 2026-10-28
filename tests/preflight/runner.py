@@ -6,14 +6,16 @@ import json
 import os
 import pathlib
 import re
-import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
-from .model import ROOT, canonical, effective, fingerprint
+from .model import ROOT, canonical, effective, fingerprint, headroom_error
+
+SAMPLE_SECONDS = 2.0
 
 
 def docker(*args: str) -> str:
@@ -73,6 +75,67 @@ def evidence(name: str, output: pathlib.Path) -> None:
     (output / "services.log").write_text(sanitize(logs))
 
 
+def data_root() -> str:
+    """The host filesystem that DinD fills: its /var/lib/docker volume lives under this root."""
+    return docker("info", "--format", "{{.DockerRootDir}}").strip()
+
+
+class DiskSampler:
+    """Record the least free space on one filesystem while a scenario runs.
+
+    End-of-run growth hides the peak, because scenarios remove images and
+    containers before they end. A sampler that cannot measure the whole run
+    reports an error and no numbers, so its result never qualifies.
+    """
+
+    def __init__(self, locate: Callable[[], str]) -> None:
+        self.error: str | None = None
+        self.samples = self.start = self.least = self.last = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        try:
+            self.path = locate()
+            self.start = self._sample()
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            self.error = "disk sampler could not start: " + sanitize(str(exc))
+            return
+        self._thread.start()
+
+    def _sample(self) -> int:
+        stat = os.statvfs(self.path)
+        self.last = stat.f_bavail * stat.f_frsize
+        self.least = min(self.least, self.last) if self.samples else self.last
+        self.samples += 1
+        return self.last
+
+    def _loop(self) -> None:
+        while not self._stop.wait(SAMPLE_SECONDS):
+            try:
+                self._sample()
+            except OSError as exc:
+                self.error = "disk sampler stopped: " + sanitize(str(exc))
+                return
+
+    def finish(self) -> dict[str, Any]:
+        """Stop sampling and return the result fields, including end-of-run growth."""
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join()
+        if self.error is None:
+            try:
+                self._sample()
+            except OSError as exc:
+                self.error = "disk sampler stopped: " + sanitize(str(exc))
+        measured = self.error is None
+        return {
+            "disk_error": self.error,
+            "disk_samples": self.samples,
+            "disk_free_start_bytes": self.start if measured else None,
+            "disk_peak_growth_bytes": max(0, self.start - self.least) if measured else None,
+            "disk_growth_bytes": max(0, self.start - self.last) if measured else None,
+        }
+
+
 def run_with_deadline(child_env: dict[str, str], scenario: str, log: Any) -> int:
     process = subprocess.Popen(
         ["bash", "tests/run.sh", "--no-cache", scenario],
@@ -123,7 +186,6 @@ def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
             "MS_TEST_TORZNAB_IMAGE": plan["fixtures"]["torznab"],
         }
     )
-    start, free = time.monotonic(), shutil.disk_usage(ROOT).free
     result: dict[str, Any] = {
         "schema": 1,
         "plan": fingerprint(plan),
@@ -139,34 +201,55 @@ def execute(plan: dict[str, Any], job_id: str, output: pathlib.Path) -> None:
         "skips": 0,
         "evidence_error": None,
     }
+    start, sampler = time.monotonic(), DiskSampler(data_root)
     with tempfile.TemporaryFile(mode="w+") as log:
         try:
             result["rc"] = run_with_deadline(child_env, scenario, log)
         finally:
-            log.seek(0)
-            text = sanitize(log.read())
-            (output / "scenario.log").write_text(text)
-            for key, marker in (("passes", "PASS"), ("failures", "FAIL"), ("skips", "SKIP")):
-                result[key] = len(re.findall(r"^  \[" + marker + r"\] ", text, re.M))
-            try:
-                evidence(name, output)
-            except (OSError, ValueError, subprocess.SubprocessError) as exc:
-                result["evidence_error"] = sanitize(str(exc))
-            result["elapsed_seconds"] = round(time.monotonic() - start)
-            result["disk_growth_bytes"] = max(0, free - shutil.disk_usage(ROOT).free)
-            (output / "result.json").write_bytes(canonical(result))
-            subprocess.run(
-                ["docker", "rm", "-fv", name], capture_output=True, timeout=60, check=False
-            )
+            text = record(result, name, output, log, sampler, start)
     print(json.dumps(result, indent=2))
+    if result["runner_error"]:
+        print(text[-12000:])
+        raise ValueError(
+            f"{job_id}: {result['runner_error']}; this is a runner problem, not an image result"
+        )
     if (
         result["rc"]
         or result["failures"]
         or result["skips"]
         or not result["passes"]
         or result["evidence_error"]
+        or result["disk_error"]
     ):
         print(text[-12000:])
         raise ValueError(
             f"{job_id} did not produce complete passing evidence; inspect its artifact"
         )
+
+
+def record(
+    result: dict[str, Any],
+    name: str,
+    output: pathlib.Path,
+    log: Any,
+    sampler: DiskSampler,
+    start: float,
+) -> str:
+    """Complete the result from the log, the DinD state and the disk samples."""
+    log.seek(0)
+    text = sanitize(log.read())
+    for key, marker in (("passes", "PASS"), ("failures", "FAIL"), ("skips", "SKIP")):
+        result[key] = len(re.findall(r"^  \[" + marker + r"\] ", text, re.M))
+    try:
+        evidence(name, output)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        result["evidence_error"] = sanitize(str(exc))
+    result["elapsed_seconds"] = round(time.monotonic() - start)
+    result.update(sampler.finish())
+    result["runner_error"] = headroom_error(result)
+    # Remove DinD before writing the log and result: on a full disk those writes
+    # would fail, and the job would read as an image failure.
+    subprocess.run(["docker", "rm", "-fv", name], capture_output=True, timeout=60, check=False)
+    (output / "scenario.log").write_text(text)
+    (output / "result.json").write_bytes(canonical(result))
+    return text

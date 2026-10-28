@@ -30,6 +30,9 @@ FIXTURES = {
     "challtestsrv": "ghcr.io/letsencrypt/pebble-challtestsrv:latest",
     "torznab": "python:3.12-alpine",
 }
+# Free space that a job must keep at its peak. Below this, a failure can come
+# from the runner disk and not from an image, so the job decides nothing.
+HEADROOM_BYTES = 2 * 1024**3
 
 
 def canonical(value: Any) -> bytes:
@@ -44,6 +47,17 @@ def load_json(path: pathlib.Path) -> Any:
     if path.is_symlink() or path.stat().st_size > 2_000_000:
         raise ValueError(f"invalid evidence file: {path.name}")
     return json.loads(path.read_text())
+
+
+def headroom_error(result: dict[str, Any]) -> str | None:
+    """Name the bytes when a job's peak disk use left less than HEADROOM_BYTES free."""
+    start, peak = result.get("disk_free_start_bytes"), result.get("disk_peak_growth_bytes")
+    if type(start) is not int or type(peak) is not int or start - peak >= HEADROOM_BYTES:
+        return None
+    return (
+        f"runner disk headroom exhausted: {start - peak} bytes free at peak, "
+        f"below the {HEADROOM_BYTES}-byte minimum"
+    )
 
 
 def source_sha() -> str:
@@ -154,9 +168,15 @@ def build_plan(
 
 
 def combination_plan(
-    parent: dict[str, Any], passed: list[str], failed: dict[str, list[str]]
+    parent: dict[str, Any],
+    passed: list[str],
+    failed: dict[str, list[str]],
+    runner: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     """Phase 2: freeze the combination of every candidate that passed phase 1.
+
+    ``failed`` holds image failures. ``runner`` holds jobs that the runner could
+    not decide, for example on a full disk; those candidates neither pass nor fail.
 
     ``authority`` names the only evidence that may change the lock. A single
     passing candidate already ran as this exact combination in phase 1, so it
@@ -173,6 +193,7 @@ def combination_plan(
             "fixtures": parent["fixtures"],
             "pending": parent["pending"],
             "failed": failed,
+            "runner_failed": runner or {},
             "authority": authority,
         }
     )
