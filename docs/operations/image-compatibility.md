@@ -8,7 +8,7 @@ the required scenarios. A combined token requires every named scenario.
 |---|---|---|---|
 | Jellyfin | User authentication, libraries, network and encoding settings, fail2ban log format | `upgrade-path`: user IDs, library IDs/paths and API credentials; reconfiguration preserves user changes. `install-e2e`: menu Update and Revert keep users, libraries and keys | Real media playback, watch history and GPU execution need separate proofs |
 | Sonarr, Radarr | Profiles, root folders, download clients, deterministic Torznab registration/search, seed policy, Jellyfin connection | `upgrade-path`: stored IDs, profiles, indexers and download clients survive; deliberate profile change remains. `install-e2e`: the same state survives menu Update and Revert | Series/movie history and actual imports need separate proofs |
-| Jackett | Generated credentials and nonempty Torznab capabilities through the local tracker | `upgrade-path`: Arr search still works through the existing indexer after update. `install-e2e`: menu Update and Revert keep the Arr indexers | Public trackers and Cloudflare availability remain external |
+| Jackett | Generated credentials and nonempty Torznab capabilities through the local tracker | `upgrade-path`: Arr search still works through the existing indexer after update. `install-e2e`: after each menu Update and Revert, Jackett serves the fixture indexer's Torznab categories through its stored API key, and the Arr indexer entries do not change | Public trackers and Cloudflare availability remain external |
 | qBittorrent | Login, paths/categories and authenticated Arr connection | `upgrade-path`: preferences/categories and credentials; the launcher's Update and Revert functions with a stopped-config restore point. `install-e2e`: the same moves through the menu | Download history, torrent resume data and interrupted restores need separate proofs |
 | Seerr | Jellyfin login, permissions, quotas, stored Arr settings and live connection tests | `upgrade-path`: existing Arr settings and API key; reconfiguration and connection checks. `install-e2e`: Arr settings survive menu Update and Revert | Existing request history needs a separate migration fixture |
 | Homepage | Generated dashboard and service widgets; `install-e2e` also through the real installer | Configuration is generated from the same source after updates | Browser rendering and widget interactions have narrower coverage |
@@ -52,19 +52,37 @@ stub Docker, Compose, image pulls or configurators.
 3. The scenario saves user state through the service APIs, with a deliberate
    change to a Sonarr profile and an extra Jellyfin user. It then runs the
    installer again and chooses **Use existing install**, then **Continue without
-   changes**. No container can be recreated or restarted. `.env`, `config.yml`,
-   the override and the install record must not change. No drift warning, pull,
-   start or configuration run is permitted, and the saved state must not change.
-4. `./mediastack` runs under a pseudo-terminal and opens **Manage updates (status,
+   changes**. This branch runs no configurator. No container can be recreated or
+   restarted. `.env`, `config.yml`, the override and the install record must not
+   change. No pull, start or configuration run is permitted, and the saved state
+   must not change.
+4. The user then runs `./scripts/configure.sh`, which applies `config.yml` to
+   every service on the installed images. It must warn that the changed Sonarr
+   profile differs from `config.yml` and leave the change in place. It must keep
+   the Uptime Kuma monitors and create none. The saved state must not change. The
+   run must exit 0 with no error and no warning in its summary.
+5. `./mediastack` runs under a pseudo-terminal and opens **Manage updates (status,
    per-service updates)**. The table must show **Update available** for each
    data-owning service that has a different candidate, and **Up to date** for the
    others. For each service with a candidate, the scenario uses **Update a
    service**, then **Revert a service to its installed image**, then **Update a
    service** again. After each move, the service must be healthy on the expected
    digest. No other container can be recreated, and the saved state must not
-   change.
-5. The `fresh-install` service checks then run on the final stack, with LAN-state
-   checks in place of the HTTPS checks.
+   change. Jackett must serve the Torznab categories of the fixture indexer.
+6. The `fresh-install` service checks then run on the final stack, with LAN-state
+   checks in place of the HTTPS checks. The Jellyfin encoding and `config.yml`
+   drift checks of `fresh-install` also run.
+
+These `fresh-install` checks do not run in `install-e2e`:
+
+- NPM, fail2ban and rate-limit checks. A LAN-only install does not start NPM or
+  fail2ban.
+- The port check. It needs NPM to answer on ports 80 and 443.
+- The install-digest check. `fresh-install` runs the digest recorder itself.
+  `install-e2e` checks instead that the installer recorded the digest of each
+  service.
+- The Uptime Kuma re-run check. It runs `configure.sh` as root. `install-e2e`
+  makes the same check on the user's `configure.sh` run in step 4.
 
 Candidate digests come from `MS_TEST_IMAGE_OVERRIDES`. The installer's override
 pulls them for every service except Jellyfin, Sonarr, Radarr, Jackett, qBittorrent

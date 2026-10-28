@@ -207,7 +207,9 @@ ie2e_pty() { # <name> <command> <steps-json>; transcript in /tmp/ie2e-<name>.pla
 
 ie2e_transcript() { dind_exec "cat /tmp/ie2e-$1.plain.log"; }
 
-# Re-running the installer on a finished install must change nothing.
+# Re-running the installer and choosing "Continue without changes" must change
+# nothing. That branch returns before any configurator runs, so it cannot show
+# drift handling; ie2e_reconfigure tests that.
 ie2e_rerun() {
     local before_c before_f log
     ie2e_state seed && ie2e_state save || {
@@ -216,35 +218,129 @@ ie2e_rerun() {
     }
     before_c=$(ie2e_containers)
     before_f=$(ie2e_state_files)
+    # Empty snapshots would make the unchanged-state comparisons below pass on nothing.
+    if [[ "$before_c" == *"/jellyfin "* && "$(grep -cE '^[0-9a-f]{64} ' <<<"$before_f")" == 4 ]]; then
+        pass 'install-e2e: container and state-file snapshots before the re-run are complete'
+    else
+        fail 'install-e2e: container and state-file snapshots before the re-run are complete' \
+            "containers: $(grep -c . <<<"$before_c"); state files: $before_f"
+        return 1
+    fi
     if ie2e_pty rerun 'DEMO=1 ./setup.sh --full' '[
         {"choose": {"prompt": "What would you like to do\\?", "item": "^Use existing install$"}, "timeout": 300},
         {"choose": {"prompt": "What would you like to do\\?", "item": "^Continue without changes$"}}]'; then
-        pass 'install-e2e: installer re-run on the finished install exits 0'
+        pass 'install-e2e: installer re-run with "Continue without changes" exits 0'
     else
-        fail 'install-e2e: installer re-run on the finished install exits 0'
+        fail 'install-e2e: installer re-run with "Continue without changes" exits 0'
         ie2e_transcript rerun | tail -40
         return 1
     fi
     log=$(ie2e_transcript rerun)
-    assert_contains "$log" 'Continuing with existing install. No changes made.' 'install-e2e: re-run keeps the existing install'
-    if grep -qE '\[ERROR\]|differs from config.yml|Pulling|Starting MediaStack|Running auto-configuration' <<<"$log"; then
-        fail 'install-e2e: re-run pulls, starts and reconfigures nothing and reports no drift' \
-            "$(grep -E '\[ERROR\]|differs|Pulling|Starting|auto-configuration' <<<"$log" | head -3)"
+    assert_contains "$log" 'Continuing with existing install. No changes made.' \
+        'install-e2e: "Continue without changes" keeps the existing install'
+    if grep -qE '\[ERROR\]|Pulling|Starting MediaStack|Running auto-configuration' <<<"$log"; then
+        fail 'install-e2e: "Continue without changes" pulls, starts and configures nothing' \
+            "$(grep -E '\[ERROR\]|Pulling|Starting|auto-configuration' <<<"$log" | head -3)"
     else
-        pass 'install-e2e: re-run pulls, starts and reconfigures nothing and reports no drift'
+        pass 'install-e2e: "Continue without changes" pulls, starts and configures nothing'
     fi
     local changed
     changed=$(ie2e_changed "$before_c" "$(ie2e_containers)")
     if [[ -z "$changed" ]]; then
-        pass 'install-e2e: re-run recreates and restarts no container'
+        pass 'install-e2e: "Continue without changes" recreates and restarts no container'
     else
-        fail 'install-e2e: re-run recreates and restarts no container' "changed: $changed"
+        fail 'install-e2e: "Continue without changes" recreates and restarts no container' "changed: $changed"
     fi
-    assert_eq "$before_f" "$(ie2e_state_files)" 'install-e2e: re-run leaves .env, config.yml, override and install record unchanged'
+    assert_eq "$before_f" "$(ie2e_state_files)" \
+        'install-e2e: "Continue without changes" leaves .env, config.yml, override and install record unchanged'
     if ie2e_state check; then
-        pass 'install-e2e: re-run keeps users, settings and the deliberate profile change'
+        pass 'install-e2e: "Continue without changes" leaves saved user state unchanged'
     else
-        fail 'install-e2e: re-run keeps users, settings and the deliberate profile change'
+        fail 'install-e2e: "Continue without changes" leaves saved user state unchanged'
+    fi
+}
+
+# upgradeAllowed of Sonarr's "1080p Balanced" profile: True, False, or an error.
+ie2e_sonarr_upgrade_allowed() {
+    dind_exec "curl -sf -H 'X-Api-Key: $(env_get SONARR_API_KEY | tr -d '\r\n')' http://127.0.0.1:8989/api/v3/qualityprofile" \
+        | python3 -I -c '
+import json, sys
+try:
+    profiles = json.load(sys.stdin)
+    print(next(p for p in profiles if p["name"] == "1080p Balanced")["upgradeAllowed"])
+except Exception as exc:
+    print(f"unreadable: {exc!r}")
+'
+}
+
+# Re-apply configuration the way a user does on a finished install:
+# ./scripts/configure.sh (docs/guide/using-the-menu.md, Direct CLI usage). Every
+# configurator runs against the live services, on the installed images. The
+# Sonarr profile change from ie2e_rerun must be reported as drift and kept:
+# re-runs warn on drift and never auto-reconcile.
+ie2e_reconfigure() {
+    local log=/tmp/ie2e-configure.log plain before errors
+    before=$(ie2e_sonarr_upgrade_allowed)
+    if [[ "$before" != True && "$before" != False ]]; then
+        fail 'install-e2e: Sonarr profile is readable before the configure.sh re-run' "$before"
+        return 1
+    fi
+    if ie2e_user_exec './scripts/configure.sh </dev/null' >"$log" 2>&1; then
+        pass 'install-e2e: ./scripts/configure.sh re-run on the finished install exits 0'
+    else
+        fail 'install-e2e: ./scripts/configure.sh re-run on the finished install exits 0'
+        tail -40 "$log"
+        return 1
+    fi
+    plain=$(sed -r 's/\x1b\[[0-9;]*m//g' "$log")
+    if grep -qE "^\[WARN\] Sonarr quality profile '1080p Balanced' differs from config.yml:.*upgrade_allowed" <<<"$plain"; then
+        pass 'install-e2e: configure.sh re-run warns that the changed Sonarr profile differs from config.yml'
+    else
+        fail 'install-e2e: configure.sh re-run warns that the changed Sonarr profile differs from config.yml' \
+            "$(grep -i 'quality profile' <<<"$plain" | head -3)"
+    fi
+    assert_eq "$before" "$(ie2e_sonarr_upgrade_allowed)" \
+        'install-e2e: configure.sh re-run leaves the changed Sonarr profile as the user set it'
+    if ie2e_state check; then
+        pass 'install-e2e: configure.sh re-run keeps saved user state'
+    else
+        fail 'install-e2e: configure.sh re-run keeps saved user state'
+    fi
+    # fresh-install's assert_uptime_kuma_idempotent, on this user run: as root
+    # it cannot reuse the error file that this user's run left in /tmp.
+    if grep -qE '^\[SKIP\] Monitors already exist' <<<"$plain" && ! grep -qE '^\[OK\] Monitors created' <<<"$plain"; then
+        pass 'install-e2e: configure.sh re-run keeps the Uptime Kuma monitors and creates none'
+    else
+        fail 'install-e2e: configure.sh re-run keeps the Uptime Kuma monitors and creates none' \
+            "$(grep -E 'Monitors|Uptime Kuma' <<<"$plain" | head -3)"
+    fi
+    # A drift notice does not count as a warning (log_drift), so the summary
+    # must still report a clean run.
+    errors=$(grep -E '^\[ERROR\]' <<<"$plain")
+    if [[ -z "$errors" ]] && grep -q 'Auto-configuration complete!' <<<"$plain"; then
+        pass 'install-e2e: configure.sh re-run reports no error and no warning'
+    else
+        fail 'install-e2e: configure.sh re-run reports no error and no warning' \
+            "${errors:-$(grep -E '^\[WARN\]|Auto-configuration complete' <<<"$plain" | grep -v 'differs from config.yml' | head -5)}"
+    fi
+}
+
+# Jackett serves the fixture indexer's Torznab caps through its stored API key,
+# the request Sonarr and Radarr make. The saved user state holds only the Arr
+# rows, so it cannot show that Jackett itself still works.
+ie2e_assert_jackett_caps() { # <label>
+    local key verdict attempt
+    key=$(api_get_jackett_key)
+    # A recreated Jackett can report healthy shortly before it loads indexers.
+    for attempt in 1 2 3 4 5 6; do
+        verdict=$(jackett_indexer_caps mstest "$key")
+        [[ "$verdict" == ok ]] && break
+        ((attempt < 6)) && sleep 5
+    done
+    if [[ "$verdict" == ok ]]; then
+        pass "install-e2e: Jackett serves Torznab categories after $1"
+    else
+        fail "install-e2e: Jackett serves Torznab categories after $1" "verdict=$verdict key=${key:0:8}"
     fi
 }
 
@@ -303,6 +399,7 @@ ie2e_move() { # <update|revert> <service> <expected image ref> <label>
     else
         fail "install-e2e: user state survives $label $svc"
     fi
+    ie2e_assert_jackett_caps "$label $svc"
 }
 
 ie2e_menu_updates() {
@@ -350,9 +447,15 @@ ie2e_run() {
     }
     ie2e_install || return 1
     ie2e_rerun || return 1
+    ie2e_reconfigure || return 1
     ie2e_menu_updates || return 1
     # Every default-profile service, now on its candidate, is still configured.
     fresh_install_assert_services "$IE2E_SETUP_LOG" "$IE2E_PASSWORD" lan
+    # The fresh-install checks that need no remote state. They change Jellyfin
+    # encoding and config.yml, so they run last. Omitted checks and the reasons
+    # are in docs/operations/image-compatibility.md.
+    assert_jellyfin_encoding
+    assert_drift_regression
 }
 
 run_scenario() {

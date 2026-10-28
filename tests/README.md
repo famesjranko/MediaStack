@@ -250,7 +250,11 @@ If you add new assertions that detect a known `configure.sh` bug, use `skip` wit
 The per-service part of that block is `fresh_install_assert_services` in
 `tests/scenarios/fresh-install.sh`. `install-e2e` calls it in `lan` mode, where the
 ready-state HTTPS checks become the LAN-state checks from
-`tests/assertions/remote-gating.sh`.
+`tests/assertions/remote-gating.sh`. `install-e2e` also runs the Jellyfin
+encoding and drift checks. It omits the NPM, fail2ban, rate-limit and port checks,
+because a LAN-only install starts no NPM or fail2ban. It replaces the install-digest
+check with a check of the installer's own record, and the Uptime Kuma re-run check
+with the same check on its user-run `configure.sh`.
 
 ### `install-e2e` — real installer and Manage updates menu
 
@@ -268,12 +272,18 @@ override, and pulls, starts and configures the LAN stack. The scenario then:
 2. runs the installer again through `tests/lib/wizard_pty.py` (**Use existing
    install**, **Continue without changes**) and requires unchanged containers
    (ID and start time), `.env`, `config.yml`, override and install record, and
-   unchanged user state (`tests/fixtures/upgrade_state.py`);
-3. opens `./mediastack` → **Manage updates** in a pseudo-terminal, checks each
+   unchanged user state (`tests/fixtures/upgrade_state.py`). This branch runs no
+   configurator;
+3. runs `./scripts/configure.sh` as the user and requires a drift warning for the
+   deliberately changed Sonarr profile, that change still in place, no new Uptime
+   Kuma monitors, unchanged user state, and a clean summary;
+4. opens `./mediastack` → **Manage updates** in a pseudo-terminal, checks each
    data-owning service's status, and moves each one that has a different
    candidate through **Update a service**, **Revert a service to its installed
-   image** and **Update a service** again;
-4. runs the `fresh-install` service checks in `lan` mode on the final stack.
+   image** and **Update a service** again. After each move it also requires Torznab
+   categories from Jackett through the stored API key;
+5. runs the `fresh-install` service checks in `lan` mode on the final stack, then
+   the Jellyfin encoding and drift checks.
 
 The PTY steps choose menu items by label (`"choose"` steps), because item numbers
 change with install state. Jellyfin, Sonarr, Radarr, Jackett, qBittorrent and Seerr

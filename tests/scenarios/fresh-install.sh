@@ -234,7 +234,9 @@ PYEOF
 # where the proxy-trust and external-URL checks become LAN-state checks.
 fresh_install_assert_services() {
     local configure_log="$1" jf_password="$2"
-    ASSERT_REMOTE_STATE="$3"
+    # Read by the per-service assertions this function calls (bash dynamic
+    # scope); local, so the mode cannot leak into later checks.
+    local ASSERT_REMOTE_STATE="$3"
     case "$ASSERT_REMOTE_STATE" in
         ready | lan) ;;
         *)

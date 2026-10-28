@@ -52,6 +52,17 @@ else:
 '
 }
 
+# Torznab caps verdict of one indexer through an API key: "ok",
+# "no-categories", "no-caps" or "request-failed".
+jackett_indexer_caps() { # <indexer id> <api key>
+    local caps_resp
+    if ! caps_resp=$(dind_exec "curl -sf --max-time 15 'http://localhost:9117/api/v2.0/indexers/$1/results/torznab/?apikey=$2&t=caps'" 2>/dev/null); then
+        echo request-failed
+        return 0
+    fi
+    printf '%s' "$caps_resp" | jackett_caps_report
+}
+
 assert_jackett_configured() {
     local jackett_key
     jackett_key=$(api_get_jackett_key)
@@ -76,13 +87,9 @@ assert_jackett_configured() {
     local indexers=()
     read -r -a indexers <<<"$ids_raw"
 
-    local caps_ok=0 caps_fail=0 caps_fail_names="" idx caps_resp verdict
+    local caps_ok=0 caps_fail=0 caps_fail_names="" idx verdict
     for idx in "${indexers[@]}"; do
-        if ! caps_resp=$(dind_exec "curl -sf --max-time 15 'http://localhost:9117/api/v2.0/indexers/${idx}/results/torznab/?apikey=${jackett_key}&t=caps'" 2>/dev/null); then
-            verdict="request-failed"
-        else
-            verdict=$(printf '%s' "$caps_resp" | jackett_caps_report)
-        fi
+        verdict=$(jackett_indexer_caps "$idx" "$jackett_key")
         if [[ "$verdict" == "ok" ]]; then
             caps_ok=$((caps_ok + 1))
         else
