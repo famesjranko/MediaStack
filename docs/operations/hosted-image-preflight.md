@@ -86,10 +86,13 @@ write evidence also prevents publication; the disposable VM provides cleanup.
 
 These are functional drift tests of trusted upstream images. Privileged DinD
 is not a security sandbox for a malicious image. A runner escape could corrupt
-its evidence or write Actions caches used by other runs, despite a read-only
-repository token. Python tool versions are pinned, but their shared CI caches
-are not independently hash-verified by this repository. Review this boundary
-before enabling unattended image tests.
+its evidence or write Actions cache entries, despite a read-only repository
+token. A forged cache entry can overwrite any workspace file when a later job
+restores it, including the scripts that verify tool hashes. For this reason, no
+workflow in this repository restores an Actions cache, and each CI job fetches
+and verifies its pinned tools. `tests/unit/workflow-caches.sh` enforces this.
+Corrupted evidence can still reach a proposed PR. The maintainer review of that
+PR remains the final gate.
 
 On a feature branch, use `publish=false` to measure the proposed workflow. The
 publisher cannot run there. Review cold time/disk results and the artifact logs
