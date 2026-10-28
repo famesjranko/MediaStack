@@ -1,72 +1,221 @@
 #!/usr/bin/env bash
 # Pin authentication responses observed from the real accepted images, and
-# prove that the saved snapshot holds no secret value.
+# prove that the saved snapshot holds no secret value and that a lost or
+# changed record changes it.
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/tests/lib/assert.sh"
 scenario_begin upgrade-state
 if python3 -I - "$REPO_ROOT" <<'PY'; then
+import copy
 import importlib.util
 import io
+import json
 import pathlib
 import sys
+import tempfile
 import unittest
+import urllib.error
+import urllib.parse
 
 spec = importlib.util.spec_from_file_location("upgrade_state", pathlib.Path(sys.argv.pop()) / "tests/fixtures/upgrade_state.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-module.read_env = lambda: {"JELLYFIN_ADMIN_USER": "admin", "JELLYFIN_ADMIN_PASSWORD": "fixture", "JELLYFIN_API_KEY": "test-key"}
+module.time.sleep = lambda seconds: None
+
+# install-e2e's real admin password: it holds a quote and a backslash.
+PASSWORD = 'Fr3sh!$tack"with\\special#chars^&*'
+ENV = {
+    "JELLYFIN_ADMIN_USER": "admin",
+    "JELLYFIN_ADMIN_PASSWORD": PASSWORD,
+    "JELLYFIN_API_KEY": "test-key",
+    "SONARR_API_KEY": "s" * 32,
+    "RADARR_API_KEY": "r" * 32,
+    "SEERR_API_KEY": "e" * 32,
+}
+module.read_env = lambda: dict(ENV)
+JACKETT_KEY = "j" * 32
+JACKETT_FILE = pathlib.Path(tempfile.mkdtemp()) / "ServerConfig.json"
+module.JACKETT_CONFIG = JACKETT_FILE
+
+
+def arr(app, trigger):
+    jellyfin = {"id": 1, "name": "Jellyfin", "implementation": "MediaBrowser", "onGrab": False, trigger: True,
+                "fields": [{"name": "host", "value": "jellyfin"}, {"name": "port", "value": 8096},
+                           {"name": "apiKey", "value": "********"}, {"name": "updateLibrary", "value": True}]}
+    port = module.PORTS[app]
+    return {
+        f"{port}/api/v3/system/status": {"version": "4"},
+        f"{port}/api/v3/rootfolder": [{"id": 1, "path": f"/data/{app}", "freeSpace": 1}],
+        f"{port}/api/v3/qualityprofile": [{"id": 1, "name": "1080p Balanced", "upgradeAllowed": True}],
+        f"{port}/api/v3/downloadclient": [{"id": 1, "name": "qBittorrent"}],
+        f"{port}/api/v3/indexer": [{"id": 1, "name": "mstest"}],
+        f"{port}/api/v3/notification": [jellyfin, {"id": 2, "implementation": "Email"}],
+    }
+
+
+# What the accepted images answer, keyed by port and path. A test changes one entry.
+SERVICES = {
+    **arr("sonarr", "onImportComplete"),
+    **arr("radarr", "onDownload"),
+    "8096/System/Info": {"Version": "10"},
+    "8096/Users/AuthenticateByName": {"AccessToken": "t" * 32, "User": {"Policy": {"IsAdministrator": True}}},
+    "8096/Users": [{"Id": "u1", "Name": "admin", "Policy": {"IsAdministrator": True, "IsDisabled": False}},
+                   {"Id": "u2", "Name": module.FIXTURE_USER, "Policy": {"IsAdministrator": False, "IsDisabled": False}}],
+    "8096/Library/VirtualFolders": [{"Name": "Movies", "Locations": ["/data/movies"], "ItemId": "l1", "CollectionType": "movies"}],
+    "8096/Auth/Keys": {"Items": [{"AppName": "MediaStack", "AccessToken": "test-key"},
+                                 {"AppName": module.FIXTURE_KEY_APP, "AccessToken": "k" * 32}]},
+    "5055/api/v1/auth/me": {"id": 1},
+    "5055/api/v1/user": {"results": [{"id": 1, "email": "admin@mediastack.test", "permissions": 2},
+                                     {"id": 2, "email": module.FIXTURE_SEERR_EMAIL, "permissions": 32}]},
+    "5055/api/v1/settings/main": {"apiKey": "m" * 32, "defaultPermissions": 32,
+                                  "defaultQuotas": {"movie": {"quotaLimit": 0}, "tv": {"quotaLimit": 0}}},
+    "5055/api/v1/settings/sonarr": [{"id": 0, "apiKey": "s" * 32}],
+    "5055/api/v1/settings/radarr": [{"id": 0, "apiKey": "r" * 32}],
+    "9117/UI/Dashboard": b"",
+    "9117/api/v2.0/server/config": {"api_key": JACKETT_KEY, "password": "a1b2", "flaresolverrurl": "http://flaresolverr:8191"},
+    "9117/api/v2.0/indexers": [{"id": "mstest", "configured": True}],
+    "9117/api/v2.0/indexers/all/results/torznab/api": b"<caps></caps>",
+    "8080/api/v2/torrents/categories": {"tv": {"savePath": "/data/torrents/tv"}},
+    "8080/api/v2/app/preferences": {**{name: 1 for name in module.QBT_PREFERENCES},
+                                    "bypass_auth_subnet_whitelist": "172.28.0.22/32\n172.28.0.23/32"},
+}
 
 
 class Response(io.BytesIO):
-    def __init__(self, status, body):
+    def __init__(self, status, body, url=""):
         super().__init__(body)
-        self.status = status
+        self.status, self.url = status, url
+
+    def geturl(self):
+        return self.url
+
+
+class Late:
+    """A route that gives its answers in order, for a service that starts late."""
+
+    def __init__(self, answers):
+        self.answers = answers
 
 
 class Opener:
-    def __init__(self, status=200, body=b"Ok."):
+    """Answers as the accepted images do. An int route is an HTTP error status;
+    a (url, body) route is a redirect."""
+
+    def __init__(self, status=200, body=b"Ok.", routes=None):
         self.status, self.body, self.request = status, body, None
+        self.routes = routes or {}
 
     def open(self, request, *args, **kwargs):
         self.request = request
-        if isinstance(request, str) and request.endswith("/auth/login"):
+        url = request if isinstance(request, str) else request.full_url
+        if url.endswith("/auth/login"):
             return Response(self.status, self.body)
-        return Response(200, b'{"fixture":true}')
+        parts = urllib.parse.urlsplit(url)
+        answer = self.routes.get(f"{parts.port}{parts.path}", {"fixture": True})
+        if isinstance(answer, Late):
+            answer = answer.answers.pop(0)
+        if isinstance(answer, int):
+            raise urllib.error.HTTPError(url, answer, "Unauthorized", {}, None)
+        if isinstance(answer, tuple):
+            url, answer = answer
+        return Response(200, answer if isinstance(answer, bytes) else json.dumps(answer).encode(), url)
+
+
+def client(**changes):
+    JACKETT_FILE.write_text(json.dumps({"APIKey": changes.pop("jackett_file_key", JACKETT_KEY)}))
+    routes = copy.deepcopy(SERVICES)
+    routes.update(changes)
+    state = module.StateClient()
+    state.http = Opener(routes=routes)
+    state.session = lambda: state.http
+    return state
 
 
 class AuthContract(unittest.TestCase):
     def test_no_content_login_is_supported(self):
         # Given the accepted qBittorrent image returns its documented 204 login.
-        client = module.StateClient()
-        client.http = Opener(204, b"")
+        state = module.StateClient()
+        state.http = Opener(204, b"")
 
         # When the migration probe reads authenticated preferences.
-        actual = client.qbt("app/preferences")
+        actual = state.qbt("app/preferences")
 
         # Then it accepts the successful login and reads the response.
         self.assertEqual(actual, {"fixture": True})
 
     def test_false_success_body_is_rejected(self):
         # Given qBittorrent rejects credentials with HTTP 200 and Fails.
-        client = module.StateClient()
-        client.http = Opener(200, b"Fails.")
+        state = module.StateClient()
+        state.http = Opener(200, b"Fails.")
 
         # When the migration probe attempts an authenticated read.
         # Then an HTTP success code cannot hide authentication failure.
         with self.assertRaisesRegex(ValueError, "login failed"):
-            client.qbt("app/preferences")
+            state.qbt("app/preferences")
 
     def test_jellyfin_uses_product_authorization(self):
         # Given a configured Jellyfin integration key.
-        client = module.StateClient()
-        client.http = Opener()
+        state = module.StateClient()
+        state.http = Opener()
 
         # When the probe reads administrative user state.
-        client.call("jellyfin", "/Users")
+        state.call("jellyfin", "/Users")
 
         # Then it sends the authorization form that the accepted image supports.
-        self.assertEqual(client.http.request.get_header("Authorization"), 'MediaBrowser Token="test-key"')
+        self.assertEqual(state.http.request.get_header("Authorization"), 'MediaBrowser Token="test-key"')
+
+    def test_one_rejected_credential_names_only_its_service(self):
+        probes = {
+            "sonarr": "8989/api/v3/system/status",
+            "radarr": "7878/api/v3/system/status",
+            "jellyfin": "8096/System/Info",
+            "jellyfin admin": "8096/Users/AuthenticateByName",
+            "seerr": "5055/api/v1/auth/me",
+            "jackett": "9117/api/v2.0/indexers/all/results/torznab/api",
+            "qbittorrent": "8080/api/v2/torrents/categories",
+        }
+        for service, route in probes.items():
+            with self.subTest(service=service):
+                # Given every service accepts its stored credential except one, which answers 401.
+                state = client(**{route: 401})
+
+                # When the probes authenticate before a snapshot.
+                with self.assertRaises(SystemExit) as raised:
+                    state.authenticate()
+
+                # Then the failure names that service and no other.
+                failed = str(raised.exception).split(": ", 1)[1]
+                self.assertEqual([entry.split(" (")[0] for entry in failed.split(", ")], [service])
+
+    def test_jellyfin_login_without_admin_rights_fails(self):
+        # Given the shared admin password logs in to a Jellyfin user that is not an administrator.
+        state = client(**mutated("8096/Users/AuthenticateByName", lambda a: a["User"]["Policy"].update(IsAdministrator=False)))
+
+        # When the probes authenticate before a snapshot.
+        # Then the Jellyfin admin login is named as failed.
+        with self.assertRaisesRegex(SystemExit, r"jellyfin admin \(Jellyfin admin login is not an administrator\)"):
+            state.authenticate()
+
+    def test_jackett_login_redirect_is_a_failed_login(self):
+        # Given Jackett answers the config read with its login page, as it does for a wrong password.
+        state = client(**{"9117/api/v2.0/server/config": ("http://127.0.0.1:9117/UI/Login?ReturnUrl=x", b"<html>")})
+
+        # When the snapshot reads Jackett's admin state.
+        # Then the redirect counts as a failed admin login.
+        with self.assertRaisesRegex(ValueError, "Jackett admin login failed"):
+            state.jackett_state({})
+
+    def test_jackett_caps_wait_for_late_readiness(self):
+        # Given Jackett answers 503 twice before it serves its Torznab caps.
+        late = Late([503, 503, b"<caps></caps>"])
+        state = client(**{"9117/api/v2.0/indexers/all/results/torznab/api": late})
+
+        # When the Jackett probe runs.
+        state.jackett_torznab()
+
+        # Then it retried until the caps arrived.
+        self.assertEqual(late.answers, [])
 
 
 class SecretFreeSnapshot(unittest.TestCase):
@@ -93,11 +242,142 @@ class SecretFreeSnapshot(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "secret value"):
             module.assert_no_secrets(module.redact(state, {key}), {key})
 
+    def test_password_with_json_escapes_inside_a_url_is_refused(self):
+        # Given a URL that embeds the install-e2e password, which JSON escapes.
+        state = {"seerr/sonarr": [{"url": f"http://admin:{PASSWORD}@sonarr:8989"}]}
+
+        # When the snapshot is checked before it is written.
+        # Then the guard still finds the password.
+        with self.assertRaisesRegex(ValueError, "secret value"):
+            module.assert_no_secrets(state, {PASSWORD})
+
+    def test_secret_dict_key_is_redacted(self):
+        # Given a record keyed by an API key.
+        key = "a" * 32
+        state = {"jellyfin/sessions": {key: "MediaStack"}}
+
+        # When the snapshot is redacted.
+        actual = module.redact(state, {key})
+
+        # Then the key is replaced by its fingerprint.
+        self.assertEqual(actual, {"jellyfin/sessions": {"sha256:" + module.fingerprint(key): "MediaStack"}})
+        # And the guard refuses the same key left unredacted.
+        with self.assertRaisesRegex(ValueError, "secret value"):
+            module.assert_no_secrets(state, {key})
+
+    def test_fingerprint_is_sixty_four_bits_of_sha256(self):
+        # Given a credential value.
+        value = "a" * 32
+
+        # When it is fingerprinted.
+        actual = module.fingerprint(value)
+
+        # Then the fingerprint is the first 16 hex digits of its SHA-256.
+        self.assertEqual(actual, "3ba3f5f43b926026")
+        # And an absent credential has no fingerprint.
+        self.assertIsNone(module.fingerprint(""))
+
+    def test_admin_password_is_a_secret(self):
+        # Given an .env with the shared admin password.
+        # When the state client starts.
+        state = module.StateClient()
+
+        # Then the password is one of the values the snapshot must never hold.
+        self.assertIn(PASSWORD, state.secrets)
+
+    def test_snapshot_holds_fingerprints_and_no_secret(self):
+        # Given every service answers with its stored credentials.
+        state = client()
+
+        # When the snapshot is taken.
+        actual = state.snapshot()
+
+        # Then each .env API key is recorded as its fingerprint.
+        expected = {name: module.fingerprint(value) for name, value in ENV.items() if name.endswith("_API_KEY")}
+        self.assertEqual(actual["credentials"], expected)
+        # And the Jellyfin connection is recorded without its masked apiKey.
+        self.assertNotIn("apiKey", actual["sonarr/notification"][0])
+        # And no API key or token reaches the snapshot text.
+        self.assertFalse([s for s in state.secrets if s != PASSWORD and s in json.dumps(actual)])
+
+
+def mutated(route, change):
+    answer = copy.deepcopy(SERVICES[route])
+    change(answer)
+    return {route: answer}
+
+
+class ComparisonContract(unittest.TestCase):
+    def test_each_recorded_value_is_compared(self):
+        users = "5055/api/v1/user"
+        cases = {
+            "seerr/users": mutated(users, lambda a: a["results"][1].update(id=3, email="other@mediastack.test")),
+            "jellyfin/api-keys": mutated("8096/Auth/Keys", lambda a: a["Items"][1].update(AccessToken="n" * 32)),
+            "jellyfin/users": mutated("8096/Users", lambda a: a[1]["Policy"].update(IsDisabled=True)),
+            "seerr/defaults": mutated("5055/api/v1/settings/main", lambda a: a["defaultQuotas"]["tv"].update(quotaLimit=5)),
+            "sonarr/notification": mutated("8989/api/v3/notification", lambda a: a[0]["fields"][0].update(value="jf")),
+            "jackett/indexers": {"9117/api/v2.0/indexers": []},
+            "jackett/flaresolverr": mutated("9117/api/v2.0/server/config", lambda a: a.update(flaresolverrurl="")),
+            "jackett/admin": {"jackett_file_key": "x" * 32},
+            "qbittorrent/preferences": mutated("8080/api/v2/app/preferences", lambda a: a.update(upnp=0)),
+        }
+        before = client().snapshot()
+        for key, change in cases.items():
+            with self.subTest(key=key):
+                # Given a saved snapshot and one recorded value changed by an upgrade.
+                state = client(**change)
+
+                # When the state is compared again.
+                actual = module.changed_keys(before, state.snapshot())
+
+                # Then the comparison names that value.
+                self.assertEqual(actual, [key])
+
+    def test_same_whitelist_in_another_form_is_unchanged(self):
+        # Given a saved snapshot, and an image that stores the same whitelist comma-separated.
+        before = client().snapshot()
+        state = client(**mutated("8080/api/v2/app/preferences",
+                                 lambda a: a.update(bypass_auth_subnet_whitelist="172.28.0.23/32, 172.28.0.22/32")))
+
+        # When the state is compared again.
+        actual = module.changed_keys(before, state.snapshot())
+
+        # Then the comparison reports no change.
+        self.assertEqual(actual, [])
+
+    def test_key_missing_after_upgrade_is_a_change(self):
+        # Given a saved snapshot and a later one that lacks one of its keys.
+        before = {"seerr/users": [], "jackett/admin": {"api_key_set": True}}
+        after = {"seerr/users": []}
+
+        # When the two are compared.
+        actual = module.changed_keys(before, after)
+
+        # Then the missing key is reported.
+        self.assertEqual(actual, ["jackett/admin"])
+
+    def test_baseline_without_configured_state_is_refused(self):
+        cases = {
+            "seerr/api-key": mutated("5055/api/v1/settings/main", lambda a: a.update(apiKey="")),
+            "jackett/admin": mutated("9117/api/v2.0/server/config", lambda a: a.update(password="")),
+            "jellyfin/libraries": {"8096/Library/VirtualFolders": []},
+            "radarr/notification": mutated("7878/api/v3/notification", lambda a: a.pop(0)),
+        }
+        for key, change in cases.items():
+            with self.subTest(key=key):
+                # Given an install that lacks one value MediaStack configures.
+                state = client(**change)
+
+                # When a snapshot is taken.
+                # Then it is refused and names the missing value.
+                with self.assertRaisesRegex(ValueError, f"configured state is missing: {key}$"):
+                    state.snapshot()
+
 
 unittest.main()
 PY
-    pass 'upgrade-state authentication and secret handling follow their contracts'
+    pass 'upgrade-state authentication, comparison and secret handling follow their contracts'
 else
-    fail 'upgrade-state authentication and secret handling follow their contracts'
+    fail 'upgrade-state authentication, comparison and secret handling follow their contracts'
 fi
 summary

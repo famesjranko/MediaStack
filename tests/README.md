@@ -1047,7 +1047,8 @@ runs the real update script against exact candidate overrides. It checks persist
 safe reconfiguration and the launcher's qBittorrent Update/Revert functions. Every
 state check also requires each stored credential to authenticate on the running
 image, and the saved state (`tests/fixtures/upgrade_state.py`) holds fingerprints and
-booleans, never a secret. Before the update the scenario proves that its comparison
+booleans, never a secret. The first check after the update runs before reconfiguration,
+which would apply some values again. Before the update the scenario proves that its comparison
 detects a changed profile, a deleted Seerr user and a deleted Jellyfin API key. After
 the update it runs the Stage 1 Jellyfin probes and the post-Revert login checks again
 on the candidate. At least one digest must differ from the accepted lock. See the

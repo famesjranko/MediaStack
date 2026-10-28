@@ -6,11 +6,11 @@ the required scenarios. A combined token requires every named scenario.
 
 | Service | Fresh configuration and behavior | Existing-install evidence | Additional boundary |
 |---|---|---|---|
-| Jellyfin | User authentication, libraries, network and encoding settings, fail2ban log format | `upgrade-path`: user IDs, library IDs and paths, and each API key (name and fingerprint). The stored MediaStack key must stay listed and must authenticate. The Stage 1 `/Users` probe and the post-Revert login checks run again on the candidate. Reconfiguration keeps user changes. `install-e2e`: the same saved state survives menu Update and Revert | Real media playback, watch history and GPU execution need separate proofs |
-| Sonarr, Radarr | Profiles, root folders, download clients, deterministic Torznab registration/search, seed policy, Jellyfin connection | `upgrade-path`: stored IDs, profiles, indexers and download clients survive; deliberate profile change remains. `install-e2e`: the same state survives menu Update and Revert | Series/movie history and actual imports need separate proofs |
-| Jackett | Generated credentials and nonempty Torznab capabilities through the local tracker | `upgrade-path`: the stored admin password still logs in, the admin password stays set, and the API key stays the same as the key in `ServerConfig.json`. Torznab answers with the stored key. Arr search still works through the existing indexer after the update. `install-e2e`: the same saved state survives menu Update and Revert. After each move, Jackett serves the fixture indexer's Torznab categories through its stored API key, and the Arr indexer entries do not change | Public trackers and Cloudflare availability remain external |
-| qBittorrent | Login, paths/categories and authenticated Arr connection | `upgrade-path`: preferences and categories, and login with the stored credentials; the launcher's Update and Revert functions with a stopped-config restore point. `install-e2e`: the same saved state survives the same moves through the menu | Download history, torrent resume data and interrupted restores need separate proofs |
-| Seerr | Jellyfin login, permissions, quotas, stored Arr settings and live connection tests | `upgrade-path`: user IDs, emails and permissions, the Seerr API key (set, and the same fingerprint), authentication with the stored key, and the stored Arr settings; reconfiguration and connection checks. `install-e2e`: the same saved state survives menu Update and Revert | Existing request history needs a separate migration fixture |
+| Jellyfin | User authentication, libraries, network and encoding settings, fail2ban log format | `upgrade-path`: user IDs and names with their administrator and disabled flags, library IDs and paths, and each API key (name and fingerprint). The stored MediaStack key must stay listed and must authenticate. The shared admin password must log in as an administrator. The Stage 1 `/Users` probe and the post-Revert login checks run again on the candidate. Reconfiguration keeps user changes. `install-e2e`: the same saved state survives menu Update and Revert | Real media playback, watch history and GPU execution need separate proofs |
+| Sonarr, Radarr | Profiles, root folders, download clients, deterministic Torznab registration/search, seed policy, Jellyfin connection | `upgrade-path`: stored IDs, profiles, indexers and download clients survive; deliberate profile change remains. The Jellyfin connection keeps its ID, host, port, SSL, library-update and notify settings, and its triggers. `install-e2e`: the same state survives menu Update and Revert | Series/movie history and actual imports need separate proofs |
+| Jackett | Generated credentials and nonempty Torznab capabilities through the local tracker | `upgrade-path`: the stored admin password still logs in, the admin password stays set, and the API key stays the same as the key in `ServerConfig.json`. The configured indexer IDs and the FlareSolverr URL stay the same. Torznab answers with the stored key. Arr search still works through the existing indexer after the update. `install-e2e`: the same saved state survives menu Update and Revert. After each move, Jackett serves the fixture indexer's Torznab categories through its stored API key, and the Arr indexer entries do not change | Public trackers and Cloudflare availability remain external |
+| qBittorrent | Login, paths/categories and authenticated Arr connection | `upgrade-path`: categories, and every preference that the configurator writes (paths, ratio and seeding limits, queue, connection and speed limits, listen port, UPnP, preallocation, the auth whitelist and the WebUI user name), and login with the stored credentials; the launcher's Update and Revert functions with a stopped-config restore point. `install-e2e`: the same saved state survives the same moves through the menu | Download history, torrent resume data and interrupted restores need separate proofs |
+| Seerr | Jellyfin login, permissions, quotas, stored Arr settings and live connection tests | `upgrade-path`: user IDs, emails and permissions, the Seerr API key (set, and the same fingerprint), authentication with the stored key, default permissions and quotas, and the stored Arr settings; reconfiguration and connection checks. `install-e2e`: the same saved state survives menu Update and Revert | Existing request history needs a separate migration fixture |
 | Homepage | Generated dashboard and service widgets; `install-e2e` also through the real installer | Configuration is generated from the same source after updates | Browser rendering and widget interactions have narrower coverage |
 | Beszel, beszel-agent | Hub login, agent registration, Docker stats through socket-proxy; `install-e2e` also through the real installer | No dedicated stored-history migration fixture | Hub upgrades require operator review |
 | Portainer | Admin login, local endpoint and API key; `install-e2e` also through the real installer | No dedicated database migration fixture | Operator review required for existing-install compatibility |
@@ -29,9 +29,16 @@ the required scenarios. A combined token requires every named scenario.
 through the real `scripts/update.sh`. It checks saved user state before and after
 reconfiguration. Each check also requires that every stored credential
 authenticates on the running image: the Sonarr, Radarr, Jellyfin and Seerr API
-keys in `.env`, the Jackett API key in `ServerConfig.json`, and the qBittorrent
-login. The saved state holds no secret value. A credential is recorded only as a
-fingerprint or as a boolean.
+keys in `.env`, the Jackett API key in `ServerConfig.json`, the qBittorrent
+login, and the Jellyfin login with the shared admin password. The saved state
+holds no secret value. A credential is recorded only as a fingerprint or as a
+boolean. A check also fails when the Seerr API key, the Jackett admin password,
+a Jellyfin library or the Sonarr or Radarr Jellyfin connection is missing,
+because a comparison with an empty value proves nothing.
+
+The first check after the update runs before `configure.sh`. Reconfiguration
+applies `config.yml` again, for example the Seerr default permissions and quotas,
+so a later check cannot show a value that the update lost.
 
 Before the update, the scenario tests its own comparison. It changes a Sonarr
 profile, and the comparison must report the change. It then deletes a Seerr user
@@ -42,6 +49,29 @@ launcher's qBittorrent Update and Revert functions directly, without the menu.
 The scenario reports fresh configuration checks and migration checks separately.
 Both installations use the current MediaStack configurators. This tests image
 changes, not configurator changes from an older MediaStack release.
+
+### Known limits of the saved state
+
+The saved state does not hold the values below. The state comparison cannot
+find an upgrade that changes them.
+
+- Jellyfin system, encoding and network configuration, and library options.
+  `upgrade-path` does not read them after the update. In `install-e2e`, the
+  final `fresh-install` checks read the system, encoding and network
+  configuration and the library paths again after the menu moves.
+- Seerr Jellyfin and network settings. The Seerr assertions read them again in
+  `upgrade-path` after reconfiguration, and in `install-e2e` after the menu
+  moves.
+- Sonarr and Radarr naming, custom formats, quality definitions and media
+  management. The Sonarr and Radarr assertions read media management, custom
+  formats and quality definitions again in `upgrade-path`, but only after
+  reconfiguration, which can apply them again. Nothing reads the naming
+  settings again.
+- Secret fields that a service returns masked or never returns: the API key in
+  the Sonarr and Radarr Jellyfin connection and indexers, and the qBittorrent
+  WebUI password. The comparison sees only the mask. The qBittorrent and Jackett
+  logins with the shared admin password, and the Arr search through the existing
+  indexer, test some of these values indirectly.
 
 ## API contracts and other touchpoints
 
