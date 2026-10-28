@@ -19,10 +19,11 @@ endpoints:
   - {id: startup-remote-access, method: POST, path: /Startup/RemoteAccess, sends: [EnableRemoteAccess, EnableAutomaticPortMapping], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: startup-complete, method: POST, path: /Startup/Complete, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: authenticate-by-name, method: POST, path: /Users/AuthenticateByName, sends: [Username, Pw], reads: [AccessToken, User.Id], callers: [scripts/services/jellyfin/main.sh, scripts/lib/http.sh, scripts/lib/health.sh]}
-  # Only the installer's final probe (Install MediaStack) calls it. A data
-  # service installs on its accepted image and gets the candidate later
-  # through Manage updates, so no image job calls it on the candidate.
-  - {id: users-list, method: GET, path: /Users, unexercised: launcher-menu, sends: [], reads: [], callers: [scripts/setup/stage1/install.sh]}
+  # Only the installer's final probe (Install MediaStack) calls it. In
+  # install-e2e a data service installs on its accepted image and gets the
+  # candidate later through Manage updates, so the call never reaches the
+  # candidate.
+  - {id: users-list, method: GET, path: /Users, unexercised: accepted-image-only, sends: [], reads: [], callers: [scripts/setup/stage1/install.sh]}
   - {id: api-keys-list, method: GET, path: /Auth/Keys, sends: [], reads: ["Items[].AccessToken", "Items[].AppName"], callers: [scripts/services/jellyfin/wizard.sh]}
   - {id: api-key-create, method: POST, path: /Auth/Keys, sends: [app], reads: [], callers: [scripts/services/jellyfin/wizard.sh]}
   - {id: virtual-folders-list, method: GET, path: /Library/VirtualFolders, sends: [], reads: [Name, "Locations[]"], callers: [scripts/services/jellyfin/wizard.sh]}

@@ -4,9 +4,9 @@ auth: {type: header, name: X-Api-Key}
 openapi: https://raw.githubusercontent.com/Sonarr/Sonarr/develop/src/Sonarr.Api.V3/openapi.json
 endpoints:
   - {id: readiness, method: GET, base_path: /, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh, scripts/lib/arr/connections.sh]}
-  # Only the check after a Manage updates Revert calls it, and a Revert runs
-  # the installed image, never the candidate.
-  - {id: system-status, method: GET, path: /system/status, unexercised: launcher-menu, sends: [], reads: [], callers: [scripts/lib/update-restore.sh]}
+  # Only the check after a Manage updates Revert calls it. In install-e2e the
+  # Revert runs the accepted image, never the candidate.
+  - {id: system-status, method: GET, path: /system/status, unexercised: accepted-image-only, sends: [], reads: [], callers: [scripts/lib/update-restore.sh]}
   - {id: config-naming-get, method: GET, path: /config/naming, sends: [], reads: [renameEpisodes, replaceIllegalCharacters, multiEpisodeStyle], callers: [scripts/services/sonarr/main.sh]}
   - {id: config-naming-update, method: PUT, path: /config/naming, sends: [renameEpisodes, replaceIllegalCharacters, multiEpisodeStyle, standardEpisodeFormat, dailyEpisodeFormat, animeEpisodeFormat, seriesFolderFormat, seasonFolderFormat], reads: [renameEpisodes, replaceIllegalCharacters, multiEpisodeStyle], callers: [scripts/services/sonarr/main.sh]}
   - {id: language-profile-list, method: GET, path: /languageprofile, sends: [], reads: [id, name], callers: [scripts/services/seerr/arr-connect.sh]}

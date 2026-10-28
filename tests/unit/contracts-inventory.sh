@@ -149,6 +149,29 @@ class SchemaContract(unittest.TestCase):
         # Then the entry is refused by name.
         self.assertEqual(errors, ["probe probe: path may hold only whole {id} or {key} segments"])
 
+    def test_accepted_image_only_is_a_valid_reason(self):
+        # Given an entry exempted as called only on the accepted image.
+        contract = endpoint(unexercised="accepted-image-only")
+
+        # When the contract is validated.
+        errors = inventory.validate("probe", contract)
+
+        # Then the entry is accepted.
+        self.assertEqual(errors, [])
+
+    def test_unknown_unexercised_reason_is_refused(self):
+        # Given an entry exempted for a reason outside the closed set.
+        contract = endpoint(unexercised="accepted-image")
+
+        # When the contract is validated.
+        errors = inventory.validate("probe", contract)
+
+        # Then the entry is refused by name with the closed set of reasons.
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(errors[0].startswith(
+            "probe probe: unexercised must be one of ['accepted-image-only', 'gpu',"))
+        self.assertTrue(errors[0].endswith("got 'accepted-image'"))
+
 
 class FingerprintContract(unittest.TestCase):
     def test_fingerprint_covers_file_content(self):
