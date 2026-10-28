@@ -204,7 +204,7 @@ Each visible root entry, and the mechanism that needs it there.
 | `mediastack` | The entry point, `AGENTS.md:20` |
 | `setup.sh` | Install entry point driven by `mediastack`, `AGENTS.md:20` |
 | `pyproject.toml` | ruff and mypy discover it at the root; `tests/check.sh:191` |
-| `tools.toml` | CI cache key `hashFiles('tools.toml')`, `.github/workflows/ci.yml:48` |
+| `tools.toml` | Read as `$REPO_ROOT/tools.toml`, `tests/lint.sh:35` |
 | `config/` | Compose bind-mount source for live service config, `scripts/setup/checks/destroy.sh:15` |
 | `docs/` | Docs tree; index is `docs/README.md`, `tests/unit/docs.sh:65` |
 | `scripts/` | Modules sourced by `mediastack` and `setup.sh`, `AGENTS.md:34` |

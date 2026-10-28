@@ -25,6 +25,13 @@ concurrency:
 permissions:
   contents: read
 
+# No job restores an Actions cache. The image preflight runs privileged DinD on
+# main, and a runner escape there could forge a main-scoped cache entry that
+# every branch restores. actions/cache extracts with tar -P, so a forged entry
+# can overwrite any workspace file, including the scripts that verify tool
+# hashes. Each job fetches and sha256-verifies its pinned tools instead.
+# tests/unit/workflow-caches.sh enforces this.
+
 jobs:
   # Keep engine failures attributable to lint. The runner analyses one root
   # per process, and the dispatchers bound their imports, rather than relying
@@ -40,15 +47,9 @@ jobs:
           # The line-cap and naming ratchets baseline on the merge-base with
           # main; a depth-1 clone has no main, and the gates fail closed on it.
           fetch-depth: 0
-      # tests/lint.sh fetches and sha256-verifies the binary itself on a cold
-      # cache, so this cache is a speed optimization, never a trust shortcut.
-      # Without it the runner's older native shellcheck fails the version gate
-      # and the sweep pays a docker pull instead.
-      - name: Cache the shellcheck pin
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.cache/mediastack-tools
-          key: shellcheck-${{ hashFiles('tools.toml') }}
+      # tests/lint.sh fetches and sha256-verifies the pinned binary. Without
+      # it the runner's older native shellcheck fails the version gate and the
+      # sweep pays a docker pull instead.
       - name: Install the shellcheck pin
         run: ./tests/lint.sh install
       - name: ShellCheck sweep
@@ -63,8 +64,7 @@ jobs:
         run: ./tests/check.sh dead-code
 
   # The pinned shfmt (tools.toml [shfmt]) over every tracked shell file.
-  # tests/format.sh fetches and sha256-verifies the binary itself on a cold
-  # cache, so this cache is a speed optimization, never a trust shortcut.
+  # tests/format.sh fetches and sha256-verifies the binary itself.
   format-shfmt:
     name: format-shfmt
     runs-on: ubuntu-latest
@@ -73,11 +73,6 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - name: Cache the shfmt pin
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.cache/mediastack-tools
-          key: shfmt-${{ hashFiles('tools.toml') }}
       - name: tests/check.sh shfmt
         run: ./tests/check.sh shfmt
 
@@ -94,13 +89,13 @@ jobs:
           # The C901 ratchet baselines on the merge-base with main; a depth-1
           # clone has no main, and the gate fails closed on it.
           fetch-depth: 0
-      - name: Install uv and cache tools
+      # setup-uv caches by default on hosted runners; see the no-cache note
+      # at the top of this file.
+      - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.31"
-          enable-cache: true
-          cache-dependency-glob: tools.toml
-          cache-suffix: ruff
+          enable-cache: false
       # The retry wraps ONLY the download-only warm-up, so PyPI transience is
       # absorbed here while a genuine lint failure in the check step below runs
       # exactly once and reads as exactly what it is.
@@ -128,11 +123,6 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - name: Cache the gitleaks pin
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.cache/mediastack-tools
-          key: gitleaks-${{ hashFiles('tools.toml') }}
       - name: tests/check.sh secrets
         run: ./tests/check.sh secrets
 
@@ -145,19 +135,13 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      # `uv tool run --from mypy==... mypy .` otherwise fetches mypy +
-      # types-PyYAML from PyPI on every run with no cache and no retry, so a
-      # transient PyPI failure reads as an unexplained red gate. setup-uv is
-      # commit-pinned and installs an exact uv version; its cache is keyed on
-      # tools.toml, so a tool pin bump invalidates it automatically. This never
-      # substitutes a fallback mypy — the pinned version still runs.
-      - name: Install uv and cache tools
+      # setup-uv is commit-pinned and installs an exact uv version. Its
+      # default cache stays off; see the no-cache note at the top of this file.
+      - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.31"
-          enable-cache: true
-          cache-dependency-glob: tools.toml
-          cache-suffix: mypy
+          enable-cache: false
       # Same shape as lint-ruff: retry only the download, run the check once.
       - name: Warm the pinned python tools (retried)
         run: |
@@ -200,18 +184,6 @@ jobs:
           # locale guard actually exercises the LC_ALL=C path (otherwise it
           # skips and the regression could slip through).
           sudo locale-gen en_US.UTF-8 || true
-
-      # Pre-warms tests/unit/secret-scan.sh's gitleaks pin so the gate does
-      # not pay its ~22 MB release fetch on every run. install_scanner
-      # (tests/secret-scan.sh) already re-verifies the cached binary's
-      # sha256 against tools.toml on every invocation and re-fetches on any
-      # mismatch, so a stale or poisoned cache entry cannot pass silently —
-      # this is a speed optimization, never a trust shortcut.
-      - name: Cache gitleaks pin
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.cache/mediastack-tools
-          key: gitleaks-${{ hashFiles('tools.toml') }}
 
       - name: tests/check.sh unit
         run: ./tests/check.sh unit

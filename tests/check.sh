@@ -160,8 +160,8 @@ discover_tracked_python() {
     fi
 }
 
-# Single source for the python tool pins: tools.toml. The CI uv caches key on
-# its hash, so a version bump there rotates them. Empty result fails the stage.
+# Single source for the python tool pins: tools.toml. Empty result fails the
+# stage.
 tool_pin() {
     local value
     value=$(awk -v section="[$1]" -v key="$2" '
