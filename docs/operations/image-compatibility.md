@@ -79,9 +79,10 @@ The menu offers Update only when the target digest differs from the running
 digest. A data-owning service without a different candidate therefore stays on
 its accepted image, and the scenario checks only its **Up to date** status. A run
 with no candidate for any of the six (for example, the local battery) does no menu
-move at all. The
-manifest does not yet name `install-e2e` for the six data-owning services, so
-their menu evidence is reported but not required.
+move at all. The manifest names `install-e2e` for all six data-owning services.
+A hosted preflight tests a drifted service, so that service always has a
+different candidate. Its menu Update and Revert are therefore required evidence
+for acceptance.
 
 Out of scope for `install-e2e`:
 

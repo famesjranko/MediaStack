@@ -186,9 +186,9 @@ class HostedEvidence(unittest.TestCase):
         # When their phase-1 jobs are planned.
         jobs = {j["id"]: j for j in plan["jobs"]}
 
-        # Then each candidate runs alone through fresh and existing-install scenarios.
-        self.assertEqual(set(jobs), {"p1-radarr.fresh-install", "p1-radarr.upgrade-path",
-                                     "p1-sonarr.fresh-install", "p1-sonarr.upgrade-path"})
+        # Then each candidate runs alone through fresh, installer and existing-install scenarios.
+        self.assertEqual(set(jobs), {f"p1-{s}.{n}" for s in ("radarr", "sonarr")
+                                     for n in ("fresh-install", "install-e2e", "upgrade-path")})
         refs = effective(plan, jobs["p1-sonarr.upgrade-path"])
         # And the other candidate stays at its accepted digest in that job.
         self.assertEqual(refs["radarr"], plan["accepted"]["radarr"])

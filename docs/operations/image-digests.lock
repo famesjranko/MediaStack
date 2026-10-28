@@ -1,13 +1,13 @@
 # MediaStack tested image digest record v1
 # Update only after the matching local DinD preflight has passed.
 service	image	digest	tested_at_utc	preflight
-jellyfin	jellyfin/jellyfin:latest	sha256:2038fe038ab3876a80f6e7b7e0aef6607b032c7dc0c9b3ad3296d0b2eba3bbb5	2026-10-25T06:18:34Z	scenario:fresh-install+upgrade-path
-sonarr	linuxserver/sonarr:latest	sha256:48e36b608b461273b9dae857725cd0561a127f2c694b687318f6d0c5ce63e5c9	2026-10-25T06:18:34Z	scenario:fresh-install+upgrade-path
-radarr	linuxserver/radarr:latest	sha256:fc0ae3c50f8128b97e84381903ec8d6845c3a569641cb7117c124376cccb57c1	2026-10-22T10:18:13Z	scenario:fresh-install+upgrade-path
-jackett	linuxserver/jackett:latest	sha256:047a28f2493d04a95d5a6bc5670a68c9bce99159e6a9ddf8ff9d564fc0b27bd7	2026-10-25T06:18:34Z	scenario:fresh-install+upgrade-path
-qbittorrent	linuxserver/qbittorrent:latest	sha256:75ecbb1c89ab7b0a21c4bde40b4820e4f1649d2d56d83b91913422155e8d2a5f	2026-10-28T00:55:49Z	scenario:fresh-install+upgrade-path
+jellyfin	jellyfin/jellyfin:latest	sha256:2038fe038ab3876a80f6e7b7e0aef6607b032c7dc0c9b3ad3296d0b2eba3bbb5	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e+upgrade-path
+sonarr	linuxserver/sonarr:latest	sha256:48e36b608b461273b9dae857725cd0561a127f2c694b687318f6d0c5ce63e5c9	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e+upgrade-path
+radarr	linuxserver/radarr:latest	sha256:fc0ae3c50f8128b97e84381903ec8d6845c3a569641cb7117c124376cccb57c1	2026-10-22T10:18:13Z	scenario:fresh-install+install-e2e+upgrade-path
+jackett	linuxserver/jackett:latest	sha256:047a28f2493d04a95d5a6bc5670a68c9bce99159e6a9ddf8ff9d564fc0b27bd7	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e+upgrade-path
+qbittorrent	linuxserver/qbittorrent:latest	sha256:75ecbb1c89ab7b0a21c4bde40b4820e4f1649d2d56d83b91913422155e8d2a5f	2026-10-28T00:55:49Z	scenario:fresh-install+install-e2e+upgrade-path
 flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:c80ae007ce2ccdcd217a12426e4f039ef763ff90738c808d38810c3e59323767	2026-10-20T03:25:34Z	scenario:fresh-install+install-e2e
-seerr	ghcr.io/seerr-team/seerr:latest	sha256:d8fab675b55ad293ded98fd71efcfd46054cbad9746534ae1cc4794a88c0b3be	2026-10-22T10:18:13Z	scenario:fresh-install+upgrade-path
+seerr	ghcr.io/seerr-team/seerr:latest	sha256:d8fab675b55ad293ded98fd71efcfd46054cbad9746534ae1cc4794a88c0b3be	2026-10-22T10:18:13Z	scenario:fresh-install+install-e2e+upgrade-path
 unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:724c702e81727e3d90c42cf2b3d900674203906a6d135ba07416c9a3f9f67fbb	2026-09-07T16:47:56Z	scenario:unpackerr
 bazarr	linuxserver/bazarr:latest	sha256:946dc8c5bb5331418eac60050cf40a63cb8f66ac039841dda493870e3559799c	2026-10-22T10:18:13Z	scenario:bazarr
 homepage	ghcr.io/gethomepage/homepage:latest	sha256:19c5c09184458a41b7b5915e71463a39f36cd33540f41bdbed008791b8182d5f	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e

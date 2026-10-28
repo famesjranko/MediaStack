@@ -340,15 +340,15 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 | fail2ban | latest | stable | scenario:fail2ban-drift | config/fail2ban/ + tests/assertions/fail2ban.sh |
 | flaresolverr | latest | n/a | scenario:fresh-install+install-e2e | healthcheck only (image pulls, container starts, /health passes); no deterministic Cloudflare-solve oracle, see "FlareSolverr — confidence boundary" above |
 | homepage | latest | stable | scenario:fresh-install+install-e2e | scripts/services/homepage/main.sh + tests/assertions/homepage.sh |
-| jackett | latest | stable | scenario:fresh-install+upgrade-path | scripts/services/jackett/main.sh + tests/assertions/jackett.sh |
-| jellyfin | latest | stable | scenario:fresh-install+upgrade-path | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh + fail2ban filter (assert_fail2ban_configured) |
-| seerr | latest | stable | scenario:fresh-install+upgrade-path | scripts/services/seerr/main.sh + tests/assertions/seerr.sh + fail2ban filter (assert_fail2ban_configured) |
+| jackett | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/jackett/main.sh + tests/assertions/jackett.sh |
+| jellyfin | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh + fail2ban filter (assert_fail2ban_configured) |
+| seerr | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/seerr/main.sh + tests/assertions/seerr.sh + fail2ban filter (assert_fail2ban_configured) |
 | npm | major:2 | major-gated | scenario:npm-heal | scripts/services/npm/main.sh + tests/assertions/npm.sh |
 | portainer | latest | stable | scenario:fresh-install+install-e2e | scripts/services/portainer/main.sh + tests/assertions/portainer.sh |
-| qbittorrent | latest | stable | scenario:fresh-install+upgrade-path | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh |
-| radarr | latest | stable | scenario:fresh-install+upgrade-path | scripts/services/radarr/main.sh + tests/assertions/radarr.sh |
+| qbittorrent | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh |
+| radarr | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/radarr/main.sh + tests/assertions/radarr.sh |
 | socket-proxy | major:1 | major-gated | scenario:fresh-install+install-e2e | docker-compose.yml socket-proxy command (per-method -allowGET/-allowPOST regexes, -listenip=127.0.0.1, -allowfrom, host network) + tests/unit/socket-proxy.sh + tests/assertions/socket-proxy.sh (allowed/denied path matrix incl. attach/ws, loopback-only listeners, no route from the mediastack bridge or the host address) + tests/assertions/beszel.sh (stats through the proxy); also run `scenario:autoheal` (restart through the proxy). Upstream's `1` tag holds until a breaking deployment change, but a bump can still change how paths are matched, so re-read the image README |
-| sonarr | latest | stable | scenario:fresh-install+upgrade-path | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh |
+| sonarr | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh |
 | unpackerr | latest | stable | scenario:unpackerr | docker-compose.yml unpackerr environment (UN_SONARR_0_*/UN_RADARR_0_*) + tests/scenarios/unpackerr.sh — proves generated-key/authenticated completed-Radarr-queue → configured torrent-path archive extraction; does not prove a live qBittorrent transfer or Arr import |
 | uptime-kuma | major:2 | major-gated | scenario:fresh-install+install-e2e | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime-kuma.sh |
 | wireguard | major:15 | unstable | scenario:wireguard | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios |
