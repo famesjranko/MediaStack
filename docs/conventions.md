@@ -184,7 +184,7 @@ adding the next gate.
 
 The complete DinD battery (`./tests/check.sh full`, `tests/battery.sh`) is not a required PR
 context — see the CI boundary in
-[`../tests/README.md`](../tests/README.md). Required image scenarios can also run through the manual hosted preflight; see
+[`../tests/README.md`](../tests/README.md). Required image scenarios also run through the weekly or dispatched hosted preflight; see
 [`operations/hosted-image-preflight.md`](operations/hosted-image-preflight.md).
 
 Every derived population in these suites fails closed: a check over an empty

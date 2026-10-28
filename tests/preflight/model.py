@@ -1,4 +1,4 @@
-"""Frozen inputs and strict validation for the manual hosted image preflight."""
+"""Frozen inputs and strict validation for the hosted image preflight."""
 
 from __future__ import annotations
 

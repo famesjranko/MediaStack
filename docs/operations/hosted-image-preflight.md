@@ -1,8 +1,9 @@
-# Manual hosted image preflight
+# Hosted image preflight
 
-The `Image Drift Alert` workflow has an optional image preflight. The weekly
-schedule still runs the lightweight alert only. Expensive image tests and digest
-publication require a manual dispatch. The ordinary PR gate stays independent.
+The `Image Drift Alert` workflow has an image preflight. It runs every week on a
+schedule, one hour after the lightweight drift alert, and it also runs by manual
+dispatch. The ordinary PR gate stays independent. See
+[Weekly schedule](#weekly-schedule) for the scheduled run.
 
 Run a measurement without publication:
 
@@ -24,6 +25,86 @@ WireGuard and FlareSolverr for separate operator review. Their specific gaps are
 listed in the [compatibility matrix](image-compatibility.md). Explicit selection
 does not bypass a hold. Image tag/repository changes and service additions or
 removals require a separately reviewed baseline change.
+
+## Weekly schedule
+
+The workflow has two crons, in UTC. Each Monday:
+
+| Time | Trigger | Jobs that run | Publication |
+|---|---|---|---|
+| 03:17 | cron `17 3 * * 1` | `mode`, `image-drift` (the alert) | None |
+| 04:17 | cron `17 4 * * 1` | `mode` and every `preflight-*` job | Yes, from the default branch |
+| Any time | dispatch, `preflight=false` | `mode`, `image-drift` | None |
+| Any time | dispatch, `preflight=true`, `publish=false` | `mode` and every `preflight-*` job except `preflight-publish` | None |
+| Any time | dispatch, `preflight=true`, `publish=true` | `mode` and every `preflight-*` job; `preflight-publish` only on the default branch | Default branch only |
+
+A scheduled event has no inputs. The `mode` job reads the cron and selects the
+task. The 04:17 cron runs as `preflight=true`, `publish=true` and an empty
+`services` input: every drifted service that is not held. The other jobs read
+the task from the `mode` job, not from the trigger. Only the planner also reads
+the `services` input. A cron that the `mode` job does not know makes the run
+fail, and no other job runs.
+
+Two preflights never run at the same time. All preflights, scheduled or
+dispatched, share the concurrency group `image-preflight`. A preflight that is
+in progress is never cancelled. A new preflight waits until the running one
+ends. GitHub keeps at most one waiting run in a group: a newer waiting
+preflight cancels an older waiting one. Each alert run has a group of its own,
+so an alert never waits for a preflight. The publisher job also has its own
+group, `tested-digests-publisher`. Because preflights do not overlap, that
+group never holds two publishers from different runs; it is a second guard.
+
+The alert at 03:17 runs first. It opens, updates or closes the `image-drift`
+issue. The preflight at 04:17 then comments on that issue. If the alert closed
+the issue because no image drifted, the preflight has no work and writes its
+report to the step summary only.
+
+### What the maintainer does each week
+
+1. Read the newest status comment on the open `image-drift` issue. See
+   [Status report](#status-report).
+2. If the comment names a proposed PR, open the PR with the label
+   `tested-digests`. Review its diff: only the digest record and the README
+   badges change.
+3. Approve the PR's CI run. See [Approve the PR's CI run](#approve-the-prs-ci-run).
+4. When every required check passes, squash-merge the PR.
+5. For a service that failed or is undecided, read the linked run and its
+   artifacts. Leave the service pending, or fix the cause in a separate PR.
+
+If you do not merge the PR, the next scheduled run replaces it with that run's
+tested combination. See [Open-proposal policy](#open-proposal-policy).
+
+### When the publisher refuses
+
+A refusal makes the `preflight-publish` job fail. It changes nothing. There are
+three causes:
+
+| Cause | Status comment and job log | What to do |
+|---|---|---|
+| The default branch advanced during the run | `the publisher did not finish; see the run`. The log says `Default branch advanced; rerun the preflight.` | Nothing is wrong: the lock was tested against an older source. Wait for the next scheduled run, or dispatch a new preflight. Expect this in a week with many merges. |
+| A foreign branch: `chore/tested-images` or its PR is not publisher-owned | `the publisher refused:` and the reason, for example `the rolling branch has a commit that the publisher did not create` | Review the branch. Close its PR and delete the branch. |
+| The last PR from `chore/tested-images` was closed without merging, and the branch remains | `the publisher refused:` and `... closed without merging; delete the branch to re-enable publication` | Delete the branch. |
+
+[Run 40656164330](https://github.com/famesjranko/MediaStack/actions/runs/40656164330)
+shows the first cause. All 14 image jobs passed, but `main` advanced while the
+run was in progress, so the publisher refused.
+
+### Pause the schedule
+
+To pause both crons, disable the workflow. Enable it to resume:
+
+```bash
+gh workflow disable image-drift.yml
+gh workflow enable image-drift.yml
+```
+
+A disabled workflow also refuses a manual dispatch. To stop only the scheduled
+preflight, remove its cron in a reviewed PR. That PR also changes the `mode`
+job, the concurrency group and `tests/unit/hosted-preflight-schedule.sh`.
+
+GitHub disables scheduled workflows in a repository with no activity for 60
+days. This stops both crons. The Actions tab then shows that the workflow is
+disabled. Enable it there, or with `gh workflow enable image-drift.yml`.
 
 ## Isolate, then combine
 
@@ -53,7 +134,7 @@ status report names the failure.
 
 Phase 1 runs one job for each candidate and required scenario. A data-owning
 service requires three scenarios. A selection of five data-owning candidates
-therefore runs fifteen phase-1 jobs, two at a time. Select fewer services to
+therefore runs fifteen phase-1 jobs, four at a time. Select fewer services to
 shorten a run.
 
 ## Contract gate
@@ -118,7 +199,7 @@ The pipeline has these boundaries:
    canonical plan hash is passed through job outputs, independently of image-job
    artifacts.
 2. Disposable hosted Ubuntu VMs run privileged DinD with read-only repository
-   permissions, in phase 1 and in phase 2. At most two jobs of a phase run
+   permissions, in phase 1 and in phase 2. At most four jobs of a phase run
    concurrently. Image execution receives no publishing token or live
    credentials. Each job has a 70-minute process deadline inside an 85-minute job
    deadline.
@@ -223,6 +304,34 @@ run. When the status job cannot validate the plan, it posts the same kind of
 notice. When no `image-drift` issue is open, the report is written to the step summary
 only. The weekly alert keeps ownership of the issue body.
 
+Read a comment from the top down. This comment is from run 40656164330 on
+[issue #115](https://github.com/famesjranko/MediaStack/issues/115), shortened:
+
+```markdown
+### Image preflight `40656164330-1`
+
+Ref: `refs/heads/main`
+
+| Service | Status |
+|---|---|
+| autoheal | passed; not proposed ([run](...), [artifacts](...)) |
+| bazarr | held: subtitle database migration is not covered |
+| jackett | passed; not proposed ([run](...), [artifacts](...)) |
+
+Publication: the publisher did not finish; see the run.
+```
+
+1. The heading names the run ID and attempt. The newest comment is the current
+   status.
+2. `Ref` must be `refs/heads/main` for a scheduled run. Any other ref is a
+   trial run and never proposes a PR.
+3. Each row is one drifted service. `proposed in PR #N` is the only state that
+   needs a merge decision. A `held` or `not selected` service needs operator
+   review outside this workflow.
+4. The `Publication` line says what the publisher did. Here, the services
+   passed but `main` advanced during the run. See
+   [When the publisher refuses](#when-the-publisher-refuses).
+
 ## Artifacts and limits
 
 Artifacts are retained for 14 days:
@@ -256,10 +365,9 @@ Corrupted evidence can still reach a proposed PR. The maintainer review of that
 PR remains the final gate.
 
 On a feature branch, use `publish=false` to measure the proposed workflow. The
-publisher cannot run there. Review cold time/disk results and the artifact logs
-before enabling recurring image acceptance. Scheduled acceptance is deliberately
-absent until the measurements, independent permissions/test review and hosted
-failure proof are complete. The existing scheduled alert remains active.
+publisher cannot run there. A scheduled run always uses the default branch.
+The [scheduling measurement](#scheduling-measurement) records the time and disk
+use that the schedule is based on.
 
 GitHub must permit the repository's workflow token to create pull requests.
 The [repository Actions setting](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)
@@ -344,7 +452,6 @@ disabled; the verifier produced a selective lock artifact for review.
 
 These are end-of-run measurements for one candidate combination on hosted
 Ubuntu 24.04. They do not establish peak disk use or a general runtime bound.
-Scheduled publication has the additional gates described above.
 
 ## Default-branch publisher trial
 
@@ -376,6 +483,52 @@ ran 9 image jobs, and the complete run took 30 minutes.
 
 The largest end-of-run growth is close to the documented 14 GB of free space,
 and the peak can be larger. This trial is the reason for the
-[runner disk](#runner-disk) cleanup and headroom rule. Before scheduled
-acceptance is enabled, a hosted run must measure the peak and the space that the
-cleanup frees.
+[runner disk](#runner-disk) cleanup and headroom rule. The
+[scheduling measurement](#scheduling-measurement) then measured the peak and the
+space that the cleanup frees.
+
+## Scheduling measurement
+
+[Run 40656164330](https://github.com/famesjranko/MediaStack/actions/runs/40656164330)
+ran on 2026-10-28 on source `d994a11fa69663f2ac9ba7909886452595854dc3`, with
+`max-parallel: 2`. It tested four candidates: Autoheal, Jackett, Jellyfin and
+Radarr. All 14 image jobs passed with 0 failed and 0 skipped assertions. The
+complete run took 58 minutes. The publisher then refused, because `main`
+advanced during the run.
+
+The numbers below are from the `result.json` of each job. "Free at peak" is the
+free space at the start minus the peak growth.
+
+| Job | Passed | Seconds | Free at start (bytes) | Peak growth (bytes) | Free at peak (bytes) |
+|---|---:|---:|---:|---:|---:|
+| `p1-autoheal.autoheal` | 10 | 73 | 121,124,782,080 | 580,747,264 | 120,544,034,816 |
+| `p1-jackett.fresh-install` | 240 | 295 | 121,124,773,888 | 12,554,289,152 | 108,570,484,736 |
+| `p1-jackett.install-e2e` | 257 | 307 | 121,120,178,176 | 10,869,096,448 | 110,251,081,728 |
+| `p1-jackett.upgrade-path` | 326 | 388 | 122,068,271,104 | 12,788,969,472 | 109,279,301,632 |
+| `p1-jellyfin.fresh-install` | 240 | 300 | 122,068,246,528 | 12,553,904,128 | 109,514,342,400 |
+| `p1-jellyfin.install-e2e` | 257 | 304 | 121,124,892,672 | 13,006,307,328 | 108,118,585,344 |
+| `p1-jellyfin.upgrade-path` | 326 | 400 | 122,068,340,736 | 14,928,572,416 | 107,139,768,320 |
+| `p1-radarr.fresh-install` | 240 | 306 | 121,124,810,752 | 12,511,735,808 | 108,613,074,944 |
+| `p1-radarr.install-e2e` | 257 | 325 | 121,124,773,888 | 10,902,450,176 | 110,222,323,712 |
+| `p1-radarr.upgrade-path` | 326 | 354 | 121,124,737,024 | 12,823,175,168 | 108,301,561,856 |
+| `p2-autoheal` | 10 | 67 | 121,499,443,200 | 634,630,144 | 120,864,813,056 |
+| `p2-fresh-install` | 240 | 276 | 121,124,847,616 | 12,507,934,720 | 108,616,912,896 |
+| `p2-install-e2e` | 295 | 435 | 121,123,573,760 | 13,511,573,504 | 107,612,000,256 |
+| `p2-upgrade-path` | 326 | 379 | 122,068,406,272 | 15,436,640,256 | 106,631,766,016 |
+
+- After the cleanup, every job started with 121.1 GB to 122.1 GB free.
+- The largest peak growth was 15.44 GB, in `p2-upgrade-path`. The smallest free
+  space at a peak was 106.6 GB, in the same job. The 2 GiB headroom rule had a
+  large margin.
+- The scenario took 67 to 435 seconds per job. From start to end, a job took
+  longer: 194 to 721 seconds in phase 1, 462 seconds on average. Runner start,
+  package install and the disk cleanup add this time.
+- Phase 1 took 39 minutes for 10 jobs. Phase 2 took 17 minutes for 4 jobs.
+
+Projection for a week in which most services drift: phase 1 has about 35 jobs,
+mostly three scenarios for each data-owning service. With 491 seconds for each
+such job from start to end, phase 1 takes about 2.4 hours at `max-parallel: 2`
+and about 72 minutes at `max-parallel: 4`. Phase 2 and the other jobs add about
+15 minutes. The workflow therefore uses `max-parallel: 4`; the complete run
+takes about 1.5 hours. Each job has its own VM, so the higher value does not
+change the disk need of a job.

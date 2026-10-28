@@ -10,9 +10,10 @@ GitHub Actions runs a deliberately small PR gate: committed-secret checks, shell
 syntax checks, compose rendering, focused host unit tests, and the `wizard-ui-*` PTY
 scenarios in DinD with service image preload skipped. The full image-backed DinD battery
 (`fresh-install`, `smoke`, remote-access scenarios, and service startup checks) stays a
-local/on-demand gate. The manually dispatched image preflight can also run required
-scenarios on disposable hosted VMs and prepare a reviewed digest PR. The weekly
-image-drift alert remains lightweight. See
+local/on-demand gate. The hosted image preflight also runs required scenarios on
+disposable hosted VMs and refreshes a digest PR for maintainer review. It runs
+weekly, one hour after the lightweight image-drift alert, and by manual dispatch.
+`tests/unit/hosted-preflight-schedule.sh` proves which jobs each trigger runs. See
 [hosted image preflight](../docs/operations/hosted-image-preflight.md). Stable-channel installs
 use the accepted digest record through the generated compose override; Latest-channel
 installs intentionally follow upstream tags.

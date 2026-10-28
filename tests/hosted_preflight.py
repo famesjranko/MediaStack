@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual hosted preflight: freeze inputs, run one job, select, verify, publish, report."""
+"""Hosted preflight: freeze inputs, run one job, select, verify, publish, report."""
 
 from __future__ import annotations
 

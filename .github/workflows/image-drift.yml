@@ -2,15 +2,20 @@ name: Image Drift Alert
 
 # Weekly maintainer tripwire. It compares compose image tags with the accepted
 # baseline in docs/operations/image-digests.lock and keeps one issue in this
-# repository current until the baseline matches upstream again. Accept changed
-# digests only after the preflight documented in docs/operations/upgrades.md.
+# repository current until the baseline matches upstream again. One hour later,
+# the hosted image preflight tests every drifted service that is not held and
+# refreshes the rolling digest PR. See docs/operations/hosted-image-preflight.md.
 
 # GitHub silently disables scheduled workflows in a repository with no commit
-# activity for 60 days; if this tripwire matters during a quiet stretch, run it
-# by hand (workflow_dispatch) or re-enable it from the Actions tab.
+# activity for 60 days. That stops both crons below. Re-enable the workflow from
+# the Actions tab or with `gh workflow enable image-drift.yml`; until then, run
+# the alert or the preflight by hand (workflow_dispatch).
 on:
   schedule:
-    - cron: "17 3 * * 1"
+    # The mode job maps each cron to its task, and the concurrency group repeats
+    # the preflight cron. Change all three together.
+    - cron: "17 3 * * 1" # Drift alert only.
+    - cron: "17 4 * * 1" # Preflight of every drifted service that is not held, with publication.
   workflow_dispatch:
     inputs:
       preflight:
@@ -30,9 +35,58 @@ on:
 permissions:
   contents: read
 
+# Preflights never overlap: a scheduled and a dispatched one, or two scheduled
+# ones, share one group. A running preflight finishes. GitHub keeps at most one
+# waiting run in a group, and a newer waiting run cancels the older one. Each
+# alert has a group of its own, so an alert never waits for a preflight.
+# GitHub resolves this group before any job runs, so it cannot read the mode
+# job; tests/unit/hosted-preflight-schedule.sh proves that the two agree for
+# every trigger. The name differs from the publisher's job-level group, so the
+# two groups cannot block each other.
+concurrency:
+  group: ${{ (github.event.schedule == '17 4 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.preflight)) && 'image-preflight' || format('image-drift-alert-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
+  # The one place that turns the trigger into a task. A scheduled event carries
+  # no inputs, so its cron selects the task; a dispatch uses its inputs. Other
+  # jobs read these outputs, never the trigger. An unmapped cron fails here.
+  mode:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      task: ${{ steps.resolve.outputs.task }}
+      publish: ${{ steps.resolve.outputs.publish }}
+    steps:
+      - name: Resolve the task from the trigger
+        id: resolve
+        env:
+          ALERT_CRON: "17 3 * * 1"
+          PREFLIGHT_CRON: "17 4 * * 1"
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          PREFLIGHT: ${{ inputs.preflight }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [ "$EVENT" = schedule ] && [ "$SCHEDULE" = "$ALERT_CRON" ]; then
+            task=alert publish=false
+          elif [ "$EVENT" = schedule ] && [ "$SCHEDULE" = "$PREFLIGHT_CRON" ]; then
+            task=preflight publish=true
+          elif [ "$EVENT" = workflow_dispatch ] && [ "$PREFLIGHT" = true ]; then
+            # A boolean input is always "true" or "false"; jobs publish only on "true".
+            task=preflight publish=$PUBLISH
+          elif [ "$EVENT" = workflow_dispatch ]; then
+            task=alert publish=false
+          else
+            echo "::error::No task for event '$EVENT' with schedule '$SCHEDULE'; map it in this step."
+            exit 1
+          fi
+          printf 'task=%s\npublish=%s\n' "$task" "$publish" | tee -a "$GITHUB_OUTPUT"
+
   image-drift:
-    if: ${{ !inputs.preflight }}
+    needs: mode
+    if: needs.mode.outputs.task == 'alert'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -126,7 +180,8 @@ jobs:
           exit 1
 
   preflight-plan:
-    if: github.event_name == 'workflow_dispatch' && inputs.preflight
+    needs: mode
+    if: needs.mode.outputs.task == 'preflight'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -144,6 +199,8 @@ jobs:
       - name: Freeze source, candidates, companions, and fixture images
         id: plan
         env:
+          # A scheduled run has no inputs, so this is empty: every drifted
+          # service that is not held.
           SELECTED_SERVICES: ${{ inputs.services }}
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
@@ -167,7 +224,11 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # Each job has its own VM, so this bounds only wall time and runner use.
+      # In run 40656164330, a phase-1 job took about 8 minutes from start to end.
+      # At 4, phase 1 of a full-drift week (about 35 jobs) takes about 72 minutes;
+      # at 2, it would take about 2.4 hours. See docs/operations/hosted-image-preflight.md.
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.preflight-plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -260,7 +321,8 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # The same bound as phase 1: each job has its own VM.
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.preflight-select.outputs.matrix) }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -342,8 +404,8 @@ jobs:
   # Owns one rolling PR on a bot-owned branch. It runs even when this run
   # accepted nothing, so that the report can name the PR it left unchanged.
   preflight-publish:
-    needs: [preflight-plan, preflight-select, preflight-combine, preflight-verify]
-    if: ${{ !cancelled() && inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.preflight-select.result == 'success' }}
+    needs: [mode, preflight-plan, preflight-select, preflight-combine, preflight-verify]
+    if: ${{ !cancelled() && needs.mode.outputs.publish == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.preflight-select.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
@@ -406,6 +468,9 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          # The lock was tested against this run's source. A merge to the default
+          # branch during the run makes this refuse; that is expected in a busy
+          # week, and the next scheduled or dispatched run tests the new source.
           if [ -e /tmp/preflight-accepted/image-digests.lock ]; then
             latest=$(gh api "repos/$GH_REPO/commits/$DEFAULT_BRANCH" --jq .sha)
             test "$latest" = "$SOURCE_SHA" || { echo 'Default branch advanced; rerun the preflight.' >&2; exit 1; }
@@ -510,8 +575,8 @@ jobs:
   # Posts one status comment per run, also when the planner failed. It never
   # runs images or artifact code; the weekly alert keeps owning the issue body.
   preflight-report:
-    needs: [preflight-plan, preflight-select, preflight-combine, preflight-verify, preflight-publish]
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.preflight }}
+    needs: [mode, preflight-plan, preflight-select, preflight-combine, preflight-verify, preflight-publish]
+    if: ${{ !cancelled() && needs.mode.outputs.task == 'preflight' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
