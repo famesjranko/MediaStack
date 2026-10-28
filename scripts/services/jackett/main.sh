@@ -2,6 +2,23 @@
 # 2. Jackett — seed session cookie, add public indexers, set admin password
 # =============================================================================
 
+# Seed the session cookie in <jar>, then prove it works; if not, authenticate
+# with the admin password. Probe the HTTP code explicitly: Jackett returns
+# 302 -> /UI/Login when the session is invalid, and `curl -sf` does NOT fail on
+# 3xx, so a bare `! curl -sf` check passes falsely once the admin password is
+# set (every indexer then reports "not available in Jackett").
+# Args: <jackett base url> <indexers url> <api key> <jar> <admin password>
+_jackett_session() {
+    local base="$1" indexers_url="$2" key="$3" jar="$4" pw="$5" probe_code
+    curl -sf -c "$jar" -X POST "${base}/UI/Dashboard" -d "" >/dev/null 2>&1
+    probe_code=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -K - \
+        < <(curl_url_config "${indexers_url}?configured=true&apikey=${key}") 2>/dev/null || echo "000")
+    if [[ "$probe_code" != "200" && -n "$pw" ]]; then
+        curl_data_urlencode_stdin password "$pw" \
+            -sf -c "$jar" -X POST "${base}/UI/Dashboard" >/dev/null 2>&1 || true
+    fi
+}
+
 configure_jackett() {
     echo ""
     echo -e "${BOLD}Configuring Jackett indexers...${NC}"
@@ -29,20 +46,7 @@ configure_jackett() {
         return 0
     }
 
-    curl -sf -c "$jar" -X POST "${jackett_base}/UI/Dashboard" -d "" >/dev/null 2>&1
-    # Verify session works; if not, retry with admin password. Must probe the
-    # HTTP code explicitly — Jackett returns 302 → /UI/Login when the session
-    # is invalid, and `curl -sf` does NOT fail on 3xx, so the bare `! curl -sf`
-    # check passed falsely on re-runs (admin password set on first pass left
-    # the empty-body POST unauthenticated, cascading into every indexer
-    # reporting "not available in Jackett").
-    local probe_code
-    probe_code=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -K - \
-        < <(curl_url_config "${jackett_url}?configured=true&apikey=${jackett_key}") 2>/dev/null || echo "000")
-    if [[ "$probe_code" != "200" && -n "$jf_pw" ]]; then
-        curl_data_urlencode_stdin password "$jf_pw" \
-            -sf -c "$jar" -X POST "${jackett_base}/UI/Dashboard" >/dev/null 2>&1 || true
-    fi
+    _jackett_session "$jackett_base" "$jackett_url" "$jackett_key" "$jar" "$jf_pw"
 
     # Jackett's first-start rewrites ServerConfig.json and drops the pre-seeded
     # FlareSolverrUrl. Set it via API so Cloudflare-protected indexers work.
@@ -83,7 +87,9 @@ print(json.dumps(d))
         # Wait for Jackett to come back, then re-seed the session cookie.
         sleep 1
         post_restart_wait "${jackett_base}/UI/Dashboard" 60 1 || true
-        curl -sf -c "$jar" -X POST "${jackett_base}/UI/Dashboard" -d "" >/dev/null 2>&1
+        # The restart ends the session. With the admin password set, the
+        # empty-body POST alone no longer authenticates.
+        _jackett_session "$jackett_base" "$jackett_url" "$jackett_key" "$jar" "$jf_pw"
     fi
 
     # Get already-configured indexers

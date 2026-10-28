@@ -307,16 +307,16 @@ JACKETT_BODY='{"flaresolverrurl":"","id":"x","api_key":"'"$JACKETT_KEY"'"}'
 _ARR_LIB_DIR="$REPO_ROOT/scripts/lib/arr"
 
 # Unset FlareSolverr URL and no stored admin hash reach every call site:
-# probe, server config GET/POST, configured list, indexer config GET/POST and
-# the admin password.
+# probe, server config GET/POST, the session probe after the restart that the
+# save causes, configured list, indexer config GET/POST and the admin password.
 printf '%s' '{"APIKey":"x","AdminPassword":""}' \
     >"$WORK/config/jackett/Jackett/ServerConfig.json"
 reset_logs
 MOCK_BODY="$JACKETT_BODY"
 JELLYFIN_ADMIN_PASSWORD="$SENTINEL" SCRIPT_DIR="$WORK" configure_jackett >/dev/null 2>&1
 assert_file_not_contains "$ARGV_LOG" "$JACKETT_KEY" "configure_jackett: API key absent from argv"
-assert_eq "7" "$(grep -c "^url = \".*apikey=$JACKETT_KEY" "$STDIN_LOG")" \
-    "configure_jackett: all 7 key-bearing requests carried the URL on stdin"
+assert_eq "8" "$(grep -c "^url = \".*apikey=$JACKETT_KEY" "$STDIN_LOG")" \
+    "configure_jackett: all 8 key-bearing requests carried the URL on stdin"
 
 reset_logs
 MOCK_BODY=""
