@@ -26,15 +26,18 @@ on:
         type: boolean
         default: false
 
+# Every job declares its own permissions; none inherits these.
 permissions:
   contents: read
-  issues: write
 
 jobs:
   image-drift:
     if: ${{ !inputs.preflight }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
 
     steps:
       - name: Check out
@@ -354,12 +357,10 @@ jobs:
       - name: Install YAML reader
         run: sudo apt-get update && sudo apt-get install -y python3-yaml
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: needs.preflight-verify.result == 'success'
         with:
           name: preflight-plan
           path: /tmp/preflight-plan
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: needs.preflight-verify.result == 'success'
         with:
           name: preflight-selection
           path: /tmp/preflight-selection
@@ -393,6 +394,8 @@ jobs:
           fi
           mkdir /tmp/publish-facts
           gh api "repos/$GH_REPO/pulls?state=open&per_page=10&head=${GH_REPO%%/*}:$BRANCH" >/tmp/publish-facts/prs.json
+          gh api "repos/$GH_REPO/pulls?state=closed&sort=updated&direction=desc&per_page=10&head=${GH_REPO%%/*}:$BRANCH" \
+            >/tmp/publish-facts/closed.json
           refs=$(git ls-remote origin "refs/heads/$BRANCH")
           head=${refs%%[[:space:]]*}
           printf '%s\n' "$head" >/tmp/publish-facts/head
@@ -403,8 +406,17 @@ jobs:
           fi
       - name: Decide the single change to the rolling digest PR
         id: decide
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          PLAN_HASH: ${{ needs.preflight-plan.outputs.plan_hash }}
+          SELECTION_HASH: ${{ needs.preflight-select.outputs.plan_hash }}
+          VERIFIED: ${{ needs.preflight-verify.result }}
         run: |
-          python3 tests/hosted_preflight.py decide --facts /tmp/publish-facts \
+          python3 tests/hosted_preflight.py decide --run "$RUN_ID" --source "$SOURCE_SHA" \
+            --hash "$PLAN_HASH" --plan /tmp/preflight-plan/plan.json \
+            --selection-hash "$SELECTION_HASH" --selection /tmp/preflight-selection/plan.json \
+            --verified "$VERIFIED" --facts /tmp/publish-facts \
             --proposed /tmp/preflight-accepted/image-digests.lock >/tmp/publish-facts/decision
           cat /tmp/publish-facts/decision >>"$GITHUB_OUTPUT"
           cat /tmp/publish-facts/decision >>"$GITHUB_STEP_SUMMARY"
@@ -412,9 +424,27 @@ jobs:
             echo "::error::The rolling digest branch or PR is not publisher-owned; nothing changed."
             exit 1
           fi
+      - name: Close the digest PR that this run refused, and delete its branch
+        if: steps.decide.outputs.action == 'close'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ steps.decide.outputs.pr }}
+          LEASE: ${{ steps.decide.outputs.lease }}
+          REASON: ${{ steps.decide.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf 'Closed by [image preflight](%s): %s. The next accepted run opens a new PR.\n' \
+            "$RUN_URL" "$REASON" >/tmp/close.md
+          gh pr comment "$PR" --body-file /tmp/close.md
+          gh pr close "$PR"
+          gh auth setup-git
+          # Delete only the head the publisher read; otherwise the next run would
+          # refuse a branch left by a closed PR.
+          git push --force-with-lease="refs/heads/$BRANCH:$LEASE" origin ":refs/heads/$BRANCH"
       - name: Rebuild the rolling branch from the default branch and refresh its PR
         id: publish
-        if: steps.decide.outputs.action == 'create' || steps.decide.outputs.action == 'update'
+        if: contains(fromJSON('["create","update","unchanged"]'), steps.decide.outputs.action)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -433,15 +463,18 @@ jobs:
                 ;;
             esac
           fi
-          cp /tmp/preflight-accepted/image-digests.lock docs/operations/image-digests.lock
-          python3 scripts/image_drift.py --write-readme-badges README.md
-          git switch -c "$BRANCH"
-          git add docs/operations/image-digests.lock README.md
-          git -c user.name='Andrew McDonald' -c user.email=andrewmcdonald42@gmail.com \
-            commit -m "$TITLE"
-          gh auth setup-git
-          # An empty lease requires that the branch does not exist yet.
-          git push --force-with-lease="refs/heads/$BRANCH:$LEASE" origin "HEAD:refs/heads/$BRANCH"
+          # An unchanged lock keeps the branch; only the PR description cites this run.
+          if [ "$ACTION" != unchanged ]; then
+            cp /tmp/preflight-accepted/image-digests.lock docs/operations/image-digests.lock
+            python3 scripts/image_drift.py --write-readme-badges README.md
+            git switch -c "$BRANCH"
+            git add docs/operations/image-digests.lock README.md
+            git -c user.name='Andrew McDonald' -c user.email=andrewmcdonald42@gmail.com \
+              commit -m "$TITLE"
+            gh auth setup-git
+            # An empty lease requires that the branch does not exist yet.
+            git push --force-with-lease="refs/heads/$BRANCH:$LEASE" origin "HEAD:refs/heads/$BRANCH"
+          fi
           if [ "$ACTION" = create ]; then
             url=$(gh pr create --base "$DEFAULT_BRANCH" --head "$BRANCH" --title "$TITLE" \
               --body-file /tmp/preflight-accepted/body.md)
@@ -454,15 +487,19 @@ jobs:
           gh api --method POST "repos/$GH_REPO/issues/$PR/labels" -f "labels[]=$LABEL" >/dev/null
           echo "pr=$PR" >>"$GITHUB_OUTPUT"
 
-  # Posts one status comment per run. It never runs images or artifact code;
-  # the weekly alert keeps owning the issue body.
+  # Posts one status comment per run, also when the planner failed. It never
+  # runs images or artifact code; the weekly alert keeps owning the issue body.
   preflight-report:
-    needs: [preflight-plan, preflight-select, preflight-verify, preflight-publish]
-    if: ${{ !cancelled() && needs.preflight-plan.result == 'success' }}
+    needs: [preflight-plan, preflight-select, preflight-combine, preflight-verify, preflight-publish]
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.preflight }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       issues: write
+    env:
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      REF: ${{ github.ref }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -470,6 +507,7 @@ jobs:
       - name: Install YAML reader
         run: sudo apt-get update && sudo apt-get install -y python3-yaml
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.preflight-plan.result == 'success'
         with:
           name: preflight-plan
           path: /tmp/preflight-plan
@@ -479,29 +517,41 @@ jobs:
           name: preflight-selection
           path: /tmp/preflight-selection
       - name: Write the per-service status
+        id: status
+        if: needs.preflight-plan.result == 'success'
         env:
           SOURCE_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           PLAN_HASH: ${{ needs.preflight-plan.outputs.plan_hash }}
           SELECTION_HASH: ${{ needs.preflight-select.result == 'success' && needs.preflight-select.outputs.plan_hash || '' }}
+          COMBINED: ${{ needs.preflight-combine.result }}
           VERIFIED: ${{ needs.preflight-verify.result }}
           PUBLISH_RESULT: ${{ needs.preflight-publish.result }}
           OUTCOME: ${{ needs.preflight-publish.outputs.outcome }}
           PR: ${{ needs.preflight-publish.outputs.pr }}
           REASON: ${{ needs.preflight-publish.outputs.reason }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python3 tests/hosted_preflight.py report --run "$RUN_ID" --source "$SOURCE_SHA" \
             --hash "$PLAN_HASH" --plan /tmp/preflight-plan/plan.json \
             --selection-hash "$SELECTION_HASH" --selection /tmp/preflight-selection/plan.json \
-            --verified "$VERIFIED" --publish-result "$PUBLISH_RESULT" --outcome "$OUTCOME" \
-            --pr "$PR" --reason "$REASON" --run-url "$RUN_URL" >/tmp/preflight-report.md
-          cat /tmp/preflight-report.md >>"$GITHUB_STEP_SUMMARY"
+            --combined "$COMBINED" --verified "$VERIFIED" --publish-result "$PUBLISH_RESULT" \
+            --outcome "$OUTCOME" --pr "$PR" --reason "$REASON" --run-url "$RUN_URL" \
+            --ref "$REF" --default-branch "$DEFAULT_BRANCH" >/tmp/preflight-report.md
+      - name: Write a failure notice when no status is available
+        if: ${{ !cancelled() && steps.status.outcome != 'success' }}
+        env:
+          PLAN_RESULT: ${{ needs.preflight-plan.result }}
+        run: |
+          python3 tests/hosted_preflight.py abort --plan-result "$PLAN_RESULT" \
+            --run-url "$RUN_URL" --ref "$REF" --default-branch "$DEFAULT_BRANCH" \
+            >/tmp/preflight-report.md
       - name: Comment on the open drift issue
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          cat /tmp/preflight-report.md >>"$GITHUB_STEP_SUMMARY"
           issue=$(gh issue list --label image-drift --state open --json number --jq '.[0].number // empty')
           if [ -n "$issue" ]; then
             gh issue comment "$issue" --body-file /tmp/preflight-report.md

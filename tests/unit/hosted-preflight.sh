@@ -20,11 +20,31 @@ from preflight.model import (FIXTURES, ROOT, build_plan, check_plan, combination
 from preflight.verify import (accept, authorized_jobs, check_result, check_runtime_evidence,
                               select_combination)
 from preflight.runner import sanitize
-from preflight.status import render
+from preflight.status import abort, render
 import yaml
 
 SOURCE = source_sha()
 RUN = "123-1"
+HEAD = "b" * 40
+MAIN = {"url": "https://example.test/run/1", "ref": "refs/heads/main", "default_branch": "main"}
+
+
+def owned_branch():
+    """The comparison GitHub returns for a branch the publisher built."""
+    return {"commits": [{"commit": {"author": {"email": publish.AUTHOR_EMAIL},
+                                    "committer": {"email": publish.AUTHOR_EMAIL},
+                                    "message": publish.TITLE + "\n"}}],
+            "ahead_by": 1, "files": [{"filename": "docs/operations/image-digests.lock"}]}
+
+
+def bot_pr(number=9, head=HEAD, **fields):
+    return dict({"number": number, "user": {"login": publish.BOT, "type": "Bot"},
+                 "head": {"sha": head}}, **fields)
+
+
+def lock_line(service, ref, stamp="2026-01-01T00:00:00Z"):
+    image, digest = ref.rsplit("@", 1)
+    return "\t".join([service, image, digest, stamp, "scenario:fresh-install"]) + "\n"
 
 
 class HostedEvidence(unittest.TestCase):
@@ -271,7 +291,10 @@ class HostedEvidence(unittest.TestCase):
         image_jobs = [jobs["preflight-isolate"], jobs["preflight-combine"]]
         publisher, report = jobs["preflight-publish"], jobs["preflight-report"]
 
-        # Then image jobs are read-only, bounded and receive no secrets.
+        # Then every job declares its own permissions, so none inherits the workflow's.
+        self.assertEqual([n for n, job in jobs.items() if "permissions" not in job], [])
+        self.assertEqual(jobs["image-drift"]["permissions"], {"contents": "read", "issues": "write"})
+        # And image jobs are read-only, bounded and receive no secrets.
         for job in image_jobs:
             self.assertEqual(job["permissions"], {"contents": "read"})
             self.assertEqual(job["runs-on"], "ubuntu-24.04")
@@ -291,53 +314,110 @@ class HostedEvidence(unittest.TestCase):
         self.assertEqual(report["permissions"], {"issues": "write"})
         self.assertNotIn("hosted_preflight.py run", json.dumps(report))
 
+    def test_report_runs_when_the_plan_fails(self):
+        # Given the status job of the workflow.
+        workflow = yaml.safe_load((ROOT / ".github/workflows/image-drift.yml").read_text())
+        report = workflow["jobs"]["preflight-report"]
+
+        # When the planner fails and the status job renders its notice.
+        text = abort("failure", MAIN)
+
+        # Then the status job does not depend on a successful planner.
+        self.assertNotIn("preflight-plan.result", report["if"])
+        # And its notice names the planner failure and links the run.
+        self.assertIn("the planner failed", text)
+        self.assertIn("(https://example.test/run/1)", text)
+
+    def test_partial_rerun_is_refused_with_guidance(self):
+        # Given a plan frozen by attempt 1 of a workflow run.
+        expected = fingerprint(self.plan)
+
+        # When a job of attempt 2 checks that plan.
+        # Then it refuses and tells the operator to re-run all jobs.
+        with self.assertRaisesRegex(ValueError, "Re-run all jobs"):
+            check_plan(self.plan, SOURCE, "123-2", expected)
+
     def test_publisher_refuses_foreign_branch_or_pr(self):
-        head = "a" * 40
-        owned = {"commits": [{"commit": {"author": {"email": publish.AUTHOR_EMAIL},
-                                         "committer": {"email": publish.AUTHOR_EMAIL},
-                                         "message": publish.TITLE}}],
-                 "ahead_by": 1, "files": [{"filename": "README.md"}]}
-        bot_pr = {"number": 7, "user": {"login": publish.BOT, "type": "Bot"}, "head": {"sha": head}}
+        owned = owned_branch()
         foreign_commit = copy.deepcopy(owned)
         foreign_commit["commits"][0]["commit"]["author"]["email"] = "someone@example.com"
         extra_commit = dict(owned, ahead_by=2, commits=owned["commits"] * 2)
         other_file = dict(owned, files=[{"filename": "setup.sh"}])
-        human_pr = dict(bot_pr, user={"login": "someone", "type": "User"})
-        for name, prs, compare in (("human PR", [human_pr], owned),
-                                   ("foreign commit", [bot_pr], foreign_commit),
-                                   ("extra commit", [bot_pr], extra_commit),
-                                   ("file outside the record", [], other_file)):
-            with self.subTest(name):
-                # Given a rolling branch or PR that the publisher did not create.
-                # When a passing run decides how to publish its lock.
-                decision = publish.decide("proposed", prs, head, compare, "old")
-
-                # Then it refuses and changes nothing.
-                self.assertEqual(decision.action, "refuse")
-
-    def test_publisher_keeps_one_rolling_pr(self):
-        head = "b" * 40
-        owned = {"commits": [{"commit": {"author": {"email": publish.AUTHOR_EMAIL},
-                                         "committer": {"email": publish.AUTHOR_EMAIL},
-                                         "message": publish.TITLE + "\n"}}],
-                 "ahead_by": 1, "files": [{"filename": "docs/operations/image-digests.lock"}]}
-        pr = [{"number": 9, "user": {"login": publish.BOT, "type": "Bot"}, "head": {"sha": head}}]
-        lock = "s\ti\tsha256:1\t2026-01-01T00:00:00Z\tscenario:fresh-install\n"
-        restamped = lock.replace("2026-01-01", "2026-02-02")
-        for name, args, expected in (
-            ("first proposal", ("new", [], "", {}, None), ("create", None, "")),
-            ("newer combination", ("new", pr, head, owned, lock), ("update", 9, head)),
-            ("same lock", (restamped, pr, head, owned, lock), ("unchanged", 9, head)),
-            ("nothing accepted", (None, pr, head, owned, lock), ("keep", 9, head)),
-            ("nothing open", (None, [], "", {}, None), ("none", None, "")),
+        human_pr = dict(bot_pr(), user={"login": "someone", "type": "User"})
+        closed = bot_pr(merged_at=None)
+        for name, prs, compare, gone, why in (
+            ("human PR", [human_pr], owned, [], "not opened by"),
+            ("foreign commit", [bot_pr()], foreign_commit, [], "did not create"),
+            ("extra commit", [bot_pr()], extra_commit, [], "exactly one publisher commit"),
+            ("file outside the record", [], other_file, [], "outside the digest record"),
+            ("two open PRs", [bot_pr(), bot_pr(10)], owned, [], "more than one open PR"),
+            ("PR head behind the branch", [bot_pr(head="c" * 40)], owned, [], "head differs"),
+            ("branch of a PR closed unmerged", [], owned, [closed], "delete the branch"),
         ):
             with self.subTest(name):
-                # Given the open rolling PR state and this run's proposal.
+                # Given a rolling branch or PR that the publisher may not replace.
+                facts = publish.Facts(prs, HEAD, compare, "old", gone)
+
+                # When a passing run decides how to publish its lock.
+                decision = publish.decide("proposed", {}, facts)
+
+                # Then it refuses for that reason and changes nothing.
+                self.assertEqual(decision.action, "refuse")
+                self.assertIn(why, decision.reason)
+
+    def test_publisher_keeps_one_rolling_pr(self):
+        owned, pr = owned_branch(), [bot_pr()]
+        lock = lock_line("s", "i@sha256:1")
+        restamped = lock.replace("2026-01-01", "2026-02-02")
+        merged = [bot_pr(merged_at="2026-01-02T00:00:00Z")]
+        for name, proposed, facts, expected in (
+            ("first proposal", "new", publish.Facts([], "", {}, None, []), ("create", None, "")),
+            ("newer combination", "new", publish.Facts(pr, HEAD, owned, lock, []),
+             ("update", 9, HEAD)),
+            ("same lock", restamped, publish.Facts(pr, HEAD, owned, lock, []),
+             ("unchanged", 9, HEAD)),
+            ("nothing accepted", None, publish.Facts(pr, HEAD, owned, lock, []),
+             ("keep", 9, HEAD)),
+            ("nothing open", None, publish.Facts([], "", {}, None, []), ("none", None, "")),
+            ("branch left by a merged PR", "new", publish.Facts([], HEAD, {}, lock, merged),
+             ("create", None, HEAD)),
+            ("branch whose PR creation failed", "new", publish.Facts([], HEAD, owned, lock, []),
+             ("create", None, HEAD)),
+        ):
+            with self.subTest(name):
+                # Given the rolling PR state and this run's proposal.
                 # When the publisher decides.
-                decision = publish.decide(*args)
+                decision = publish.decide(proposed, {}, facts)
 
                 # Then it makes exactly the expected change under a lease on the observed head.
                 self.assertEqual((decision.action, decision.pr, decision.lease), expected)
+
+    def test_refused_digest_closes_the_open_pr(self):
+        # Given an open PR that proposes the Radarr and Sonarr candidates of this run.
+        both, alone = self.phase1(["radarr", "sonarr"]), self.phase1(["sonarr"])
+        refs = both["candidates"]
+        proposed = lock_line("radarr", refs["radarr"]) + lock_line("sonarr", refs["sonarr"])
+        facts = publish.Facts([bot_pr()], HEAD, owned_branch(), proposed, [])
+        older = facts._replace(branch_lock=lock_line("sonarr", refs["sonarr"][:-1] + "0"))
+        failed = combination_plan(alone, [], {"sonarr": ["upgrade-path"]})
+        together = combination_plan(both, ["radarr", "sonarr"], {})
+        for name, plan, selection, verified, facts, expected in (
+            ("Sonarr failed phase 1", alone, failed, "skipped", facts, ("close", ["sonarr"])),
+            ("final verification refused both", both, together, "failure", facts,
+             ("close", ["radarr", "sonarr"])),
+            ("the PR holds another Sonarr digest", alone, failed, "skipped", older,
+             ("keep", [])),
+        ):
+            with self.subTest(name):
+                # When this run accepted nothing and the publisher decides.
+                decision = publish.decide(None, publish.rejected(plan, selection, verified), facts)
+
+                # Then it closes the PR only when this run refused one of its exact digests.
+                named = [s for s in ("radarr", "sonarr") if s in decision.reason]
+                self.assertEqual((decision.action, named), expected)
+                self.assertEqual((decision.pr, decision.lease), (9, HEAD))
+                # And it never claims that evidence from another run is still valid.
+                self.assertNotIn("valid", decision.reason)
 
     def test_report_names_each_service_outcome(self):
         # Given Radarr failed phase 1, Sonarr was proposed, and two services were not tested.
@@ -345,10 +425,12 @@ class HostedEvidence(unittest.TestCase):
         plan["pending"] = {"bazarr": "subtitle database migration is not covered",
                            "lidarr": "not selected"}
         selection = combination_plan(plan, ["sonarr"], {"radarr": ["upgrade-path"]})
-        publication = {"result": "success", "outcome": "created", "pr": "12", "reason": "new"}
+        decided = publish.decide("new", {}, publish.Facts([], "", {}, None, []))
+        publication = {"outcome": decided.action, "pr": "12", "reason": decided.reason}
+        jobs = {"combine": "skipped", "verify": "success", "publish": "success"}
 
         # When the status report is rendered.
-        text = render(plan, selection, "success", publication, "https://example.test/run/1")
+        text = render(plan, selection, jobs, publication, MAIN)
 
         # Then each service has exactly one visible state.
         self.assertIn("| sonarr | proposed in PR #12 |", text)
@@ -356,6 +438,27 @@ class HostedEvidence(unittest.TestCase):
         self.assertIn("`result-p1-radarr.upgrade-path`", text)
         self.assertIn("| bazarr | held: subtitle database migration is not covered |", text)
         self.assertIn("| lidarr | not selected |", text)
+        # And a default-branch run is not marked as a trial.
+        self.assertIn("Ref: `refs/heads/main`\n", text)
+
+    def test_report_separates_phase_two_from_final_verification(self):
+        # Given Radarr and Sonarr passed phase 1 and the publisher did not run.
+        plan = self.phase1(["radarr", "sonarr"])
+        selection = combination_plan(plan, ["radarr", "sonarr"], {})
+        publication = {"outcome": "", "pr": "", "reason": ""}
+        for name, combined, expected in (("phase 2 failed", "failure", "failed in phase 2"),
+                                         ("verification refused", "success",
+                                          "failed final verification")):
+            with self.subTest(name):
+                jobs = {"combine": combined, "verify": "failure", "publish": "skipped"}
+
+                # When the report is rendered for a trial branch.
+                text = render(plan, selection, jobs, publication, dict(MAIN, ref="refs/heads/x"))
+
+                # Then it names the stage that refused the combination.
+                self.assertIn(f"| sonarr | {expected} (", text)
+                # And it marks the trial ref so that nobody reads it as a main result.
+                self.assertIn("`refs/heads/x` (a trial run", text)
 
     def test_log_export_masks_fixture_credentials(self):
         # Given log text containing a fixture password and generated API key.

@@ -106,13 +106,20 @@ def verify(args: argparse.Namespace) -> None:
 
 
 def decide(args: argparse.Namespace) -> None:
-    from preflight.publish import decide_from_files
+    from preflight.publish import decide, read_facts, rejected
 
-    decision = decide_from_files(args.facts, args.proposed)
+    plan = checked(args.plan, args, args.hash)
+    selection = checked(args.selection, args, args.selection_hash)
+    proposed = args.proposed.read_text() if args.proposed and args.proposed.is_file() else None
+    decision = decide(proposed, rejected(plan, selection, args.verified), read_facts(args.facts))
     print("action=" + decision.action)
     print("pr=" + (str(decision.pr) if decision.pr else ""))
     print("lease=" + decision.lease)
     print("reason=" + decision.reason)
+
+
+def run_context(args: argparse.Namespace) -> dict[str, str]:
+    return {"url": args.run_url, "ref": args.ref, "default_branch": args.default_branch}
 
 
 def report(args: argparse.Namespace) -> None:
@@ -120,13 +127,15 @@ def report(args: argparse.Namespace) -> None:
 
     plan = checked(args.plan, args, args.hash)
     selection = checked(args.selection, args, args.selection_hash) if args.selection_hash else None
-    publication = {
-        "result": args.publish_result,
-        "outcome": args.outcome,
-        "pr": args.pr,
-        "reason": args.reason,
-    }
-    print(render(plan, selection, args.verified, publication, args.run_url), end="")
+    jobs = {"combine": args.combined, "verify": args.verified, "publish": args.publish_result}
+    publication = {"outcome": args.outcome, "pr": args.pr, "reason": args.reason}
+    print(render(plan, selection, jobs, publication, run_context(args)), end="")
+
+
+def abort(args: argparse.Namespace) -> None:
+    from preflight.status import abort as render_abort
+
+    print(render_abort(args.plan_result, run_context(args)), end="")
 
 
 def parse() -> argparse.Namespace:
@@ -151,12 +160,15 @@ def parse() -> argparse.Namespace:
     command("verify", "--selection", "--results", "--output").add_argument(
         "--selection-hash", required=True
     )
-    command("decide", "--facts", planned=False).add_argument("--proposed", type=pathlib.Path)
+    decision = command("decide", "--facts", "--selection")
+    decision.add_argument("--selection-hash", required=True)
+    decision.add_argument("--verified", required=True)
+    decision.add_argument("--proposed", type=pathlib.Path)
     status = command("report")
     status.add_argument("--selection", type=pathlib.Path)
-    status.add_argument("--run-url", required=True)
     for flag in (
         "--selection-hash",
+        "--combined",
         "--verified",
         "--publish-result",
         "--outcome",
@@ -164,6 +176,11 @@ def parse() -> argparse.Namespace:
         "--reason",
     ):
         status.add_argument(flag, default="")
+    failed = command("abort", planned=False)
+    failed.add_argument("--plan-result", required=True)
+    for sub in (status, failed):
+        for flag in ("--run-url", "--ref", "--default-branch"):
+            sub.add_argument(flag, required=True)
     return parser.parse_args()
 
 

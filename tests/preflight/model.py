@@ -196,6 +196,15 @@ def effective(plan: dict[str, Any], job: dict[str, Any]) -> dict[str, str]:
 
 
 def check_plan(plan: dict[str, Any], source: str, run: str, expected_hash: str) -> None:
+    # The run is "<run id>-<attempt>". "Re-run failed jobs" reuses attempt-1
+    # job outputs, but which attempt's artifacts a re-run job reads is not
+    # documented and upload-artifact will not overwrite a name; only a complete
+    # re-run gives every job one coherent plan.
+    if plan["run"] != run and plan["run"].rpartition("-")[0] == run.rpartition("-")[0]:
+        raise ValueError(
+            "plan comes from another attempt of this workflow run; partial re-runs are "
+            "not supported, use Re-run all jobs"
+        )
     if fingerprint(plan) != expected_hash or plan["source"] != source or plan["run"] != run:
         raise ValueError("plan does not match the source, workflow run, and immutable plan hash")
     if plan["schema"] != 2 or plan["architecture"] != "x86_64":
