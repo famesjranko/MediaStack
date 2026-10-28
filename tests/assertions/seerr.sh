@@ -237,3 +237,35 @@ print(",".join(names))' 2>/dev/null)
         fail "step 6 Seerr: trustProxy $trust_label" "settings/network trustProxy=$seerr_trust"
     fi
 }
+
+# A fresh Seerr already matches the default quotas in config.yml, so the first
+# configure run only reads them. Set a movie quota in config.yml and run the
+# configurator again with contract tracing: it must write the quota through
+# the settings API and read it back. config.yml is then restored; Seerr keeps
+# the quota until the next configure run.
+assert_seerr_quota_update() {
+    local log=/tmp/configure-seerr-quota.out
+    if ! dind_python <<'PY'; then
+import shutil
+
+import yaml
+
+shutil.copy2("config.yml", "/tmp/config.yml.quota-bak")
+with open("config.yml", encoding="utf-8") as fh:
+    config = yaml.safe_load(fh)
+config["seerr"]["quotas"]["movie"]["limit"] = 5
+with open("config.yml", "w", encoding="utf-8") as fh:
+    yaml.safe_dump(config, fh, sort_keys=False)
+PY
+        fail "Seerr: config.yml movie quota set for the update check"
+        return 0
+    fi
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only seerr" >"$log" 2>&1 \
+        && grep -q 'quotas 5 movies/7d' "$log"; then
+        pass "Seerr: configure.sh writes a changed config.yml quota and reads it back"
+    else
+        fail "Seerr: configure.sh writes a changed config.yml quota and reads it back"
+        tail -20 "$log"
+    fi
+    dind_exec 'mv /tmp/config.yml.quota-bak config.yml' || fail "Seerr: config.yml restored after the quota check"
+}
