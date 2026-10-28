@@ -80,7 +80,19 @@ The pipeline has these boundaries:
    this job. GitHub creates the PR-triggered CI run in an approval-required
    state. A maintainer must approve that run before the PR gate can pass.
 5. A separate status job has only `issues: write`. It runs no image and no
-   artifact code. It posts the run status.
+   artifact code. It posts the run status, also when the planner fails.
+
+Every job declares its own permissions. No job inherits a workflow-level
+permission.
+
+## Re-run a preflight
+
+Use **Re-run all jobs** only. A partial re-run (**Re-run failed jobs** or one
+job) reuses the plan outputs of the earlier attempt. GitHub does not document
+which attempt's artifact a re-run job downloads, and `upload-artifact` does not
+overwrite an artifact name that already exists. Each job
+refuses a plan from another attempt of the same run, with the message
+`partial re-runs are not supported, use Re-run all jobs`.
 
 ## Approve the PR's CI run
 
@@ -102,37 +114,50 @@ gh api --method POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
 With `publish=true`, the publisher keeps one open digest PR. The PR head is the branch
 `chore/tested-images`, and the PR has the label `tested-digests`. A newer
 accepted run replaces the proposal: the newest run's tested combination is the
-only proposal. A failed phase 2 accepts nothing. The publisher makes one decision
-per run:
+only proposal. A failed phase 2 accepts nothing. A run refuses a candidate when
+the candidate fails phase 1, or when final verification of its combination does
+not succeed. The publisher makes one decision per run:
 
-| This run | Open PR on `chore/tested-images` | Action |
+| This run | Branch `chore/tested-images` and its PR | Action |
 |---|---|---|
-| Any result | Not opened by `github-actions[bot]`, or the branch has other commits | Refuse and fail. Change nothing. |
-| Accepted a combination | None | Rebuild the branch from the default branch and open the PR. |
-| Accepted a combination | Publisher-owned, different lock | Rebuild the branch from the default branch, force-update it with a lease, and refresh the PR body. |
-| Accepted a combination | Publisher-owned, same lock | Do nothing. Test timestamps are ignored. |
-| Accepted nothing | Publisher-owned | Do nothing. The PR's tested digests remain valid. |
-| Accepted nothing | None | Do nothing. |
+| Any result | PR not opened by `github-actions[bot]`, more than one open PR, PR head differs from the branch, or the branch has other commits | Refuse and fail. Change nothing. |
+| Any result | Branch exists, no open PR, and the last PR with that head was closed without merging | Refuse and fail. Delete the branch to enable publication again. |
+| Accepted a combination | No branch, a branch from a merged PR, or a publisher branch with no PR | Rebuild the branch from the default branch, push it with a lease, and open the PR. |
+| Accepted a combination | Publisher-owned PR, different lock | Rebuild the branch from the default branch, force-update it with a lease, and refresh the PR body. |
+| Accepted a combination | Publisher-owned PR, same lock | Keep the branch. Refresh the PR body so that it cites this run. Test timestamps are ignored. |
+| Accepted nothing; refused an exact digest that the PR proposes | Publisher-owned PR | Comment on the PR with the run link, close it, and delete the branch with a lease. The next accepted run opens a new PR. |
+| Accepted nothing; refused none of the PR's digests | Publisher-owned PR | Do nothing. The PR's evidence is the source and run that its description cites, not this run. |
+| Accepted nothing | No PR | Do nothing. |
 
 A publisher-owned branch has exactly one commit on top of the default branch.
 That commit has the publisher's author, committer and message, and it changes
 only the digest record and the README badges. Any other shape causes a refusal.
-To recover, close the PR or delete the branch after review. The force-update
-uses a lease on the branch head that the publisher read. A concurrent change
-makes the push fail. The repository ruleset protects only `main`, so it permits
-this force-update.
+To recover, close the PR and delete the branch after review. If you close the
+PR and keep the branch, the publisher refuses until you delete the branch. The
+repository squash-merges and deletes merged branches, so the publisher reads the
+closed PR list to find out whether a remaining branch was merged. Every push and
+deletion uses a lease on the branch head that the publisher read. A concurrent
+change makes the push fail. The repository ruleset protects only `main`, so it
+permits this force-update.
 
 ## Status report
 
 The status job posts one comment for each preflight run on the open
-`image-drift` issue. The comment gives one state for each drifted service:
+`image-drift` issue. The comment names the ref of the run. A run on a ref other
+than the default branch is marked as a trial run. The comment gives one state
+for each drifted service:
 
 - proposed in PR #N;
 - failed in phase 1 or phase 2, with links to the run and its artifacts;
+- failed final verification, when the image jobs passed but the verifier
+  refused the evidence;
 - held, with the reason from the compatibility hold list;
 - not selected.
 
-When no `image-drift` issue is open, the report is written to the step summary
+When the planner fails, for example on a registry outage, an invalid `services`
+input or a lock that differs from compose, the comment says so and links the
+run. When the status job cannot validate the plan, it posts the same kind of
+notice. When no `image-drift` issue is open, the report is written to the step summary
 only. The weekly alert keeps ownership of the issue body.
 
 ## Artifacts and limits
