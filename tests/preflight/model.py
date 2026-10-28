@@ -88,6 +88,30 @@ def resolve(image: str) -> str:
     return digest
 
 
+def required_scenarios(services: list[str]) -> dict[str, list[str]]:
+    preflights = drift.read_preflights(ROOT / "docs/operations/upgrades.md")
+    required = {}
+    for service in services:
+        names = drift.scenarios_of(preflights.get(service, ""))
+        if not names:
+            raise ValueError(f"{service} has no scenario oracle")
+        required[service] = sorted(set(names + EXTRA.get(service, [])))
+    return required
+
+
+def make_job(
+    plan: dict[str, Any], job_id: str, scenario: str, combination: list[str], services: list[str]
+) -> dict[str, Any]:
+    """One image job: the ``combination`` candidates run; ``services`` must prove ``scenario``."""
+    return {
+        "id": job_id,
+        "scenario": scenario,
+        "combination": combination,
+        "services": services,
+        "run_id": "run-20260101T000000Z-" + fingerprint([plan["source"], plan["run"], job_id])[:8],
+    }
+
+
 def build_plan(
     baseline: dict[str, drift.ImageDigest],
     current: dict[str, drift.ImageDigest],
@@ -96,6 +120,7 @@ def build_plan(
     run: str,
     fixtures: dict[str, str],
 ) -> dict[str, Any]:
+    """Phase 1: each selected candidate runs alone with the accepted companions."""
     if baseline.keys() != current.keys():
         raise ValueError(
             "service additions and removals require a separate reviewed baseline change"
@@ -108,49 +133,90 @@ def build_plan(
         raise ValueError(
             "selection must name distinct, drifted services with complete automated coverage"
         )
-    preflights = drift.read_preflights(ROOT / "docs/operations/upgrades.md")
-    effective = {s: f"{r.image}@{r.digest}" for s, r in baseline.items()}
-    groups: dict[str, list[str]] = {}
-    for service in sorted(requested):
-        required = drift.scenarios_of(preflights.get(service, ""))
-        if not required:
-            raise ValueError(f"{service} has no scenario oracle")
-        effective[service] = f"{current[service].image}@{current[service].digest}"
-        for scenario in sorted(set(required + EXTRA.get(service, []))):
-            groups.setdefault(scenario, []).append(service)
-    return {
-        "schema": 1,
+    plan: dict[str, Any] = {
+        "schema": 2,
+        "phase": 1,
         "source": source,
         "run": run,
         "architecture": "x86_64",
-        "baseline": fingerprint({s: f"{r.image}@{r.digest}" for s, r in baseline.items()}),
+        "accepted": {s: f"{r.image}@{r.digest}" for s, r in baseline.items()},
+        "candidates": {s: f"{current[s].image}@{current[s].digest}" for s in sorted(requested)},
         "selected": sorted(requested),
-        "effective": effective,
         "fixtures": fixtures,
         "pending": {s: HELD.get(s, "not selected") for s in sorted(changed - requested)},
-        "jobs": [
-            {
-                "scenario": s,
-                "services": v,
-                "run_id": "run-20260101T000000Z-" + fingerprint([source, run, s])[:8],
-            }
-            for s, v in sorted(groups.items())
-        ],
     }
+    plan["jobs"] = [
+        make_job(plan, f"p1-{service}.{scenario}", scenario, [service], [service])
+        for service, scenarios in required_scenarios(plan["selected"]).items()
+        for scenario in scenarios
+    ]
+    return plan
+
+
+def combination_plan(
+    parent: dict[str, Any], passed: list[str], failed: dict[str, list[str]]
+) -> dict[str, Any]:
+    """Phase 2: freeze the combination of every candidate that passed phase 1.
+
+    ``authority`` names the only evidence that may change the lock. A single
+    passing candidate already ran as this exact combination in phase 1, so it
+    needs no phase 2. Several passing candidates must pass again together.
+    """
+    authority = "none" if not passed else "phase-1" if len(passed) == 1 else "phase-2"
+    plan = {key: parent[key] for key in ("schema", "source", "run", "architecture", "accepted")}
+    plan.update(
+        {
+            "phase": 2,
+            "parent": fingerprint(parent),
+            "candidates": {s: parent["candidates"][s] for s in passed},
+            "selected": passed,
+            "fixtures": parent["fixtures"],
+            "pending": parent["pending"],
+            "failed": failed,
+            "authority": authority,
+        }
+    )
+    groups: dict[str, list[str]] = {}
+    if authority == "phase-2":
+        for service, scenarios in required_scenarios(passed).items():
+            for scenario in scenarios:
+                groups.setdefault(scenario, []).append(service)
+    plan["jobs"] = [
+        make_job(plan, f"p2-{scenario}", scenario, passed, services)
+        for scenario, services in sorted(groups.items())
+    ]
+    return plan
+
+
+def effective(plan: dict[str, Any], job: dict[str, Any]) -> dict[str, str]:
+    """Every service reference one job runs: accepted companions plus its candidates."""
+    refs = dict(plan["accepted"])
+    refs.update({s: plan["candidates"][s] for s in job["combination"]})
+    return refs
 
 
 def check_plan(plan: dict[str, Any], source: str, run: str, expected_hash: str) -> None:
+    # The run is "<run id>-<attempt>". "Re-run failed jobs" reuses attempt-1
+    # job outputs, but which attempt's artifacts a re-run job reads is not
+    # documented and upload-artifact will not overwrite a name; only a complete
+    # re-run gives every job one coherent plan.
+    if plan["run"] != run and plan["run"].rpartition("-")[0] == run.rpartition("-")[0]:
+        raise ValueError(
+            "plan comes from another attempt of this workflow run; partial re-runs are "
+            "not supported, use Re-run all jobs"
+        )
     if fingerprint(plan) != expected_hash or plan["source"] != source or plan["run"] != run:
         raise ValueError("plan does not match the source, workflow run, and immutable plan hash")
+    if plan["schema"] != 2 or plan["architecture"] != "x86_64":
+        raise ValueError("plan schema or architecture mismatch")
     if source_sha() != source:
         raise ValueError("checkout is not the source that was tested")
     baseline = rows(ROOT / "docs/operations/image-digests.lock")
-    actual = fingerprint({s: f"{r.image}@{r.digest}" for s, r in baseline.items()})
-    if plan["baseline"] != actual or plan["architecture"] != "x86_64":
-        raise ValueError("plan baseline or architecture mismatch")
-    if set(plan["effective"]) != set(baseline) or set(plan["fixtures"]) != set(FIXTURES):
+    if plan["accepted"] != {s: f"{r.image}@{r.digest}" for s, r in baseline.items()}:
+        raise ValueError("plan baseline does not match the accepted lock")
+    if not set(plan["candidates"]) <= set(baseline) or set(plan["fixtures"]) != set(FIXTURES):
         raise ValueError("plan has an unexpected image population")
-    for ref in [*plan["effective"].values(), *plan["fixtures"].values()]:
+    for ref in [*plan["candidates"].values(), *plan["fixtures"].values()]:
         if not isinstance(ref, str) or not re.fullmatch(
             r"[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}", ref
         ):

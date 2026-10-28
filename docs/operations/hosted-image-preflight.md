@@ -25,33 +25,76 @@ listed in the [compatibility matrix](image-compatibility.md). Explicit selection
 does not bypass a hold. Image tag/repository changes and service additions or
 removals require a separately reviewed baseline change.
 
-Each scenario tests the same proposed combination: selected candidate digests
-plus accepted companion digests. All required scenarios must pass with a
-nonempty assertion population and no failed or skipped assertions. If one
-candidate fails, the selected combination is not published. Narrow the selection
-and rerun to test a smaller combination. Passing evidence from the failed
-combination cannot authorize the smaller combination.
+## Isolate, then combine
 
-The pipeline has four boundaries:
+One run narrows the selection automatically:
 
-1. A read-only planner freezes the source SHA, candidate snapshot, full effective
-   service set, fixture-image digests, architecture and scenario run IDs. Its
+1. **Phase 1.** Each selected candidate runs alone. Its jobs use that candidate
+   digest plus the accepted digests of all other services. Each candidate runs
+   every scenario that the manifest requires for it.
+2. **Selection.** A read-only job reads the phase-1 results as data. A candidate
+   passes only when all of its phase-1 jobs qualify. The job freezes a phase-2
+   plan for the candidates that passed and records the failed candidates. The
+   phase-2 plan hash goes through job outputs, like the phase-1 plan hash.
+3. **Phase 2.** The candidates that passed run together through the union of
+   their required scenarios. Only phase-2 evidence can authorize this
+   combination. Phase-1 evidence never authorizes a different combination.
+
+When exactly one candidate passes phase 1, its phase-1 jobs already tested the
+exact combination: that candidate plus the accepted companions. Phase 2 does not
+run. The phase-2 plan records this as `authority: phase-1`, and the verifier
+accepts phase-1 evidence only for a single-candidate combination. When no
+candidate passes, the plan records `authority: none` and nothing is published.
+
+A qualifying job has a nonempty assertion population and no failed or skipped
+assertions. If phase 2 fails, the run publishes nothing. The status report names
+the failure.
+
+Phase 1 runs one job for each candidate and required scenario. A selection of
+five candidates with two scenarios each runs ten phase-1 jobs, two at a time.
+Select fewer services to shorten a run.
+
+## Boundaries
+
+The pipeline has these boundaries:
+
+1. A read-only planner freezes the source SHA, candidate snapshot, accepted
+   companions, fixture-image digests, architecture and job run IDs. Its
    canonical plan hash is passed through job outputs, independently of image-job
    artifacts.
 2. Disposable hosted Ubuntu VMs run privileged DinD with read-only repository
-   permissions. At most two scenarios run concurrently. Image execution receives
-   no publishing token or live credentials. Each scenario has a 70-minute process
-   deadline inside an 85-minute job deadline.
-3. A read-only verifier checks the original plan hash and validates result data,
-   exact-digest receipts, source/run identity, architecture, actual companion and
-   fixture references, image inspections, pass/skip counts and resource fields.
-   It writes a selective lock only after every required result qualifies.
+   permissions, in phase 1 and in phase 2. At most two jobs of a phase run
+   concurrently. Image execution receives no publishing token or live
+   credentials. Each job has a 70-minute process deadline inside an 85-minute job
+   deadline.
+3. The read-only selection job and the read-only verifier check each plan hash
+   and validate result data, exact-digest receipts, source/run identity,
+   architecture, actual companion and fixture references, image inspections,
+   pass/skip counts and resource fields. The verifier recomputes the selection
+   from the phase-1 results and refuses a stale or different phase-2 plan. It
+   writes a selective lock only after every authorizing result qualifies.
 4. A separate publisher runs only on the default branch. It revalidates the
    original artifacts using trusted source code, refuses an advanced default
-   branch, and opens an ordinary PR. It never runs candidate images, executes
+   branch, and maintains one rolling PR. It never runs candidate images, executes
    artifact code, pushes to `main`, or merges. Its write token exists only in
    this job. GitHub creates the PR-triggered CI run in an approval-required
    state. A maintainer must approve that run before the PR gate can pass.
+5. A separate status job has only `issues: write`. It runs no image and no
+   artifact code. It posts the run status, also when the planner fails.
+
+Every job declares its own permissions. No job inherits a workflow-level
+permission.
+
+## Re-run a preflight
+
+Use **Re-run all jobs** only. A partial re-run (**Re-run failed jobs** or one
+job) reuses the plan outputs of the earlier attempt. GitHub does not document
+which attempt's artifact a re-run job downloads, and `upload-artifact` does not
+overwrite an artifact name that already exists. Each job
+refuses a plan from another attempt of the same run, with the message
+`partial re-runs are not supported, use Re-run all jobs`.
+
+## Approve the PR's CI run
 
 Open the generated PR and select **Approve workflows to run** in its merge box.
 Review the diff before approval. This starts CI; it does not approve or merge
@@ -66,15 +109,68 @@ its event, source commit and associated PR:
 gh api --method POST repos/OWNER/REPO/actions/runs/RUN_ID/approve
 ```
 
-Check for an existing open digest PR before another publishing trial. Current
-manual runs create separate branches; they do not replace or deduplicate open
-proposals. Scheduled publication needs an explicit policy for this case.
+## Open-proposal policy
+
+With `publish=true`, the publisher keeps one open digest PR. The PR head is the branch
+`chore/tested-images`, and the PR has the label `tested-digests`. A newer
+accepted run replaces the proposal: the newest run's tested combination is the
+only proposal. A failed phase 2 accepts nothing. A run refuses a candidate when
+the candidate fails phase 1, or when final verification of its combination does
+not succeed. The publisher makes one decision per run:
+
+| This run | Branch `chore/tested-images` and its PR | Action |
+|---|---|---|
+| Any result | PR not opened by `github-actions[bot]`, more than one open PR, PR head differs from the branch, or the branch has other commits | Refuse and fail. Change nothing. |
+| Any result | Branch exists, no open PR, and the last PR with that head was closed without merging | Refuse and fail. Delete the branch to enable publication again. |
+| Accepted a combination | No branch, a branch from a merged PR, or a publisher branch with no PR | Rebuild the branch from the default branch, push it with a lease, and open the PR. |
+| Accepted a combination | Publisher-owned PR, different lock | Rebuild the branch from the default branch, force-update it with a lease, and refresh the PR body. |
+| Accepted a combination | Publisher-owned PR, same lock | Keep the branch. Refresh the PR body so that it cites this run. Test timestamps are ignored. |
+| Accepted nothing; refused an exact digest that the PR proposes | Publisher-owned PR | Comment on the PR with the run link, close it, and delete the branch with a lease. The next accepted run opens a new PR. |
+| Accepted nothing; refused none of the PR's digests | Publisher-owned PR | Do nothing. The PR's evidence is the source and run that its description cites, not this run. |
+| Accepted nothing | No PR | Do nothing. |
+
+A publisher-owned branch has exactly one commit on top of the default branch.
+That commit has the publisher's author, committer and message, and it changes
+only the digest record and the README badges. Any other shape causes a refusal.
+To recover, close the PR and delete the branch after review. If you close the
+PR and keep the branch, the publisher refuses until you delete the branch. The
+repository squash-merges and deletes merged branches, so the publisher reads the
+closed PR list to find out whether a remaining branch was merged. Every push and
+deletion uses a lease on the branch head that the publisher read. A concurrent
+change makes the push fail. The repository ruleset protects only `main`, so it
+permits this force-update.
+
+## Status report
+
+The status job posts one comment for each preflight run on the open
+`image-drift` issue. The comment names the ref of the run. A run on a ref other
+than the default branch is marked as a trial run. The comment gives one state
+for each drifted service:
+
+- proposed in PR #N;
+- failed in phase 1 or phase 2, with links to the run and its artifacts;
+- failed final verification, when the image jobs passed but the verifier
+  refused the evidence;
+- held, with the reason from the compatibility hold list;
+- not selected.
+
+When the planner fails, for example on a registry outage, an invalid `services`
+input or a lock that differs from compose, the comment says so and links the
+run. When the status job cannot validate the plan, it posts the same kind of
+notice. When no `image-drift` issue is open, the report is written to the step summary
+only. The weekly alert keeps ownership of the issue body.
+
+## Artifacts and limits
 
 Artifacts are retained for 14 days:
 
-- `preflight-plan`: the immutable candidate snapshot and complete JSON plan.
-- `result-<scenario>`: sanitized assertion/service logs, selected Docker event
-  fields, image IDs/digests/platforms, exact receipts and `result.json`.
+- `preflight-plan`: the immutable candidate snapshot and the phase-1 JSON plan.
+- `preflight-selection`: the phase-2 JSON plan, with the passed and failed
+  candidates and the authorizing evidence.
+- `result-<job>`: sanitized assertion/service logs, selected Docker event
+  fields, image IDs/digests/platforms, exact receipts and `result.json`. Phase-1
+  jobs are named `p1-<service>.<scenario>`. Phase-2 jobs are named
+  `p2-<scenario>`.
 - `preflight-accepted`: the proposed lock, combined receipts and PR description.
 
 The result records elapsed seconds and disk growth before DinD cleanup. Disk
@@ -97,9 +193,8 @@ PR remains the final gate.
 On a feature branch, use `publish=false` to measure the proposed workflow. The
 publisher cannot run there. Review cold time/disk results and the artifact logs
 before enabling recurring image acceptance. Scheduled acceptance is deliberately
-absent until the measurements, independent permissions/test review, hosted
-failure proof and open-proposal policy are complete. The existing scheduled
-alert remains active.
+absent until the measurements, independent permissions/test review and hosted
+failure proof are complete. The existing scheduled alert remains active.
 
 GitHub must permit the repository's workflow token to create pull requests.
 The [repository Actions setting](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)
