@@ -1,0 +1,11 @@
+service: fail2ban
+# MediaStack calls no fail2ban HTTP API: every touchpoint is a docker exec of a
+# binary inside the image.
+endpoints: []
+exec:
+  - {id: client-reload, command: [fail2ban-client, reload], callers: [scripts/configure.sh, scripts/fail2ban-reload-watcher.sh, scripts/launcher/fail2ban.sh, scripts/setup/fail2ban.sh]}
+  - {id: client-status, unexercised: launcher-menu, command: [fail2ban-client, status], callers: [scripts/launcher/diagnostics.sh, scripts/launcher/fail2ban.sh, scripts/lib/health.sh]}
+  - {id: client-unban, unexercised: launcher-menu, command: [fail2ban-client, unban], callers: [scripts/launcher/fail2ban.sh]}
+  - {id: client-unban-all, unexercised: launcher-menu, command: [fail2ban-client, unban, --all], callers: [scripts/launcher/fail2ban.sh]}
+  - {id: regex-count, command: [sh, -c], match: fail2ban-regex, callers: [scripts/lib/health.sh]}
+  - {id: newest-log, unexercised: launcher-menu, command: [sh, -c], match: "stat -c %Y", callers: [scripts/lib/health.sh]}

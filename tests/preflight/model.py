@@ -24,7 +24,12 @@ HELD = {
     "wireguard": "existing-peer migration is not covered",
     "flaresolverr": "health alone cannot prove a challenge solve",
 }
-EXTRA = {"ddns-updater": ["ddns-seed"], "socket-proxy": ["autoheal"], "fail2ban": ["fresh-install"]}
+# fail2ban needs upgrade-path: its regex-count exec runs only in scripts/update.sh.
+EXTRA = {
+    "ddns-updater": ["ddns-seed"],
+    "socket-proxy": ["autoheal"],
+    "fail2ban": ["fresh-install", "upgrade-path"],
+}
 FIXTURES = {
     "pebble": "ghcr.io/letsencrypt/pebble:latest",
     "challtestsrv": "ghcr.io/letsencrypt/pebble-challtestsrv:latest",

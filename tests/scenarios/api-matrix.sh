@@ -58,9 +58,7 @@ source tests/api-matrix/seerr.sh
 
 run_scenario() {
     # ------------------------------------------------------------------
-    # 0-2. Prep, bring-up, and API keys — shared with contract-drift.sh
-    # (tests/api-matrix/bringup.sh), so this scenario and the drift replayer
-    # never grow two bring-up implementations.
+    # 0-2. Prep, bring-up, and API keys (tests/api-matrix/bringup.sh).
     # ------------------------------------------------------------------
     api_matrix_bring_up || return 1
     local sonarr_key="$API_MATRIX_SONARR_KEY" radarr_key="$API_MATRIX_RADARR_KEY"

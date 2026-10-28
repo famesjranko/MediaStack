@@ -17,7 +17,7 @@ the required scenarios. A combined token requires every named scenario.
 | Uptime Kuma | Admin login, required monitors and idempotent re-run; `install-e2e` also through the real installer | No dedicated database migration fixture | Operator review required for stored monitoring history |
 | NPM | Admin auth, proxy/certificate writes, live HTTPS and security headers; `npm-heal` tests recovery | No dedicated proxy/database migration fixture | Real WAN DNS and public ACME are separate |
 | DDNS updater | `ddns-seed` configuration/startup and `ddns-verify` provider/error behavior | Existing rendered provider configuration is reused in the focused fixtures | Real provider accounts and WAN address changes are separate |
-| fail2ban | Static filter fixtures plus live Jellyfin/Seerr auth failures in `fresh-install` | Jails/rules recreated and checked in DinD | Host networking remains an operator-run proof |
+| fail2ban | Static filter fixtures plus live Jellyfin/Seerr auth failures in `fresh-install` | `upgrade-path`: the update script's filter check (`fail2ban-regex`) runs on the candidate; jails/rules recreated and checked in DinD | Host networking remains an operator-run proof |
 | socket-proxy | Allow/deny API matrix and agent statistics; `autoheal` proves restart permissions; `install-e2e` also through the real installer | Stateless container replacement | Host network exposure checked separately on real installs |
 | autoheal | Unhealthy fixture restart through socket-proxy | Stateless container replacement | Intentional stops remain covered by product unit tests |
 | Unpackerr | Authenticated queue fixture through real extraction | Stateless worker replacement | A real transfer and Arr import remain separate |

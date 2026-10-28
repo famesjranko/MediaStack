@@ -143,21 +143,25 @@ shorten a run.
 Passing scenarios do not prove that each API call of MediaStack still works. A
 JSON helper can return a default value when a field has a new name. The contract
 gate closes this gap. `tests/contracts/*.yml` lists each API call, the statuses
-that it accepts and the response fields (`reads`) that MediaStack uses. See
-[tests/contracts/README.md](../../tests/contracts/README.md).
+that it accepts and the response fields (`reads`) that MediaStack uses. It also
+lists each `docker exec` into a service container and its accepted exit
+statuses. See [tests/contracts/README.md](../../tests/contracts/README.md).
 
 Capture:
 
 1. `fresh-install`, `upgrade-path` and `install-e2e` are the traced scenarios.
    They set `MS_CONTRACT_TRACE` only on the commands that start product code.
    Assertion requests are not traced.
-2. In DinD, a `curl` wrapper writes a trace of each product request.
+2. In DinD, a `curl` wrapper writes a trace of each product request. A
+   `docker` wrapper records each product `docker exec`: the container, the
+   arguments after it and the exit status.
 3. At scenario end, `tests/contracts/observe.py` runs in DinD. It connects each
-   request to its inventory entry, and to the candidate image or to another
-   image, through the container start events. It writes `contracts.json` to the
-   job artifact. This file holds counts, statuses and the names of the reads
-   seen. It holds no values, headers or bodies.
-4. The raw traces stay in DinD and are deleted there.
+   request and each exec to its inventory entry, and to the candidate image or
+   to another image, through the container start events. It writes
+   `contracts.json` to the job artifact. This file holds counts, statuses, exit
+   statuses and the names of the reads seen. It holds no values, headers,
+   bodies or exec arguments.
+4. The raw traces and exec records stay in DinD and are deleted there.
 
 Verdict (`tests/preflight/contracts.py`):
 
@@ -166,8 +170,9 @@ Verdict (`tests/preflight/contracts.py`):
   least one request and parse all of them.
 - For each candidate, the gate uses all of its traced jobs together. Each entry
   must have a call on the candidate digest with an accepted status. Each
-  declared read must appear in an accepted response. No call to the candidate
-  can be outside the inventory.
+  declared read must appear in an accepted response. Each exec entry must run
+  on the candidate digest with an accepted exit status. No call or exec into
+  the candidate can be outside the inventory.
 - An entry with `unexercised` (`gpu`, `remote-profile`, `launcher-menu`, `nas`
   or `held-profile`) is exempt. An exempt entry that has a call on the candidate
   is reported as stale. It does not fail.
@@ -182,9 +187,12 @@ Failure messages name the exact entry:
 | `sonarr quality-profile-list: not exercised on candidate (seen 404×2 in fresh-install)` | No call had an accepted status on the candidate. The message shows what was seen. |
 | `sonarr quality-profile-list: missing reads items[].quality.id` | No accepted response had that field with a value. |
 | `sonarr GET /api/v3/system/status: unlisted call (upgrade-path)` | MediaStack called a route that the inventory does not list. |
+| `fail2ban client-reload: exit 1` | No exec of the entry had an accepted exit status on the candidate. The message shows the statuses seen. |
+| `fail2ban: unlisted exec fail2ban-client ... (fresh-install)` | MediaStack ran a command in the container that the inventory does not list. |
 | `p1-sonarr.fresh-install: contracts.json is missing or unreadable` | The traced job uploaded no usable evidence. |
 | `p1-sonarr.fresh-install: contract trace inactive: no product request was traced` | The wrapper recorded nothing. |
 | `p1-sonarr.fresh-install: contract trace has 3 unparsed requests` | A local request has no known target or no request line. |
+| `p1-sonarr.fresh-install: contract trace has 1 unparsed exec record` | The `docker` wrapper wrote a record that does not parse. |
 | `p1-sonarr.fresh-install: contract inventory fingerprint does not match the tested source` | The evidence comes from another inventory. |
 
 A candidate without entries, for example socket-proxy, passes the gate. The

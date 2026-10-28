@@ -75,20 +75,17 @@ MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.s
 `MS_TEST_IMAGE_OVERRIDES` takes `svc=ref` pairs (comma/space separated); a typo (unknown service,
 empty ref) aborts the run. See the "Bumping a Service Version" playbook in `docs/project/structure.md`.
 
-**Six API-bearing services get a contract-drift check.** `./tests/run.sh contract-drift` brings up
-the same services `api-matrix` does (reusing its bring-up), applies each service's own product
-configurator to get real credentials, and replays their contracts
-(`tests/contracts/{sonarr,radarr,qbittorrent,jackett,jellyfin,seerr}.yml`) against the live API:
-`tests/contracts/replay.py live` diffs the declared `reads` fields of every safe (`GET`, no `{id}`,
-declared `reads`) endpoint, shape-driven from each contract's own `auth:` block (header, bearer,
-cookie, or query auth — see `tests/contracts/README.md`). `python3 tests/contracts/replay.py spec`
-separately checks every declared endpoint's method+path still exists in the upstream OpenAPI spec
-(works offline against a local cache; a fresh spec fetch needs network) for the services that carry
-one — Jellyfin is live-replay-only; see its contract's own note. A contract-drift failure on a bump
-is resolved in the bump PR itself — update the contract (and any caller) alongside the pin change,
-the same way an accepted-digest update already travels with the bump. Neither replay mode runs in
-the PR gate; see `tests/README.md` "Contract mocks and drift replay" for what each mode does and
-does not cover.
+**Contract drift is checked against real traffic.** Run a traced scenario (`fresh-install`,
+`upgrade-path` or `install-e2e`) with `MS_CONTRACTS_FILE` set and a digest override. The product's
+own configurators call each service's API and run each `docker exec`. The run writes
+`contracts.json`: which `tests/contracts/*.yml` entries were called on the candidate, their statuses
+or exit statuses, and the declared `reads` seen. The hosted preflight applies the
+[contract gate](hosted-image-preflight.md#contract-gate) to it. `python3 tests/contracts/replay.py
+spec` separately checks that each declared endpoint's method and path still exist in the upstream
+OpenAPI spec, for the services that have one (it works offline against a local cache; a fresh spec
+fetch needs network). A contract failure on a bump is resolved in the bump PR itself: update the
+contract, and any caller, with the pin change, as an accepted-digest update already travels with
+the bump. See `tests/README.md` "Contract mocks and drift checks".
 
 **Caveat:** coverage depends on the scenario. Some scenarios verify configuration writes,
 environment contracts, authentication, and service interactions. The WireGuard scenario runs its

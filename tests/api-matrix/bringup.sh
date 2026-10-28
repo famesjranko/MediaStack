@@ -2,9 +2,7 @@
 # services (sonarr, radarr, qbittorrent, jackett, jellyfin, seerr).
 #
 # Owns: compose pull/up + health wait + Sonarr/Radarr API key extraction,
-# used by BOTH tests/scenarios/api-matrix.sh (behavioral matrix) and
-# tests/scenarios/contract-drift.sh (live drift replay) — one bring-up, not
-# duplicated: the existing live layer is reused, never duplicated.
+# for tests/scenarios/api-matrix.sh (behavioral matrix).
 #
 # Sets (after a successful call): API_MATRIX_SONARR_KEY, API_MATRIX_RADARR_KEY
 # (empty string if that key could not be read). Returns non-zero only on a

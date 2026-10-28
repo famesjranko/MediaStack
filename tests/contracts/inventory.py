@@ -1,9 +1,10 @@
-"""Load, validate and match the API contract inventory in tests/contracts/*.yml.
+"""Load, validate and match the contract inventory in tests/contracts/*.yml.
 
 check.py (static coverage), observe.py (trace reducer) and the preflight
 verdict (tests/preflight/contracts.py) share this one reading of the format, so
-a route or a read path cannot mean one thing to the scanner and another to the
-acceptance gate. The format itself is documented in tests/contracts/README.md.
+a route, a read path or an exec command cannot mean one thing to the scanner
+and another to the acceptance gate. The format itself is documented in
+tests/contracts/README.md.
 """
 
 from __future__ import annotations
@@ -23,7 +24,10 @@ EXEMPT_REASONS = frozenset({"gpu", "remote-profile", "launcher-menu", "nas", "he
 ENDPOINT_KEYS = frozenset(
     {"id", "method", "path", "base_path", "expect", "unexercised", "sends", "reads", "callers"}
 )
+EXEC_KEYS = frozenset({"id", "command", "match", "expect_exit", "unexercised", "callers"})
 _ID_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# An exec command token is a literal word: no shell expansion, quote or space.
+_COMMAND_TOKEN_RE = re.compile(r"[^\s$`'\"\\]+")
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,37 @@ class Endpoint:
     def accepts(self, status: int) -> bool:
         """Accepted statuses are ``expect`` when given, otherwise any 2xx."""
         return status in self.expect if self.expect else 200 <= status < 300
+
+
+@dataclass(frozen=True)
+class ExecEntry:
+    """One inventoried ``docker exec`` into the service's container.
+
+    ``command`` is a prefix of the argv after the container name. ``match``,
+    when set, must be a substring of the argument that follows the prefix:
+    the script of an ``sh -c`` call.
+    """
+
+    service: str
+    id: str
+    command: tuple[str, ...]
+    match: str | None
+    expect_exit: tuple[int, ...]
+    unexercised: str | None
+
+    @property
+    def key(self) -> str:
+        return f"{self.service} {self.id}"
+
+    def accepts(self, code: int) -> bool:
+        """Accepted exit codes are ``expect_exit`` when given, otherwise 0."""
+        return code in (self.expect_exit or (0,))
+
+    def matches(self, argv: list[str]) -> bool:
+        size = len(self.command)
+        if tuple(argv[:size]) != self.command:
+            return False
+        return self.match is None or (len(argv) > size and self.match in argv[size])
 
 
 def join_path(base_path: str, path: str) -> str:
@@ -140,24 +175,89 @@ def _endpoint_errors(item: dict[str, Any]) -> list[str]:
     return [error for error in errors if error]
 
 
-def validate(service: str, contract: dict[str, Any]) -> list[str]:
-    """Schema errors for one contract file, each naming the entry it concerns."""
-    endpoints = contract.get("endpoints")
-    if not isinstance(endpoints, list):
-        return [f"{service}: endpoints must be a list"]
-    if not isinstance(contract.get("base_path", "/"), str):
-        return [f"{service}: base_path must be a string"]
+def _exec_errors(item: dict[str, Any]) -> list[str]:
+    errors = [f"unknown key {key!r}" for key in sorted(set(item) - EXEC_KEYS)]
+    if not isinstance(item.get("id"), str) or not _ID_RE.fullmatch(item["id"]):
+        errors.append("id must be kebab-case")
+    command = item.get("command")
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(
+            isinstance(token, str) and _COMMAND_TOKEN_RE.fullmatch(token) for token in command
+        )
+    ):
+        errors.append("command must be a non-empty list of literal words")
+    if "match" in item and not (isinstance(item["match"], str) and item["match"]):
+        errors.append("match must be a non-empty string")
+    expect = item.get("expect_exit", [0])
+    if (
+        not isinstance(expect, list)
+        or not expect
+        or not all(type(code) is int and 0 <= code <= 255 for code in expect)
+    ):
+        errors.append(f"expect_exit must be a non-empty list of exit codes 0-255, got {expect!r}")
+    if "unexercised" in item and item["unexercised"] not in EXEMPT_REASONS:
+        errors.append(
+            f"unexercised must be one of {sorted(EXEMPT_REASONS)}, got {item['unexercised']!r}"
+        )
+    if _string_list_error(item.get("callers")):
+        errors.append("callers must be a list of strings")
+    return errors
+
+
+def _items_errors(service: str, kind: str, items: list[Any], seen: set[str]) -> list[str]:
+    """Errors of each endpoint or exec entry. Ids are unique across both kinds."""
+    check = _endpoint_errors if kind == "endpoint" else _exec_errors
     errors: list[str] = []
-    seen: set[str] = set()
-    for index, item in enumerate(endpoints):
+    for index, item in enumerate(items):
         if not isinstance(item, dict):
-            errors.append(f"{service} endpoint #{index}: must be a mapping")
+            errors.append(f"{service} {kind} #{index}: must be a mapping")
             continue
-        label = f"{service} {item.get('id', f'endpoint #{index}')}"
-        errors += [f"{label}: {error}" for error in _endpoint_errors(item)]
+        label = f"{service} {item.get('id', f'{kind} #{index}')}"
+        errors += [f"{label}: {error}" for error in check(item)]
         if item.get("id") in seen:
             errors.append(f"{label}: duplicate id")
         seen.add(str(item.get("id")))
+    return errors
+
+
+def validate(service: str, contract: dict[str, Any]) -> list[str]:
+    """Schema errors for one contract file, each naming the entry it concerns."""
+    endpoints, execs = contract.get("endpoints"), contract.get("exec", [])
+    if not isinstance(endpoints, list):
+        return [f"{service}: endpoints must be a list"]
+    if not isinstance(execs, list):
+        return [f"{service}: exec must be a list"]
+    if not isinstance(contract.get("base_path", "/"), str):
+        return [f"{service}: base_path must be a string"]
+    seen: set[str] = set()
+    errors = _items_errors(service, "endpoint", endpoints, seen)
+    errors += _items_errors(service, "exec", execs, seen)
+    return errors or _exec_overlaps(service, execs)
+
+
+def _exec_overlaps(service: str, execs: list[dict[str, Any]]) -> list[str]:
+    """Pairs of valid exec entries where every call one matches also matches the other.
+
+    A longer command, or a ``match`` over the same command, wins a call, so
+    only entries with the same command and both with or both without
+    ``match`` can tie. Without ``match`` they are one entry written twice;
+    with a ``match`` that holds the other's, every call of the narrower one
+    also matches the wider one. Two other ``match`` strings can still meet in
+    one script; exec_match makes such a call hit neither.
+    """
+    errors = []
+    for index, first in enumerate(execs):
+        for second in execs[index + 1 :]:
+            one, other = first.get("match"), second.get("match")
+            if first["command"] != second["command"] or (one is None) != (other is None):
+                continue
+            if one is None or other is None or one in other or other in one:
+                errors.append(
+                    f"{service} {second['id']}: overlaps {first['id']}: "
+                    "every call one of them matches also matches the other"
+                )
     return errors
 
 
@@ -182,14 +282,57 @@ def endpoints(contracts: dict[str, dict[str, Any]]) -> list[Endpoint]:
     return found
 
 
-def load_endpoints(directory: Path = CONTRACT_DIR) -> list[Endpoint]:
-    """Load and validate the whole inventory, or raise ValueError naming every error."""
+def exec_entries(contracts: dict[str, dict[str, Any]]) -> list[ExecEntry]:
+    """Typed exec entries for already-validated contracts."""
+    return [
+        ExecEntry(
+            service=service,
+            id=item["id"],
+            command=tuple(item["command"]),
+            match=item.get("match"),
+            expect_exit=tuple(item.get("expect_exit", ())),
+            unexercised=item.get("unexercised"),
+        )
+        for service, contract in sorted(contracts.items())
+        for item in contract.get("exec", [])
+    ]
+
+
+def _load_valid(directory: Path) -> dict[str, dict[str, Any]]:
     contracts, errors = load(directory)
     for service, contract in contracts.items():
         errors += validate(service, contract)
     if errors:
         raise ValueError("invalid contract inventory: " + "; ".join(errors))
-    return endpoints(contracts)
+    return contracts
+
+
+def load_endpoints(directory: Path = CONTRACT_DIR) -> list[Endpoint]:
+    """Load and validate the whole inventory, or raise ValueError naming every error."""
+    return endpoints(_load_valid(directory))
+
+
+def load_exec(directory: Path = CONTRACT_DIR) -> list[ExecEntry]:
+    """The validated inventory's exec entries, or ValueError naming every error."""
+    return exec_entries(_load_valid(directory))
+
+
+def _rank(item: ExecEntry) -> tuple[int, bool]:
+    return len(item.command), item.match is not None
+
+
+def exec_match(found: list[ExecEntry], service: str, argv: list[str]) -> ExecEntry | None:
+    """The entry an exec hits: the longest command prefix, then one with ``match``.
+
+    A call that two equally specific entries match hits neither, so it counts
+    as unlisted: a script that holds the ``match`` of two entries with the same
+    command is not credited to either.
+    """
+    hits = [item for item in found if item.service == service and item.matches(argv)]
+    best = max(hits, key=_rank, default=None)
+    if best is None or sum(_rank(item) == _rank(best) for item in hits) > 1:
+        return None
+    return best
 
 
 def match(found: list[Endpoint], service: str, method: str, path: str) -> Endpoint | None:

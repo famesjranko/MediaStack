@@ -150,6 +150,92 @@ class SchemaContract(unittest.TestCase):
         self.assertEqual(errors, ["probe probe: path may hold only whole {id} or {key} segments"])
 
 
+def exec_entry(entry_id, command, match=None):
+    return inventory.ExecEntry("fail2ban", entry_id, tuple(command), match, (), None)
+
+
+class ExecContract(unittest.TestCase):
+    def test_longest_command_prefix_wins(self):
+        # Given an unban entry and an unban-all entry whose command extends it.
+        found = [exec_entry("unban", ["fail2ban-client", "unban"]),
+                 exec_entry("unban-all", ["fail2ban-client", "unban", "--all"])]
+
+        # When the argv of an unban --all and of a single unban are matched.
+        every = inventory.exec_match(found, "fail2ban", ["fail2ban-client", "unban", "--all"])
+        one = inventory.exec_match(found, "fail2ban", ["fail2ban-client", "unban", "10.0.0.9"])
+
+        # Then each one hits its own entry.
+        self.assertEqual((every.id, one.id), ("unban-all", "unban"))
+
+    def test_match_reads_the_word_after_the_prefix(self):
+        # Given an sh -c entry that requires fail2ban-regex in its script.
+        found = [exec_entry("regex", ["sh", "-c"], match="fail2ban-regex")]
+
+        # When a script with it and a script without it are matched.
+        hit = inventory.exec_match(found, "fail2ban", ["sh", "-c", "fail2ban-regex /l f"])
+        miss = inventory.exec_match(found, "fail2ban", ["sh", "-c", "date"])
+
+        # Then only the first one hits the entry.
+        self.assertEqual((hit and hit.id, miss), ("regex", None))
+
+    def test_match_reads_only_the_script_argument(self):
+        # Given an sh -c entry that requires fail2ban-regex in its script.
+        found = [exec_entry("regex", ["sh", "-c"], match="fail2ban-regex")]
+
+        # When a call has fail2ban-regex only in an argument after the script.
+        hit = inventory.exec_match(found, "fail2ban", ["sh", "-c", "date", "fail2ban-regex"])
+
+        # Then it does not hit the entry.
+        self.assertIsNone(hit)
+
+    def test_script_with_two_entries_matches_hits_neither(self):
+        # Given two sh -c entries with different match strings.
+        found = [exec_entry("regex", ["sh", "-c"], match="fail2ban-regex"),
+                 exec_entry("newest", ["sh", "-c"], match="stat -c %Y")]
+
+        # When a script holds both strings.
+        hit = inventory.exec_match(found, "fail2ban", ["sh", "-c", "stat -c %Y x; fail2ban-regex"])
+
+        # Then it is credited to neither entry.
+        self.assertIsNone(hit)
+
+    def test_overlapping_match_entries_are_refused(self):
+        # Given two sh -c entries where one match string holds the other.
+        contract = {"endpoints": [], "exec": [
+            {"id": "regex", "command": ["sh", "-c"], "match": "regex", "callers": []},
+            {"id": "f2b-regex", "command": ["sh", "-c"], "match": "fail2ban-regex",
+             "callers": []}]}
+
+        # When the contract is validated.
+        errors = inventory.validate("fail2ban", contract)
+
+        # Then the second entry is refused as overlapping the first.
+        self.assertEqual(errors, ["fail2ban f2b-regex: overlaps regex: "
+                                  "every call one of them matches also matches the other"])
+
+    def test_command_with_a_variable_is_refused(self):
+        # Given an exec entry whose command holds a shell variable.
+        contract = {"endpoints": [], "exec": [
+            {"id": "status", "command": ["fail2ban-client", "status", "$jail"], "callers": []}]}
+
+        # When the contract is validated.
+        errors = inventory.validate("fail2ban", contract)
+
+        # Then the entry is refused by name.
+        self.assertEqual(errors, ["fail2ban status: command must be a non-empty list of literal words"])
+
+    def test_exec_id_may_not_repeat_an_endpoint_id(self):
+        # Given an exec entry with the id of an endpoint in the same file.
+        contract = endpoint()
+        contract["exec"] = [{"id": "probe", "command": ["true"], "callers": []}]
+
+        # When the contract is validated.
+        errors = inventory.validate("probe", contract)
+
+        # Then the exec entry is refused as a duplicate.
+        self.assertEqual(errors, ["probe probe: duplicate id"])
+
+
 class FingerprintContract(unittest.TestCase):
     def test_fingerprint_covers_file_content(self):
         # Given a copy of the inventory.

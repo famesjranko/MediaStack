@@ -149,7 +149,7 @@ tests/
   Dockerfile.dind                   Debian-based DinD image
   Dockerfile.dry-run                Image for the --dry-run UI explorer
   lib/                              Shared harness libraries and the publication guard modules
-  contracts/                        Per-service HTTP API contracts (*.yml) + check.py/replay.py; README.md holds the schema
+  contracts/                        Per-service HTTP API and docker exec contracts (*.yml), check.py, observe.py, replay.py; README.md holds the schema
   mock/                             Contract-driven stdlib mock server (serve.py) + fixtures/, driven by the contract-mock scenario
   assertions/                       Per-service assertion modules (sourced by scenarios)
   api-matrix/                       Per-service direct-API modules for the api-matrix layer

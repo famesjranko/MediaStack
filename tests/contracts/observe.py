@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reduce product curl traces to contracts.json, the contract-coverage evidence.
+"""Reduce product curl traces and exec records to contracts.json, the coverage evidence.
 
 tests/lib/contract-trace-curl.sh records each product curl as a hex --trace
 file named <epoch-ns>-<pid>.trace. This reducer reads those files, maps each
@@ -15,6 +15,13 @@ can name another server. Without a port in the Host header, the request's
 connection gives the target. Both the curl 7.88 trace in the DinD image and
 newer curl traces parse.
 
+tests/lib/contract-trace-docker.sh records each product docker exec in the
+same directory as <epoch-ns>-<pid>.exec: one JSON object with the start time,
+the container, the argv after it and the exit status. The container name is
+the service name. Each record is matched to an exec entry and bound to an
+image like a request. The report holds exit counts, never an argument: argv
+can hold a secret (beszel's superuser password).
+
 Usage:
   observe.py --traces DIR --events FILE --ports JSON --candidates SPEC \\
              --scenario NAME --run-id ID [--output FILE]
@@ -23,18 +30,24 @@ Usage:
 object from service_http_ports_json. --candidates uses the
 MS_TEST_IMAGE_OVERRIDES form: svc=ref pairs separated by commas or spaces.
 
-contracts.json, schema 1. Only entries that were called appear; status keys
+contracts.json, schema 2. Only entries that were called appear; status keys
 are three digits, and "000" is a request with no response:
-  {"schema": 1, "inventory": "<sha256>", "scenario": "...", "run_id": "...",
+  {"schema": 2, "inventory": "<sha256>", "scenario": "...", "run_id": "...",
    "candidates": {"<service>": "<candidate ref>"},
    "requests": <every traced request>, "unparsed": <requests with no target>,
    "entries": {"<service>": {"<entry id>": {"candidate": {"200": 2},
                                             "other": {"404": 1},
                                             "reads": ["<declared read seen>"]}}},
-   "unmatched": {"<service> <METHOD> <path>": {"candidate": 1, "other": 0}}}
+   "unmatched": {"<service> <METHOD> <path>": {"candidate": 1, "other": 0}},
+   "exec": {"calls": <every exec record>, "unparsed": <records that do not parse>,
+            "entries": {"<service>": {"<entry id>": {"candidate": {"0": 1},
+                                                     "other": {"1": 1}}}},
+            "unmatched": {"<service> <argv0> ...": {"candidate": 1, "other": 0}}}}
 "reads" holds the declared reads seen in accepted responses on the candidate.
 "unparsed" counts requests without a request line or a target, and local
 requests to a port that no service owns; the verdict refuses a job with any.
+Exec keys are exit statuses. An unmatched exec keeps argv0 and the following
+words that are literal words of some exec entry; "..." marks the rest.
 """
 
 from __future__ import annotations
@@ -53,8 +66,11 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import inventory
 
-SCHEMA = 1
+SCHEMA = 2
 TRACE_NAME_RE = re.compile(r"(?P<ns>\d+)-\d+\.trace")
+EXEC_NAME_RE = re.compile(r"\d+-\d+\.exec")
+# A container or program name the report may show; anything else is redacted.
+SHOWN_WORD_RE = re.compile(r"[A-Za-z0-9_./-]{1,64}")
 CONNECTED_RE = re.compile(r"Connected to (?P<host>\S+) \((?P<ip>[^)]*)\) port (?P<port>\d+)")
 HOST_HEADER_RE = re.compile(rb"\r\nHost:[ \t]*(?P<host>[^\r\n]*)", re.IGNORECASE)
 HOST_PORT_RE = re.compile(r"(?:\[(?P<v6>[^\]]+)\]|(?P<name>[^:\[\]]+))(?::(?P<port>\d+))?")
@@ -310,6 +326,105 @@ class Tally:
         self.unmatched.setdefault(call, Counter())[side] += 1
 
 
+@dataclass(frozen=True)
+class ExecRecord:
+    """One product docker exec, as the docker shim recorded it."""
+
+    started_ns: int
+    container: str
+    argv: tuple[str, ...]
+    rc: int
+
+
+def _exec_record(text: str) -> ExecRecord | None:
+    try:
+        data = json.loads(text)
+        record = ExecRecord(data["t"], data["container"], tuple(data["argv"]), data["rc"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    valid = (
+        type(record.started_ns) is int
+        and isinstance(record.container, str)
+        and all(isinstance(word, str) for word in record.argv)
+        and type(record.rc) is int
+    )
+    return record if valid else None
+
+
+def read_exec(directory: Path) -> tuple[list[ExecRecord], int]:
+    """The exec records, and how many files do not hold one."""
+    records, unparsed = [], 0
+    for path in sorted(directory.glob("*.exec")):
+        if not EXEC_NAME_RE.fullmatch(path.name):
+            raise ValueError(f"unexpected exec record name: {path.name}")
+        record = _exec_record(path.read_text(encoding="utf-8", errors="replace"))
+        if record is None:
+            unparsed += 1
+        else:
+            records.append(record)
+    return records, unparsed
+
+
+def _shown(word: str) -> str:
+    return word if SHOWN_WORD_RE.fullmatch(word) else "{redacted}"
+
+
+def describe_exec(container: str, argv: tuple[str, ...], words: frozenset[str]) -> str:
+    """``service argv0 ...``: argv0 and the inventory words after it, never a value."""
+    kept = [_shown(argv[0])] if argv else []
+    for word in argv[1:]:
+        if word not in words:
+            break
+        kept.append(word)
+    rest = " ..." if len(kept) < len(argv) else ""
+    return f"{_shown(container)} {' '.join(kept)}{rest}".rstrip()
+
+
+@dataclass
+class ExecTally:
+    """Exit counts per exec entry and per unmatched exec."""
+
+    entries: dict[tuple[str, str], dict[str, Counter[str]]] = field(default_factory=dict)
+    unmatched: dict[str, Counter[str]] = field(default_factory=dict)
+    calls: int = 0
+    unparsed: int = 0
+
+
+def exec_tally(
+    records: list[ExecRecord], found: list[inventory.ExecEntry], binder: Binder
+) -> ExecTally:
+    result = ExecTally(calls=len(records))
+    words = frozenset(word for item in found for word in item.command)
+    for record in records:
+        side = binder.side(record.container, record.started_ns)
+        entry = inventory.exec_match(found, record.container, list(record.argv))
+        if entry is None:
+            call = describe_exec(record.container, record.argv, words)
+            result.unmatched.setdefault(call, Counter())[side] += 1
+        else:
+            counts = result.entries.setdefault((entry.service, entry.id), {})
+            counts.setdefault(side, Counter())[str(record.rc)] += 1
+    return result
+
+
+def _exec_report(result: ExecTally) -> dict[str, Any]:
+    entries: dict[str, dict[str, Any]] = {}
+    for (service, entry_id), counts in sorted(result.entries.items()):
+        entries.setdefault(service, {})[entry_id] = {
+            side: dict(sorted(counts.get(side, Counter()).items()))
+            for side in ("candidate", "other")
+        }
+    return {
+        "calls": result.calls,
+        "unparsed": result.unparsed,
+        "entries": entries,
+        "unmatched": {
+            call: {"candidate": counts["candidate"], "other": counts["other"]}
+            for call, counts in sorted(result.unmatched.items())
+        },
+    }
+
+
 def tally(
     requests: list[Request],
     found: list[inventory.Endpoint],
@@ -339,9 +454,14 @@ def tally(
 
 
 def report(
-    result: Tally, fingerprint: str, scenario: str, run_id: str, candidates: dict[str, str]
+    result: Tally,
+    execs: ExecTally,
+    fingerprint: str,
+    scenario: str,
+    run_id: str,
+    candidates: dict[str, str],
 ) -> dict[str, Any]:
-    """contracts.json schema 1."""
+    """contracts.json schema 2."""
     entries: dict[str, dict[str, Any]] = {}
     for (service, entry_id), counts in sorted(result.entries.items()):
         entries.setdefault(service, {})[entry_id] = {
@@ -363,11 +483,14 @@ def report(
         "unparsed": result.unparsed,
         "entries": entries,
         "unmatched": unmatched,
+        "exec": _exec_report(execs),
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Reduce curl traces to contracts.json.")
+    parser = argparse.ArgumentParser(
+        description="Reduce curl traces and exec records to contracts.json."
+    )
     for name in ("traces", "events", "ports", "candidates", "scenario", "run-id"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--output")
@@ -382,8 +505,13 @@ def main(argv: list[str] | None = None) -> int:
         parse_ports(args.ports),
         binder,
     )
+    records, unparsed = read_exec(Path(args.traces))
+    execs = exec_tally(records, inventory.load_exec(), binder)
+    execs.unparsed = unparsed
     text = json.dumps(
-        report(result, inventory.fingerprint(), args.scenario, args.run_id, binder.candidates)
+        report(
+            result, execs, inventory.fingerprint(), args.scenario, args.run_id, binder.candidates
+        )
     )
     if args.output:
         Path(args.output).write_text(text + "\n", encoding="utf-8")

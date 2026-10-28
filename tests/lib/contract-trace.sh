@@ -2,12 +2,13 @@
 # Sourced by tests/run.sh after receipts.sh. No side effects at source time.
 #
 # With MS_CONTRACTS_FILE set to a host path, each scenario installs
-# tests/lib/contract-trace-curl.sh as /usr/local/bin/curl in DinD. Scenarios set
-# MS_CONTRACT_TRACE=$CONTRACT_TRACE_DIR only on the commands that start product
-# code, so assertion curls are never traced. At scenario end,
-# tests/contracts/observe.py reduces the traces inside DinD and only its
-# contracts.json leaves; the raw traces hold keys and response bodies, so they
-# are deleted there. With several scenarios in one run, each one replaces the
+# tests/lib/contract-trace-curl.sh as /usr/local/bin/curl and
+# tests/lib/contract-trace-docker.sh as /usr/local/bin/docker in DinD. Scenarios
+# set MS_CONTRACT_TRACE=$CONTRACT_TRACE_DIR only on the commands that start
+# product code, so assertion curls and docker execs are never traced. At
+# scenario end, tests/contracts/observe.py reduces the traces and exec records
+# inside DinD and only its contracts.json leaves; the raw traces hold keys and
+# response bodies and the exec records hold argv, so they are deleted there. With several scenarios in one run, each one replaces the
 # file: hosted preflight runs one scenario per job.
 #
 # The evidence binds requests to the candidate images through the receipts'
@@ -20,20 +21,27 @@
 # combination. MS_TEST_RUN_ID, or the receipts' run id, is the evidence's run id.
 
 : "${MS_CONTRACTS_FILE:=}"
-CONTRACT_TRACE_DIR=/tmp/ms-contract-traces # inside DinD; scenarios pass it to product code
-_CONTRACT_SHIM=/usr/local/bin/curl         # inside DinD, ahead of /usr/bin in PATH and secure_path
-_CONTRACT_OUTPUT=/tmp/ms-contracts.json    # inside DinD
+CONTRACT_TRACE_DIR=/tmp/ms-contract-traces  # inside DinD; scenarios pass it to product code
+_CONTRACT_SHIM=/usr/local/bin/curl          # inside DinD, ahead of /usr/bin in PATH and secure_path
+_CONTRACT_DOCKER_SHIM=/usr/local/bin/docker # inside DinD, likewise ahead of /usr/bin/docker
+_CONTRACT_OUTPUT=/tmp/ms-contracts.json     # inside DinD
 CONTRACT_TRACE_ACTIVE=0
 
 _contract_say() { echo -e "${BLUE:-}[contracts]${NC:-} $*" >&2; }
 
-# Remove the shim and every raw trace, so later scenarios and the hosted
+# Remove the shims and every raw trace, so later scenarios and the hosted
 # artifact see neither.
 _contract_clear() {
-    docker exec "$DIND_NAME" rm -rf "$_CONTRACT_SHIM" "$CONTRACT_TRACE_DIR" "$_CONTRACT_OUTPUT" >/dev/null 2>&1
+    docker exec "$DIND_NAME" rm -rf "$_CONTRACT_SHIM" "$_CONTRACT_DOCKER_SHIM" \
+        "$CONTRACT_TRACE_DIR" "$_CONTRACT_OUTPUT" >/dev/null 2>&1
 }
 
-# Install the shim and an empty, world-writable trace directory: install-e2e
+# Copy one shim from stdin to its path in DinD.
+_contract_install() {
+    docker exec -i "$DIND_NAME" sh -c "cat >'$1' && chmod 755 '$1'" <"$2"
+}
+
+# Install the shims and an empty, world-writable trace directory: install-e2e
 # runs product code as an unprivileged user.
 contract_trace_begin() {
     CONTRACT_TRACE_ACTIVE=0
@@ -44,11 +52,13 @@ contract_trace_begin() {
         return 0
     fi
     if _contract_clear \
-        && docker exec -i "$DIND_NAME" sh -c "cat >'$_CONTRACT_SHIM' && chmod 755 '$_CONTRACT_SHIM' && mkdir -m 1777 '$CONTRACT_TRACE_DIR'" \
-            <"$REPO_ROOT/tests/lib/contract-trace-curl.sh"; then
+        && _contract_install "$_CONTRACT_SHIM" "$REPO_ROOT/tests/lib/contract-trace-curl.sh" \
+        && _contract_install "$_CONTRACT_DOCKER_SHIM" "$REPO_ROOT/tests/lib/contract-trace-docker.sh" \
+        && docker exec "$DIND_NAME" mkdir -m 1777 "$CONTRACT_TRACE_DIR"; then
         CONTRACT_TRACE_ACTIVE=1
     else
-        _contract_say "cannot install the curl trace shim; no contracts.json"
+        _contract_clear
+        _contract_say "cannot install the curl and docker trace shims; no contracts.json"
     fi
     return 0
 }
@@ -74,6 +84,6 @@ contract_trace_end() {
     else
         _contract_say "$scn: contracts.json written to $MS_CONTRACTS_FILE"
     fi
-    _contract_clear || _contract_say "$scn: cannot remove the trace shim and raw traces"
+    _contract_clear || _contract_say "$scn: cannot remove the trace shims and raw traces"
     return 0
 }
