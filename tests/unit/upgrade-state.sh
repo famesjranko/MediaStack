@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Pin authentication responses observed from the real accepted images.
+# Pin authentication responses observed from the real accepted images, and
+# prove that the saved snapshot holds no secret value.
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO_ROOT/tests/lib/assert.sh"
@@ -68,10 +69,35 @@ class AuthContract(unittest.TestCase):
         self.assertEqual(client.http.request.get_header("Authorization"), 'MediaBrowser Token="test-key"')
 
 
+class SecretFreeSnapshot(unittest.TestCase):
+    def test_stored_key_is_replaced_by_its_fingerprint(self):
+        # Given Seerr's Arr settings echo the Sonarr API key, as the real API does.
+        key = "a" * 32
+        state = {"seerr/sonarr": [{"apiKey": key, "port": 8989}]}
+
+        # When the snapshot is redacted for the artifact file.
+        actual = module.redact(state, {key})
+
+        # Then only a fingerprint of the key remains.
+        self.assertEqual(actual["seerr/sonarr"][0], {"apiKey": "sha256:" + module.fingerprint(key), "port": 8989})
+        # And the secret guard accepts the redacted snapshot.
+        module.assert_no_secrets(actual, {key})
+
+    def test_embedded_key_is_refused(self):
+        # Given a snapshot value that carries a key inside a URL.
+        key = "a" * 32
+        state = {"jackett/indexer": f"http://jackett:9117/api?apikey={key}"}
+
+        # When the snapshot is checked before it is written.
+        # Then the guard refuses it.
+        with self.assertRaisesRegex(ValueError, "secret value"):
+            module.assert_no_secrets(module.redact(state, {key}), {key})
+
+
 unittest.main()
 PY
-    pass 'upgrade-state authentication follows the real service contracts'
+    pass 'upgrade-state authentication and secret handling follow their contracts'
 else
-    fail 'upgrade-state authentication follows the real service contracts'
+    fail 'upgrade-state authentication and secret handling follow their contracts'
 fi
 summary

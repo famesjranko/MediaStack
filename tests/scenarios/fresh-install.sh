@@ -262,31 +262,33 @@ esac
 BASH
 }
 
+# Optional arg: a label prefix, so a caller that runs the probes again on
+# another image (upgrade-path, after the update) reports them separately.
 fresh_install_assert_product_probes() {
-    local out svc rc
+    local label="${1:-}" out svc rc
     if svc_stripped jellyfin; then
-        skip "Stage 1 Jellyfin probes" "stripped via MS_TEST_STRIP_SERVICES"
+        skip "${label}Stage 1 Jellyfin probes" "stripped via MS_TEST_STRIP_SERVICES"
     else
         if out=$(fresh_install_product_probe jellyfin-users 2>&1); then
-            pass "Stage 1 Jellyfin /Users probe authenticates with the saved API key"
+            pass "${label}Stage 1 Jellyfin /Users probe authenticates with the saved API key"
         else
-            fail "Stage 1 Jellyfin /Users probe authenticates with the saved API key" "$out"
+            fail "${label}Stage 1 Jellyfin /Users probe authenticates with the saved API key" "$out"
         fi
         # Without a key the probe must refuse the marker, after /health answers.
         out=$(fresh_install_product_probe jellyfin-health 2>&1) && rc=0 || rc=$?
         if [[ $rc -eq 1 && "$out" == *"/health responded but JELLYFIN_API_KEY is empty"* ]]; then
-            pass "Stage 1 Jellyfin probe without an API key reaches /health and refuses the marker"
+            pass "${label}Stage 1 Jellyfin probe without an API key reaches /health and refuses the marker"
         else
-            fail "Stage 1 Jellyfin probe without an API key reaches /health and refuses the marker" "$out"
+            fail "${label}Stage 1 Jellyfin probe without an API key reaches /health and refuses the marker" "$out"
         fi
     fi
     for svc in sonarr radarr; do
         if svc_stripped "$svc"; then
-            skip "$svc post-Revert login check" "stripped via MS_TEST_STRIP_SERVICES"
+            skip "${label}$svc post-Revert login check" "stripped via MS_TEST_STRIP_SERVICES"
         elif out=$(fresh_install_product_probe "$svc" 2>&1); then
-            pass "$svc post-Revert login check succeeds with the saved API key"
+            pass "${label}$svc post-Revert login check succeeds with the saved API key"
         else
-            fail "$svc post-Revert login check succeeds with the saved API key" "$out"
+            fail "${label}$svc post-Revert login check succeeds with the saved API key" "$out"
         fi
     done
 }

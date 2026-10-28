@@ -35,10 +35,21 @@ assert_jackett_configured() { return 0; }
 assert_sonarr_configured() { return 0; }
 assert_radarr_configured() { return 0; }
 assert_seerr_configured() { return 0; }
+fresh_install_assert_product_probes() { return 0; }
+# A stand-in for the state comparison. detects_drop=0 models a comparison that
+# misses a lost Seerr user and a removed Jellyfin API key.
 upgrade_state() {
     case "$1" in
         flip) flipped=$((1 - flipped)) ;;
-        check) ((flipped == 0)) ;;
+        drop) dropped=1 ;;
+        restore) dropped=0 ;;
+        check)
+            if ((dropped && detects_drop)); then
+                echo 'persistent state changed: jellyfin/api-keys, seerr/users'
+                return 1
+            fi
+            ((flipped == 0))
+            ;;
         *) return 0 ;;
     esac
 }
@@ -46,7 +57,7 @@ probe() (
     PASS_COUNT=0 FAIL_COUNT=0 SKIP_COUNT=0
     FAILED_TESTS=()
     scenario_begin candidate-inspection
-    flipped=0
+    flipped=0 dropped=0
     run_scenario
     summary
 )
@@ -56,6 +67,7 @@ candidate="ghcr.io/gethomepage/homepage:latest@sha256:$(printf '%064d' 1)"
 MS_TEST_IMAGE_OVERRIDES="homepage=$candidate"
 MS_TEST_STRIP_SERVICES=""
 inspection=matching
+detects_drop=1
 
 # When the real upgrade scenario inspects the running image.
 run_cmd probe
@@ -77,7 +89,18 @@ RC=$?
 assert_rc 0 'upgrade-path probes isolate earlier caller failures'
 assert_not_contains "$OUT" 'previous case failed' 'upgrade-path probes isolate earlier failure details'
 
+# Given a state comparison that misses a lost Seerr user and Jellyfin API key.
+detects_drop=0
+
+# When the scenario runs its self-test before trusting that comparison.
+run_cmd probe
+
+# Then the blind comparison blocks the scenario with an explicit failure.
+assert_rc 1 'upgrade-path rejects a comparison that misses lost records'
+assert_contains "$OUT" '[FAIL] upgrade-path detects a lost Seerr user and a removed Jellyfin API key' 'blind comparison has an explicit assertion failure'
+
 # Given the selected service runs a floating tag instead of the candidate.
+detects_drop=1
 inspection=wrong
 
 # When the same scenario inspects that container.
