@@ -12,6 +12,19 @@ on:
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
+    inputs:
+      preflight:
+        description: Run disposable image compatibility jobs instead of the alert
+        type: boolean
+        default: false
+      services:
+        description: Optional comma-separated subset of drifted services
+        type: string
+        default: ""
+      publish:
+        description: Propose a tested digest PR (default branch only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,6 +32,7 @@ permissions:
 
 jobs:
   image-drift:
+    if: ${{ !inputs.preflight }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -107,3 +121,168 @@ jobs:
         run: |
           echo "::error::image-drift check errored (rc=${{ steps.check.outputs.rc }}); see the check step log."
           exit 1
+
+  preflight-plan:
+    if: github.event_name == 'workflow_dispatch' && inputs.preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      plan_hash: ${{ steps.plan.outputs.plan_hash }}
+      has_work: ${{ steps.plan.outputs.has_work }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Install YAML reader
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      - name: Freeze source, candidates, companions, and fixture images
+        id: plan
+        env:
+          SELECTED_SERVICES: ${{ inputs.services }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python3 tests/hosted_preflight.py prepare --run "$RUN_ID" \
+            --services "$SELECTED_SERVICES" --output /tmp/preflight-plan >>"$GITHUB_OUTPUT"
+          cat /tmp/preflight-plan/summary.md >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: preflight-plan
+          path: /tmp/preflight-plan/
+          if-no-files-found: error
+          retention-days: 14
+
+  preflight-images:
+    needs: preflight-plan
+    if: needs.preflight-plan.outputs.has_work == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.preflight-plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: preflight-plan
+          path: /tmp/preflight-plan
+      - name: Install YAML reader
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      - name: Run the frozen candidate combination without publishing credentials
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          PLAN_HASH: ${{ needs.preflight-plan.outputs.plan_hash }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          python3 tests/hosted_preflight.py run --run "$RUN_ID" --source "$SOURCE_SHA" \
+            --hash "$PLAN_HASH" --plan /tmp/preflight-plan/plan.json \
+            --scenario "$SCENARIO" --output "/tmp/result-$SCENARIO"
+      - name: Preserve evidence before the disposable VM is released
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: result-${{ matrix.scenario }}
+          path: /tmp/result-${{ matrix.scenario }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  preflight-verify:
+    needs: [preflight-plan, preflight-images]
+    if: always() && needs.preflight-plan.result == 'success' && needs.preflight-plan.outputs.has_work == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: preflight-plan
+          path: /tmp/preflight-plan
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: result-*
+          path: /tmp/preflight-results
+      - name: Install YAML reader
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      - name: Validate artifacts and prepare a selective lock update
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          PLAN_HASH: ${{ needs.preflight-plan.outputs.plan_hash }}
+        run: |
+          python3 tests/hosted_preflight.py verify --run "$RUN_ID" --source "$SOURCE_SHA" \
+            --hash "$PLAN_HASH" --plan /tmp/preflight-plan/plan.json \
+            --results /tmp/preflight-results --output /tmp/preflight-accepted
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: preflight-accepted
+          path: /tmp/preflight-accepted/
+          if-no-files-found: error
+          retention-days: 14
+
+  preflight-publish:
+    needs: [preflight-plan, preflight-verify]
+    if: inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: preflight-plan
+          path: /tmp/preflight-plan
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: result-*
+          path: /tmp/preflight-results
+      - name: Install YAML reader
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      - name: Revalidate original data using trusted source code
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          PLAN_HASH: ${{ needs.preflight-plan.outputs.plan_hash }}
+        run: |
+          python3 tests/hosted_preflight.py verify --run "$RUN_ID" --source "$SOURCE_SHA" \
+            --hash "$PLAN_HASH" --plan /tmp/preflight-plan/plan.json \
+            --results /tmp/preflight-results --output /tmp/preflight-accepted
+      - name: Open a reviewed digest PR without merging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          latest=$(gh api "repos/$GH_REPO/commits/$DEFAULT_BRANCH" --jq .sha)
+          test "$latest" = "$SOURCE_SHA" || { echo 'Default branch advanced; rerun the preflight.' >&2; exit 1; }
+          cp /tmp/preflight-accepted/image-digests.lock docs/operations/image-digests.lock
+          python3 scripts/image_drift.py --write-readme-badges README.md
+          if git diff --quiet -- docs/operations/image-digests.lock README.md; then exit 0; fi
+          branch="chore/tested-images-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          git switch -c "$branch"
+          git add docs/operations/image-digests.lock README.md
+          git -c user.name='Andrew McDonald' -c user.email=andrewmcdonald42@gmail.com \
+            commit -m 'chore: refresh tested Stable image digests'
+          gh auth setup-git
+          git push origin "$branch"
+          gh pr create --base "$DEFAULT_BRANCH" --head "$branch" \
+            --title 'chore: refresh tested Stable image digests' \
+            --body-file /tmp/preflight-accepted/body.md
+          gh workflow run ci.yml --ref "$branch"

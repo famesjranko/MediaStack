@@ -185,7 +185,7 @@ docker compose logs -f <service>
 - Reverse proxy: NPM over raw nginx — target users won't edit nginx configs; NPM has web UI + built-in Let's Encrypt.
 - VPN: wg-easy over linuxserver/wireguard — web UI for peer management, no manual conf editing.
 - DinD test base: Debian over Alpine — BusyBox grep lacks -P, envsubst missing from Alpine default, musl/glibc edge cases. Matches production distro.
-- CI covers syntax, compose rendering, focused unit checks, public guards, wizard PTY scenarios, and image-digest drift alerts against the committed tested record. Full image-backed integration proof remains local/manual DinD so GitHub Actions does not need privileged nested Docker pulls.
+- CI covers syntax, compose rendering, focused unit checks, public guards, wizard PTY scenarios, and image-digest drift alerts against the committed tested record. Image-backed integration proof runs locally or through the manually dispatched hosted preflight on disposable Ubuntu VMs. Publishing credentials stay in a separate job; the ordinary PR gate remains image-free. See [hosted preflight](../operations/hosted-image-preflight.md).
 - Python uses the stdlib plus distro `python3-yaml`: small render/config helpers, no pip dependencies or venv. Keeps the host dependency footprint minimal.
 - Config via APIs: Most service settings use HTTP APIs called from Bash. Some services, including Homepage and DDNS Updater, use generated configuration files.
 

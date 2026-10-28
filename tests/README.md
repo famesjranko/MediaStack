@@ -10,8 +10,10 @@ GitHub Actions runs a deliberately small PR gate: committed-secret checks, shell
 syntax checks, compose rendering, focused host unit tests, and the `wizard-ui-*` PTY
 scenarios in DinD with service image preload skipped. The full image-backed DinD battery
 (`fresh-install`, `smoke`, remote-access scenarios, and service startup checks) stays a
-local/on-demand gate. CI also handles the scheduled image-drift alert; maintainers run
-the matching local DinD preflight before accepting image updates. Stable-channel installs
+local/on-demand gate. The manually dispatched image preflight can also run required
+scenarios on disposable hosted VMs and prepare a reviewed digest PR. The weekly
+image-drift alert remains lightweight. See
+[hosted image preflight](../docs/operations/hosted-image-preflight.md). Stable-channel installs
 use the accepted digest record through the generated compose override; Latest-channel
 installs intentionally follow upstream tags.
 
@@ -68,7 +70,9 @@ See [`gcp-vm/README.md`](gcp-vm/README.md) and
 ./tests/run.sh --no-preload <scenario>  # skip host image sideload for lightweight scenarios
 ```
 
-Exit code is non-zero if any hard assertion failed. `[SKIP]` lines never fail.
+Exit code is non-zero if any hard assertion failed. `[SKIP]` lines do not fail
+the scenario exit, but withhold all image receipts for that scenario. Hosted
+acceptance also rejects skips, empty results and missing required scenarios.
 
 ## Exploring the UI safely — `--dry-run`
 
@@ -656,6 +660,7 @@ Current units:
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; the receipt gate (no receipt, wrong scenario, bypass, non-scenario tiers); and that the generated README Stable-baseline badge stays derived from the lock file.
 - **image-drift-install** — checks install-digest records for running services, omission of absent services, and normalization of already pinned Compose references into valid Revert pins. Pure Python and shell; no Docker.
 - **upgrade-baseline** — checks that the full battery uses an exact accepted qBittorrent target without leaking overrides or claiming candidate evidence, while identical explicit candidates fail before setup.
+- **qbittorrent-live** — runs the real assertion against a local HTTP server: 200/204 session login, rejection of an HTTP error with an `Ok.` body, and total request deadlines for login and preferences.
 - **image-drift-receipts** — verifies the receipt provenance rules of `scripts/image_drift.py`: a legacy four-column row never vouches and is counted on stderr; a receipt from another commit, a `-dirty` tree, an unknown source or a run outside `--receipt-run-id` is refused with a message that says which; a matching v2 row is accepted and leaves every other lock row byte-identical; a `scenario:X+Y` token needs one receipt per scenario and the summary prints one command per scenario; and `--preflight-plan` groups drifted services by scenario, puts a `+` service in both groups and lists non-scenario tiers under `pending_non_scenario`. Pure bash + python3, no git; run directly with `./tests/unit/image-drift-receipts.sh`.
 - **launcher-service-start** — checks that **Start a service** reconciles with `docker compose up -d` (not `start`), runs the storage guard first, passes the optional-profile flag, does not pass `--no-deps` (stopped dependencies start), reports a failed recreate without a success line, and that staging for a stopped service starts nothing. Docker is shimmed.
 - **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image_drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.

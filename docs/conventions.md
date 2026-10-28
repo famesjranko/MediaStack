@@ -182,9 +182,10 @@ adding the next gate.
 | Every decision record carries all six required sections and is listed in the decisions index | `tests/unit/docs.sh` | `unit-host` |
 | `docs/operations/upgrades.md` matches the live `docker-compose.yml` tags | `tests/unit/upgrades-manifest.sh` | `unit-host` |
 
-The DinD battery (`./tests/check.sh full`, `tests/battery.sh`) runs no CI
-context by design — see the CI boundary in
-[`../tests/README.md`](../tests/README.md). It is a local gate only.
+The complete DinD battery (`./tests/check.sh full`, `tests/battery.sh`) is not a required PR
+context — see the CI boundary in
+[`../tests/README.md`](../tests/README.md). Required image scenarios can also run through the manual hosted preflight; see
+[`operations/hosted-image-preflight.md`](operations/hosted-image-preflight.md).
 
 Every derived population in these suites fails closed: a check over an empty
 list is an assertion that proves nothing, so an empty population is a failure

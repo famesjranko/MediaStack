@@ -188,14 +188,15 @@ dind_pull_retry() { # <image>
 # Pebble validates HTTP-01 challenges; its default httpPort is 5002 but NPM
 # listens on 80, so we mount a custom config overriding httpPort to 80.
 pebble_up() {
+    local pebble_image="${MS_TEST_PEBBLE_IMAGE:-ghcr.io/letsencrypt/pebble}" chall_image="${MS_TEST_CHALLTESTSRV_IMAGE:-ghcr.io/letsencrypt/pebble-challtestsrv}"
     echo -e "${BLUE}[pebble]${NC} starting pebble-challtestsrv"
-    dind_pull_retry ghcr.io/letsencrypt/pebble-challtestsrv \
+    dind_pull_retry "$chall_image" \
         || {
             echo -e "${BLUE}[pebble]${NC} challtestsrv image pull failed after retries"
             return 1
         }
     dind_exec 'docker run -d --name pebble-challtestsrv --network mediastack \
-        ghcr.io/letsencrypt/pebble-challtestsrv >/dev/null'
+        '"$chall_image"' >/dev/null'
 
     local waited=0
     while ((waited < 30)); do
@@ -212,7 +213,7 @@ pebble_up() {
     fi
 
     echo -e "${BLUE}[pebble]${NC} starting pebble"
-    dind_pull_retry ghcr.io/letsencrypt/pebble \
+    dind_pull_retry "$pebble_image" \
         || {
             echo -e "${BLUE}[pebble]${NC} pebble image pull failed after retries"
             return 1
@@ -237,7 +238,7 @@ PEBBLECFG'
         -e PEBBLE_VA_NOSLEEP=1 \
         -e PEBBLE_WFE_NONCEREJECT=0 \
         -v /tmp/pebble-config.json:/test/config/pebble-config.json:ro \
-        ghcr.io/letsencrypt/pebble \
+        '"$pebble_image"' \
         -dnsserver pebble-challtestsrv:8053 >/dev/null'
 
     waited=0
@@ -284,7 +285,7 @@ pebble_down() {
 # real search round trip without any public tracker.
 
 TORZNAB_FIXTURE_NAME="torznab-fixture"
-TORZNAB_FIXTURE_IMAGE="python:3.12-alpine"
+TORZNAB_FIXTURE_IMAGE="${MS_TEST_TORZNAB_IMAGE:-python:3.12-alpine}"
 
 # Seed the Jackett definition and point config.yml at it. Call before Jackett
 # starts (it reads definitions once at startup) and before configure.sh.
