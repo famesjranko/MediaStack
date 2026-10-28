@@ -654,6 +654,8 @@ Current units:
 - **gcp-wan-ports** — keeps the GCP external blocked-port probe aligned with the Docker LAN-only port set enforced by `scripts/setup/hardening/admin-filter.sh`.
 - **preflight-receipts** — proves a row in `tests/.image-preflight-passed.tsv` is written only for a scenario that passed and whose container events show the service ran from the candidate digest: teardown after a healthy run, a crash hidden by a restart-policy start, a recreate that never started, a wrong digest, an unreadable log and the `[receipts]` reasons (`preflight-receipts/evidence.sh`); and that every row carries the v2 columns, a `-dirty` or `unknown` source when the tree or git warrants it, and the run id, generated or from a well-formed `MS_TEST_RUN_ID` (`preflight-receipts/provenance.sh`). Pure bash with a fake `docker` and a fake `git` on `PATH`, no DinD and no real repository; run directly with `./tests/unit/preflight-receipts.sh`.
 - **image-drift** — verifies that digest acceptance requires a frozen `--current-file`, preventing maintainers from recording a tag digest that was not the one preflighted; the receipt gate (no receipt, wrong scenario, bypass, non-scenario tiers); and that the generated README Stable-baseline badge stays derived from the lock file.
+- **image-drift-install** — checks install-digest records for running services, omission of absent services, and normalization of already pinned Compose references into valid Revert pins. Pure Python and shell; no Docker.
+- **upgrade-baseline** — checks that the full battery uses an exact accepted qBittorrent target without leaking overrides or claiming candidate evidence, while identical explicit candidates fail before setup.
 - **image-drift-receipts** — verifies the receipt provenance rules of `scripts/image_drift.py`: a legacy four-column row never vouches and is counted on stderr; a receipt from another commit, a `-dirty` tree, an unknown source or a run outside `--receipt-run-id` is refused with a message that says which; a matching v2 row is accepted and leaves every other lock row byte-identical; a `scenario:X+Y` token needs one receipt per scenario and the summary prints one command per scenario; and `--preflight-plan` groups drifted services by scenario, puts a `+` service in both groups and lists non-scenario tiers under `pending_non_scenario`. Pure bash + python3, no git; run directly with `./tests/unit/image-drift-receipts.sh`.
 - **launcher-service-start** — checks that **Start a service** reconciles with `docker compose up -d` (not `start`), runs the storage guard first, passes the optional-profile flag, does not pass `--no-deps` (stopped dependencies start), reports a failed recreate without a success line, and that staging for a stopped service starts nothing. Docker is shimmed.
 - **manage-updates** — covers the day-2 "Manage updates" feature: `override.sh` per-service policy (floating one service drops only its digest pin; clearing re-pins; global-latest pins nothing), `image_drift.py --status` channel-agnostic 2-state truth table and hardened running-digest extraction, and the launcher's apply/flip/revert helpers (a pinned service floats to its tag decided by effective channel, not status text; WireGuard exclusion from "Update all"). Sources `mediastack` + `override.sh`; pure bash + python3, no Docker/network.
@@ -969,6 +971,15 @@ runner reset and make sure the scenario only runs in a `--reset-between`
 battery (`tests/battery.sh`'s glob-discovered `MAIN` set, or
 `tests/check.sh`'s wizard tier via `tests/ci-scenarios.sh`).
 
+## Existing-install image checks
+
+`upgrade-path` boots the accepted lock, records persistent users and settings, then
+runs the real update script against exact candidate overrides. It checks persistence,
+safe reconfiguration and the launcher's qBittorrent Update/Revert functions. At least
+one digest must differ from the accepted lock. See the
+[compatibility matrix](../docs/operations/image-compatibility.md) for service coverage
+and remaining boundaries.
+
 ## Focused staged-setup scenarios
 
 Use these when changing staged setup, recovery hooks, demo mode, destructive reinstall, or fail2ban filters:
@@ -1119,3 +1130,8 @@ A previous pass accumulated **133 GB across 68 dangling DinD volumes** over five
 - **Fresh DinD per `run.sh` invocation.** Each run pays the image-pull cost. We chose hermeticity over iteration speed; add a `--reuse-dind` flag if that changes.
 - **Scenarios share one DinD.** `run.sh smoke fresh-install` does one DinD setup, runs both, tears down.
 - **Counters are global across scenarios.** Final summary is a sum of all scenarios. A scenario that silently bypasses a `fail` (e.g. `return 1` without calling `fail` first) leaves the counter confused — every exit path should record a result.
+
+Without image overrides, the full battery runs `upgrade-path` as an accepted-image
+management check. It pins qBittorrent Update/Revert to the accepted digest and
+produces no candidate receipts. With explicit overrides, an unchanged candidate
+lock is rejected; only a changed exact combination can produce upgrade evidence.
