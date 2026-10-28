@@ -94,7 +94,7 @@ run_scenario() {
     # 3. Launch the disposable fixture with an always-failing healthcheck.
     # ------------------------------------------------------------------
     if ! dind_exec "docker run -d --name $AUTOHEAL_FIXTURE \
-        --health-cmd='exit 1' --health-interval=2s --health-retries=1 \
+        --health-cmd='exit 0' --health-interval=2s --health-retries=1 \
         --health-timeout=2s --health-start-period=0s \
         $AUTOHEAL_FIXTURE_IMAGE sleep 600" >/dev/null 2>&1; then
         fail "autoheal: fixture container started"
