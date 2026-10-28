@@ -28,6 +28,10 @@ docker() {
     case "$*" in
         *observe.py*) return "$REDUCER_RC" ;;
         "exec $DIND_NAME cat /tmp/ms-contracts.json") printf '%s' "$REDUCED" ;;
+        *"cat >'/usr/local/bin/docker'"*)
+            cat >/dev/null
+            return "$FAIL_DOCKER_SHIM"
+            ;;
         *"cat >"*) cat >/dev/null ;;
     esac
 }
@@ -44,6 +48,7 @@ reset_case() {
     RECEIPTS_ACTIVE=1
     SYNC_RC=0
     REDUCER_RC=0
+    FAIL_DOCKER_SHIM=0
 }
 
 # Given no MS_CONTRACTS_FILE and an active event recorder.
@@ -63,8 +68,9 @@ reset_case
 # When a scenario begins.
 contract_trace_begin
 
-# Then the curl shim is installed in DinD and tracing is active.
+# Then the curl and docker shims are installed in DinD and tracing is active.
 assert_contains "$(cat "$DOCKER_LOG")" "chmod\ 755\ \'/usr/local/bin/curl\'" "contract trace: begin installs the curl shim"
+assert_contains "$(cat "$DOCKER_LOG")" "chmod\ 755\ \'/usr/local/bin/docker\'" "contract trace: begin installs the docker shim"
 assert_eq "1" "$CONTRACT_TRACE_ACTIVE" "contract trace: begin activates tracing"
 
 # Given a stale contracts.json from an earlier run, and no event recorder.
@@ -96,9 +102,9 @@ assert_eq "$REDUCED" "$(cat "$OUT")" "contract trace: contracts.json is the redu
 leaks=$(grep -F 'ms-contract-traces' "$DOCKER_LOG" | grep -v -e 'observe.py' -e "^exec $DIND_NAME rm -rf ")
 assert_eq "" "$leaks" "contract trace: only contracts.json leaves DinD, never the raw traces"
 assert_eq "0" "$(grep -c '^cp ' "$DOCKER_LOG")" "contract trace: nothing is copied out of DinD with docker cp"
-# And the last call removes the shim, the raw traces and the DinD output.
-assert_eq "exec $DIND_NAME rm -rf /usr/local/bin/curl /tmp/ms-contract-traces /tmp/ms-contracts.json " \
-    "$(tail -1 "$DOCKER_LOG")" "contract trace: end removes the shim and the raw traces"
+# And the last call removes both shims, the raw traces and exec records, and the DinD output.
+assert_eq "exec $DIND_NAME rm -rf /usr/local/bin/curl /usr/local/bin/docker /tmp/ms-contract-traces /tmp/ms-contracts.json " \
+    "$(tail -1 "$DOCKER_LOG")" "contract trace: end removes both shims and the raw records"
 
 # Given a traced scenario whose event log does not catch up.
 reset_case
@@ -113,8 +119,20 @@ contract_trace_end fresh-install
 assert_eq "absent" "$([[ -e "$OUT" ]] && echo present || echo absent)" "contract trace: a failed event-log sync writes no contracts.json"
 assert_not_contains "$(cat "$DOCKER_LOG")" "observe.py" "contract trace: a failed event-log sync runs no reducer"
 # And the shim and raw traces are still removed.
-assert_contains "$(tail -1 "$DOCKER_LOG")" "rm -rf /usr/local/bin/curl /tmp/ms-contract-traces" \
-    "contract trace: a failed event-log sync still removes the shim and raw traces"
+assert_contains "$(tail -1 "$DOCKER_LOG")" "rm -rf /usr/local/bin/curl /usr/local/bin/docker /tmp/ms-contract-traces" \
+    "contract trace: a failed event-log sync still removes both shims and the raw records"
+
+# Given MS_CONTRACTS_FILE, an active event recorder, and a DinD that refuses the docker shim.
+reset_case
+FAIL_DOCKER_SHIM=1
+
+# When a scenario begins.
+contract_trace_begin
+
+# Then tracing stays off and the curl shim already copied in is removed again.
+assert_eq "0" "$CONTRACT_TRACE_ACTIVE" "contract trace: a failed docker shim install leaves tracing off"
+assert_contains "$(tail -1 "$DOCKER_LOG")" "rm -rf /usr/local/bin/curl /usr/local/bin/docker" \
+    "contract trace: a failed docker shim install removes the shims"
 
 scenario_end "$CURRENT_SCENARIO"
 summary

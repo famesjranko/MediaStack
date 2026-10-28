@@ -15,3 +15,9 @@ endpoints:
   - {id: proxy-host-update, method: PUT, path: "/nginx/proxy-hosts/{id}", sends: [domain_names, forward_scheme, forward_host, forward_port, block_exploits, allow_websocket_upgrade, access_list_id, certificate_id, ssl_forced, http2_support, meta, advanced_config, locations, caching_enabled, hsts_enabled, hsts_subdomains, enabled], reads: [], callers: [scripts/services/npm/health.sh, scripts/services/npm/publication.sh, scripts/services/npm/rendered.sh]}
   - {id: certificate-list, method: GET, path: /nginx/certificates, sends: [], reads: [id, domain_names, is_deleted], callers: [scripts/lib/npm-remote.sh]}
   - {id: certificate-create, method: POST, path: /nginx/certificates, sends: [provider, domain_names, meta.dns_challenge], reads: [id], callers: [scripts/services/npm/publication.sh]}
+exec:
+  - {id: nginx-test, command: [nginx, -t], callers: [scripts/services/npm/health.sh, scripts/setup/stage2/le.sh]}
+  - {id: nginx-reload, unexercised: held-profile, command: [nginx, -s, reload], callers: [scripts/services/npm/post.sh]}
+  - {id: certbot-lock, command: [test, -e, /var/lib/letsencrypt/.certbot.lock], expect_exit: [0, 1], callers: [scripts/services/npm/certs.sh]}
+  - {id: file-test, command: [test, -f], callers: [scripts/lib/npm-remote.sh]}
+  - {id: file-grep, command: [grep, -q], callers: [scripts/lib/npm-remote.sh]}

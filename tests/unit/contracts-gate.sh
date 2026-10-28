@@ -6,7 +6,10 @@
 # whose URL cannot be attributed or whose service has no entry, a service URL
 # with a braced variable in its suffix, a service URL variable reused in
 # another function, and schema violations of the optional `expect` and
-# `unexercised` keys. A gate that only names its symptom leaves the
+# `unexercised` keys. The exec scan is probed the same way: a docker exec with
+# no exec entry, an exec entry no call reaches, a container that cannot be
+# read, a container variable that names one service, and the dry-run sandbox
+# exclusion. A gate that only names its symptom leaves the
 # reader to guess the remedy, so each failure is probed with one fabricated
 # violation and asserted to route somewhere.
 #
@@ -179,6 +182,87 @@ assert_rc 1 "held-profile on a service that is not held fails"
 assert_contains "$OUT" "schema: sonarr indexer-list: unexercised held-profile is only for held services" \
     "the failure names the entry and the held-profile rule"
 printf '%s\n' "$contract_backup" >"$PROBED_CONTRACT"
+
+# --- a docker exec with no exec entry ---------------------------------------
+
+# Given a call that runs a fail2ban binary no exec entry lists.
+printf '\ncontracts_gate_probe() { docker exec -u root fail2ban fail2ban-client ping; }\n' \
+    >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then it fails and names the caller, the container and the command.
+assert_rc 1 "a docker exec no exec entry covers fails"
+assert_contains "$OUT" "missing contract: scripts/lib/health.sh exec fail2ban fail2ban-client ping" \
+    "the failure names the uncovered exec after its flags"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
+
+# --- an exec entry no call reaches ------------------------------------------
+
+# Given an exec entry for a command nothing runs.
+EXEC_CONTRACT="$FIXTURE/tests/contracts/fail2ban.yml"
+exec_backup=$(cat "$EXEC_CONTRACT")
+printf '  - {id: gate-ping, command: [fail2ban-client, ping], callers: [scripts/lib/health.sh]}\n' \
+    >>"$EXEC_CONTRACT"
+
+# When the gate runs.
+run_gate
+
+# Then it fails as a dead entry that names the command.
+assert_rc 1 "an exec entry nothing runs fails"
+assert_contains "$OUT" "dead contract entry: fail2ban gate-ping (exec fail2ban-client ping)" \
+    "the failure names the dead exec entry"
+printf '%s\n' "$exec_backup" >"$EXEC_CONTRACT"
+
+# --- a docker exec whose container cannot be read ---------------------------
+
+# Given a call into a container held in a variable that no assignment names.
+printf '\ncontracts_gate_probe() { docker exec "$gate_box" fail2ban-client reload; }\n' \
+    >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then it fails closed as unparseable and says which call form it reads.
+assert_rc 1 "a docker exec into an unknown container fails"
+assert_contains "$OUT" "unparseable exec: scripts/lib/health.sh: docker exec \"\$gate_box\"" \
+    "the failure names the unparseable call"
+assert_contains "$OUT" "with a literal container" "the failure names the call form to use"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
+
+# --- a container variable that names one service ----------------------------
+
+# Given a call into a variable assigned the literal name fail2ban in the same function.
+printf '\ncontracts_gate_probe() {\n    local box=fail2ban\n    docker exec "$box" fail2ban-client reload\n}\n' \
+    >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then the call is attributed to the fail2ban reload entry, so its callers differ.
+assert_rc 1 "a docker exec through a service variable is checked"
+assert_contains "$OUT" "caller mismatch: fail2ban client-reload" \
+    "the variable container resolves to its service entry"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
+
+# --- the dry-run sandbox is excluded only in its own file -------------------
+
+# Given the dry-run sandbox call shape, copied into another file.
+DRY_RUN="$FIXTURE/scripts/lib/dry-run.sh"
+assert_contains "$(cat "$DRY_RUN")" 'docker exec -u mstest "$cname" mkdir' \
+    "the dry-run sandbox exec is in the scanned tree"
+printf '\ncontracts_gate_probe() { docker exec -u mstest "$cname" mkdir -p /x; }\n' \
+    >>"$PROBED_CALLER"
+
+# When the gate runs.
+run_gate
+
+# Then the copy fails as unparseable, while the dry-run file's own calls do not.
+assert_rc 1 "the sandbox container outside dry-run.sh fails"
+assert_contains "$OUT" "unparseable exec: scripts/lib/health.sh" "the copied call is not excluded"
+assert_not_contains "$OUT" "scripts/lib/dry-run.sh" "the dry-run sandbox calls stay excluded"
+printf '%s\n' "$caller_backup" >"$PROBED_CALLER"
 
 run_gate
 assert_rc 0 "restoring both files restores the check to green"

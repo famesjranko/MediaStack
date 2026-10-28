@@ -3,7 +3,7 @@
 `serve.py` is one generic, stdlib-only mock HTTP server. It has zero
 per-service branches; every per-service detail lives in `tests/contracts/`
 and `tests/mock/fixtures/`. See `tests/contracts/README.md` for the contract
-schema and `tests/README.md` "Contract mocks and drift replay" for how the
+schema and `tests/README.md` "Contract mocks and drift checks" for how the
 `contract-mock` scenario drives it.
 
 ## Behavior notes

@@ -1,8 +1,9 @@
 # Service API contracts
 
-These files describe only the HTTP API calls made by MediaStack. Each service
-file has the top-level keys `service`, `base_path`, `auth` and `endpoints`,
-plus an optional `openapi`:
+These files describe only the HTTP API calls and the `docker exec` calls made
+by MediaStack. Each service file has the top-level keys `service`, `base_path`,
+`auth` and `endpoints`, plus an optional `openapi` and an optional `exec` (see
+[Exec entries](#exec-entries)):
 
 ```yaml
 service: sonarr
@@ -19,26 +20,21 @@ endpoints:
 ```
 
 `openapi` is optional. It is present when an upstream specification is
-available upstream; its absence means the service is live-replay-only.
-`base_path` is the API prefix omitted from endpoint `path` values. `auth`
-describes the service's normal request authentication shape. The inventory is
-per service, and helpers under `scripts/lib/` are attributed to the service
-whose API they call.
+available; `tests/contracts/replay.py spec` checks each endpoint's method and
+path against it, and skips a service without one. `base_path` is the API
+prefix omitted from endpoint `path` values. `auth` describes the service's
+normal request authentication shape. The inventory is per service, and helpers
+under `scripts/lib/` are attributed to the service whose API they call.
 
-`auth.type` is one of `header`, `bearer`, `cookie`, `query`, `basic`, or `none`
-(the default when the block is absent; `basic` is sent as no auth) — `tests/contracts/replay.py`'s live mode
-reads this generically, never with a per-service branch. `header` sets header
-`auth.name` to the caller's credential verbatim, unless `auth.format` is also
-given: a literal header-value template with the substring `{key}` replaced by
-the credential, for a service whose real header value is structured (e.g.
-Jellyfin's `MediaBrowser Client="...", Token="{key}"` scheme — see
-`jellyfin.yml`). `bearer` sends `auth.name: Bearer <credential>`. `cookie`
-sends a `Cookie: <auth.name>=<credential>` header. `query` appends
-`<auth.name>=<credential>` to the request URL. A service whose live session
-needs a *second*, supplementary cookie alongside its primary credential (e.g.
-Jackett: an `apikey` query param plus a separate UI session cookie the API
-alone doesn't carry) takes that second cookie via replay.py's `--cookie
-NAME:RAW_COOKIE_HEADER` flag rather than a new auth type.
+`auth.type` is one of `header`, `bearer`, `cookie`, `query`, `basic`, `form`,
+or `none` (the default when the block is absent). `tests/mock/serve.py`
+shape-checks it generically, never with a per-service branch. `header` names
+the header that carries the credential; `auth.format` documents a structured
+header value, with `{key}` for the credential (e.g. Jellyfin's
+`MediaBrowser Client="...", Token="{key}"` scheme — see `jellyfin.yml`).
+`bearer` is `auth.name: Bearer <credential>`. `cookie` is a
+`Cookie: <auth.name>=<credential>` header. `query` is
+`<auth.name>=<credential>` in the request URL.
 
 Endpoint `id` values are kebab-case and unique within a service. `method` is
 the HTTP method and `path` is the route after `base_path`; query strings are
@@ -109,3 +105,46 @@ names is malformed. `dead contract entry` means the call an entry covered is
 gone — delete the entry. Neither is fixed by loosening the check. A `caller
 mismatch` names an entry whose `callers` differ from the tree, and a `schema:`
 error names an entry that breaks this format.
+
+## Exec entries
+
+Some touchpoints are binaries inside a service image, run with `docker exec`:
+`fail2ban-client`, `nginx -t`, `/beszel superuser upsert`. The optional
+top-level `exec` key lists them. A file with no HTTP API, such as
+`fail2ban.yml`, has `endpoints: []` and may omit `base_path` and `auth`.
+
+```yaml
+exec:
+  - {id: client-reload, command: [fail2ban-client, reload], callers: [scripts/configure.sh]}
+  - {id: regex-count, command: [sh, -c], match: fail2ban-regex, callers: [scripts/lib/health.sh]}
+  - {id: certbot-lock, command: [test, -e, /var/lib/letsencrypt/.certbot.lock], expect_exit: [0, 1], callers: [scripts/services/npm/certs.sh]}
+```
+
+- The container is the file's `service`; each MediaStack container is named
+  after its service.
+- `command` is a prefix of the words after the container name. Each word is a
+  literal: no variable, quote or space. A call matches the entry with the
+  longest prefix.
+- `match` is for an `sh -c` script: a substring of the word after the prefix.
+- `expect_exit` lists the accepted exit statuses, from 0 to 255. Without it,
+  only 0 counts.
+- `unexercised` uses the same closed set of reasons as an endpoint.
+- Ids are unique across `endpoints` and `exec` in one file.
+
+`check.py` reads each `docker exec [flags] CONTAINER COMMAND...` in
+`scripts/`. The flags `-u`, `-e`, `-w` and their long forms take a value. The
+container must be a literal service name, or a variable whose assignments in
+the same function, or at file level, all give one literal name. A command
+array, as in `docker "${cmd[@]}"`, is read from its literal assignment. A call
+that the check cannot read fails as an `unparseable exec`, and so does
+`docker container exec` or `docker compose exec`. The only exclusion is the
+dry-run sandbox container in `scripts/lib/dry-run.sh`, which is not a service.
+`missing contract` and `dead contract entry` mean the same for exec entries as
+for endpoints.
+
+In the image jobs, `tests/lib/contract-trace-docker.sh` records each product
+`docker exec`: the container, the words after it and the exit status. The
+verdict needs each exec entry without `unexercised` to exit with an accepted
+status on the candidate, and no unlisted exec into the candidate. The evidence
+holds no argument values: `contracts.json` keeps exit counts per entry, and an
+unlisted exec keeps only its first word and the inventory words after it.

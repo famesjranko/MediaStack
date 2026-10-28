@@ -463,11 +463,10 @@ and asserts with `pass`/`fail`/`assert_eq`; `source` it and call it from
 render/config helpers rather than re-implementing request payloads. Each new
 day-2 action that mutates a service API should ship with a matrix module here.
 
-### Contract mocks and drift replay
+### Contract mocks and drift checks
 
 ```bash
 ./tests/run.sh --no-preload contract-mock   # image-free, PR gate
-./tests/run.sh contract-drift               # image-backed, preflight-only
 python3 tests/contracts/replay.py spec      # offline-friendly, run anywhere
 ```
 
@@ -492,25 +491,20 @@ service behavior:
   (`localhost:8989` sonarr, `localhost:7878` radarr) and runs
   `scripts/configure.sh --only sonarr,radarr` unmodified against it — no
   test hook in `scripts/`. Image-free; joins the `wizard-ui-*` PR-gate set.
-- **`tests/contracts/replay.py`** — the drift replayer. `spec` mode checks
-  every endpoint of a contract with an `openapi:` URL still exists in the
-  upstream spec (cached locally; offline is a reported SKIP, never a
-  failure). `live` mode replays a contract's safe (`GET`, no `{id}`, declared
-  `reads`) endpoints against a real running container and diffs only those
-  `reads` fields — mutating endpoints are covered by `spec` mode's
-  method+path check instead, so a drift run never mutates a preflight
-  container. Request auth is shape-driven from each contract's own `auth:`
-  block (header/bearer/cookie/query, `tests/contracts/README.md`), never a
-  per-service branch in `replay.py` itself. `tests/scenarios/contract-drift.sh`
-  reuses `tests/api-matrix/bringup.sh` (the same bring-up `api-matrix.sh`
-  uses — one bring-up, not duplicated), applies each service's own product
-  configurator to get real credentials, and runs `live` mode against all six
-  API-bearing services (Sonarr, Radarr, qBittorrent, Jackett, Jellyfin,
-  Seerr). Image-backed; runs in the image-bump preflight
-  (`docs/operations/upgrades.md`), never the PR gate.
+- **`tests/contracts/replay.py spec`** — checks that every endpoint of a
+  contract with an `openapi:` URL still exists in the upstream spec (cached
+  locally; offline is a reported SKIP, never a failure).
+- **Contract capture** — the traced scenarios (`fresh-install`,
+  `upgrade-path`, `install-e2e`) record each product request and each
+  product `docker exec` in DinD when `MS_CONTRACTS_FILE` is set
+  (`tests/lib/contract-trace.sh`), and `tests/contracts/observe.py` reduces
+  them to `contracts.json`. The real configurators send the real requests, so
+  every declared `reads` field is checked against a real response, writes
+  included. The hosted preflight's contract gate judges it
+  (`docs/operations/hosted-image-preflight.md`).
 
 Division of labor is a hard constraint: contracts declare data only, the mock proves our scripts speak the
-contract, drift proves the contract still matches reality, and
+contract, capture and spec mode prove the contract still matches reality, and
 `tests/api-matrix/` keeps proving live behavior none of the above can (auth
 dances, seeding, retries, day-2 effects). Logic in a contract, a
 per-service branch in `serve.py`, or a mock asserting service-side behavior

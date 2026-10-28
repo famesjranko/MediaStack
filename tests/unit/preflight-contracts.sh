@@ -60,11 +60,12 @@ def job(job_id, scenario, services=("sonarr",)):
 
 
 def data(the_job, entries, unmatched=None, requests=5, unparsed=0):
-    return {"schema": 1, "inventory": FINGERPRINT, "scenario": the_job["scenario"],
+    return {"schema": 2, "inventory": FINGERPRINT, "scenario": the_job["scenario"],
             "run_id": the_job["run_id"],
             "candidates": {s: CANDIDATES[s] for s in the_job["combination"]},
             "requests": requests, "unparsed": unparsed,
-            "entries": entries, "unmatched": unmatched or {}}
+            "entries": entries, "unmatched": unmatched or {},
+            "exec": {"calls": 0, "unparsed": 0, "entries": {}, "unmatched": {}}}
 
 
 def seen(candidate=None, other=None, reads=()):
@@ -236,7 +237,7 @@ class VerdictContract(unittest.TestCase):
                                         "match the job"), result.failures)
 
     def test_boolean_schema_is_refused(self):
-        # Given complete evidence whose schema is true, which equals 1 in Python.
+        # Given complete evidence whose schema is true, a bool and not an int.
         evidence = dict(data(FRESH, COMPLETE), schema=True)
 
         # When the verdict judges the job.

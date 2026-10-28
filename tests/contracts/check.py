@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that literal HTTP API calls and contract entries cover each other."""
+"""Check that literal API calls, docker exec calls and contract entries cover each other."""
 
 from __future__ import annotations
 
@@ -10,8 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+import exec_scan
 import inventory
-from inventory import Endpoint
+from inventory import Endpoint, ExecEntry
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests"))
@@ -415,7 +416,7 @@ def _scan_curl_args(scan: Scan, script: ScriptFile, text: str) -> None:
                 _record_route(scan, script.relative, method, route, require_contract=False)
 
 
-def _scan_file(scan: Scan, path: Path) -> None:
+def _scan_file(scan: Scan, path: Path) -> exec_scan.Script:
     relative = path.relative_to(ROOT).as_posix()
     text = path.read_text(encoding="utf-8").replace("\\\n", " ")
     script = _script_file(relative, text)
@@ -426,6 +427,7 @@ def _scan_file(scan: Scan, path: Path) -> None:
             _record_route(scan, relative, method, route, _requires_contract(relative))
     _scan_probes(scan, script, text)
     _scan_curl_args(scan, script, text)
+    return exec_scan.Script(relative, text, lambda position: _scope(script.spans, position))
 
 
 def _steer(errors: list[str]) -> None:
@@ -452,6 +454,13 @@ def _steer(errors: list[str]) -> None:
             "see tests/contracts/README.md.",
             file=sys.stderr,
         )
+    if any(error.startswith("unparseable exec:") for error in errors):
+        print(
+            "contract: an unparseable exec is a docker exec call this check cannot read: "
+            "write `docker exec [flags] <container> <command...>` with a literal container, "
+            "or a variable assigned one literal service name — see tests/contracts/README.md.",
+            file=sys.stderr,
+        )
     if any(error.startswith("schema:") for error in errors):
         print(
             f"contract: a schema error means a file in {contract_dir}/ breaks the format "
@@ -467,12 +476,15 @@ def _held_profile_errors(service: str, contract: dict[str, Any]) -> list[str]:
     return [
         f"{service} {item['id']}: unexercised held-profile is only for held services "
         f"({', '.join(sorted(HELD))})"
-        for item in contract["endpoints"]
+        for item in [*contract["endpoints"], *contract.get("exec", [])]
         if item.get("unexercised") == "held-profile"
     ]
 
 
-def _load() -> tuple[list[Endpoint], dict[tuple[str, str], set[str]], list[str]]:
+Loaded = tuple[list[Endpoint], list[ExecEntry], dict[tuple[str, str], set[str]], list[str]]
+
+
+def _load() -> Loaded:
     contracts, errors = inventory.load(CONTRACT_DIR)
     if not contracts:
         errors.append("no contract files found")
@@ -480,20 +492,24 @@ def _load() -> tuple[list[Endpoint], dict[tuple[str, str], set[str]], list[str]]
         problems = inventory.validate(service, contract) or _held_profile_errors(service, contract)
         errors += [f"schema: {error}" for error in problems]
     if errors:
-        return [], {}, errors
+        return [], [], {}, errors
     expected = {
         (service, item["id"]): set(item["callers"])
         for service, contract in contracts.items()
-        for item in contract["endpoints"]
+        for item in [*contract["endpoints"], *contract.get("exec", [])]
     }
-    return inventory.endpoints(contracts), expected, []
+    return inventory.endpoints(contracts), inventory.exec_entries(contracts), expected, []
 
 
-def _sync_errors(expected: dict[tuple[str, str], set[str]], scan: Scan) -> list[str]:
+def _sync_errors(
+    expected: dict[tuple[str, str], set[str]], scan: Scan, execs: exec_scan.ExecScan
+) -> list[str]:
     actual: dict[tuple[str, str], set[str]] = {}
-    for call in scan.calls:
-        actual.setdefault((call.endpoint.service, call.endpoint.id), set()).add(call.caller)
+    reached = [(call.endpoint, call.caller) for call in scan.calls] + execs.calls
+    for entry, caller in reached:
+        actual.setdefault((entry.service, entry.id), set()).add(caller)
     routes = {(item.service, item.id): f"{item.method} {item.route}" for item in scan.found}
+    routes |= {(item.service, item.id): "exec " + " ".join(item.command) for item in execs.found}
     errors = []
     for key, callers in sorted(expected.items()):
         label = f"{key[0]} {key[1]} ({routes[key]})"
@@ -508,12 +524,12 @@ def _sync_errors(expected: dict[tuple[str, str], set[str]], scan: Scan) -> list[
 
 def main() -> int:
     """Run the bidirectional contract coverage check."""
-    found, expected, errors = _load()
-    scan = Scan(found)
+    found, found_exec, expected, errors = _load()
+    scan, execs = Scan(found), exec_scan.ExecScan(found_exec)
     if not errors:
         for path in sorted((ROOT / "scripts").rglob("*.sh")):
-            _scan_file(scan, path)
-        errors = scan.errors + _sync_errors(expected, scan)
+            exec_scan.scan_script(execs, _scan_file(scan, path))
+        errors = scan.errors + execs.errors + _sync_errors(expected, scan, execs)
     for finding in sorted(scan.findings):
         print(f"contract: finding: {finding}", file=sys.stderr)
     for error in errors:
@@ -522,7 +538,10 @@ def main() -> int:
         _steer(errors)
         return 1
     reached = {(call.endpoint.service, call.endpoint.id) for call in scan.calls}
-    print(f"contracts: {len(expected)} endpoints, {len(reached)} reached by literal calls")
+    print(
+        f"contracts: {len(found)} endpoints, {len(reached)} reached by literal calls; "
+        f"{len(found_exec)} exec entries"
+    )
     return 0
 
 

@@ -1,14 +1,12 @@
 service: jellyfin
 base_path: /
-# `format` is the literal header value template replay.py's live mode sends,
-# with `{key}` replaced by the supplied credential (the permanent API key
-# configure_jellyfin creates) — Jellyfin's actual Authorization scheme, not a
-# raw token (see scripts/services/jellyfin/main.sh's own `$auth` construction).
-auth: {type: header, name: Authorization, format: 'MediaBrowser Client="ContractDrift", Device="Test", DeviceId="contract-drift", Version="1.0", Token="{key}"'}
-# live-replay-only: the upstream stable OpenAPI omits five endpoints we use
-# and verify live (System/Configuration/{encoding,network}, /health) — found
-# by replay.py spec mode 2026-08-04. Restore an openapi: URL if upstream
-# documents them.
+# `format` is the header value the product sends, with `{key}` for the token
+# (the permanent API key configure_jellyfin creates): Jellyfin's structured
+# Authorization scheme, not a raw token (see scripts/services/jellyfin/server.sh).
+auth: {type: header, name: Authorization, format: 'MediaBrowser Client="MediaStack", Device="Setup", DeviceId="mediastack-setup", Version="1.0", Token="{key}"'}
+# No openapi: the upstream stable OpenAPI omits five endpoints we use
+# (System/Configuration/{encoding,network}, /health) — found by replay.py spec
+# mode 2026-08-04. Restore an openapi: URL if upstream documents them.
 endpoints:
   - {id: readiness, method: GET, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: public-system-info, method: GET, path: /System/Info/Public, sends: [], reads: [Version], callers: [scripts/services/homepage/main.sh]}
@@ -42,3 +40,9 @@ endpoints:
   # Stage 1 probe falls back to it when no API key was saved; fresh-install
   # calls that fallback on the candidate.
   - {id: health, method: GET, path: /health, sends: [], reads: [], callers: [scripts/setup/gpu/compose.sh, scripts/setup/stage1/install.sh]}
+exec:
+  - {id: exec-ready, unexercised: gpu, command: ["true"], callers: [scripts/setup/stage3/jellyfin.sh]}
+  - {id: vainfo-bundled, unexercised: gpu, command: [/usr/lib/jellyfin-ffmpeg/vainfo, --display, drm, --device], callers: [scripts/setup/stage3/transcode.sh]}
+  - {id: vainfo, unexercised: gpu, command: [vainfo, --display, drm, --device], callers: [scripts/setup/stage3/transcode.sh]}
+  - {id: encode-probe, unexercised: gpu, command: [/usr/lib/jellyfin-ffmpeg/ffmpeg, -hide_banner, -f, lavfi], callers: [scripts/setup/stage3/transcode.sh]}
+  - {id: decode-probe, unexercised: gpu, command: [sh, -c], match: "-hwaccel cuda", callers: [scripts/setup/stage3/transcode.sh]}
