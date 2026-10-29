@@ -52,13 +52,14 @@ stack network, publishes no host port and makes no public tracker calls.
 NPM stays in `HELD`. Remote evidence is for local acceptance and PR review.
 It does not enter the hosted publisher.
 
-WireGuard peer migration and a real client handshake follow in a separate PR.
-DDNS candidate pushes and fail2ban candidate host bans also need separate proofs.
+Local WireGuard scenarios cover stored peer migration. A real client handshake
+after migration still needs a separate proof. DDNS candidate pushes and fail2ban
+candidate host bans also need separate proofs.
 This check uses their accepted images as companions; it does not approve them.
 NAS checks need a disposable lab guest and the TrueNAS test appliance. GPU checks
 need a disposable guest with the P600. Those commands are not implemented yet.
-The other migration holds remain in place. FlareSolverr stays held because there
-is no deterministic challenge-solving oracle.
+FlareSolverr stays held because there is no deterministic challenge-solving
+oracle.
 
 ## One-time setup
 
