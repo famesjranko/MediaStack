@@ -5,8 +5,8 @@
 # starting containers.
 set -uo pipefail
 
-# Each case controls mirror retention instead of inheriting the caller's setting.
-export MS_CACHE_MIRROR_KEEP=0
+# Each case controls cache use and retention instead of inheriting caller settings.
+export MS_TEST_NO_CACHE=0 MS_CACHE_MIRROR_KEEP=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"

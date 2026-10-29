@@ -18,6 +18,15 @@ run_cmd env -u MS_UNIT_VERDICT_FILE MS_CACHE_MIRROR_KEEP=1 bash "$RUNNER_SUITE" 
 # Then its cleanup and explicit mirror-retention cases both pass.
 assert_rc 0 "test-runner passes with MS_CACHE_MIRROR_KEEP exported"
 
+# Given the caller disables the cache for real scenario runs.
+RUNNER_NO_CACHE=1
+
+# When the runner unit inherits that setting with its own verdict.
+run_cmd env -u MS_UNIT_VERDICT_FILE MS_TEST_NO_CACHE="$RUNNER_NO_CACHE" bash "$RUNNER_SUITE" </dev/null
+
+# Then its normal-cache and explicit no-cache cases both pass.
+assert_rc 0 "test-runner passes with MS_TEST_NO_CACHE exported"
+
 # Given the standalone fail2ban unit has its own verdict.
 FAIL2BAN_SUITE="$SCRIPT_DIR/launcher-fail2ban.sh"
 
