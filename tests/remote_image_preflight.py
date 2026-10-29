@@ -77,12 +77,31 @@ def install(gcp: Gcp, config: dict[str, str]) -> None:
 
 def candidate(gcp: Gcp, plan: dict[str, Any], plan_hash: str) -> bytes:
     argv = [plan["candidate"], plan["source"], plan["run_id"], plan_hash]
-    remote_step(
-        gcp,
-        "Upgrade candidate; compare before repair; reconfigure; renew staging certs",
-        "timeout 1800 bash tests/gcp-vm/candidate-host.sh " + shlex.join(argv),
-        timeout=1860,
-    )
+    try:
+        remote_step(
+            gcp,
+            "Upgrade candidate; compare before repair; reconfigure; renew staging certs",
+            "timeout 1800 bash tests/gcp-vm/candidate-host.sh " + shlex.join(argv),
+            timeout=1860,
+        )
+    except RuntimeError:
+        stages = {
+            "candidate-lock",
+            "update",
+            "application-state",
+            "npm-state",
+            "reconfigure",
+            "npm-state-after-reconfigure",
+            "staging-renewal",
+            "receipt",
+        }
+        try:
+            stage = gcp.ssh("cat /tmp/ms-remote-check", timeout=30).decode().strip()
+        except (RuntimeError, OSError, subprocess.SubprocessError):
+            stage = ""
+        if stage in stages:
+            raise RuntimeError(f"candidate check failed at {stage}; no receipt") from None
+        raise
     state = json.loads(remote_step(gcp, "Read reduced NPM state", "cat /tmp/ms-npm-after.json"))
     instances = gcp.instances()
     ip = str(

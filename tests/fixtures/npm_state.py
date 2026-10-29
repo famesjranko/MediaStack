@@ -142,6 +142,19 @@ class Npm:
             leaf = pem.decode().split("-----END CERTIFICATE-----", 1)[0]
             der = ssl.PEM_cert_to_DER_cert(leaf + "-----END CERTIFICATE-----\n")
             result[f"certificate/{cert_id}"] = hashlib.sha256(der).hexdigest()
+            key = subprocess.check_output(
+                [
+                    "docker",
+                    "exec",
+                    "npm",
+                    "cat",
+                    f"/etc/letsencrypt/live/npm-{cert_id}/privkey.pem",
+                ],
+                timeout=20,
+            )
+            if not key.strip():
+                raise ValueError("managed certificate private key is missing")
+            result[f"private-key/{cert_id}"] = hashlib.sha256(key).hexdigest()
         return result
 
     def seed(self) -> None:
@@ -181,7 +194,11 @@ class Npm:
         cert_keys = [key for key in before if key.startswith("certificate/")]
         if not cert_keys or any(before[key] == after[key] for key in cert_keys):
             raise ValueError("staging renewal did not replace every managed certificate")
-        if any(before[key] != after[key] for key in before if key not in cert_keys):
+        if any(
+            before[key] != after[key]
+            for key in before
+            if key not in cert_keys and not key.startswith("private-key/")
+        ):
             raise ValueError("staging renewal changed proxy or certificate identity")
         pathlib.Path("/tmp/ms-npm-after.json").write_text(json.dumps(after, sort_keys=True))
 

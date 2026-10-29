@@ -114,6 +114,8 @@ class Migration(unittest.TestCase):
     def inspection(self, argv, **kwargs):
         if argv[:3] == ["openssl", "x509", "-noout"]:
             return b"issuer=STAGING fixture"
+        if argv[-1].endswith("privkey.pem"):
+            return b"fixture-opaque-private-key-material"
         return ("server = " + fixture.STAGING).encode()
 
     def test_seed_check_and_renew_preserve_real_records(self):
@@ -171,6 +173,34 @@ class Migration(unittest.TestCase):
             return b"server = https://acme-v02.api.letsencrypt.org/directory" if argv[0] == "docker" else original(argv, **kwargs)
         with patch.object(fixture.subprocess, "check_output", side_effect=inspect):
             with self.assertRaisesRegex(ValueError, "renewal does not use staging"):
+                self.npm.check()
+
+    def test_lost_private_key_is_not_hidden_by_later_renewal(self):
+        # Given accepted certificates and a candidate that loses the private key.
+        self.npm.seed()
+        original = self.inspection
+        def inspect(argv, **kwargs):
+            if argv[-1].endswith("privkey.pem"): return b""
+            return original(argv, **kwargs)
+
+        # When persistent state is checked before renewal can recreate the key.
+        # Then missing key material fails the migration check.
+        with patch.object(fixture.subprocess, "check_output", side_effect=inspect):
+            with self.assertRaisesRegex(ValueError, "private key is missing"):
+                self.npm.check()
+
+    def test_production_certificate_issuer_is_rejected_independently_of_renewal_config(self):
+        # Given a production issuer even though the renewal config names staging.
+        self.npm.seed()
+        original = self.inspection
+        def inspect(argv, **kwargs):
+            if argv[0] == "openssl": return b"issuer=C=US, O=Let's Encrypt, CN=R1"
+            return original(argv, **kwargs)
+
+        # When the candidate certificate material is inspected.
+        # Then the issuer check independently refuses it.
+        with patch.object(fixture.subprocess, "check_output", side_effect=inspect):
+            with self.assertRaisesRegex(ValueError, "not from Let's Encrypt staging"):
                 self.npm.check()
 
 

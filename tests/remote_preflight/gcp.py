@@ -38,6 +38,7 @@ class Gcp:
     def __init__(self, config: dict[str, str], run_id: str, report: Callable[[str], None]) -> None:
         self.config, self.run_id, self.report = config, run_id, report
         self.attempted = False
+        self.creation_acknowledged = False
 
     def call(self, *args: str, data: bytes | None = None, timeout: int = 120) -> bytes:
         return command(
@@ -81,6 +82,7 @@ class Gcp:
             f"--metadata-from-file=startup-script={ROOT / 'tests/gcp-vm/startup.sh'}",
             timeout=300,
         )
+        self.creation_acknowledged = True
 
     def ssh(self, script: str, data: bytes | None = None, timeout: int = 120) -> bytes:
         return self.call(
@@ -119,11 +121,37 @@ class Gcp:
             "sudo chown $(id -u):$(id -g) /opt/MediaStack && tar -xf - -C /opt/MediaStack", archive
         )
 
+    def wait_creation(self) -> bool:
+        """An interrupted local gcloud does not cancel the server-side insert."""
+        deadline = time.monotonic() + 300
+        observed = False
+        while time.monotonic() < deadline:
+            pending = json.loads(
+                self.call(
+                    "compute",
+                    "operations",
+                    "list",
+                    f"--zones={self.config['ZONE']}",
+                    "--filter=operationType=insert AND status!=DONE AND "
+                    f"targetLink~'/instances/{self.config['INSTANCE']}$'",
+                    "--format=json",
+                    timeout=30,
+                )
+            )
+            if not pending:
+                return observed
+            observed = True
+            time.sleep(2)
+        raise RuntimeError("cleanup cannot verify deletion: cloud creation is still pending")
+
     def cleanup(self) -> None:
         if not self.attempted:
             return
+        observed = self.wait_creation()
         # Do not delete a foreign VM if another operator raced this run's create.
         values = self.instances()
+        if not values and not self.creation_acknowledged and not observed:
+            raise RuntimeError("cleanup cannot verify an unacknowledged create; inspect target")
         if (
             values
             and values[0].get("labels", {}).get("mediastack-preflight") != self.run_id.lower()

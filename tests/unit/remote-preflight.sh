@@ -114,6 +114,18 @@ class FrozenInputs(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     frozen_inputs(self.snapshot, None, None)
 
+    def test_self_consistent_weekly_plan_from_another_source_is_rejected(self):
+        # Given an intact weekly plan whose hash is valid but source is another commit.
+        hosted = build_plan(self.baseline, self.current, [], "b" * 40, "99-1", {})
+        path = self.folder / "plan.json"
+        path.write_text(json.dumps(hosted))
+
+        # When its correct hash is supplied from the current checkout.
+        # Then source identity independently blocks the remote run.
+        with patch("remote_preflight.inputs.source_sha", return_value=SOURCE):
+            with self.assertRaisesRegex(ValueError, "hash or source"):
+                frozen_inputs(None, path, fingerprint(hosted))
+
     def test_target_and_staging_guards(self):
         # Given a target whose expected name or ACME server differs.
         base = dict(CONFIG, GCP_EXPECT_TARGET="fixture-project/us-central1-a/candidate-test")
@@ -205,6 +217,8 @@ class ReceiptBinding(unittest.TestCase):
 class FakeCloud:
     def __init__(self, fault=""):
         self.vm = None
+        self.pending = None
+        self.operation_reads = 0
         self.calls = []
         self.fault = fault
 
@@ -213,10 +227,19 @@ class FakeCloud:
         if argv[0] == "git" and "archive" in argv: return b"fixture archive"
         if argv[0] != "gcloud" or "--project=fixture-project" not in argv:
             raise AssertionError("every cloud operation needs an explicit project")
+        if "operations" in argv:
+            self.operation_reads += 1
+            if self.pending:
+                if self.operation_reads == 1: return b'[{"status":"RUNNING"}]'
+                self.vm, self.pending = self.pending, None
+            return b'[]'
         if "list" in argv: return json.dumps([self.vm] if self.vm else []).encode()
         if "create" in argv:
             label = next(a.split("=", 2)[2] for a in argv if a.startswith("--labels="))
             self.vm = {"zone": "zones/us-central1-a", "labels": {"mediastack-preflight": label}}
+            if self.fault == "delayed-create":
+                self.pending, self.vm = self.vm, None
+                raise RuntimeError("create response lost before VM became visible")
             if self.fault == "create": raise RuntimeError("create response lost")
             return b""
         if "delete" in argv:
@@ -249,6 +272,36 @@ class Cleanup(unittest.TestCase):
         # Then no delete was sent for the existing target.
         self.assertFalse(any("delete" in argv for argv in cloud.calls))
         self.assertIsNotNone(cloud.vm)
+
+    def test_pending_cloud_create_settles_before_deletion_is_verified(self):
+        # Given a lost create response while the cloud operation still runs.
+        cloud = FakeCloud("delayed-create")
+        gcp = Gcp(CONFIG, RUN_ID, lambda message: None)
+
+        # When cleanup runs before the instance is visible in the VM list.
+        with patch("remote_preflight.gcp.command", cloud), patch("remote_preflight.gcp.time.sleep"):
+            with self.assertRaises(RuntimeError): gcp.create()
+            gcp.cleanup()
+
+        # Then it waits for cloud creation to settle and deletes the resulting VM.
+        self.assertIsNone(cloud.pending)
+        self.assertIsNone(cloud.vm)
+        self.assertTrue(any("delete" in argv for argv in cloud.calls))
+
+    def test_foreign_ownership_after_a_raced_create_is_never_deleted(self):
+        # Given a create attempt whose named target now belongs to another run.
+        cloud = FakeCloud()
+        gcp = Gcp(CONFIG, RUN_ID, lambda message: None)
+        with patch("remote_preflight.gcp.command", cloud):
+            gcp.create()
+            cloud.vm["labels"] = {"mediastack-preflight": "another-run"}
+
+            # When cleanup checks the target's ownership label.
+            # Then it refuses deletion even though this run attempted creation.
+            with self.assertRaisesRegex(RuntimeError, "ownership label"):
+                gcp.cleanup()
+        self.assertIsNotNone(cloud.vm)
+        self.assertFalse(any("delete" in argv for argv in cloud.calls))
 
     def test_success_failure_interrupt_and_lost_create_response(self):
         for fault in ("", "candidate", "interrupt", "create", "cleanup", "wan", "receipt"):
@@ -293,6 +346,27 @@ class Cleanup(unittest.TestCase):
         # Then the exception contains only the exit code.
         self.assertNotIn(secret, str(caught.exception))
         self.assertIn("exit 1", str(caught.exception))
+
+    def test_wan_failure_stops_real_candidate_orchestration_before_receipts(self):
+        # Given successful guest commands but a failed public WAN proof.
+        gcp = Gcp(CONFIG, RUN_ID, lambda message: None)
+        state = {"hosts": []}
+        calls = []
+        def ssh(script, data=None, timeout=120):
+            calls.append(script)
+            if "ms-npm-after.json" in script: return json.dumps(state).encode()
+            return b""
+        instances = [{"networkInterfaces": [{"accessConfigs": [{"natIP": "192.0.2.42"}]}]}]
+
+        # When the real candidate orchestration reaches the public check.
+        with patch.object(gcp, "ssh", side_effect=ssh), patch.object(gcp, "instances", return_value=instances):
+            with patch.object(run.wan, "check", side_effect=ValueError("candidate serves no HTTPS")) as probe:
+                with self.assertRaisesRegex(ValueError, "no HTTPS"):
+                    run.candidate(gcp, plan(), "e" * 64)
+
+        # Then it propagates the failure and never retrieves acceptance receipts.
+        probe.assert_called_once_with("fixture.test", "192.0.2.42", state)
+        self.assertFalse(any("ms-remote-receipts.tsv" in script for script in calls))
 
 
 unittest.main(argv=["remote-preflight"], verbosity=2)

@@ -48,12 +48,17 @@ assert_eq 1 "$RECEIPTS_ROWS_WRITTEN" 'guest-local events and image inspection qu
 assert_eq 9 "$(awk -F '\t' '!/^#/ {print NF}' "$RECEIPTS_FILE")" 'remote receipt has nine fields'
 assert_eq "$RECEIPTS_PLAN_HASH" "$(awk -F '\t' '!/^#/ {print $8}' "$RECEIPTS_FILE")" 'remote receipt carries the full plan hash'
 
-# Given the recorder stops before a second check starts.
+# Given the recorder stops before a new run with otherwise qualifying events.
 kill "$(cat "$RECEIPTS_PID")"
 wait "$(cat "$RECEIPTS_PID")" 2>/dev/null || true
+RECEIPTS_RUN_ID=run-20261029T120000Z-87654321
 
 # When another scenario tries to produce evidence.
 receipts_scenario_begin
+cat >>"$RECEIPTS_EVENTS" <<EOF
+{"Type":"container","Action":"create","Actor":{"ID":"candidate-2","Attributes":{"com.docker.compose.service":"npm","image":"${MS_TEST_IMAGE_OVERRIDES#*=}"}}}
+{"Type":"container","Action":"start","Actor":{"ID":"candidate-2","Attributes":{"com.docker.compose.service":"npm","image":"${MS_TEST_IMAGE_OVERRIDES#*=}"}}}
+EOF
 receipts_scenario_end remote-gcp
 
 # Then a lost recorder cannot produce another receipt.

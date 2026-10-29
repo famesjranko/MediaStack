@@ -29,7 +29,8 @@ It proves:
 
 - The real setup installs the accepted Stable lock and enables remote access.
 - Stored application credentials and representative user records survive.
-- NPM proxy IDs, forwarding rules, certificate IDs, credentials, and a deliberate
+- NPM proxy IDs, forwarding rules, certificate IDs, certificate and private-key
+  fingerprints, credentials, and a deliberate
   user proxy survive before reconfiguration can repair missing state.
 - Reconfiguration preserves that state.
 - Both managed certificates renew through NPM against Let's Encrypt staging.
@@ -137,9 +138,10 @@ Run the command from [Coverage](#coverage). Select a new output directory each
 time. Existing output directories are refused. The log prints the last stage
 reached. Each cloud command and remote operation has a deadline.
 
-Cleanup runs on success, failure, SIGINT and SIGTERM. It verifies the VM's run
+Cleanup runs on success, failure, SIGINT and SIGTERM. It waits for pending cloud
+creation before it verifies the VM's run
 ownership label, deletes it, and lists the target again to prove absence. An
-unverified deletion blocks publication. A two-hour Compute Engine DELETE deadline
+unacknowledged creation or unverified deletion blocks publication. A two-hour Compute Engine DELETE deadline
 is a backstop for SIGKILL, lost power or a disconnected operator host. No local
 trap can guarantee immediate cleanup in those cases.
 
