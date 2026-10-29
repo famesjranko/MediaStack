@@ -203,6 +203,70 @@ class Migration(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not from Let's Encrypt staging"):
                 self.npm.check()
 
+    def test_changed_nonempty_private_key_blocks_migration(self):
+        # Given accepted key material and a different nonempty candidate key.
+        self.npm.seed()
+        original = self.inspection
+        def inspect(argv, **kwargs):
+            if argv[-1].endswith("privkey.pem"): return b"different-opaque-key-material"
+            return original(argv, **kwargs)
+
+        # When NPM state is compared before renewal.
+        # Then key replacement fails even though neither file is empty.
+        with patch.object(fixture.subprocess, "check_output", side_effect=inspect):
+            with self.assertRaisesRegex(ValueError, "persistent state changed"):
+                self.npm.check()
+
+
+class Wan(unittest.TestCase):
+    def state(self):
+        return {"hosts": [host(1, "jellyfin.fixture.test", 10), host(2, "seerr.fixture.test", 11)],
+                "certificate/10": "1" * 64, "certificate/11": "2" * 64}
+
+    def application(self, hostname, ip, path, cert):
+        return {"Id": "fixture", "Version": "1"} if path == "/System/Info/Public" else {"version": "1"}
+
+    def test_public_proof_accepts_matching_dns_and_closed_admin_ports(self):
+        # Given both DNS names point to the VM and all admin TCP ports refuse connections.
+        with patch.object(wan, "command", return_value=b"192.0.2.42 STREAM fixture\n"), \
+             patch.object(wan, "https", side_effect=self.application) as tls, \
+             patch.object(wan.socket, "create_connection", side_effect=ConnectionRefusedError) as tcp:
+            # When the real WAN proof checks DNS, applications and the canonical ports.
+            wan.check("fixture.test", "192.0.2.42", self.state())
+
+        # Then both applications qualify and the admin-port check has a nonempty population.
+        self.assertEqual(tls.call_count, 2)
+        self.assertGreater(tcp.call_count, 0)
+
+    def test_wrong_public_dns_blocks_even_when_https_and_firewall_would_pass(self):
+        # Given one DNS name points elsewhere but HTTPS and blocked ports would qualify.
+        def dns(argv, **kwargs):
+            ip = "192.0.2.66" if argv[-1].startswith("jellyfin.") else "192.0.2.42"
+            return (ip + " STREAM fixture\n").encode()
+        with patch.object(wan, "command", side_effect=dns), \
+             patch.object(wan, "https", side_effect=self.application), \
+             patch.object(wan.socket, "create_connection", side_effect=ConnectionRefusedError), \
+             patch.object(wan.time, "monotonic", side_effect=[0, 0, 181]), patch.object(wan.time, "sleep"):
+            # When the real WAN proof reaches its bounded DNS deadline.
+            # Then stale public DNS independently prevents acceptance.
+            with self.assertRaisesRegex(ValueError, "public DNS did not converge"):
+                wan.check("fixture.test", "192.0.2.42", self.state())
+
+    def test_reachable_admin_port_blocks_even_when_dns_and_https_pass(self):
+        # Given correct public DNS and HTTPS but NPM's admin TCP port is reachable.
+        class Connection:
+            def close(self): pass
+        def connect(address, **kwargs):
+            if address[1] == 81: return Connection()
+            raise ConnectionRefusedError()
+        with patch.object(wan, "command", return_value=b"192.0.2.42 STREAM fixture\n"), \
+             patch.object(wan, "https", side_effect=self.application), \
+             patch.object(wan.socket, "create_connection", side_effect=connect):
+            # When the real WAN proof tests the canonical admin ports.
+            # Then the reachable admin service independently prevents acceptance.
+            with self.assertRaisesRegex(ValueError, "admin TCP port 81 is reachable"):
+                wan.check("fixture.test", "192.0.2.42", self.state())
+
 
 class Tls(unittest.TestCase):
     def test_public_https_requires_the_candidate_certificate_and_working_backend(self):
