@@ -21,6 +21,10 @@ import urllib.request
 from collections.abc import Iterator
 from typing import Any, Callable
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import upgrade_history
+import upgrade_media
+
 FIXTURE_USER = "upgrade-fixture-user"
 FIXTURE_KEY_APP = "upgrade-fixture-key"
 FIXTURE_SEERR_EMAIL = "upgrade-fixture@mediastack.test"
@@ -144,6 +148,22 @@ def assert_populated(result: dict[str, Any]) -> None:
         "sonarr/notification": bool(result["sonarr/notification"]),
         "radarr/notification": bool(result["radarr/notification"]),
     }
+    required.update(
+        {
+            name: bool(result[name])
+            for name in (
+                "jellyfin/system",
+                "jellyfin/encoding",
+                "jellyfin/network",
+                "seerr/jellyfin",
+                "seerr/network",
+                "sonarr/naming",
+                "sonarr/mediamanagement",
+                "radarr/naming",
+                "radarr/mediamanagement",
+            )
+        }
+    )
     missing = [name for name, present in required.items() if not present]
     if missing:
         raise ValueError("configured state is missing: " + ", ".join(missing))
@@ -243,10 +263,23 @@ class StateClient:
                 self.call("seerr", f"/api/v1/user/{user['id']}", method="DELETE")
 
     def seed(self) -> None:
+        if (
+            pathlib.Path.cwd() != pathlib.Path("/root/MediaStack")
+            or self.env.get("DATA_DIR") != "/tmp/ms-data"
+        ):
+            raise ValueError("migration fixtures require the isolated DinD test install")
         self.ensure_fixtures()
         self.flip_profile()
+        upgrade_history.seed(self)
+        upgrade_media.seed_watch_state(self)
+        upgrade_media.seed_torrent(self)
 
-    def qbt(self, endpoint: str) -> Any:
+    def qbt_request(
+        self,
+        endpoint: str,
+        data: bytes | None = None,
+        content_type: str = "application/x-www-form-urlencoded",
+    ) -> bytes:
         credentials = urllib.parse.urlencode(
             {
                 "username": self.env["JELLYFIN_ADMIN_USER"],
@@ -259,8 +292,16 @@ class StateClient:
             body = response.read().strip()
             if body != b"Ok." and not (response.status == 204 and not body):
                 raise ValueError("qBittorrent login failed")
-        with self.http.open(f"http://127.0.0.1:8080/api/v2/{endpoint}", timeout=20) as response:
-            return json.load(response)
+        request = urllib.request.Request(
+            f"http://127.0.0.1:8080/api/v2/{endpoint}",
+            data=data,
+            headers={"Content-Type": content_type},
+        )
+        with self.http.open(request, timeout=20) as response:
+            return bytes(response.read())
+
+    def qbt(self, endpoint: str) -> Any:
+        return json.loads(self.qbt_request(endpoint))
 
     def jackett_key(self) -> str:
         """The key MediaStack reads from Jackett's own file (api_get_jackett_key)."""
@@ -330,9 +371,24 @@ class StateClient:
         if failed:
             raise SystemExit("stored credentials do not authenticate: " + ", ".join(failed))
 
+    def integration_credentials(self) -> None:
+        """Exercise masked credentials from the service that stores them."""
+        for app in ("sonarr", "radarr"):
+            for resource in ("downloadclient", "indexer", "notification"):
+                results = self.call(app, f"/api/v3/{resource}/testall", {}, "POST")
+                if not results or any(row.get("isValid") is not True for row in results):
+                    raise ValueError(f"{app}/{resource}: stored credentials failed connection test")
+
     def arr_state(self, result: dict[str, Any]) -> None:
         for app in ("sonarr", "radarr"):
-            for endpoint in ("rootfolder", "qualityprofile", "downloadclient", "indexer"):
+            for endpoint in (
+                "rootfolder",
+                "qualityprofile",
+                "downloadclient",
+                "indexer",
+                "customformat",
+                "qualitydefinition",
+            ):
                 rows = self.call(app, f"/api/v3/{endpoint}")
                 if not isinstance(rows, list) or not rows:
                     raise ValueError(f"{app}/{endpoint}: required population is empty")
@@ -345,6 +401,8 @@ class StateClient:
                     }
                     for row in rows
                 ]
+            for setting in ("naming", "mediamanagement"):
+                result[f"{app}/{setting}"] = self.call(app, f"/api/v3/config/{setting}")
             result[f"{app}/notification"] = [
                 self.arr_jellyfin_connection(row)
                 for row in self.call(app, "/api/v3/notification")
@@ -370,9 +428,14 @@ class StateClient:
             for u in users
         )
         result["jellyfin/libraries"] = [
-            {k: row[k] for k in ("Name", "Locations", "ItemId", "CollectionType")}
+            {k: row[k] for k in ("Name", "Locations", "ItemId", "CollectionType", "LibraryOptions")}
             for row in self.call("jellyfin", "/Library/VirtualFolders")
         ]
+        result["jellyfin/system"] = self.call("jellyfin", "/System/Configuration")
+        for setting in ("encoding", "network"):
+            result[f"jellyfin/{setting}"] = self.call(
+                "jellyfin", f"/System/Configuration/{setting}"
+            )
         keys = self.jellyfin_keys()
         result["jellyfin/api-keys"] = sorted(
             (k["AppName"], fingerprint(k["AccessToken"])) for k in keys
@@ -396,7 +459,7 @@ class StateClient:
             "defaultPermissions": main.get("defaultPermissions"),
             "defaultQuotas": main.get("defaultQuotas"),
         }
-        for app in ("sonarr", "radarr"):
+        for app in ("sonarr", "radarr", "jellyfin", "network"):
             result[f"seerr/{app}"] = self.call("seerr", f"/api/v1/settings/{app}")
 
     def jackett_state(self, result: dict[str, Any]) -> None:
@@ -432,6 +495,9 @@ class StateClient:
         self.seerr_state(result)
         self.jackett_state(result)
         self.qbittorrent_state(result)
+        self.integration_credentials()
+        result.update(upgrade_media.snapshot(self))
+        result.update(upgrade_history.snapshot(self))
         # A rotated key that was also rewritten into .env still authenticates,
         # but every client that holds the old key breaks.
         result["credentials"] = {

@@ -1,6 +1,7 @@
 # Accepted-image installation -> candidate combination, using real update paths.
 # Fresh configuration evidence is reported by fresh-install separately.
 source tests/scenarios/fresh-install.sh
+source tests/lib/upgrade-recovery.sh
 
 upgrade_state() { dind_exec "python3 -I tests/fixtures/upgrade_state.py $1"; }
 
@@ -21,9 +22,22 @@ source scripts/setup/storage.sh
 source scripts/setup/override.sh
 source scripts/launcher/manage-updates.sh
 _MU_APPLIED=()
+if [[ "$1" == interrupt || "$1" == retry ]]; then
+    worker_pid=$BASHPID
+    action=$1
+    mv() {
+        command mv "$@" || return $?
+        if [[ "$action" == interrupt && "$1" == "$SCRIPT_DIR/config/qbittorrent" ]]; then
+            : >/tmp/upgrade-revert-interrupted
+            kill -KILL "$worker_pid"
+        elif [[ "$action" == retry && "$2" == "$SCRIPT_DIR/config/qbittorrent" ]]; then
+            sha256sum config/state/restore-points/qbittorrent.pre-revert.tar.gz >/tmp/upgrade-retry-safety.sha
+        fi
+    }
+fi
 case "$1" in
     update) _apply_service_update qbittorrent 1 ;;
-    revert) _reset_service_to_default qbittorrent ;;
+    revert | interrupt | retry) _reset_service_to_default qbittorrent ;;
 esac
 BASH
 }
@@ -106,7 +120,9 @@ run_scenario() {
         tail -30 "$log"
     fi
     # End on the proposed candidate combination for the event-based receipts.
-    upgrade_launcher update >"$log" 2>&1 && wait_healthy qbittorrent 120 && upgrade_state check || {
+    upgrade_launcher update >"$log" 2>&1 && wait_healthy qbittorrent 120 && upgrade_state check \
+        && upgrade_interrupted_revert && upgrade_launcher update >"$log" 2>&1 \
+        && wait_healthy qbittorrent 120 && upgrade_state check || {
         fail 'upgrade-path returns to the candidate after verified revert'
         return 1
     }
@@ -117,6 +133,16 @@ run_scenario() {
         fail 'upgrade-path real scripts/update.sh succeeds'
         tail -30 "$log"
         return 1
+    fi
+    if ((baseline_only)); then
+        # With identical digests, Compose can leave the other five processes
+        # untouched. The local battery must still prove they reload disk state.
+        dind_exec 'docker compose up -d --force-recreate jellyfin sonarr radarr jackett qbittorrent seerr' >"$log" 2>&1 || {
+            fail 'upgrade-path baseline recreates the data-owning services'
+            tail -30 "$log"
+            return 1
+        }
+        pass 'upgrade-path baseline recreates the data-owning services (no candidate evidence)'
     fi
     local svc
     for svc in jellyfin sonarr radarr jackett qbittorrent seerr; do
