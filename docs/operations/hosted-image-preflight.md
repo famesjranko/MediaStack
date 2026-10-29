@@ -107,6 +107,49 @@ GitHub disables scheduled workflows in a repository with no activity for 60
 days. This stops both crons. The Actions tab then shows that the workflow is
 disabled. Enable it there, or with `gh workflow enable image-drift.yml`.
 
+## Weekly baseline canary
+
+The separate `Baseline Canary` workflow runs each Monday at 05:17 UTC and by
+manual dispatch. It runs `install-e2e` even when no upstream image changed.
+Product images come from the accepted digest lock. Fixture images are resolved
+at the start of the run. A fresh hosted VM builds DinD with the current Debian
+packages, Docker Engine and Compose plugin. This catches changes outside the
+product image lock. The scenario exercises the real installer, safe re-run,
+and the Manage updates menu's `Up to date` state. With no candidate, it omits
+the service update and restore actions; candidate preflights exercise those.
+
+```bash
+gh workflow run baseline-canary.yml --ref main
+```
+
+The canary never proposes or accepts a digest update. Its image job has read
+access only. A separate report job reads its artifacts as data and maintains
+one `baseline-canary` issue on the default branch. A failed run opens or updates
+the issue with failed or skipped assertions, the inner Docker client, Engine
+and Compose versions, and a link to the run. If installation stops before
+versions can be read, the issue marks them unavailable. Missing or invalid
+results also fail. A complete passing run closes the issue; a later failure
+reopens it. Feature-branch dispatches write artifacts but do not change issues.
+
+Artifacts expire after 14 days. They contain the frozen plan, sanitized logs,
+`result.json`, `runtime.json`, image identities and container events. Infrastructure
+failures before the scenario starts can leave only `runner.log` or the job log.
+
+The report job also maintains one `schedule-inactivity` reminder when the newest
+default-branch commit is at least 45 days old. This is a conservative activity
+signal; issue updates and workflow runs are not assumed to reset GitHub's
+inactivity clock. A newer commit closes the reminder. No keepalive commit is
+made. Before day 60, review the Actions tab and enable any disabled workflows:
+
+```bash
+gh workflow enable image-drift.yml
+gh workflow enable baseline-canary.yml
+```
+
+If the repository will stay idle, set a reminder outside GitHub. A disabled
+schedule cannot report its own absence. See the
+[GitHub schedule rules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
+
 ## Isolate, then combine
 
 One run narrows the selection automatically:
