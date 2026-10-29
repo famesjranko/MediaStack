@@ -27,8 +27,9 @@ _npm_configure_publication() {
     local existing_hosts="[]"
     if [[ -n "$domain" && "$domain" != "example.com" ]]; then
         if ! existing_hosts=$(api_fetch_auth "NPM proxy hosts" "Authorization" "Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
-            existing_hosts="[]"
+            return 1
         fi
+        json_check "NPM proxy hosts" :array '[].id:integer' '[].domain_names:array' '[].domain_names[]:string' '[].certificate_id:integer' '[].enabled:boolean' <<<"$existing_hosts" || return 1
         _npm_warn_stale_managed_hosts "$npm_token" "$npm_api" "$domain" "$existing_hosts"
     fi
 
@@ -57,8 +58,8 @@ for host in json.load(sys.stdin):
             [[ -z "$existing_host_json" ]] && continue
 
             local existing_cert_id existing_enabled
-            existing_cert_id=$(echo "$existing_host_json" | json_get certificate_id 0)
-            existing_enabled=$(echo "$existing_host_json" | json_get enabled False)
+            existing_cert_id=$(echo "$existing_host_json" | json_get certificate_id) || return 1
+            existing_enabled=$(echo "$existing_host_json" | json_get enabled) || return 1
             if [[ "${existing_cert_id:-0}" == "0" && "$existing_enabled" =~ ^(True|true)$ ]]; then
                 local disable_http
                 disable_http=$(_npm_disable_host "$npm_token" "$npm_api" "$(echo "$existing_host_json" | json_get id)" "$existing_host_json")
@@ -88,8 +89,8 @@ for host in json.load(sys.stdin):
         if [[ "$_needs_public_dns_gate" != "true" ]]; then
             log_info "Custom ACME endpoint (${_le_server:-unset}) - skipping public DNS propagation gate"
         else
-            _public_ip=$(curl -s --connect-timeout 5 https://api.ipify.org 2>/dev/null) \
-                || _public_ip=$(curl -s --connect-timeout 5 https://ifconfig.me 2>/dev/null) \
+            _public_ip=$(http_curl -s --connect-timeout 5 https://api.ipify.org 2>/dev/null) \
+                || _public_ip=$(http_curl -s --connect-timeout 5 https://ifconfig.me 2>/dev/null) \
                 || _public_ip=""
         fi
 
@@ -131,9 +132,10 @@ for host in json.load(sys.stdin):
 
         # Re-fetch after any disable operations so final writes start from fresh state.
         if ! existing_hosts=$(api_fetch_auth "NPM proxy hosts (publish)" "Authorization" "Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
-            existing_hosts="[]"
+            return 1
         fi
 
+        json_check "NPM proxy hosts (publish)" :array '[].id:integer' '[].domain_names:array' '[].domain_names[]:string' '[].certificate_id:integer' '[].enabled:boolean' <<<"$existing_hosts" || return 1
         for entry in "${proxy_hosts[@]}"; do
             IFS='|' read -r subdomain forward_host forward_port websocket <<<"$entry"
             local fqdn="${subdomain}.${domain}"
@@ -189,8 +191,8 @@ for host in json.load(sys.stdin):
             host_cert_id="0"
             local cert_post_attempted="false" cert_post_http="" latest_cert_id="" cert_outcome="pending" proxy_published="false"
             if [[ -n "$host_json" ]]; then
-                host_id=$(echo "$host_json" | json_get id)
-                host_cert_id=$(echo "$host_json" | json_get certificate_id 0)
+                host_id=$(echo "$host_json" | json_get id) || return 1
+                host_cert_id=$(echo "$host_json" | json_get certificate_id) || return 1
             fi
 
             # Site 1: existing host's cert_id. Adopt only when the cert
@@ -420,7 +422,7 @@ print(json.dumps({
                 proxy_http=$(echo "$proxy_resp" | tail -1)
                 proxy_resp=$(echo "$proxy_resp" | sed '$d')
                 if [[ "$proxy_http" == "201" ]]; then
-                    new_host_id=$(echo "$proxy_resp" | json_get id)
+                    new_host_id=$(echo "$proxy_resp" | json_get id) || return 1
                     if [[ -n "$new_host_id" ]] \
                         && _npm_wait_proxy_conf "$new_host_id" "$fqdn" "$target_cert_id"; then
                         proxy_published="true"
@@ -465,13 +467,13 @@ for host in json.load(sys.stdin):
                 [[ -z "$existing_host_json" ]] && continue
 
                 local existing_enabled
-                existing_enabled=$(echo "$existing_host_json" | json_get enabled False)
+                existing_enabled=$(echo "$existing_host_json" | json_get enabled) || return 1
                 if [[ "$existing_enabled" =~ ^(True|true)$ ]]; then
                     local host_id disable_http
-                    host_id=$(echo "$existing_host_json" | json_get id)
+                    host_id=$(echo "$existing_host_json" | json_get id) || return 1
                     if [[ "$remote_state" == "failed" ]]; then
                         local existing_cert_id
-                        existing_cert_id=$(echo "$existing_host_json" | json_get certificate_id 0)
+                        existing_cert_id=$(echo "$existing_host_json" | json_get certificate_id) || return 1
                         if [[ "${existing_cert_id:-0}" != "0" ]] \
                             && _npm_cert_material_ready "$existing_cert_id" \
                             && _npm_proxy_conf_renders "$host_id" "$fqdn" "$existing_cert_id"; then

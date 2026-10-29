@@ -42,7 +42,7 @@ def main() -> int:
 
     # All live scores, including the custom formats the app auto-adds to every
     # profile at score 0.
-    current_all = {item["format"]: item.get("score", 0) for item in current_items}
+    current_all = {item["format"]: item["score"] for item in current_items}
     # A non-zero live score means the profile has been scored before — this
     # tells a fresh CREATE (empty -> PUT) apart from genuine drift. Keep the
     # 0-filter here: a brand-new profile already carries every custom format at

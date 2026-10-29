@@ -38,11 +38,11 @@ configure_radarr() {
     # Enables renaming + sets folder/movie formats with [imdbid-*] tags
     # so Jellyfin matches metadata reliably without scraping guesswork.
     local naming_config current_rename
-    if ! naming_config=$(api_get "$base/config/naming" "$radarr_key"); then
+    if ! naming_config=$(api_get "$base/config/naming" "$radarr_key" renameMovies:boolean); then
         log_warn "Could not fetch Radarr naming config - skipping"
-        naming_config="{}"
+        return 1
     fi
-    current_rename=$(echo "$naming_config" | json_get renameMovies False)
+    current_rename=$(echo "$naming_config" | json_get renameMovies) || return 1
     if [[ "$current_rename" == "True" ]]; then
         log_skip "Radarr naming convention already configured"
     else

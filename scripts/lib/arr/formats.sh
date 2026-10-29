@@ -16,7 +16,7 @@ configure_arr_custom_formats() {
     fi
 
     local existing
-    if ! existing=$(api_get "$base/customformat" "$key"); then
+    if ! existing=$(api_get "$base/customformat" "$key" :array '[].id:integer' '[].name:string'); then
         log_warn "Could not fetch $app_label custom formats - skipping"
         return 0
     fi
@@ -25,7 +25,10 @@ configure_arr_custom_formats() {
     plan=$(echo "$existing" \
         | FORMATS_FILE="$_ARR_LIB_DIR/custom_formats.yml" \
             SCORES="$scores" \
-            python3 "$_ARR_LIB_DIR/render/custom_formats.py" 2>/dev/null || echo "")
+            python3 "$_ARR_LIB_DIR/render/custom_formats.py") || {
+        log_warn "Could not plan $app_label custom formats"
+        return 1
+    }
 
     if [[ -z "$plan" ]]; then
         log_skip "$app_label custom formats already present"
@@ -61,7 +64,7 @@ configure_arr_format_scores() {
     fi
 
     local existing
-    if ! existing=$(api_get "$base/customformat" "$key"); then
+    if ! existing=$(api_get "$base/customformat" "$key" :array '[].id:integer' '[].name:string'); then
         log_warn "Could not fetch $app_label custom formats - skipping score attachment"
         return 0
     fi
@@ -74,13 +77,13 @@ try:
     print(json.dumps({cf["name"]: cf["id"] for cf in cfs}))
 except Exception:
     print("{}")
-' 2>/dev/null)
+' 2>/dev/null) || return 1
 
     local profile_name
     profile_name=$(cfg_field "quality_profile.name")
 
     local profiles profile_json
-    if ! profiles=$(api_get "$base/qualityprofile" "$key"); then
+    if ! profiles=$(api_get "$base/qualityprofile" "$key" :array '[].id:integer' '[].name:string' '[].formatItems:array' '[].formatItems[].score:integer'); then
         log_warn "Could not fetch $app_label quality profiles - skipping score attachment"
         return 0
     fi
@@ -97,7 +100,7 @@ try:
         print("")
 except Exception:
     print("")
-' 2>/dev/null)
+' 2>/dev/null) || return 1
 
     if [[ -z "$profile_json" ]]; then
         log_warn "$app_label quality profile '$profile_name' not found - skipping format scores"
@@ -117,7 +120,7 @@ except Exception:
         empty)
             local put_body="${status#*$'\t'}"
             local profile_id
-            profile_id=$(echo "$profile_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("id",""))' 2>/dev/null)
+            profile_id=$(echo "$profile_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("id",""))' 2>/dev/null) || return 1
             if api_put "$base/qualityprofile/$profile_id" "$key" "$put_body" >/dev/null 2>&1; then
                 log_ok "Format scores attached to profile '$profile_name' in $app_label"
             else

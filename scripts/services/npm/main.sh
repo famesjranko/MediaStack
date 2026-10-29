@@ -95,7 +95,7 @@ print(json.dumps({
         # required below before hardening or publication can continue.
         log_info "NPM admin already exists (HTTP $create_http). Checking rotation..."
         local default_token
-        default_token=$(curl -sf -X POST "$npm_api/tokens" \
+        default_token=$(http_curl -sf -X POST "$npm_api/tokens" \
             -H "Content-Type: application/json" \
             -d "@$SCRIPT_DIR/scripts/services/npm/templates/token-default.json" 2>/dev/null \
             | json_get token)
@@ -144,6 +144,7 @@ print(json.dumps({
     local default_site_settings default_site_value
     if default_site_settings=$(api_fetch_auth "NPM settings" "Authorization" "Bearer $npm_token" \
         "$npm_api/settings"); then
+        json_check "NPM settings" :array '[].id:string' '[].value:nullable' <<<"$default_site_settings" || return 1
         default_site_value=$(echo "$default_site_settings" | python3 -c '
 import sys, json
 for s in json.load(sys.stdin):
@@ -214,6 +215,6 @@ for s in json.load(sys.stdin):
         fi
     fi
 
-    _npm_configure_publication
+    _npm_configure_publication || return 1
     _npm_finish_configuration
 }

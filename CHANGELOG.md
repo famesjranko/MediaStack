@@ -27,7 +27,8 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
-- Reject incomplete Beszel API responses before changing its system entry or agent key; failed requests and agent recreates now warn and fail the Beszel step (#158).
+- Stop dependent service changes when API state is unreadable or required fields are missing. Shared response validation preserves valid empty inventories without treating failed reads as first-run state. Service HTTP requests now have connection and total time limits and do not retry writes automatically (#158).
+- Report failed Beszel agent recreation and retry it on the next setup run. Portainer setup now stops on an unknown admin-check result; if its initial setup window expired, restart Portainer and re-run setup.
 - Deploy renewed NPM certificates to HTTPS with a validated nginx reload; update NPM through `./scripts/update.sh` once to add the renewal hook to an existing container (#167).
 - Retry an interrupted Revert without losing its safety copy or original image policy; services that were running resume, and failed checks restore the previous image and config (#157).
 - Report a failed Unpackerr recreate instead of claiming success; the warning names the Compose exit and the service shows WARN in the summary (#100).

@@ -92,6 +92,7 @@ _npm_ensure_healthy() {
                 -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" \
                 "$(service_local_url npm)/api/nginx/proxy-hosts/$_host_id" 2>/dev/null)
             [[ -z "$_host_json" ]] && continue
+            json_check "NPM repair host" :object id:integer domain_names:array enabled certificate_id <<<"$_host_json" || return 1
             _body=$(echo "$_host_json" | python3 -c '
 import sys, json
 h = json.load(sys.stdin)
@@ -219,7 +220,7 @@ finally:
     local _i _probe_http
     for _i in $(seq 1 "$NPM_HEALTH_REPAIR_MAX_ATTEMPTS"); do
         if docker exec npm nginx -t >/dev/null 2>&1; then
-            _probe_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_HEALTH_PROBE_TIMEOUT_SECONDS" \
+            _probe_http=$(http_curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_HEALTH_PROBE_TIMEOUT_SECONDS" \
                 -X POST "$(service_local_url npm)/api/tokens" \
                 -H "Content-Type: application/json" \
                 -d '{"identity":"_probe","secret":"_probe"}' 2>/dev/null)

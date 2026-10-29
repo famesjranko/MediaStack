@@ -2,7 +2,7 @@
 # 7. Portainer CE — create admin user with shared password
 # =============================================================================
 # Portainer CE locks itself if no admin is created within 5 minutes of first
-# start. If that happens, we restart the container to reset the window.
+# start. An unreadable admin check must not authorize a restart or creation.
 
 configure_portainer() {
     echo ""
@@ -22,10 +22,14 @@ configure_portainer() {
     # JSON error bodies for timeouts that would give false positives).
     #   204 = admin exists     → skip
     #   404 = no admin yet     → create
-    #   other = timeout/error  → restart and retry
+    #   other = unknown       → stop before changing state
     local check_http
-    check_http=$(curl -s -o /dev/null -w "%{http_code}" \
-        "$portainer_url/api/users/admin/check" 2>/dev/null)
+    check_http=$(http_curl -s -o /dev/null -w "%{http_code}" \
+        "$portainer_url/api/users/admin/check" 2>/dev/null) || check_http=000
+    if [[ "$check_http" != 204 && "$check_http" != 404 ]]; then
+        log_warn "Could not verify Portainer admin state (HTTP $check_http); setup stopped. If the initial setup window expired, restart Portainer and re-run setup."
+        return 1
+    fi
 
     local admin_exists=false
     if [[ "$check_http" == "204" ]]; then
@@ -37,14 +41,6 @@ configure_portainer() {
     init_body=$(http_json_body Username "$admin_user" Password "$admin_pw")
 
     if [[ "$admin_exists" == "false" ]]; then
-        # If Portainer returned anything other than 404 (e.g. init timeout),
-        # restart it to reset the 5-minute admin creation window.
-        if [[ "$check_http" != "404" ]]; then
-            log_info "Portainer init window expired (HTTP $check_http) - restarting..."
-            docker restart portainer >/dev/null 2>&1
-            wait_for_service "Portainer" "$portainer_url"
-        fi
-
         # Newer Portainer versions require X-Setup-Token (printed to container
         # logs at startup) on the admin/init endpoint. Extract it from logs;
         # older versions without this requirement ignore the extra header.
@@ -86,16 +82,20 @@ configure_portainer() {
     # Create local Docker endpoint so Portainer can see containers without
     # requiring the user to complete the web-UI wizard.
     local jwt endpoints_json endpoint_count
-    jwt=$(curl_data_stdin "$init_body" -s -X POST "$portainer_url/api/auth" \
-        -H "Content-Type: application/json" 2>/dev/null \
-        | json_get jwt)
+    local auth_response auth_rc=0
+    auth_response=$(http_json_request "Portainer login" POST "$portainer_url/api/auth" "$init_body" "" "" jwt:string) || auth_rc=$?
+    if ((auth_rc == 2)); then
+        log_warn "Portainer authentication returned an incomplete response; endpoint/API-token setup skipped"
+        return 1
+    fi
+    jwt=""
+    if ((auth_rc == 0)); then jwt=$(json_get jwt <<<"$auth_response") || return 1; fi
 
     if [[ -z "$jwt" && "$admin_user" != "admin" ]]; then
         local legacy_body legacy_jwt
         legacy_body=$(http_json_body Username admin Password "$admin_pw")
-        legacy_jwt=$(curl_data_stdin "$legacy_body" -s -X POST "$portainer_url/api/auth" \
-            -H "Content-Type: application/json" 2>/dev/null \
-            | json_get jwt)
+        auth_response=$(http_json_request "Portainer legacy login" POST "$portainer_url/api/auth" "$legacy_body" "" "" jwt:string) || return 1
+        legacy_jwt=$(json_get jwt <<<"$auth_response") || return 1
 
         if [[ -n "$legacy_jwt" ]]; then
             local rename_body rename_resp rename_http rename_body_resp
@@ -109,9 +109,8 @@ configure_portainer() {
 
             if [[ "$rename_http" == "200" ]]; then
                 log_ok "Portainer admin username updated to $admin_user"
-                jwt=$(curl_data_stdin "$init_body" -s -X POST "$portainer_url/api/auth" \
-                    -H "Content-Type: application/json" 2>/dev/null \
-                    | json_get jwt)
+                auth_response=$(http_json_request "Portainer renamed login" POST "$portainer_url/api/auth" "$init_body" "" "" jwt:string) || return 1
+                jwt=$(json_get jwt <<<"$auth_response") || return 1
                 jwt="${jwt:-$legacy_jwt}"
             else
                 log_warn "Portainer admin username update returned HTTP $rename_http: $rename_body_resp"
@@ -121,8 +120,7 @@ configure_portainer() {
     fi
 
     if [[ -n "$jwt" ]]; then
-        endpoints_json=$(curl_header_stdin "Authorization" "Bearer $jwt" -s "$portainer_url/api/endpoints" \
-            2>/dev/null)
+        endpoints_json=$(http_json_request "Portainer endpoints" GET "$portainer_url/api/endpoints" "" Authorization "Bearer $jwt" :array '[].Id:integer') || return 1
         endpoint_count=$(echo "$endpoints_json" \
             | python3 -c 'import sys,json; print(len(json.loads(sys.stdin.read())))' 2>/dev/null)
 
@@ -132,18 +130,30 @@ configure_portainer() {
         local existing_ptkey="${PORTAINER_API_KEY:-}"
         local ptkey_valid=""
         if [[ -n "$existing_ptkey" ]]; then
-            if curl_header_stdin "X-API-Key" "$existing_ptkey" -sf "$portainer_url/api/endpoints" \
-                >/dev/null 2>&1; then
-                ptkey_valid=1
-            fi
+            local key_probe key_code key_body
+            key_probe=$(curl_header_stdin "X-API-Key" "$existing_ptkey" -sS -w "\n%{http_code}" "$portainer_url/api/endpoints") || {
+                log_warn "Could not verify Portainer API key"
+                return 1
+            }
+            key_code=$(tail -n1 <<<"$key_probe")
+            key_body=$(sed '$d' <<<"$key_probe")
+            case "$key_code" in
+                200)
+                    json_check "Portainer API-key endpoints" :array '[].Id:integer' <<<"$key_body" || return 1
+                    ptkey_valid=1
+                    ;;
+                401 | 403) ;; # Explicit rejection permits replacing this key.
+                *)
+                    log_warn "Could not verify Portainer API key (HTTP $key_code)"
+                    return 1
+                    ;;
+            esac
         fi
         if [[ -z "$ptkey_valid" ]]; then
             local token_body token_resp token_raw
             token_body=$(http_json_body description Homepage password "$admin_pw")
-            token_resp=$(curl_header_data_stdin "Authorization" "Bearer $jwt" "$token_body" \
-                -s -X POST "$portainer_url/api/users/1/tokens" \
-                -H "Content-Type: application/json" 2>/dev/null)
-            token_raw=$(echo "$token_resp" | json_get rawAPIKey)
+            token_resp=$(http_json_request "Portainer API token" POST "$portainer_url/api/users/1/tokens" "$token_body" Authorization "Bearer $jwt" rawAPIKey:string) || return 1
+            token_raw=$(echo "$token_resp" | json_get rawAPIKey) || return 1
             if [[ -n "$token_raw" ]]; then
                 env_save_api_key "PORTAINER_API_KEY" "$token_raw"
             fi

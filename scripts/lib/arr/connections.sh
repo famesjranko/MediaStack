@@ -12,11 +12,11 @@ configure_arr_auth() {
     fi
 
     local host_config current_auth
-    if ! host_config=$(api_get "$base/config/host" "$key"); then
+    if ! host_config=$(api_get "$base/config/host" "$key" :object authenticationMethod:string); then
         log_warn "Could not fetch ${app^} host config - skipping auth check"
-        host_config="{}"
+        return 1
     fi
-    current_auth=$(echo "$host_config" | json_get authenticationMethod none)
+    current_auth=$(echo "$host_config" | json_get authenticationMethod) || return 1
 
     if [[ "$current_auth" == "forms" ]]; then
         log_skip "${app^} Forms authentication already enabled"

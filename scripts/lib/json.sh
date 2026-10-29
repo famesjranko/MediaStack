@@ -1,34 +1,31 @@
 # =============================================================================
 # MediaStack JSON helpers: stdin-based field extraction and array queries
 # =============================================================================
-# Sourced by lib/http.sh and callers that only need JSON helpers. Each function reads JSON
-# from stdin. The legacy extractors keep their default-value behavior;
-# json_require rejects incomplete responses before a caller uses those extractors.
+# Sourced by lib/common.sh and callers that only need JSON helpers. Each function reads JSON
+# from stdin. Required fields fail explicitly; optional application defaults
+# must be chosen by a caller after the response has been validated.
 
-# Extract a top-level key from JSON on stdin.
-# Usage: echo "$json" | json_get <key> [default]
-json_get() {
-    python3 -c "
-import sys, json
-try:
-    v = json.load(sys.stdin).get(sys.argv[1])
-    print(sys.argv[2] if v is None else v)
-except Exception:
-    print(sys.argv[2])" "$1" "${2:-}" 2>/dev/null
-}
-
-# Extract a nested value via dot-separated path from JSON on stdin.
-# Usage: echo "$json" | json_path <dot.path> [default]
+# Extract a required scalar. Absence, null, containers and malformed JSON fail;
+# a real false, zero or empty string remains a value, never a default.
+json_get() { json_path "$@"; }
 json_path() {
-    python3 -c "
-import sys, json
+    [[ $# == 1 ]] || {
+        echo "json_path: expected one required path" >&2
+        return 1
+    }
+    python3 -c '
+import json, sys
+path = sys.argv[1]
 try:
-    d = json.load(sys.stdin)
-    for k in sys.argv[1].split('.'):
-        d = d.get(k, {}) if isinstance(d, dict) else {}
-    print(sys.argv[2] if isinstance(d, (dict, list)) or d is None else d)
-except Exception:
-    print(sys.argv[2])" "$1" "${2:-}" 2>/dev/null
+    value = json.load(sys.stdin)
+    for key in path.split("."):
+        value = value[key]
+    if value is None or isinstance(value, (dict, list)):
+        raise ValueError
+except (ValueError, KeyError, TypeError):
+    sys.exit("invalid or missing required JSON field " + path)
+print(value)
+' "$1"
 }
 
 # Exit 0 if any object in a JSON array on stdin has a matching field value.
@@ -88,6 +85,7 @@ except Exception:
 # Missing/null fields fail; an explicitly empty array is valid. Errors name only
 # the path, never response values (which can contain credentials).
 # Append :string to require a string value.
+# A field ending in ? is optional in the upstream API; validate it when present.
 # Usage: json_require token:string record.id:string 'items[].name:string'
 json_require() {
     python3 -c '
@@ -95,17 +93,31 @@ import json, sys
 
 def require(value, parts, path, kind):
     if not parts:
-        if value is None:
+        if value is None and kind not in ("nullable", "nullable-array", "nullable-number"):
             raise ValueError("null required field " + path)
-        if kind == "string" and not isinstance(value, str):
-            raise ValueError("expected string at required field " + path)
+        types = {"string": str, "object": dict, "array": list, "boolean": bool,
+                 "integer": int, "number": (int, float), "nullable": object,
+                 "nullable-array": (list, type(None)), "nullable-number": (int, float, type(None))}
+        if kind and (not isinstance(value, types[kind]) or
+                     (kind in ("number", "integer", "nullable-number") and isinstance(value, bool))):
+            raise ValueError("unexpected type at required field " + path)
         return
     part, *rest = parts
     array = part.endswith("[]")
     key = part[:-2] if array else part
-    if not isinstance(value, dict) or key not in value:
+    optional = key.endswith("?")
+    key = key[:-1] if optional else key
+    if key == "*":
+        if not isinstance(value, dict):
+            raise ValueError("expected object at required field " + path)
+        for item in value.values():
+            require(item, rest, path, kind)
+        return
+    if key and (not isinstance(value, dict) or key not in value):
+        if optional and isinstance(value, dict):
+            return
         raise ValueError("missing required field " + path)
-    child = value[key]
+    child = value[key] if key else value
     if array:
         if not isinstance(child, list):
             raise ValueError("expected array at required field " + path)
@@ -122,11 +134,26 @@ except (ValueError, UnicodeError):
 try:
     for spec in sys.argv[1:]:
         path, _, kind = spec.partition(":")
-        if kind not in ("", "string"):
+        if kind not in ("", "string", "object", "array", "boolean", "integer", "number", "nullable", "nullable-array", "nullable-number"):
             raise ValueError("invalid required field type")
-        require(data, path.split("."), path, kind)
+        require(data, path.split(".") if path else [], path or "response", kind)
 except ValueError as error:
     sys.exit(str(error))
 sys.stdout.write(raw)
 ' "$@"
+}
+
+# Validate a read before deciding whether to create/update state. Error output
+# contains the operation and field path, never the response or its credentials.
+json_check() {
+    local label="$1" error
+    shift
+    if ! error=$(json_require "$@" 2>&1 >/dev/null); then
+        if declare -F log_warn >/dev/null; then
+            log_warn "$label: $error"
+        else
+            echo "$label: $error" >&2
+        fi
+        return 1
+    fi
 }

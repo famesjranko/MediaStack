@@ -18,6 +18,7 @@ STATE="$TMP_DIR/state.json"
 POSTS="$TMP_DIR/posts"
 LOGS="$TMP_DIR/logs"
 
+source "$REPO_ROOT/scripts/lib/http.sh"
 source "$REPO_ROOT/scripts/services/seerr/quotas.sh"
 
 declare -A CFG

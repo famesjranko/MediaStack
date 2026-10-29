@@ -26,9 +26,23 @@ configure_seerr() {
     # surviving an incomplete cleanup (e.g. container still running during
     # rm -rf recreates the file).
     local seerr_public media_server_type initialized
-    seerr_public=$(curl -fsS "$seerr_url/api/v1/settings/public" 2>/dev/null || echo "{}")
-    media_server_type=$(echo "$seerr_public" | json_get mediaServerType 4)
-    initialized=$(echo "$seerr_public" | json_get initialized False)
+    # Gate on Seerr's internal init completing. The HTTP port responds
+    # before API routes are fully initialized — /api/v1/auth/jellyfin returns
+    # 500 during this window on slow hosts (observed on GCP e2-medium).
+    local _seerr_ready="" _seerr_init_wait
+    for _seerr_init_wait in $(seq 1 20); do
+        if seerr_public=$(http_json_request "Seerr public settings" GET "$seerr_url/api/v1/settings/public" "" "" "" mediaServerType:integer initialized:boolean); then
+            _seerr_ready="yes"
+            break
+        fi
+        sleep 3
+    done
+    if [[ -z "$_seerr_ready" ]]; then
+        log_warn "Seerr API did not return complete public settings after 60s"
+        return 1
+    fi
+    media_server_type=$(json_get mediaServerType <<<"$seerr_public") || return 1
+    initialized=$(json_get initialized <<<"$seerr_public") || return 1
 
     local is_fresh=false
     if [[ "$media_server_type" == "4" ]]; then
@@ -40,21 +54,6 @@ configure_seerr() {
         is_fresh=true
         log_info "Running Seerr first-time setup..."
     fi
-
-    # Gate on Seerr's internal init completing. The HTTP port responds
-    # before API routes are fully initialized — /api/v1/auth/jellyfin returns
-    # 500 during this window on slow hosts (observed on GCP e2-medium).
-    local _seerr_ready="" _seerr_init_wait
-    for _seerr_init_wait in $(seq 1 20); do
-        if curl -fsS "$seerr_url/api/v1/settings/public" 2>/dev/null \
-            | python3 -c "import sys,json; json.load(sys.stdin)" >/dev/null 2>&1; then
-            _seerr_ready="yes"
-            break
-        fi
-        sleep 3
-    done
-    [[ -z "$_seerr_ready" ]] \
-        && log_warn "Seerr API did not return valid JSON after 60s - auth may fail"
 
     local cookiejar auth_http auth_resp auth_msg me_resp
     cookiejar="$(mktemp)"
@@ -145,7 +144,7 @@ PY
     log_ok "Signed in to Seerr as $jf_user"
 
     # Verify the session really works
-    if ! curl -fsS \
+    if ! http_curl -fsS \
         -o "$me_resp" \
         -c "$cookiejar" -b "$cookiejar" \
         "$seerr_url/api/v1/auth/me" >/dev/null 2>&1; then
@@ -167,9 +166,17 @@ PY
     jf_url="$(service_local_url jellyfin)"
     local seerr_jf_settings seerr_jf_key mf_resp mf_code mf_ok i
     if ! seerr_jf_settings=$(api_fetch "Seerr Jellyfin settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/jellyfin"); then
-        seerr_jf_settings="{}"
+        cleanup_seerr_tmp
+        return 1
     fi
-    seerr_jf_key=$(echo "$seerr_jf_settings" | json_get apiKey)
+    json_check "Seerr Jellyfin settings" apiKey:string <<<"$seerr_jf_settings" || {
+        cleanup_seerr_tmp
+        return 1
+    }
+    seerr_jf_key=$(echo "$seerr_jf_settings" | json_get apiKey) || {
+        cleanup_seerr_tmp
+        return 1
+    }
 
     if [[ -n "$seerr_jf_key" ]]; then
         mf_resp=$(mktemp)
@@ -210,16 +217,22 @@ except Exception:
     # (seerr-team/seerr#3321); older images no longer work here.
     local libs lib_ids sync_resp sync_code
     sync_resp=$(mktemp)
-    sync_code=$(curl -sS -o "$sync_resp" -w "%{http_code}" -X POST \
+    sync_code=$(http_curl -sS -o "$sync_resp" -w "%{http_code}" -X POST \
         -c "$cookiejar" -b "$cookiejar" \
         "$seerr_url/api/v1/settings/jellyfin/library/sync" 2>/dev/null || echo "000")
     if [[ "$sync_code" == "200" ]]; then
         libs=$(cat "$sync_resp")
     else
-        libs="[]"
         log_warn "Seerr sync returned HTTP $sync_code: $(head -c 300 "$sync_resp")"
+        rm -f "$sync_resp"
+        cleanup_seerr_tmp
+        return 1
     fi
     rm -f "$sync_resp"
+    json_check "Seerr library sync" :array '[].id:string' <<<"$libs" || {
+        cleanup_seerr_tmp
+        return 1
+    }
 
     # NOTE: do NOT use `python3 - <<'PY'` here. The heredoc rebinds stdin to
     # the script body, so `json.load(sys.stdin)` would get EOF and silently
@@ -239,7 +252,7 @@ except Exception:
         # Sync keeps each library's enabled flag; enable them one by one.
         local lib_id enable_failed=""
         for lib_id in ${lib_ids//,/ }; do
-            curl -fsS -X PUT "$seerr_url/api/v1/settings/jellyfin/library/$lib_id" \
+            http_curl -fsS -X PUT "$seerr_url/api/v1/settings/jellyfin/library/$lib_id" \
                 -H "Content-Type: application/json" \
                 -c "$cookiejar" -b "$cookiejar" \
                 -d "$(http_json_obj enabled bool true)" >/dev/null 2>&1 || enable_failed=1
@@ -259,13 +272,13 @@ except Exception:
     # Mark setup complete (only on first-time setup)
     if [[ "$is_fresh" != "true" ]]; then
         log_ok "Seerr reconciliation complete"
-    elif curl -fsS -X POST "$seerr_url/api/v1/settings/initialize" \
+    elif http_curl -fsS -X POST "$seerr_url/api/v1/settings/initialize" \
         -H "Content-Type: application/json" \
         -c "$cookiejar" -b "$cookiejar" \
         >/dev/null 2>&1; then
 
-        initialized=$(curl -fsS "$seerr_url/api/v1/settings/public" 2>/dev/null \
-            | json_get initialized False)
+        initialized=$(http_curl -fsS "$seerr_url/api/v1/settings/public" 2>/dev/null \
+            | json_get initialized)
 
         if [[ "$initialized" == "True" ]]; then
             log_ok "Seerr setup complete"
@@ -281,9 +294,17 @@ except Exception:
     # Quotas prevent request spam from family members.
     local current_settings seerr_api_key
     if ! current_settings=$(api_fetch "Seerr main settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/main"); then
-        current_settings=""
+        cleanup_seerr_tmp
+        return 1
     fi
-    seerr_api_key=$(echo "$current_settings" | json_get apiKey)
+    json_check "Seerr main settings" apiKey:string defaultPermissions:integer defaultQuotas.movie:object defaultQuotas.tv:object <<<"$current_settings" || {
+        cleanup_seerr_tmp
+        return 1
+    }
+    seerr_api_key=$(echo "$current_settings" | json_get apiKey) || {
+        cleanup_seerr_tmp
+        return 1
+    }
     if [[ -n "$seerr_api_key" ]]; then
         env_save_api_key "SEERR_API_KEY" "$seerr_api_key"
     fi
@@ -308,9 +329,17 @@ except Exception:
 
     local seerr_net_settings cur_trust cur_trust_norm seerr_trust_changed=false
     if ! seerr_net_settings=$(api_fetch "Seerr network settings" -c "$cookiejar" -b "$cookiejar" "$seerr_url/api/v1/settings/network"); then
-        seerr_net_settings="{}"
+        cleanup_seerr_tmp
+        return 1
     fi
-    cur_trust=$(echo "$seerr_net_settings" | json_get trustProxy False)
+    json_check "Seerr network settings" trustProxy:boolean <<<"$seerr_net_settings" || {
+        cleanup_seerr_tmp
+        return 1
+    }
+    cur_trust=$(echo "$seerr_net_settings" | json_get trustProxy) || {
+        cleanup_seerr_tmp
+        return 1
+    }
     cur_trust_norm=false
     [[ "$cur_trust" =~ ^(True|true)$ ]] && cur_trust_norm=true
 
@@ -319,7 +348,7 @@ except Exception:
     else
         local net_body
         net_body=$(http_json_obj trustProxy bool "$want_trust")
-        if curl -fsS -X POST "$seerr_url/api/v1/settings/network" \
+        if http_curl -fsS -X POST "$seerr_url/api/v1/settings/network" \
             -H "Content-Type: application/json" \
             -c "$cookiejar" -b "$cookiejar" \
             -d "$net_body" >/dev/null 2>&1; then

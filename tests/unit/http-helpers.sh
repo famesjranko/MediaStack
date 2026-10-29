@@ -3,7 +3,7 @@
 #
 # Unit tests for scripts/lib/http.sh helpers. No DinD, no Docker, no network.
 # Mocks curl as a bash function to control HTTP responses. The mock handles
-# two calling conventions: _http_request (code appended to stdout) and
+# two calling conventions: http_request (code appended to stdout) and
 # http_json_post (body to -o file, code to stdout).
 
 set -uo pipefail
@@ -150,61 +150,61 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# _http_request — 2xx returns body and rc=0
+# http_request — 2xx returns body and rc=0
 # ---------------------------------------------------------------------------
 
 reset_mock
 MOCK_CURL_CODE=200
 MOCK_CURL_BODY='{"ok":true}'
-result=$(_http_request log_error "test-label" "" http://fake)
+result=$(http_request log_error "test-label" "" http://fake)
 rc=$?
-assert_eq '{"ok":true}' "$result" "_http_request: 2xx returns body"
-assert_eq "0" "$rc" "_http_request: 2xx rc=0"
+assert_eq '{"ok":true}' "$result" "http_request: 2xx returns body"
+assert_eq "0" "$rc" "http_request: 2xx rc=0"
 
 # ---------------------------------------------------------------------------
-# _http_request — 4xx returns 1 and logs HTTP code
+# http_request — 4xx returns 1 and logs HTTP code
 # ---------------------------------------------------------------------------
 
 reset_mock
 MOCK_CURL_CODE=404
 MOCK_CURL_BODY='not found'
-_http_request log_error "test-label" "" http://fake >/dev/null
+http_request log_error "test-label" "" http://fake >/dev/null
 rc=$?
-assert_eq "1" "$rc" "_http_request: 4xx returns 1"
-assert_contains "$LAST_LOG_MSG" "HTTP 404" "_http_request: 4xx logs HTTP code"
+assert_eq "1" "$rc" "http_request: 4xx returns 1"
+assert_contains "$LAST_LOG_MSG" "HTTP 404" "http_request: 4xx logs HTTP code"
 
 # ---------------------------------------------------------------------------
-# _http_request — 5xx returns 1
+# http_request — 5xx returns 1
 # ---------------------------------------------------------------------------
 
 reset_mock
 MOCK_CURL_CODE=500
 MOCK_CURL_BODY='server error'
-_http_request log_error "test-label" "" http://fake >/dev/null
+http_request log_error "test-label" "" http://fake >/dev/null
 rc=$?
-assert_eq "1" "$rc" "_http_request: 5xx returns 1"
+assert_eq "1" "$rc" "http_request: 5xx returns 1"
 
 # ---------------------------------------------------------------------------
-# _http_request — connection failure returns 1
+# http_request — connection failure returns 1
 # ---------------------------------------------------------------------------
 
 reset_mock
 MOCK_CURL_FAIL=1
-_http_request log_error "test-label" "" http://fake >/dev/null
+http_request log_error "test-label" "" http://fake >/dev/null
 rc=$?
-assert_eq "1" "$rc" "_http_request: connection failure returns 1"
-assert_contains "$LAST_LOG_MSG" "connection failed" "_http_request: connection failure logged"
+assert_eq "1" "$rc" "http_request: connection failure returns 1"
+assert_contains "$LAST_LOG_MSG" "connection failed" "http_request: connection failure logged"
 
 # ---------------------------------------------------------------------------
-# _http_request — truncates body to 300 chars on error
+# http_request — truncates body to 300 chars on error
 # ---------------------------------------------------------------------------
 
 reset_mock
 MOCK_CURL_CODE=400
 MOCK_CURL_BODY=$(python3 -c "print('x' * 500)")
-_http_request log_error "trunc" "" http://fake >/dev/null
+http_request log_error "trunc" "" http://fake >/dev/null
 body_in_msg="${LAST_LOG_MSG#*HTTP 400 }"
-assert_eq "300" "${#body_in_msg}" "_http_request: error body truncated to 300 chars"
+assert_eq "300" "${#body_in_msg}" "http_request: error body truncated to 300 chars"
 
 # ---------------------------------------------------------------------------
 # http_check uses log_error, api_fetch uses log_warn

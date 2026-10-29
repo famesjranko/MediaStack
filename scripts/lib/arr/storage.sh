@@ -7,20 +7,19 @@ configure_arr_root_folder() {
     root_folder=$(cfg_field "$app.root_folder")
 
     local existing rf_status
-    if ! existing=$(api_get "$base/rootfolder" "$key"); then
+    if ! existing=$(api_get "$base/rootfolder" "$key" :array '[].path:string'); then
         log_warn "Could not fetch ${app^} root folders - skipping check"
-        existing="[]"
+        return 1
     fi
     rf_status=$(echo "$existing" | WANT_PATH="$root_folder" python3 -c '
 import sys, json, os
 want = os.environ["WANT_PATH"]
-try: items = json.load(sys.stdin)
-except Exception: items = []
+items = json.load(sys.stdin)
 paths = [r.get("path","") for r in items]
 if want in paths: print("match")
 elif paths:       print("drift\t" + ",".join(paths))
 else:             print("absent")
-' 2>/dev/null)
+' 2>/dev/null) || return 1
     case "${rf_status%%$'\t'*}" in
         match)
             log_skip "${app^} root folder $root_folder already matches config.yml"
@@ -36,7 +35,7 @@ import os
 import sys
 
 json.dump({"path": os.environ["ROOT_FOLDER"]}, sys.stdout)
-' 2>/dev/null)
+' 2>/dev/null) || return 1
             if [[ -n "$root_body" ]] && api_post "$base/rootfolder" "$key" "$root_body" >/dev/null 2>&1; then
                 log_ok "Root folder: $root_folder"
             else
@@ -66,11 +65,11 @@ configure_arr_disk_threshold() {
     local min_free_mb=$((min_free_gb * 1024))
 
     local mm_config current_mb
-    if ! mm_config=$(api_get "$base/config/mediamanagement" "$key"); then
+    if ! mm_config=$(api_get "$base/config/mediamanagement" "$key" :object minimumFreeSpaceWhenImporting:integer); then
         log_warn "Could not fetch ${app^} media management config - skipping disk threshold"
         return 0
     fi
-    current_mb=$(echo "$mm_config" | json_get minimumFreeSpaceWhenImporting 100)
+    current_mb=$(echo "$mm_config" | json_get minimumFreeSpaceWhenImporting) || return 1
 
     if [[ "$current_mb" == "$min_free_mb" ]]; then
         log_skip "${app^} disk threshold already ${min_free_gb}GB"
@@ -87,7 +86,7 @@ configure_arr_disk_threshold() {
 import sys, json, os
 config = json.load(sys.stdin)
 config["minimumFreeSpaceWhenImporting"] = int(os.environ["MIN_FREE_MB"])
-json.dump(config, sys.stdout)' 2>/dev/null)
+json.dump(config, sys.stdout)' 2>/dev/null) || return 1
 
     if api_put "$base/config/mediamanagement" "$key" "$mm_body" >/dev/null 2>&1; then
         log_ok "Disk threshold: ${min_free_gb}GB minimum free space"
@@ -108,23 +107,22 @@ configure_arr_download_client() {
     dl_category=$(cfg_field "$app.download_client_category")
 
     local existing dc_status
-    if ! existing=$(api_get "$base/downloadclient" "$key"); then
+    if ! existing=$(api_get "$base/downloadclient" "$key" :array '[].name:string' '[].fields:array' '[].fields[].name:string'); then
         log_warn "Could not fetch ${app^} download clients - skipping check"
-        existing="[]"
+        return 1
     fi
     dc_status=$(echo "$existing" | WANT_CATEGORY="$dl_category" CATEGORY_FIELD="$category_field" python3 -c '
 import sys, json, os
 want = os.environ["WANT_CATEGORY"]
 cat_field = os.environ["CATEGORY_FIELD"]
-try: items = json.load(sys.stdin)
-except Exception: items = []
+items = json.load(sys.stdin)
 qbt = next((c for c in items if c.get("name") == "qBittorrent"), None)
 if qbt is None:
     print("absent")
 else:
     live = next((f.get("value","") for f in qbt.get("fields",[]) if f.get("name")==cat_field), "")
     print("match" if str(live) == str(want) else "drift\t" + str(live))
-' 2>/dev/null)
+' 2>/dev/null) || return 1
     case "${dc_status%%$'\t'*}" in
         match)
             log_skip "${app^} qBittorrent category already matches config.yml ($dl_category)"

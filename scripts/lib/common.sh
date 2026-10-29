@@ -162,7 +162,7 @@ _curl_stdin_payload() {
         restore_pipefail=1
         set +o pipefail
     fi
-    printf '%s' "$payload" | curl "$@"
+    printf '%s' "$payload" | http_curl "$@"
     rc=$?
     if [[ "$restore_pipefail" == "1" ]]; then
         set -o pipefail
@@ -258,46 +258,27 @@ curl_data_urlencode_stdin() {
     _curl_stdin_payload "$value" --data-urlencode "$field@/dev/stdin" "$@"
 }
 
-# API primitives — capture HTTP code + body so failures surface actionable
-# error messages instead of silent empty output.  On 2xx the body goes to
-# stdout and we return 0.  On anything else the code + first 300 chars of
-# body go to stderr and we return 1.  Callers that already redirect
-# 2>/dev/null are unaffected; callers that *don't* now get visibility for free.
+# Shared transport and strict JSON handling are also available to day-2 callers
+# that source common.sh without the configure.sh HTTP convenience helpers.
+# shellcheck source=scripts/lib/http-request.sh
+source "$_COMMON_TC_DIR/http-request.sh"
+# shellcheck source=scripts/lib/json.sh
+source "$_COMMON_TC_DIR/json.sh"
+
+# The arr APIs all return JSON on reads. Required fields are supplied by the
+# caller; writes may legitimately return an empty success body.
 _api_request() {
-    local _caller="$1" _method="$2" _url="$3" _key="$4" _data="${5:-}"
-    # --max-time 45 caps any single curl wall time. Most *arr endpoints answer
-    # in <1s; the indexer save path can stall on Sonarr/Radarr's synchronous
-    # caps fetch through Jackett to a Cloudflare-protected tracker. 45s exceeds
-    # Sonarr's own ~30s internal timeout but lets us recover from a truly hung
-    # call instead of waiting curl-default-forever. Retry wrappers (e.g.
-    # _add_indexer's 2 attempts) still get a second chance on transient timeout.
-    local _args=(-sS --max-time 45 -H "Content-Type: application/json")
-    [[ "$_method" != "GET" ]] && _args+=(-X "$_method")
-    _args+=(-w "\n%{http_code}")
-    # X-Api-Key and (for a write) the body both carry secrets, so both go via
-    # curl's stdin config file instead of argv/-H: curl_header_data_stdin for a
-    # write (header + body share the one stdin curl actually drains), plain
-    # curl_header_stdin for a GET (no body to combine with).
-    local _out _code _rc=0
-    if [[ -n "$_data" ]]; then
-        _out=$(curl_header_data_stdin "X-Api-Key" "$_key" "$_data" "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
-    else
-        _out=$(curl_header_stdin "X-Api-Key" "$_key" "${_args[@]}" "$_url" 2>/dev/null) || _rc=$?
-    fi
-    if ((_rc != 0)); then
-        echo "$_caller $_url: connection failed" >&2
-        return 1
-    fi
-    _code="${_out##*$'\n'}"
-    _out="${_out%$'\n'*}"
-    if [[ "$_code" =~ ^2 ]]; then
-        printf '%s' "$_out"
-    else
-        echo "$_caller $_url: HTTP ${_code} ${_out:0:300}" >&2
-        return 1
-    fi
+    local caller="$1" method="$2" url="$3" key="$4" data="${5:-}"
+    http_request log_warn "$caller $url" "$data" X-Api-Key "$key" \
+        -X "$method" -H "Content-Type: application/json" "$url"
 }
-api_get() { _api_request api_get GET "$1" "$2"; }
+api_get() {
+    local url="$1" key="$2" response
+    shift 2
+    response=$(_api_request api_get GET "$url" "$key") || return 1
+    json_check "api_get $url" "$@" <<<"$response" || return 1
+    printf '%s' "$response"
+}
 api_post() { _api_request api_post POST "$1" "$2" "$3"; }
 api_put() { _api_request api_put PUT "$1" "$2" "$3"; }
 

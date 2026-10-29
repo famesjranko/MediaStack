@@ -14,9 +14,9 @@ configure_arr_indexers() {
     fi
 
     local existing_indexers
-    if ! existing_indexers=$(api_get "$base/indexer" "$key"); then
+    if ! existing_indexers=$(api_get "$base/indexer" "$key" :array '[].name:string'); then
         log_warn "Could not fetch ${app^} indexers - skipping check"
-        existing_indexers="[]"
+        return 1
     fi
 
     local fallback_cat_json

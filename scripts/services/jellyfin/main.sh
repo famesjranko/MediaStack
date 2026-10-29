@@ -31,7 +31,7 @@ configure_jellyfin() {
 
     # Check if setup wizard is still pending
     local startup_info
-    startup_info=$(curl -sf "$jf_url/Startup/Configuration" 2>/dev/null || echo "")
+    startup_info=$(http_curl -sf "$jf_url/Startup/Configuration" 2>/dev/null || echo "")
 
     # Auth body is JSON-safe regardless of what's in jf_user/jf_pw — python's
     # json.dumps escapes quotes, backslashes, and control chars. The previous
@@ -48,7 +48,7 @@ configure_jellyfin() {
         auth_result=$(wait_for_jellyfin_auth "$jf_url" "$auth_header" "$auth_body" 30)
         case $? in
             0)
-                jf_token=$(echo "$auth_result" | json_get AccessToken)
+                jf_token=$(echo "$auth_result" | json_get AccessToken) || return 1
                 log_ok "Authenticated as $jf_user"
                 save_jellyfin_api_key "$jf_url" "$jf_token" "$auth_header"
                 configure_jellyfin_server_name "$jf_url" "$jf_token"
@@ -76,7 +76,7 @@ configure_jellyfin() {
 
     # Each sub-step uses http_check: a non-2xx aborts with an actionable error
     # rather than silently logging [OK]. Previously all four were fire-and-
-    # forget (curl -sf >/dev/null 2>&1) so a silently-rejected user-creation
+    # forget (http_curl -sf >/dev/null 2>&1) so a silently-rejected user-creation
     # POST produced a "successful" install with a broken admin account.
     http_check "Jellyfin /Startup/Configuration" \
         -X POST "$jf_url/Startup/Configuration" \
@@ -123,7 +123,7 @@ configure_jellyfin() {
         -sf -X POST "$jf_url/Users/AuthenticateByName" \
         -H "Content-Type: application/json" 2>/dev/null || echo "")
     local jf_token
-    jf_token=$(echo "$auth_result" | json_get AccessToken)
+    jf_token=$(echo "$auth_result" | json_get AccessToken) || jf_token=""
 
     if [[ -z "$jf_token" ]]; then
         log_error "Jellyfin admin login could not be verified."

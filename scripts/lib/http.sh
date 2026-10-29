@@ -55,46 +55,6 @@ print(json.dumps(out))
 ' "$@"
 }
 
-# Perform a curl request and enforce a 2xx status. On 2xx the response body
-# goes to stdout (return 0). On non-2xx the HTTP code + first 300 chars of
-# body go to stderr via the specified log function and the function returns 1.
-# Unlike _api_request (X-Api-Key-based *arr APIs) this helper is agnostic —
-# pass any curl args including -X, -H, -d after the body.
-#
-# <body> is the request payload, sent on stdin so a payload holding a secret
-# never reaches argv; pass "" for requests that carry no body. <hdr_name>/
-# <hdr_value> is an optional secret-bearing header (Authorization, X-Api-Key,
-# ...), also kept off argv; pass "" for both when the call has no such header.
-# When both a header and a body are secret they go over the SAME stdin config
-# file (curl_header_data_stdin) rather than layering curl_header_stdin's -K -
-# under curl_data_stdin's @- — curl only drains stdin once, so the second of
-# the two would starve.
-_http_request() {
-    local _log_fn="$1" label="$2" _body="$3" _hdr_name="$4" _hdr_value="$5"
-    shift 5
-    local out code rc=0
-    if [[ -n "$_hdr_name" && -n "$_body" ]]; then
-        out=$(curl_header_data_stdin "$_hdr_name" "$_hdr_value" "$_body" -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
-    elif [[ -n "$_hdr_name" ]]; then
-        out=$(curl_header_stdin "$_hdr_name" "$_hdr_value" -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
-    elif [[ -n "$_body" ]]; then
-        out=$(curl_data_stdin "$_body" -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
-    else
-        out=$(curl -sS -w "\n%{http_code}" "$@" 2>/dev/null) || rc=$?
-    fi
-    if ((rc != 0)); then
-        "$_log_fn" "$label: connection failed"
-        return 1
-    fi
-    code="${out##*$'\n'}"
-    out="${out%$'\n'*}"
-    if [[ "$code" =~ ^2 ]]; then
-        printf '%s' "$out"
-        return 0
-    fi
-    "$_log_fn" "$label: HTTP ${code} ${out:0:300}"
-    return 1
-}
 # http_check:      log_error on failure (strict — aborts the step).
 # api_fetch:       log_warn on failure (advisory — fetch-and-compare calls).
 # http_check_data: http_check for a secret-bearing payload, which is sent on
@@ -103,11 +63,11 @@ _http_request() {
 #                  header (Authorization, X-Api-Key, ...), sent via curl's
 #                  config file instead of -H. Usage: *_auth <label> <header-name>
 #                  <header-value> ...
-http_check() { _http_request log_error "$1" "" "" "" "${@:2}"; }
-api_fetch() { _http_request log_warn "$1" "" "" "" "${@:2}"; }
-http_check_data() { _http_request log_error "$2" "$1" "" "" "${@:3}"; }
-http_check_auth() { _http_request log_error "$1" "" "$2" "$3" "${@:4}"; }
-api_fetch_auth() { _http_request log_warn "$1" "" "$2" "$3" "${@:4}"; }
+http_check() { http_request log_error "$1" "" "" "" "${@:2}"; }
+api_fetch() { http_request log_warn "$1" "" "" "" "${@:2}"; }
+http_check_data() { http_request log_error "$2" "$1" "" "" "${@:3}"; }
+http_check_auth() { http_request log_error "$1" "" "$2" "$3" "${@:4}"; }
+api_fetch_auth() { http_request log_warn "$1" "" "$2" "$3" "${@:4}"; }
 
 # Strict service JSON request. Both secrets use curl stdin; successful bodies
 # reach the caller only after their required fields have been checked.
@@ -119,11 +79,19 @@ api_fetch_auth() { _http_request log_warn "$1" "" "$2" "$3" "${@:4}"; }
 http_json_request() {
     local label="$1" method="$2" url="$3" body="$4" header="$5" value="$6"
     shift 6
+    local required=() curl_args=()
+    while (($#)) && [[ "$1" != "--" ]]; do
+        required+=("$1")
+        shift
+    done
+    if (($#)); then
+        shift
+        curl_args=("$@")
+    fi
     local response error
-    response=$(_http_request log_warn "$label" "$body" "$header" "$value" \
-        --connect-timeout 10 --max-time 45 --retry 0 -X "$method" \
-        -H "Content-Type: application/json" "$url") || return 1
-    if ! error=$(json_require "$@" <<<"$response" 2>&1 >/dev/null); then
+    response=$(http_request log_warn "$label" "$body" "$header" "$value" \
+        -X "$method" -H "Content-Type: application/json" "${curl_args[@]}" ${url:+"$url"}) || return 1
+    if ! error=$(json_require "${required[@]}" <<<"$response" 2>&1 >/dev/null); then
         log_warn "$label: $error"
         return 2
     fi
@@ -135,7 +103,7 @@ wait_for_service() {
     local name="$1" url="$2" max=90 i=0
     echo -ne "  Waiting for ${name}..."
     while ((i < max)); do
-        if curl -sf "$url" >/dev/null 2>&1; then
+        if http_curl -sf "$url" >/dev/null 2>&1; then
             echo -e " ${GREEN}ready${NC}"
             return 0
         fi
@@ -185,11 +153,11 @@ wait_for_healthy() {
 post_restart_wait() {
     local url="$1" max="${2:-60}" interval="${3:-2}" elapsed=0
     while ((elapsed < max)); do
-        curl -sf --max-time 5 "$url" >/dev/null 2>&1 && return 0
+        http_curl -sf --max-time 5 "$url" >/dev/null 2>&1 && return 0
         sleep "$interval"
         ((elapsed += interval))
     done
-    curl -sf --max-time 5 "$url" >/dev/null 2>&1
+    http_curl -sf --max-time 5 "$url" >/dev/null 2>&1
 }
 
 # Poll Jellyfin's AuthenticateByName until it returns 200 (or fails fast on 401).

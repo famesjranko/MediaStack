@@ -101,7 +101,7 @@ path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 _npm_disable_host() {
     local _token="$1" _api="$2" _host_id="$3" _host_json="${4:-}"
     if [[ -z "$_host_json" ]]; then
-        _host_json=$(curl -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" -H "Authorization: Bearer $_token" \
+        _host_json=$(http_curl -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" -H "Authorization: Bearer $_token" \
             "$_api/nginx/proxy-hosts/$_host_id" 2>/dev/null) || return 1
     fi
     local _body
@@ -117,7 +117,7 @@ for k in ("id","created_on","modified_on","owner_user_id","owner",
     h.pop(k, None)
 print(json.dumps(h))
 ' 2>/dev/null)
-    curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
+    http_curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
         "$_api/nginx/proxy-hosts/$_host_id" \
         -H "Authorization: Bearer $_token" \
         -H "Content-Type: application/json" \

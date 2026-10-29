@@ -63,12 +63,12 @@ MOCK_DEFAULT_TOKEN_BODY=""
 # it (-K -, @-, name@/dev/stdin) so a stdin-less call cannot block.
 curl() {
     printf '%s\n' "$@" >>"$ARGV_LOG"
-    local arg
+    local arg stdin_payload=""
     for arg in "$@"; do
         case "$arg" in
             -K | @- | *@/dev/stdin)
-                cat >>"$STDIN_LOG"
-                printf '\n' >>"$STDIN_LOG"
+                stdin_payload=$(cat)
+                printf '%s\n' "$stdin_payload" >>"$STDIN_LOG"
                 break
                 ;;
         esac
@@ -81,6 +81,13 @@ curl() {
         [[ "$arg" == *token-default.json && -n "$MOCK_DEFAULT_TOKEN_BODY" ]] && body="$MOCK_DEFAULT_TOKEN_BODY"
         prev="$arg"
     done
+    if [[ "$stdin_payload" == *'/api/v2.0/indexers'* ]]; then
+        if [[ "$stdin_payload" == *'/config?'* ]]; then
+            body='[{"id":"fixture","type":"info","value":""}]'
+        else
+            body='[]'
+        fi
+    fi
     if [[ -n "$outfile" ]]; then
         printf '%s' "$body" >"$outfile"
         [[ "$want_code" == "1" ]] && printf '%s' "$MOCK_CODE"

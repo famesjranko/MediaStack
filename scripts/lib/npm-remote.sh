@@ -72,6 +72,7 @@ npm_remote_api_cert_ids_by_fqdn() {
     local certs
     certs=$(curl_header_stdin "Authorization" "Bearer $token" -sf --max-time 30 \
         "$api/nginx/certificates" 2>/dev/null) || return 2
+    json_check "NPM certificates" :array '[].id:integer' '[].domain_names:array' '[].domain_names[]:string' <<<"$certs" || return 2
     echo "$certs" | FQDN="$fqdn" python3 -c '
 import sys, json, os
 fqdn = os.environ["FQDN"]
@@ -80,7 +81,7 @@ matches = [c for c in json.load(sys.stdin)
 matches.sort(key=lambda c: int(c.get("id", 0)), reverse=True)
 for c in matches:
     print(c.get("id", 0))
-' 2>/dev/null
+' 2>/dev/null || return 2
 }
 
 npm_remote_usable_cert_id_by_fqdn() {
@@ -111,20 +112,6 @@ for host in json.load(sys.stdin):
 ' 2>/dev/null
 }
 
-npm_remote_json_field() {
-    local field="$1" default="${2:-}"
-    FIELD="$field" DEFAULT="$default" python3 -c '
-import sys, json, os
-try:
-    value = json.load(sys.stdin).get(os.environ["FIELD"], None)
-except Exception:
-    value = None
-if value is None:
-    value = os.environ["DEFAULT"]
-print(value)
-' 2>/dev/null
-}
-
 npm_remote_token() {
     local api="${1:-$(service_local_url npm)/api}"
     local email="${NPM_ADMIN_EMAIL:-}" password="${JELLYFIN_ADMIN_PASSWORD:-}"
@@ -136,7 +123,7 @@ import os, json
 print(json.dumps({"identity": os.environ["NPM_EMAIL"], "secret": os.environ["NPM_PASSWORD"]}))
 ')
     curl_data_stdin "$body" -sf --max-time 10 -X POST "$api/tokens" \
-        -H "Content-Type: application/json" 2>/dev/null | npm_remote_json_field token
+        -H "Content-Type: application/json" 2>/dev/null | json_get token
 }
 
 npm_remote_hosts_ready() {
@@ -158,9 +145,9 @@ npm_remote_hosts_ready() {
         host_json=$(npm_remote_host_json_by_fqdn "$hosts" "$fqdn")
         [[ -z "$host_json" ]] && return 1
 
-        host_id=$(echo "$host_json" | npm_remote_json_field id)
-        host_cert_id=$(echo "$host_json" | npm_remote_json_field certificate_id 0)
-        host_enabled=$(echo "$host_json" | npm_remote_json_field enabled False)
+        host_id=$(echo "$host_json" | json_get id)
+        host_cert_id=$(echo "$host_json" | json_get certificate_id) || return 1
+        host_enabled=$(echo "$host_json" | json_get enabled) || return 1
         [[ "$host_enabled" =~ ^(True|true)$ ]] || return 1
         [[ "$host_cert_id" == "$cert_id" ]] || return 1
 

@@ -38,11 +38,11 @@ configure_sonarr() {
     # Enables renaming + sets folder/episode formats with [tvdbid-*] tags
     # so Jellyfin matches metadata reliably without scraping guesswork.
     local naming_config current_rename
-    if ! naming_config=$(api_get "$base/config/naming" "$sonarr_key"); then
+    if ! naming_config=$(api_get "$base/config/naming" "$sonarr_key" renameEpisodes:boolean); then
         log_warn "Could not fetch Sonarr naming config - skipping"
-        naming_config="{}"
+        return 1
     fi
-    current_rename=$(echo "$naming_config" | json_get renameEpisodes False)
+    current_rename=$(echo "$naming_config" | json_get renameEpisodes) || return 1
     if [[ "$current_rename" == "True" ]]; then
         log_skip "Sonarr naming convention already configured"
     else

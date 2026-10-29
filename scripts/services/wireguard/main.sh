@@ -72,7 +72,11 @@ configure_wireguard() {
     fi
 
     local clients_json peer_id
-    clients_json=$(curl_basic_auth "$wg_user" "$wg_pw" -sf "$wg_url/api/client" 2>/dev/null || echo "[]")
+    clients_json=$(curl_basic_auth "$wg_user" "$wg_pw" -sf "$wg_url/api/client") || {
+        log_warn "Could not read WireGuard peers"
+        return 1
+    }
+    json_check "WireGuard peers" :array '[].name:string' '[].id:string' <<<"$clients_json" || return 1
     peer_id=$(echo "$clients_json" | WG_PEER="$wg_user" python3 -c '
 import os, sys, json
 peer = os.environ["WG_PEER"]
@@ -117,7 +121,11 @@ _wg_ensure_firewall_enabled() {
     local url="$1" user="$2" pw="$3"
     local current already
 
-    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/admin/interface" 2>/dev/null || echo "{}")
+    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/admin/interface") || {
+        log_warn "Could not read WireGuard interface"
+        return 1
+    }
+    json_check "WireGuard interface" :object firewallEnabled:boolean <<<"$current" || return 1
     already=$(echo "$current" | python3 -c '
 import sys, json
 try: print("yes" if json.load(sys.stdin).get("firewallEnabled") else "no")
@@ -145,7 +153,11 @@ print(json.dumps(d))' <<<"$current")
     # (ip6tables touched during firewall chain setup even with DISABLE_IPV6).
     # Always re-read state; classify on read-back, not on the POST exit code.
     sleep 1
-    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/admin/interface" 2>/dev/null || echo "{}")
+    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/admin/interface") || {
+        log_warn "Could not read WireGuard interface"
+        return 1
+    }
+    json_check "WireGuard interface" :object firewallEnabled:boolean <<<"$current" || return 1
     already=$(echo "$current" | python3 -c '
 import sys, json
 try: print("yes" if json.load(sys.stdin).get("firewallEnabled") else "no")
@@ -234,6 +246,7 @@ _wg_set_peer_firewall_ips() {
         return 1
     }
 
+    json_check "WireGuard peer" :object firewallIps:nullable-array <<<"$current" || return 1
     desired_json=$(IPS="$firewall_ips" python3 -c '
 import os, json
 entries = [x.strip() for x in os.environ["IPS"].split(",") if x.strip()]
@@ -253,7 +266,11 @@ print(json.dumps(d))' <<<"$current")
         -H "Content-Type: application/json" -d "$body" 2>/dev/null || echo "000")
 
     sleep 1
-    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/client/$peer_id" 2>/dev/null || echo "{}")
+    current=$(curl_basic_auth "$user" "$pw" -sf "$url/api/client/$peer_id") || {
+        log_warn "Could not read WireGuard peer after update"
+        return 1
+    }
+    json_check "WireGuard peer after update" :object firewallIps:nullable-array <<<"$current" || return 1
     persisted=$(IPS_JSON="$desired_json" python3 -c '
 import os, sys, json
 try:

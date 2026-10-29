@@ -38,12 +38,13 @@ try:
         raise TypeError
     have = {}
     for kind in ("movie", "tv"):
-        q = quotas.get(kind) or {}
+        q = quotas[kind]
+        # Seerr declares these two leaf fields optional; an empty quota is unlimited.
         lim, days = q.get("quotaLimit") or 0, q.get("quotaDays") or 0
         if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in (lim, days)):
             raise TypeError
         have[kind] = (lim, days) if lim > 0 else (0, 0)
-    perms = settings.get("defaultPermissions")
+    perms = settings["defaultPermissions"]
 except (ValueError, KeyError, TypeError, AttributeError):
     sys.exit(3)
 
@@ -84,7 +85,7 @@ reconcile_seerr_quotas() {
             ;;
     esac
 
-    if ! curl -fsS -X POST "$seerr_url/api/v1/settings/main" \
+    if ! http_curl -fsS -X POST "$seerr_url/api/v1/settings/main" \
         -H "Content-Type: application/json" \
         -c "$cookiejar" -b "$cookiejar" \
         -d "$settings_body" >/dev/null 2>&1; then

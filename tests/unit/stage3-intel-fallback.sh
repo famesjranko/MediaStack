@@ -155,6 +155,7 @@ assert_eq "1" "$summary_calls" "Intel VAAPI fallback prints final summary once"
 unset -f ui_choose ui_log stage3_set_gpu_env _stage3_apply_runtime_override stage3_probe_capabilities _stage3_configure_jellyfin _stage3_verify_jellyfin_encoding stage3_verify_transcode_evidence print_final_summary
 unset gpu_env_calls verify_calls runtime_count probe_calls configure_calls summary_calls
 
+source "$REPO_ROOT/scripts/lib/json.sh"
 source "$REPO_ROOT/scripts/services/jellyfin/main.sh"
 
 # encoding.sh's config read/write now go through api_fetch_auth (secret
