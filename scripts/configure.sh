@@ -16,8 +16,8 @@
 # per-service installers live under scripts/services/. Cross-service
 # orchestration (when it arrives) goes in scripts/flows/.
 # =============================================================================
-# -e is intentionally OFF: each step handles errors locally via if/fi, log_warn,
-# and `if ! var=$(api_get/api_fetch ...); then log_warn; var="[]"; fi` fallbacks.
+# -e is intentionally OFF: each step warns and stops its dependent work when
+# an API read fails. Unknown state must not become an empty inventory or default.
 # A single api_post returning HTTP 4xx (validation error, conflict, etc.) should
 # not abort the whole configurator — otherwise steps 4-8 are silently skipped on
 # the first transient failure in step 3.

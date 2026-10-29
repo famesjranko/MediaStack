@@ -15,6 +15,10 @@
 # unix). The socket directory is ./config/beszel/socket, which the hub already
 # sees under its /beszel_data mount.
 
+_BESZEL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)"
+# shellcheck source=scripts/lib/http.sh
+source "$_BESZEL_LIB_DIR/http.sh"
+
 BESZEL_LOCAL_SOCKET="/beszel_data/socket/beszel.sock"
 
 # Logs in to the hub as the shared admin and sets BESZEL_TOKEN and
@@ -22,7 +26,7 @@ BESZEL_LOCAL_SOCKET="/beszel_data/socket/beszel.sock"
 # Usage: _beszel_login <hub_url> <email> <password>
 _beszel_login() {
     local hub_url="$1" admin_email="$2" admin_pw="$3"
-    local auth_body auth_resp auth_code
+    local auth_body auth_resp token user_id
     BESZEL_TOKEN="" BESZEL_USER_ID=""
     auth_body=$(B_EMAIL="$admin_email" B_PW="$admin_pw" python3 -c '
 import os, json
@@ -32,27 +36,15 @@ print(json.dumps({"identity": os.environ["B_EMAIL"], "password": os.environ["B_P
         return 1
     }
 
-    auth_resp=$(curl_data_stdin "$auth_body" \
-        -sS -X POST "$hub_url/api/collections/users/auth-with-password" \
-        -H "Content-Type: application/json" -w "\n%{http_code}" 2>/dev/null) || {
-        log_warn "Beszel hub not reachable - skipping"
-        return 1
-    }
-
-    auth_code="${auth_resp##*$'\n'}"
-    auth_resp="${auth_resp%$'\n'*}"
-
-    if [[ ! "$auth_code" =~ ^2 ]]; then
-        log_warn "Beszel auth failed (HTTP $auth_code) - hub may still be initializing"
+    auth_resp=$(http_json_request "Beszel login" POST "$hub_url/api/collections/users/auth-with-password" \
+        "$auth_body" "" "" token:string record.id:string) || return 1
+    token=$(json_get token <<<"$auth_resp")
+    user_id=$(json_path record.id <<<"$auth_resp")
+    if [[ -z "$token" || -z "$user_id" ]]; then
+        log_warn "Beszel login returned an empty token or user id"
         return 1
     fi
-
-    BESZEL_TOKEN=$(echo "$auth_resp" | json_get token)
-    BESZEL_USER_ID=$(echo "$auth_resp" | json_path record.id)
-    if [[ -z "$BESZEL_TOKEN" ]]; then
-        log_warn "Beszel auth returned no token"
-        return 1
-    fi
+    BESZEL_TOKEN="$token" BESZEL_USER_ID="$user_id"
     return 0
 }
 
@@ -63,11 +55,14 @@ _beszel_local_system_state() {
     BESZEL_SOCKET="$BESZEL_LOCAL_SOCKET" python3 -c '
 import os, sys, json
 try:
-    items = json.load(sys.stdin).get("items", [])
+    items = json.load(sys.stdin)["items"]
 except Exception:
     print("unreadable -")
     sys.exit(0)
 for it in items:
+    if not all(it.get(k) for k in ("id", "name", "host")):
+        print("unreadable -")
+        sys.exit(0)
     if it.get("name") != "MediaStack":
         continue
     host, port = it.get("host"), str(it.get("port"))
@@ -90,11 +85,11 @@ else:
 # Usage: beszel_sync_local_system <hub_url>
 beszel_sync_local_system() {
     local hub_url="$1" systems_resp state record_id
-    systems_resp=$(curl_header_stdin "Authorization" "Bearer $BESZEL_TOKEN" -sS "$hub_url/api/collections/systems/records" \
-        2>/dev/null)
+    systems_resp=$(http_json_request "Beszel systems list" GET "$hub_url/api/collections/systems/records" \
+        "" Authorization "Bearer $BESZEL_TOKEN" 'items[].id:string' 'items[].name:string' 'items[].host:string' 'items[].port:string') || return 1
     read -r state record_id < <(_beszel_local_system_state <<<"$systems_resp")
 
-    local body code out
+    local body
     case "$state" in
         current)
             log_skip "Beszel system 'MediaStack' already registered"
@@ -108,17 +103,13 @@ beszel_sync_local_system() {
             body=$(B_SOCKET="$BESZEL_LOCAL_SOCKET" python3 -c '
 import os, json
 print(json.dumps({"host": os.environ["B_SOCKET"]}))' 2>/dev/null)
-            out=$(curl_header_data_stdin "Authorization" "Bearer $BESZEL_TOKEN" "$body" \
-                -sS -X PATCH "$hub_url/api/collections/systems/records/$record_id" \
-                -H "Content-Type: application/json" \
-                -w "\n%{http_code}" 2>/dev/null)
-            code="${out##*$'\n'}"
-            if [[ "$code" =~ ^2 ]]; then
+            if http_json_request "Beszel system migration" PATCH "$hub_url/api/collections/systems/records/$record_id" \
+                "$body" Authorization "Bearer $BESZEL_TOKEN" >/dev/null; then
                 log_ok "Beszel system 'MediaStack' moved from host.docker.internal:45876 to the agent's unix socket"
                 BESZEL_SYSTEM_MOVED=true
                 return 0
             fi
-            log_warn "Beszel system migration returned HTTP $code: ${out:0:200}"
+            log_warn "Beszel system migration failed"
             return 1
             ;;
         none) ;;
@@ -135,17 +126,12 @@ print(json.dumps({
     "host": os.environ["B_SOCKET"],
     "users": [os.environ["B_USER_ID"]],
 }))' 2>/dev/null)
-    out=$(curl_header_data_stdin "Authorization" "Bearer $BESZEL_TOKEN" "$body" \
-        -sS -X POST "$hub_url/api/collections/systems/records" \
-        -H "Content-Type: application/json" \
-        -w "\n%{http_code}" 2>/dev/null)
-    code="${out##*$'\n'}"
-    if [[ "$code" =~ ^2 ]]; then
+    if http_json_request "Beszel system registration" POST "$hub_url/api/collections/systems/records" \
+        "$body" Authorization "Bearer $BESZEL_TOKEN" id:string name:string >/dev/null; then
         log_ok "Beszel system 'MediaStack' registered"
         return 0
     fi
-    out="${out%$'\n'*}"
-    log_warn "Beszel system registration returned HTTP $code: ${out:0:200}"
+    log_warn "Beszel system registration failed"
     return 1
 }
 
@@ -205,32 +191,59 @@ configure_beszel() {
     # PocketBase CLI accepts it only as a positional argument, and the hub image
     # is built FROM scratch, so there is no in-container shell to expand it from
     # the environment instead. Probing keeps that path out of every normal run.
-    local su_body su_code
+    local su_body su_resp su_code
     su_body=$(http_json_body identity "$admin_email" password "$admin_pw")
-    su_code=$(curl_data_stdin "$su_body" -s -o /dev/null -w "%{http_code}" \
+    su_resp=$(curl_data_stdin "$su_body" -sS -w '\n%{http_code}' \
         -X POST "$hub_url/api/collections/_superusers/auth-with-password" \
-        -H "Content-Type: application/json" 2>/dev/null || echo "000")
-    if [[ "$su_code" == "200" ]]; then
-        log_skip "Beszel superuser already present"
-    elif docker exec beszel /beszel superuser upsert "$admin_email" "$admin_pw" >/dev/null 2>&1; then
-        log_ok "Beszel superuser ensured"
-    else
-        log_warn "Could not upsert Beszel superuser"
-    fi
+        -H "Content-Type: application/json" 2>/dev/null) || {
+        log_warn "Beszel superuser login: connection failed; credentials left unchanged"
+        return 1
+    }
+    su_code="${su_resp##*$'\n'}"
+    su_resp="${su_resp%$'\n'*}"
+    case "$su_code" in
+        200)
+            json_check "Beszel superuser login" token:string record.id:string <<<"$su_resp" || return 1
+            if [[ -z "$(json_get token <<<"$su_resp")" || -z "$(json_path record.id <<<"$su_resp")" ]]; then
+                log_warn "Beszel superuser login returned an empty identity"
+                return 1
+            fi
+            log_skip "Beszel superuser already present"
+            ;;
+        400)
+            # PocketBase uses 400 for both rejected credentials and invalid
+            # requests. Only its explicit credential rejection permits repair.
+            json_check "Beszel superuser rejection" code:integer message:string <<<"$su_resp" || return 1
+            if [[ "$(json_get code <<<"$su_resp")" != 400 || "$(json_get message <<<"$su_resp")" != "Failed to authenticate." ]]; then
+                log_warn "Beszel superuser login was inconclusive; credentials left unchanged"
+                return 1
+            fi
+            if docker exec beszel /beszel superuser upsert "$admin_email" "$admin_pw" >/dev/null 2>&1; then
+                log_ok "Beszel superuser ensured"
+            else
+                log_warn "Could not upsert Beszel superuser"
+                return 1
+            fi
+            ;;
+        *)
+            log_warn "Beszel superuser login: HTTP $su_code; credentials left unchanged"
+            return 1
+            ;;
+    esac
 
     # --- 1. Authenticate to hub ---
-    _beszel_login "$hub_url" "$admin_email" "$admin_pw" || return 0
+    _beszel_login "$hub_url" "$admin_email" "$admin_pw" || return 1
     log_ok "Beszel hub authenticated"
 
     # --- 2. Get SSH key from hub ---
     local key_resp hub_key
-    key_resp=$(curl_header_stdin "Authorization" "Bearer $BESZEL_TOKEN" -sS "$hub_url/api/beszel/getkey" \
-        2>/dev/null)
+    key_resp=$(http_json_request "Beszel agent key" GET "$hub_url/api/beszel/getkey" \
+        "" Authorization "Bearer $BESZEL_TOKEN" key:string) || return 1
     hub_key=$(echo "$key_resp" | json_get key)
 
     if [[ -z "$hub_key" ]]; then
         log_warn "Could not retrieve Beszel agent key"
-        return 0
+        return 1
     fi
 
     # --- 3. Save key to .env if changed ---
@@ -238,14 +251,17 @@ configure_beszel() {
     if [[ "$current_key" == "$hub_key" ]]; then
         log_skip "Beszel agent key already in .env"
     else
-        env_save_api_key "BESZEL_AGENT_KEY" "$hub_key"
-
-        # --- 4. Recreate agent so it picks up the new KEY ---
-        log_info "Recreating beszel-agent with SSH key..."
-        docker compose up -d beszel-agent >/dev/null 2>&1
-        log_ok "Beszel agent restarted with key"
+        env_save_api_key "BESZEL_AGENT_KEY" "$hub_key" || return 1
     fi
 
+    # A previous run may have saved KEY and failed before the recreate. Compose
+    # leaves an unchanged agent alone and retries any pending configuration.
+    if ! docker compose up -d beszel-agent >/dev/null 2>&1; then
+        log_warn "Could not recreate Beszel agent - run: docker compose up -d beszel-agent"
+        return 1
+    fi
+    log_ok "Beszel agent is running with the hub key"
+
     # --- 5. Register this host as a monitored system (or move the old entry) ---
-    beszel_sync_local_system "$hub_url" || true
+    beszel_sync_local_system "$hub_url"
 }

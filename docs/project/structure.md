@@ -81,8 +81,9 @@ scripts/
     health.sh                       Day-2 silent-failure health checks (cert renewal, DDNS drift, disk, UFW, Docker)
     health-containers.sh            Container health checks
     health-fail2ban.sh              fail2ban regex-drift and jail checks
-    http.sh                         wait_for_service, http_json_post (cookie-session)
-    json.sh                         json_get, json_path, json_has_name, json_array_nonempty
+    http-request.sh                 bounded http_curl and shared HTTP status handling
+    http.sh                         wait_for_service, http_json_request, http_json_post
+    json.sh                         required-field extraction and typed response validation
     network.sh                      Compatibility entry point and source-time state for shared network helpers
     network/                        access, ddns, dns, local-probes, port-gate, public
     npm-remote.sh                   Shared NPM remote-readiness checks, sourceable without the full npm/main.sh

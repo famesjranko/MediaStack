@@ -29,9 +29,12 @@ configure_jellyfin() {
 
     local auth_header="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\""
 
-    # Check if setup wizard is still pending
-    local startup_info
-    startup_info=$(curl -sf "$jf_url/Startup/Configuration" 2>/dev/null || echo "")
+    # A failed startup endpoint does not distinguish completed setup from an
+    # unavailable server. Use Jellyfin's explicit public completion flag.
+    local startup_info startup_completed
+    startup_info=$(http_json_request "Jellyfin startup state" GET "$jf_url/System/Info/Public" \
+        "" "" "" StartupWizardCompleted:boolean) || return 1
+    startup_completed=$(json_get StartupWizardCompleted <<<"$startup_info") || return 1
 
     # Auth body is JSON-safe regardless of what's in jf_user/jf_pw — python's
     # json.dumps escapes quotes, backslashes, and control chars. The previous
@@ -39,7 +42,7 @@ configure_jellyfin() {
     local auth_body
     auth_body=$(http_json_body Username "$jf_user" Pw "$jf_pw")
 
-    if [[ -z "$startup_info" ]]; then
+    if [[ "$startup_completed" == "True" ]]; then
         # Wizard already completed — wait for the auth subsystem to become
         # ready (it lags /health by several seconds after a container
         # recreate while SQLite WAL replays), then authenticate.
@@ -48,7 +51,7 @@ configure_jellyfin() {
         auth_result=$(wait_for_jellyfin_auth "$jf_url" "$auth_header" "$auth_body" 30)
         case $? in
             0)
-                jf_token=$(echo "$auth_result" | json_get AccessToken)
+                jf_token=$(echo "$auth_result" | json_get AccessToken) || return 1
                 log_ok "Authenticated as $jf_user"
                 save_jellyfin_api_key "$jf_url" "$jf_token" "$auth_header"
                 configure_jellyfin_server_name "$jf_url" "$jf_token"
@@ -76,7 +79,7 @@ configure_jellyfin() {
 
     # Each sub-step uses http_check: a non-2xx aborts with an actionable error
     # rather than silently logging [OK]. Previously all four were fire-and-
-    # forget (curl -sf >/dev/null 2>&1) so a silently-rejected user-creation
+    # forget (http_curl -sf >/dev/null 2>&1) so a silently-rejected user-creation
     # POST produced a "successful" install with a broken admin account.
     http_check "Jellyfin /Startup/Configuration" \
         -X POST "$jf_url/Startup/Configuration" \
@@ -123,7 +126,7 @@ configure_jellyfin() {
         -sf -X POST "$jf_url/Users/AuthenticateByName" \
         -H "Content-Type: application/json" 2>/dev/null || echo "")
     local jf_token
-    jf_token=$(echo "$auth_result" | json_get AccessToken)
+    jf_token=$(echo "$auth_result" | json_get AccessToken) || jf_token=""
 
     if [[ -z "$jf_token" ]]; then
         log_error "Jellyfin admin login could not be verified."

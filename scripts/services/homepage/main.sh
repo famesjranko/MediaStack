@@ -13,7 +13,7 @@ _homepage_jellyfin_widget_version() {
     result_file=$(mktemp) || return 1
     url="$(service_local_url jellyfin)/System/Info/Public"
 
-    curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+    http_curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
         --write-out '\n%{http_code}' "$url" \
         | python3 "$HOMEPAGE_JELLYFIN_WIDGET_PARSER" >"$result_file"
     statuses=("${PIPESTATUS[@]}")

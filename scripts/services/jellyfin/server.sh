@@ -16,6 +16,8 @@ configure_jellyfin_server_name() {
         return 0
     fi
 
+    json_check "Jellyfin server config" :object ServerName:string <<<"$current_config" || return 1
+
     local current_name
     current_name=$(echo "$current_config" | python3 -c "
 import sys, json
@@ -77,6 +79,8 @@ configure_jellyfin_streaming() {
         log_warn "Could not read Jellyfin server config - skipping streaming limit"
         return 0
     fi
+
+    json_check "Jellyfin streaming config" :object RemoteClientBitrateLimit:integer <<<"$current_config" || return 1
 
     local current_limit
     current_limit=$(echo "$current_config" | python3 -c "

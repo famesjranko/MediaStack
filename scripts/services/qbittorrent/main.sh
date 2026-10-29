@@ -202,7 +202,7 @@ print(password)
     local wl_csv wl_state live_prefs wl_apply=""
     if ! wl_csv=$(_qbt_caller_whitelist); then
         log_warn "$(_qbt_prefix_hint) (Sonarr/Radarr may not connect)"
-    elif ! live_prefs=$(curl -sf -b "$jar" "$qbt_url/api/v2/app/preferences" 2>/dev/null); then
+    elif ! live_prefs=$(http_curl -sf -b "$jar" "$qbt_url/api/v2/app/preferences" 2>/dev/null); then
         log_warn "Could not read qBittorrent preferences - auth whitelist left unchanged"
     else
         wl_state=$(_qbt_whitelist_state "$wl_csv" <<<"$live_prefs")
@@ -260,7 +260,7 @@ print(json.dumps({
         "bypass_auth_subnet_whitelist_enabled": True} if os.environ["WL_CSV"] else {}),
 }))')
     fi
-    if curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
+    if http_curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
         --data-urlencode "json=$prefs_json" >/dev/null 2>&1; then
         log_ok "Preferences set"
         if [[ -n "$wl_apply" ]]; then
@@ -310,13 +310,16 @@ print(json.dumps({
         return 0
     fi
 
-    # Categories from config.yml. createCategory may 409 if the category was
-    # pre-seeded via categories.json; editCategory ensures savePath is set
-    # regardless. Check existing categories first for idempotent logging.
+    # Read categories before create/edit so an unknown state cannot trigger writes.
     local existing_cats
-    if ! existing_cats=$(api_fetch "qBittorrent categories" -b "$jar" "$qbt_url/api/v2/torrents/categories"); then
-        existing_cats="{}"
-    fi
+    existing_cats=$(api_fetch "qBittorrent categories" -b "$jar" "$qbt_url/api/v2/torrents/categories") || {
+        rm -f "$jar"
+        return 1
+    }
+    json_check "qBittorrent categories" :object '*.savePath:string' <<<"$existing_cats" || {
+        rm -f "$jar"
+        return 1
+    }
     _qbt_category_path() {
         local cats_json="$1" name="$2"
         CATEGORY_NAME="$name" python3 -c '
@@ -341,16 +344,17 @@ print(cat.get("savePath", ""))
             continue
         fi
 
-        curl -sf -b "$jar" "$qbt_url/api/v2/torrents/createCategory" \
+        http_curl -sf -b "$jar" "$qbt_url/api/v2/torrents/createCategory" \
             --data-urlencode "category=${cat_name}" \
             --data-urlencode "savePath=${cat_path}" >/dev/null 2>&1 || true
-        if curl -sf -b "$jar" "$qbt_url/api/v2/torrents/editCategory" \
+        if http_curl -sf -b "$jar" "$qbt_url/api/v2/torrents/editCategory" \
             --data-urlencode "category=${cat_name}" \
             --data-urlencode "savePath=${cat_path}" >/dev/null 2>&1; then
             log_ok "Category: $cat_name -> $cat_path"
         else
             local refreshed_cats refreshed_path
-            if refreshed_cats=$(api_fetch "qBittorrent categories" -b "$jar" "$qbt_url/api/v2/torrents/categories"); then
+            if refreshed_cats=$(api_fetch "qBittorrent categories" -b "$jar" "$qbt_url/api/v2/torrents/categories") \
+                && json_check "qBittorrent categories" :object '*.savePath:string' <<<"$refreshed_cats"; then
                 refreshed_path=$(_qbt_category_path "$refreshed_cats" "$cat_name")
             else
                 refreshed_path=""
@@ -412,7 +416,7 @@ print(json.dumps({
 }))')
 
     local rc=0
-    if curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
+    if http_curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
         --data-urlencode "json=$prefs_json" >/dev/null 2>&1; then
         log_ok "qBittorrent speed limits updated: download ${dl_mb} MB/s, upload ${ul_mb} MB/s."
     else
@@ -454,7 +458,7 @@ qbt_narrow_legacy_whitelist() {
         rm -f "$jar"
         return 1
     fi
-    if ! live_prefs=$(curl -sf -b "$jar" "$qbt_url/api/v2/app/preferences" 2>/dev/null); then
+    if ! live_prefs=$(http_curl -sf -b "$jar" "$qbt_url/api/v2/app/preferences" 2>/dev/null); then
         log_warn "Could not read qBittorrent preferences - auth whitelist left unchanged"
         rm -f "$jar"
         return 1
@@ -467,7 +471,7 @@ qbt_narrow_legacy_whitelist() {
 import os, json
 print(json.dumps({"bypass_auth_subnet_whitelist": os.environ["WL_CSV"],
                   "bypass_auth_subnet_whitelist_enabled": True}))')
-            if curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
+            if http_curl -sf -b "$jar" "$qbt_url/api/v2/app/setPreferences" \
                 --data-urlencode "json=$prefs_json" >/dev/null 2>&1; then
                 log_ok "qBittorrent auth whitelist narrowed from 172.16.0.0/12 to $wl_csv"
             else

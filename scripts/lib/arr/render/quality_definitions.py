@@ -46,9 +46,10 @@ def main() -> int:
         max_s = float(vals["max"])
 
         if (
-            _close(match.get("minSize", 0), min_s)
-            and _close(match.get("preferredSize", 0), pref_s)
-            and _close(match.get("maxSize", 0), max_s)
+            # The API omits null size limits; these are known unlimited values.
+            _close(float(match.get("minSize") or 0), min_s)
+            and _close(float(match.get("preferredSize") or 0), pref_s)
+            and _close(float(match.get("maxSize") or 0), max_s)
         ):
             continue
 

@@ -42,7 +42,7 @@ export JELLYFIN_API_KEY="$SENTINEL"
 
 log_ok() { echo "OK: $*" >>"$LOG"; }
 log_info() { echo "INFO: $*" >>"$LOG"; }
-log_warn() { echo "WARN: $*" >>"$LOG"; }
+log_warn() { printf 'WARN: %s\n' "$*" | tee -a "$LOG" >&2; }
 log_skip() { echo "SKIP: $*" >>"$LOG"; }
 log_error() { echo "ERROR: $*" >>"$LOG"; }
 log_drift() { echo "WARN: $*" >>"$LOG"; }

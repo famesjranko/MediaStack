@@ -30,9 +30,10 @@ configure_quality_profile() {
     upgrade=$(cfg_field "quality_profile.upgrade_allowed")
 
     local existing qp_status
-    if ! existing=$(api_get "$base/qualityprofile" "$key"); then
+    if ! existing=$(api_get "$base/qualityprofile" "$key" :array '[].id:integer' '[].name:string' '[].cutoff:integer' '[].upgradeAllowed:boolean' '[].items:array' '[].formatItems:array' '[].formatItems[].score:integer'); then
         log_warn "Could not fetch ${app^} quality profiles - skipping check"
-        existing="[]"
+        _qp_record_rename_failure "$app"
+        return 1
     fi
 
     # Day-2 in-place rename. The launcher's "Change quality profile"
@@ -52,8 +53,7 @@ configure_quality_profile() {
             | OLD_NAME="$rename_from" NEW_NAME="$profile_name" python3 -c '
 import sys, json, os
 old, new = os.environ["OLD_NAME"], os.environ["NEW_NAME"]
-try: profiles = json.load(sys.stdin)
-except Exception: profiles = []
+profiles = json.load(sys.stdin)
 names = {p.get("name") for p in profiles}
 if new in names and old in names:
     print("exists_stale")                 # renamed already, but the old one lingers
@@ -64,7 +64,10 @@ elif old in names:
     print("rename\t" + str(p.get("id")))
 else:
     print("absent")                       # live name drifted -> refuse to orphan
-' 2>/dev/null)
+' 2>/dev/null) || {
+            _qp_record_rename_failure "$app"
+            return 1
+        }
         case "${rename_plan%%$'\t'*}" in
             rename)
                 local old_id="${rename_plan#*$'\t'}"
@@ -75,7 +78,10 @@ oid = os.environ["OLD_ID"]
 profiles = json.load(sys.stdin)
 p = next((pp for pp in profiles if str(pp.get("id")) == oid), None)
 print(json.dumps(p) if p else "")
-' 2>/dev/null)
+' 2>/dev/null) || {
+                    _qp_record_rename_failure "$app"
+                    return 1
+                }
                 # Render new items/cutoff/name using the OLD profile as template,
                 # then merge them onto the FULL old profile so id/language and
                 # every other field survive the PUT (same as the api-matrix
@@ -103,7 +109,10 @@ merged["minFormatScore"] = rendered["minFormatScore"]
 for it in merged.get("formatItems", []):
     it["score"] = 0
 print(json.dumps(merged))
-' 2>/dev/null)
+' 2>/dev/null) || {
+                    _qp_record_rename_failure "$app"
+                    return 1
+                }
                 # PUT the rename, then verify it actually landed: the live
                 # profile must show the new name AND every formatItems score at
                 # 0. If a transient dropped write leaves any managed
@@ -124,7 +133,7 @@ print(json.dumps(merged))
 import sys, json, os
 p = json.load(sys.stdin)
 ok = p.get("name") == os.environ["PROFILE_NAME"] \
-    and all(fi.get("score", 0) == 0 for fi in p.get("formatItems", []))
+    and all(fi["score"] == 0 for fi in p["formatItems"])
 sys.exit(0 if ok else 1)
 ' 2>/dev/null; then
                             _rn_ok=1
@@ -171,8 +180,7 @@ name = os.environ["PROFILE_NAME"]
 want_ids = set(json.loads(os.environ["ENABLED_IDS"]))
 want_cutoff = int(os.environ["CUTOFF_ID"])
 want_upgrade = os.environ["UPGRADE_ALLOWED"].strip().lower() == "true"
-try: profiles = json.load(sys.stdin)
-except Exception: profiles = []
+profiles = json.load(sys.stdin)
 p = next((pp for pp in profiles if pp.get("name") == name), None)
 if p is None:
     print("absent"); sys.exit(0)
@@ -198,7 +206,10 @@ if live_ids != want_ids:
     if removed: parts.append("config.yml removes " + str(removed))
     drift.append("qualities (" + ", ".join(parts) + ")")
 print("drift\t" + "; ".join(drift) if drift else "match")
-' 2>/dev/null)
+' 2>/dev/null) || {
+        _qp_record_rename_failure "$app"
+        return 1
+    }
     case "${qp_status%%$'\t'*}" in
         match)
             log_skip "$app_label quality profile '$profile_name' already matches your settings"
@@ -257,9 +268,10 @@ configure_quality_definitions() {
     fi
 
     local current
-    if ! current=$(api_get "$base/qualitydefinition" "$key"); then
+    # The *arr API omits nullable size limits when they are unlimited.
+    if ! current=$(api_get "$base/qualitydefinition" "$key" :array '[].id:integer' '[].quality.name:string' '[].minSize?:nullable-number' '[].maxSize?:nullable-number' '[].preferredSize?:nullable-number'); then
         log_warn "Could not fetch ${app^} quality definitions - skipping"
-        current="[]"
+        return 1
     fi
     if [[ -z "$current" || "$current" == "[]" ]]; then
         log_warn "No quality definitions returned from ${app^}"
@@ -273,7 +285,11 @@ configure_quality_definitions() {
     local plan warn_lines updated=0
     local warn_file
     warn_file="$(mktemp)"
-    plan=$(DESIRED="$desired" python3 "$_ARR_LIB_DIR/render/quality_definitions.py" <<<"$current" 2>"$warn_file" || echo "")
+    plan=$(DESIRED="$desired" python3 "$_ARR_LIB_DIR/render/quality_definitions.py" <<<"$current" 2>"$warn_file") || {
+        rm -f "$warn_file"
+        log_warn "Could not plan ${app^} quality definitions"
+        return 1
+    }
     warn_lines=$(<"$warn_file")
     rm -f "$warn_file"
 

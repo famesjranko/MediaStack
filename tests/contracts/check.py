@@ -20,10 +20,10 @@ from preflight.model import HELD  # noqa: E402
 
 CONTRACT_DIR = inventory.CONTRACT_DIR
 CALL_RE = re.compile(
-    r"\b(?P<function>curl|curl_basic_auth|curl_data_stdin|curl_data_urlencode_stdin|"
+    r"\b(?P<function>curl|http_curl|curl_basic_auth|curl_data_stdin|curl_data_urlencode_stdin|"
     r"curl_header_stdin|curl_header_data_stdin|"
     r"api_get|api_fetch|api_fetch_auth|api_post|api_put|api_delete|"
-    r"wait_for_jellyfin_auth|http_json_post|http_check|"
+    r"wait_for_jellyfin_auth|http_json_post|http_json_request|http_check|"
     r"http_check_data|http_check_auth)\b(?P<args>[^\n]*)"
 )
 # Readiness probes poll a URL with GET until it answers. They are found only in
@@ -246,6 +246,9 @@ def _service_route(token: str, script: ScriptFile, position: int, probe: bool) -
 
 
 def _method(function: str, args: str) -> str:
+    if function == "http_json_request":
+        tokens = shlex.split(args)
+        return tokens[1] if len(tokens) > 1 and tokens[1] in inventory.METHODS else "GET"
     explicit = re.search(r"(?:^|\s)-X\s+(GET|POST|PUT|PATCH|DELETE)\b", args)
     if explicit and explicit.group(1) in inventory.METHODS:
         return explicit.group(1)
@@ -261,7 +264,9 @@ def _method(function: str, args: str) -> str:
     # so a request through one of them is a POST unless -X says otherwise.
     if function in {"curl_data_urlencode_stdin", "http_check_data", "curl_header_data_stdin"}:
         return "POST"
-    if function == "curl" and re.search(r"(?:^|\s)(?:-d|--data|--data-\w+)(?:\s|=)", args):
+    if function in {"curl", "http_curl"} and re.search(
+        r"(?:^|\s)(?:-d|--data|--data-\w+)(?:\s|=)", args
+    ):
         return "POST"
     return "GET"
 

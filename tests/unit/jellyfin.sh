@@ -322,8 +322,8 @@ MOCK_NETWORK_JSON='{'
 REMOTE_WEB_STATE=ready DOMAIN=fresh.test HOST_ADDRESS=192.168.1.50 MEDIASTACK_NPM_IP=172.29.0.10 \
     configure_jellyfin_networking "http://localhost:8096" "token"
 rc=$?
-assert_eq "0" "$rc" "Jellyfin networking malformed policy input remains non-fatal"
-assert_contains "${WARN_MESSAGES[*]:-}" "Unexpected result from networking config check - skipping" \
+assert_eq "1" "$rc" "Jellyfin networking malformed policy input fails the step"
+assert_contains "${WARN_MESSAGES[*]:-}" "Jellyfin network config: invalid JSON response" \
     "Jellyfin networking malformed policy input warns and skips"
 
 scenario_end "$CURRENT_SCENARIO"

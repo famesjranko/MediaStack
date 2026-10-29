@@ -40,6 +40,8 @@ configure_jellyfin_encoding() {
         return 0
     fi
 
+    json_check "Jellyfin encoding config" :object HardwareAccelerationType:string <<<"$current_config" || return 1
+
     # Jellyfin defaults HardwareAccelerationType to "none" (not "").
     # Both "none" and "" mean "unconfigured / software transcoding".
     local current_accel

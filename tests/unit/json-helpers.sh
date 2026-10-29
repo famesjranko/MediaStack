@@ -31,23 +31,17 @@ assert_eq "True" "$(echo '{"ok":true}' | json_get ok)" \
 assert_eq "False" "$(echo '{"ok":false}' | json_get ok)" \
     "json_get: boolean false"
 
-assert_eq "" "$(echo '{"a":1}' | json_get missing)" \
-    "json_get: missing key returns empty"
+for INPUT in '{"a":1}' '{"missing":null}' '{}' 'not json' ''; do
+    # Given JSON that cannot supply the required field
 
-assert_eq "fallback" "$(echo '{"a":1}' | json_get missing fallback)" \
-    "json_get: missing key returns custom default"
+    # When the scalar extractor reads that field
+    OUTPUT=$(json_get missing <<<"$INPUT" 2>/dev/null)
+    RC=$?
 
-assert_eq "fallback" "$(echo '{"k":null}' | json_get k fallback)" \
-    "json_get: null value returns default"
-
-assert_eq "" "$(echo '{}' | json_get x)" \
-    "json_get: empty object"
-
-assert_eq "oops" "$(echo 'not json' | json_get x oops)" \
-    "json_get: invalid JSON returns default"
-
-assert_eq "" "$(echo '' | json_get x)" \
-    "json_get: empty input returns empty"
+    # Then it fails and emits no substitute value
+    assert_eq 1 "$RC" "json_get rejects unavailable value ($INPUT)"
+    assert_eq "" "$OUTPUT" "json_get emits no default ($INPUT)"
+done
 
 # ─── json_path ───────────────────────────────────────────────────────────────
 
@@ -57,14 +51,17 @@ assert_eq "val" "$(echo '{"a":{"b":"val"}}' | json_path a.b)" \
 assert_eq "deep" "$(echo '{"a":{"b":{"c":"deep"}}}' | json_path a.b.c)" \
     "json_path: 3-level path"
 
-assert_eq "" "$(echo '{"a":{"b":"val"}}' | json_path a.x)" \
-    "json_path: missing leaf returns empty"
+for INPUT in '{"a":{}}' '{"a":1}' '{"a":{"b":null}}'; do
+    # Given an unavailable nested field
 
-assert_eq "" "$(echo '{"a":1}' | json_path a.b.c)" \
-    "json_path: non-dict intermediate returns empty"
+    # When the nested extractor reads it
+    OUTPUT=$(json_path a.b <<<"$INPUT" 2>/dev/null)
+    RC=$?
 
-assert_eq "0" "$(echo '{"a":{}}' | json_path a.b 0)" \
-    "json_path: missing path returns custom default"
+    # Then no fabricated path value is returned
+    assert_eq 1 "$RC" "json_path rejects unavailable nested field ($INPUT)"
+    assert_eq "" "$OUTPUT" "json_path emits no default ($INPUT)"
+done
 
 assert_eq "42" "$(echo '{"a":{"b":42}}' | json_path a.b)" \
     "json_path: numeric leaf"
@@ -120,6 +117,52 @@ assert_eq "1" "$?" "json_array_nonempty: object returns 1"
 
 echo 'invalid' | json_array_nonempty
 assert_eq "1" "$?" "json_array_nonempty: invalid JSON returns 1"
+
+# Given explicit empty inventories, false, zero and nullable API fields
+for CASE in \
+    '[]|:array' \
+    '{}|:object' \
+    '{"enabled":false}|enabled:boolean' \
+    '{"count":0}|count:integer' \
+    '{"firewallIps":null}|firewallIps:nullable-array' \
+    '{"size":null}|size:nullable-number' \
+    '{"size":0}|size:nullable-number' \
+    '{}|size?:nullable-number' \
+    '{"size":null}|size?:nullable-number' \
+    '{"size":0}|size?:nullable-number' \
+    '{"meta":null}|meta:nullable-object' \
+    '{"meta":{}}|meta:nullable-object' \
+    '{"fixture":{"savePath":""}}|*.savePath:string'; do
+    # When their declared contract is checked
+    json_require "${CASE#*|}" <<<"${CASE%%|*}" >/dev/null 2>&1
+
+    # Then real empty and nullable values remain usable
+    assert_eq 0 "$?" "json_require accepts $CASE"
+done
+
+# Given wrong field types and incomplete inventories
+for CASE in \
+    '{}|:array' \
+    '[]|:object' \
+    '{"enabled":0}|enabled:boolean' \
+    '{"count":false}|count:integer' \
+    '{}|firewallIps:nullable-array' \
+    '{"firewallIps":{}}|firewallIps:nullable-array' \
+    '{"size":false}|size:nullable-number' \
+    '{"size":"0"}|size:nullable-number' \
+    '{"size":false}|size?:nullable-number' \
+    '{"meta":false}|meta:nullable-object' \
+    '{}|meta:nullable-object' \
+    '{"fixture":{}}|*.savePath:string' \
+    '{"items":[{"id":1},{}]}|items[].id:integer'; do
+    # When their declared contract is checked
+    OUTPUT=$(json_require "${CASE#*|}" <<<"${CASE%%|*}" 2>/dev/null)
+    RC=$?
+
+    # Then no invalid response reaches the caller
+    assert_eq 1 "$RC" "json_require rejects $CASE"
+    assert_eq "" "$OUTPUT" "json_require emits no invalid response ($CASE)"
+done
 
 # ─── summary ─────────────────────────────────────────────────────────────────
 

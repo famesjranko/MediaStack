@@ -40,13 +40,15 @@ print(c.get('auth', {}).get('apikey', ''))
     # Check current state via API (read works fine)
     local current_settings
     if ! current_settings=$(api_fetch_auth "Bazarr settings" "X-API-KEY" "$bazarr_key" "$bazarr_url/api/system/settings"); then
-        current_settings="{}"
+        return 1
     fi
+
+    json_check "Bazarr settings" sonarr.apikey:string radarr.apikey:string general.use_sonarr:boolean <<<"$current_settings" || return 1
 
     local current_sonarr_key current_radarr_key current_use_sonarr
     current_sonarr_key=$(echo "$current_settings" | json_path sonarr.apikey)
     current_radarr_key=$(echo "$current_settings" | json_path radarr.apikey)
-    current_use_sonarr=$(echo "$current_settings" | json_path general.use_sonarr False)
+    current_use_sonarr=$(echo "$current_settings" | json_path general.use_sonarr) || return 1
 
     local sonarr_connected=false radarr_connected=false general_applied=false
     [[ -n "$current_sonarr_key" && "$current_sonarr_key" != "None" && "$current_sonarr_key" != "" ]] && sonarr_connected=true
@@ -173,7 +175,10 @@ conn = sqlite3.connect('$bazarr_db')
 rows = conn.execute('SELECT COUNT(*) FROM table_languages_profiles').fetchone()[0]
 conn.close()
 print(rows)
-" 2>/dev/null || echo "0")
+" 2>/dev/null) || {
+            log_warn "Could not read Bazarr language profiles"
+            return 1
+        }
 
         if [[ "$profile_exists" -gt 0 ]]; then
             log_skip "Language profile already exists"

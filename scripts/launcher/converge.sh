@@ -53,7 +53,7 @@ converge_mediastack_state() {
     # MEDIASTACK_UFW_AFTER_RULES) and firewall.sh's UFW cleanup come from hardening.sh.
     [[ -v MEDIASTACK_ADMIN_FILTER_DROPIN ]] && type ufw_remove_legacy_beszel_rule &>/dev/null \
         || source "$SCRIPT_DIR/scripts/setup/hardening.sh"
-    # The Beszel step parses the hub's replies with json_get/json_path.
+    # The service modules load their HTTP dependencies; qBittorrent also uses JSON.
     type json_get &>/dev/null || source "$SCRIPT_DIR/scripts/lib/json.sh"
     type qbt_narrow_legacy_whitelist &>/dev/null || source "$SCRIPT_DIR/scripts/services/qbittorrent/main.sh"
     type beszel_converge_local_system &>/dev/null || source "$SCRIPT_DIR/scripts/services/beszel/main.sh"

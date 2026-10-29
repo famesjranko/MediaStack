@@ -46,6 +46,8 @@ reset_fixture() {
     SKIP_MESSAGES=()
     SAVED_KEYS=()
     CHECK_HTTP="204"
+    AUTH_HTTP=200
+    rm -f "$TMP_DIR/renamed"
     AUTH_BODY='{"jwt":"test-jwt"}'
     ENDPOINTS_BODY='[]'
     TOKEN_BODY='{"rawAPIKey":"portainer-api-key"}'
@@ -84,17 +86,23 @@ curl() {
     elif $is_auth; then
         if [[ "$all_args" == *'"Username": "admin"'* ]]; then
             printf '%s' "${LEGACY_AUTH_BODY:-$AUTH_BODY}"
+            [[ "$*" != *'%{http_code}'* ]] || printf '\n200'
         else
-            printf '%s' "$AUTH_BODY"
+            if [[ -e "$TMP_DIR/renamed" ]]; then
+                printf '{"jwt":"renamed-jwt"}\n200'
+            else
+                printf '%s\n%s' "$AUTH_BODY" "$AUTH_HTTP"
+            fi
         fi
     elif $is_token; then
-        printf '%s' "$TOKEN_BODY"
+        printf '%s\n200' "$TOKEN_BODY"
     elif $is_user_update; then
+        touch "$TMP_DIR/renamed"
         printf '%s\n200' "${USER_UPDATE_BODY:-'{\"Id\":1,\"Username\":\"mediaadmin\",\"Role\":1}'}"
     elif $is_endpoint_create; then
         printf '%s' "$EP_HTTP"
     elif $is_endpoints; then
-        printf '%s' "$ENDPOINTS_BODY"
+        printf '%s\n200' "$ENDPOINTS_BODY"
     fi
     return 0
 }
@@ -103,9 +111,9 @@ reset_fixture
 AUTH_BODY='{}'
 configure_portainer
 rc=$?
-assert_eq "0" "$rc" "Portainer empty JWT remains non-fatal"
+assert_eq "1" "$rc" "Portainer incomplete authentication response fails the step"
 warn_log=$(printf '%s\n' "${WARN_MESSAGES[@]}")
-assert_contains "$warn_log" "Portainer authentication did not return a JWT" \
+assert_contains "$warn_log" "Portainer authentication returned an incomplete response" \
     "Portainer empty JWT logs warning"
 assert_contains "$warn_log" "endpoint/API-token setup skipped" \
     "Portainer empty JWT warning names skipped setup"
@@ -126,7 +134,8 @@ assert_contains "${OK_MESSAGES[*]:-}" "Portainer local Docker endpoint created" 
     "Portainer valid JWT logs endpoint creation"
 
 reset_fixture
-AUTH_BODY='{}'
+AUTH_BODY='{"message":"unauthorized"}'
+AUTH_HTTP=401
 LEGACY_AUTH_BODY='{"jwt":"legacy-jwt"}'
 configure_portainer
 rc=$?

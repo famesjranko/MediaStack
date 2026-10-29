@@ -75,6 +75,8 @@ configure_jellyfin_networking() {
         return 0
     fi
 
+    json_check "Jellyfin network config" :object AutoDiscovery:boolean KnownProxies:array 'KnownProxies[]:string' PublishedServerUriBySubnet:array 'PublishedServerUriBySubnet[]:string' <<<"$current_config" || return 1
+
     local domain="${DOMAIN:-}"
     local remote_state="${REMOTE_WEB_STATE:-}"
     local host_addr="${HOST_ADDRESS:-localhost}"

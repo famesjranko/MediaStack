@@ -13,8 +13,9 @@ scripts/
 ├── configure.sh              # thin entrypoint: env load, lib+service sourcing, main() orchestration
 ├── lib/
 │   ├── common.sh             # colours, logging, cfg_* YAML readers, api_get/api_post/api_put, curl_basic_auth/curl_data_stdin (secrets on stdin, never argv), *_api_key helpers
-│   ├── http.sh               # wait_for_service, http_json_body, http_json_post (cookie-session POST with body capture), http_check_data (secret-bearing body on stdin)
-│   ├── json.sh               # json_get, json_path, json_has_name, json_array_nonempty
+│   ├── http-request.sh       # shared bounded curl transport and HTTP status handling
+│   ├── http.sh               # wait_for_service, http_json_body, http_json_post (cookie-session POST with body capture), http_check_data (secret-bearing body on stdin), http_json_request (bounded request with required response fields)
+│   ├── json.sh               # json_get, json_path, json_has_name, json_array_nonempty, json_require
 │   └── arr/
 │       ├── main.sh           # configure_quality_profile, configure_quality_definitions, configure_arr_custom_formats, configure_arr_format_scores, configure_arr_indexers, configure_arr_disk_threshold
 │       ├── custom_formats.yml         # curated TRaSH Guides format definitions
@@ -69,10 +70,14 @@ All are parsed fresh each call — no caching. For a file this small it doesn't 
 
 ## API / service helpers
 
-Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (service readiness + response-capture POSTs):
+`lib/common.sh` loads the shared transport in `lib/http-request.sh` and the response validators in `lib/json.sh`. `lib/http.sh` adds service readiness and JSON requests.
+
+Service requests use `http_curl`: a 10-second connection limit, a 45-second total limit, and no automatic retries. A caller can set a shorter probe limit. Writes are not replayed because a lost response can hide a completed write.
+
+Before a read authorizes a write, the caller declares its required fields and types with `json_check`, `api_get`, or `http_json_request`. Validation checks root objects or arrays, nested fields, every array member, and dictionary values. Missing required fields fail. Null is accepted only for explicitly nullable fields. An upstream optional field has a trailing `?` and is checked when present: the *arr APIs omit null size limits for unlimited qualities. Validation never fills in values. Valid empty inventories and real false or zero values remain valid. `json_get` and `json_path` extract required scalars; they do not supply defaults. An unreadable inventory or incomplete settings response warns and stops dependent work. Independent service steps can continue.
 
 - `wait_for_service NAME URL` in `scripts/lib/http.sh` — 90-second curl loop; used by `main()` for initial waits and later service readiness checks.
-- `api_get URL KEY` / `api_post URL KEY BODY` / `api_put URL KEY BODY` in `scripts/lib/common.sh` — curl wrappers for *arr APIs with `X-Api-Key` header. `api_put` is used by `configure_quality_definitions` to update individual quality definitions; `api_post` for everything else.
+- `api_get URL KEY [FIELD:TYPE …]` / `api_post URL KEY BODY` / `api_put URL KEY BODY` in `scripts/lib/common.sh` — wrappers for *arr APIs with `X-Api-Key` header. `api_get` validates the declared response fields before returning the body.
 - `api_get_key PATH` in `scripts/lib/common.sh` — regex-extract `<ApiKey>` from Sonarr/Radarr `config.xml`.
 - `api_get_jackett_key` in `scripts/lib/common.sh` — JSON parse `config/jackett/Jackett/ServerConfig.json`.
 - `env_save_api_key NAME VALUE` in `scripts/lib/common.sh` — `sed -i` writes into `.env`, logs if changed. Also `export` so later steps in the same invocation see the new value without re-sourcing.
@@ -87,7 +92,7 @@ Split across `lib/common.sh` (auth + API key management) and `lib/http.sh` (serv
 
 Portainer CE is distroless (no shell, no curl inside the container), so all configuration happens via external API calls.
 
-**Admin creation:** Check `GET /api/users/admin/check` — HTTP 204 means admin exists (skip), 404 means no admin yet (create), anything else (e.g. init timeout) triggers a `docker restart portainer` to reset the 5-minute admin creation window (Portainer locks itself if no admin is created within 5 minutes of first start).
+**Admin creation:** Check `GET /api/users/admin/check` — HTTP 204 means admin exists (skip), 404 means no admin yet (create). Any other result stops setup before a restart or write. If Portainer's initial setup window expired, restart Portainer and re-run setup as the warning directs.
 
 Create admin via `POST /api/users/admin/init` with `{"Username": "<JELLYFIN_ADMIN_USER>", "Password": "<shared password>"}`. The payload is built via `python3 json.dumps` (not a template) so usernames/passwords with JSON-special characters are properly escaped. HTTP 200 = created, 409 = already exists. If a prior run created Portainer's first admin as `admin`, `configure.sh` authenticates with the shared password and renames user ID 1 to `JELLYFIN_ADMIN_USER` so the login matches the rest of the stack.
 
@@ -222,7 +227,7 @@ Dedup by case-insensitive exact name match. Each addition is `POST /api/v3/index
 
 ## Step 6 — Jellyfin (`configure_jellyfin` in `scripts/services/jellyfin/main.sh`)
 
-**Two paths selected by whether `/Startup/Configuration` returns anything:**
+**Two paths selected by `StartupWizardCompleted` from `GET /System/Info/Public`:** false permits first-time setup; true selects authentication. A failed request, malformed response, missing flag or non-boolean flag stops Jellyfin configuration before any write.
 
 ### Path A: wizard not yet run
 
@@ -235,7 +240,7 @@ Dedup by case-insensitive exact name match. Each addition is `POST /api/v3/index
 
 ### Path B: wizard already completed
 
-Skip straight to `POST /Users/AuthenticateByName`, use the session token to find or create a permanent MediaStack API key, and fall through to server name / library sync. Save the session token as `JELLYFIN_API_KEY` only if permanent-key creation fails.
+Skip straight to `POST /Users/AuthenticateByName`, use the session token to find or create a permanent MediaStack API key, and fall through to server name / library sync. A failed permanent-key read or creation warns and leaves the saved key unchanged.
 
 ### `configure_jellyfin_server_name` (in `scripts/services/jellyfin/server.sh`)
 
@@ -387,13 +392,17 @@ Beszel is part of the default stack. When selected, `configure.sh` waits for its
 
 **Auth:** `POST /api/collections/users/auth-with-password` with `NPM_ADMIN_EMAIL` / `JELLYFIN_ADMIN_PASSWORD`. The hub auto-creates this user from `USER_EMAIL`/`USER_PASSWORD` env vars on first container start — no API call needed for initial user creation.
 
+**Superuser repair:** Probe `POST /api/collections/_superusers/auth-with-password` first. A valid successful response leaves credentials unchanged. Only PocketBase's explicit HTTP 400 `Failed to authenticate.` response permits CLI repair. Transport failures, other HTTP errors, malformed responses and unrelated HTTP 400 responses stop the step without changing credentials.
+
+**Response checks:** Beszel uses the shared `http_json_request` policy described above. Login requires `token` and `record.id`; key retrieval requires `key`; the systems list requires `items` and each record's `id`, `name`, `host`, and `port`. An empty `items` array is valid. An unreadable list leaves the system unchanged.
+
 **SSH key retrieval:** `GET /api/beszel/getkey` with Bearer auth returns the hub's ed25519 public key. This key is stable across restarts (generated once, persisted in `/beszel_data`). Saved to `.env` as `BESZEL_AGENT_KEY` via `env_save_api_key`.
 
-**Agent recreate:** When the key changes, `docker compose up -d beszel-agent` recreates the agent container with the new `KEY` env var. `docker restart` would NOT pick up the new key (same pattern as the Unpackerr recreate at the end of `main()`).
+**Agent recreate:** `docker compose up -d beszel-agent` applies the saved `KEY` on each run. Compose leaves an unchanged agent alone. This also retries a recreate that failed after an earlier run saved the key. A failed recreate warns and fails the Beszel step. `docker restart` would NOT pick up the new key (same pattern as the Unpackerr recreate at the end of `main()`).
 
 **System registration:** `POST /api/collections/systems/records` with `{name: "MediaStack", host: "/beszel_data/socket/beszel.sock", users: [user_id]}`. The agent listens on that unix socket (`LISTEN=/beszel_socket/beszel.sock`, the same `./config/beszel/socket` directory), not on a TCP port: with host networking a port would be open on every host interface. The `users` field is an **array** of user IDs, not a single string — a single string silently fails.
 
-**Idempotency:** Skip key save if `.env` already has the correct key. Skip system registration if the "MediaStack" system already uses the socket. An existing install's entry that is exactly `host.docker.internal` port `45876` (MediaStack's old entry) is `PATCH`ed to the socket, on configure and on the converge action after an update (`beszel_converge_local_system`); a "MediaStack" entry with any other host or port is user state and is reported with `log_drift`, never rewritten. Graceful failure on auth (`log_warn` + `return 0`) — hub may still be initializing on first run.
+**Idempotency:** Skip key save if `.env` already has the correct key. Skip system registration if the "MediaStack" system already uses the socket. An existing install's entry that is exactly `host.docker.internal` port `45876` (MediaStack's old entry) is `PATCH`ed to the socket, on configure and on the converge action after an update (`beszel_converge_local_system`); a "MediaStack" entry with any other host or port is user state and is reported with `log_drift`, never rewritten. A failed request or incomplete response logs a warning and fails the Beszel step. Re-run setup after the hub finishes initializing.
 
 ## Unpackerr restart (end of `main()` in `scripts/configure.sh`)
 

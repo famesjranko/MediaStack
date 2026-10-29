@@ -140,6 +140,7 @@ function emit(socket, event, ...args) {
     }
 
     try {
+        if (typeof needSetup !== \"boolean\") throw new Error(\"Invalid needSetup response\");
         if (needSetup) {
             const setupRes = await emit(socket, \"setup\", user, pw);
             if (!setupRes || !setupRes.ok) {
@@ -155,6 +156,15 @@ function emit(socket, event, ...args) {
         const loginRes = await emit(socket, \"login\", { username: user, password: pw });
         if (!loginRes.ok) throw new Error(\"Auth failed: \" + (loginRes.msg || \"unknown\"));
         const existingMonitors = await monitorListP;
+        if (monitorListTimedOut) throw new Error(\"monitorList event timed out; monitors left unchanged\");
+        function checkMonitors(list) {
+            if (!list || typeof list !== \"object\" || Array.isArray(list)) throw new Error(\"Invalid monitorList response\");
+            for (const m of Object.values(list)) {
+                if (!m || !Number.isInteger(m.id) || typeof m.name !== \"string\" || typeof m.type !== \"string\") throw new Error(\"Invalid monitor record\");
+                if (m.type === \"http\" && (typeof m.url !== \"string\" || !m.url)) throw new Error(\"Missing HTTP monitor URL\");
+            }
+        }
+        checkMonitors(existingMonitors);
 
         await emit(socket, \"setSettings\", { checkUpdate: false }, pw);
 
@@ -165,7 +175,6 @@ function emit(socket, event, ...args) {
         }
 
         const created = [], skipped = [], errors = [];
-        if (monitorListTimedOut) errors.push(\"monitorList event timed out - duplicate monitors possible on re-run\");
         for (const mon of monitorsInput) {
             if (existingUrls.has(mon.url)) { skipped.push(mon.name); continue; }
             try {
@@ -181,11 +190,12 @@ function emit(socket, event, ...args) {
         }
 
         const refreshP = new Promise((resolve) => {
-            const timer = setTimeout(() => { errors.push(\"monitorList refresh timed out\"); resolve({}); }, 10000);
+            const timer = setTimeout(() => resolve(null), 10000);
             socket.once(\"monitorList\", (list) => { clearTimeout(timer); resolve(list); });
         });
         await emit(socket, \"getMonitorList\");
         const allMonitors = await refreshP;
+        checkMonitors(allMonitors);
 
         const managedUrls = new Set(monitorsInput.map((m) => m.url));
         const managedIds = Object.keys(allMonitors).filter((id) => {
@@ -203,7 +213,7 @@ function emit(socket, event, ...args) {
                 name: \"Services\",
                 monitorList: managedIds.map((id) => ({ id }))
             }]);
-            if (spRes && !spRes.ok) errors.push(\"Status page: \" + (spRes.msg || \"save failed\"));
+            if (!spRes || !spRes.ok) errors.push(\"Status page: \" + (spRes.msg || \"save failed\"));
         } catch (e) { errors.push(\"Status page: \" + e.message); }
 
         socket.disconnect();
@@ -234,6 +244,8 @@ function emit(socket, event, ...args) {
         log_warn "Uptime Kuma: $err"
         return 0
     fi
+
+    json_check "Uptime Kuma result" created:array skipped:array errors:array <<<"$result" || return 1
 
     # Parse results
     local created skipped_list error_list

@@ -8,38 +8,27 @@ save_jellyfin_api_key() {
     local jf_url="$1" session_token="$2" auth_header="$3"
     local auth="$auth_header, Token=\"$session_token\""
 
-    # Check if a MediaStack key already exists
-    local existing_key
-    existing_key=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/Auth/Keys" 2>/dev/null \
-        | python3 -c "
-import sys,json
-items = json.load(sys.stdin).get('Items',[])
-keys = [k['AccessToken'] for k in items if k.get('AppName')=='MediaStack']
-print(keys[0] if keys else '')" 2>/dev/null || echo "")
-
+    local keys existing_key new_key
+    keys=$(http_json_request "Jellyfin API keys" GET "$jf_url/Auth/Keys" "" Authorization "$auth" \
+        'Items[].AppName:string' 'Items[].AccessToken:string') || return 1
+    existing_key=$(python3 -c '
+import json, sys
+print(next((k["AccessToken"] for k in json.load(sys.stdin)["Items"] if k["AppName"] == "MediaStack"), ""))' <<<"$keys") || return 1
     if [[ -n "$existing_key" ]]; then
         env_save_api_key "JELLYFIN_API_KEY" "$existing_key"
-        return 0
+        return $?
     fi
-
-    # Create a new permanent key
-    curl_header_stdin "Authorization" "$auth" -sf -X POST "$jf_url/Auth/Keys?app=MediaStack" \
-        >/dev/null 2>&1
-
-    local new_key
-    new_key=$(curl_header_stdin "Authorization" "$auth" -sf "$jf_url/Auth/Keys" 2>/dev/null \
-        | python3 -c "
-import sys,json
-items = json.load(sys.stdin).get('Items',[])
-keys = [k['AccessToken'] for k in items if k.get('AppName')=='MediaStack']
-print(keys[0] if keys else '')" 2>/dev/null || echo "")
-
-    if [[ -n "$new_key" ]]; then
-        env_save_api_key "JELLYFIN_API_KEY" "$new_key"
-    else
-        log_warn "Could not create permanent Jellyfin API key, saving session token"
-        env_save_api_key "JELLYFIN_API_KEY" "$session_token"
+    http_check_auth "Jellyfin API key creation" Authorization "$auth" -X POST "$jf_url/Auth/Keys?app=MediaStack" >/dev/null || return 1
+    keys=$(http_json_request "Jellyfin API keys after creation" GET "$jf_url/Auth/Keys" "" Authorization "$auth" \
+        'Items[].AppName:string' 'Items[].AccessToken:string') || return 1
+    new_key=$(python3 -c '
+import json, sys
+print(next((k["AccessToken"] for k in json.load(sys.stdin)["Items"] if k["AppName"] == "MediaStack"), ""))' <<<"$keys") || return 1
+    if [[ -z "$new_key" ]]; then
+        log_warn "Jellyfin did not return the created permanent API key"
+        return 1
     fi
+    env_save_api_key "JELLYFIN_API_KEY" "$new_key"
 }
 
 configure_jellyfin_libraries() {
@@ -48,8 +37,10 @@ configure_jellyfin_libraries() {
 
     local existing_libs
     if ! existing_libs=$(api_fetch_auth "Jellyfin libraries" "Authorization" "$auth" "$jf_url/Library/VirtualFolders"); then
-        existing_libs="[]"
+        return 1
     fi
+
+    json_check "Jellyfin libraries" :array '[].Name:string' '[].Locations:array' '[].Locations[]:string' <<<"$existing_libs" || return 1
 
     # Add libraries from config.yml. On re-run with an existing library whose
     # path has drifted, warn but do not re-root — Jellyfin has no path-rename

@@ -14,9 +14,9 @@ _stage2_le_ready_hosts() {
         [[ -z "$cert_id" || "$cert_id" == "0" ]] && continue
         host_json=$(npm_remote_host_json_by_fqdn "$hosts" "$fqdn")
         [[ -z "$host_json" ]] && continue
-        host_id=$(echo "$host_json" | npm_remote_json_field id)
-        host_cert_id=$(echo "$host_json" | npm_remote_json_field certificate_id 0)
-        host_enabled=$(echo "$host_json" | npm_remote_json_field enabled False)
+        host_id=$(echo "$host_json" | json_get id)
+        host_cert_id=$(echo "$host_json" | json_get certificate_id) || return 1
+        host_enabled=$(echo "$host_json" | json_get enabled) || return 1
         [[ "$host_enabled" =~ ^(True|true)$ ]] || continue
         [[ "$host_cert_id" == "$cert_id" ]] || continue
         npm_remote_proxy_conf_renders "$host_id" "$fqdn" "$cert_id" || continue
