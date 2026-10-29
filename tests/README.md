@@ -1129,6 +1129,23 @@ same safety archive, restore the installed image and torrent state, pass real
 login, and clear the pending recovery. Docker and authentication are not stubbed.
 The host unit `revert-interrupted` covers the other interruption boundaries.
 
+## WireGuard migration scenario
+
+`./tests/run.sh wireguard-upgrade` boots and configures the accepted WireGuard
+image, seeds enabled and disabled peers, and records API state, client exports
+and loaded kernel configuration. It runs `scripts/update.sh`, compares before
+repair, then reconfigures and compares again. A baseline-only run forces
+recreation and earns no candidate receipt. Exact candidate digests use the
+same `MS_TEST_IMAGE_OVERRIDES` input as other scenarios. Run `wireguard` and
+`wireguard-upgrade` with `--reset-between` for the manifest's combined evidence.
+The fixture's unit suite is `tests/unit/wireguard-state.sh`.
+
+This fixture changes non-WireGuard service profiles only in the disposable repo
+copy, so the real update script starts only WireGuard. Use it in a battery with
+`--reset-between` so the next scenario receives pristine compose files. It does
+not prove a real client handshake or public remote access; WireGuard remains
+held for those checks.
+
 ## Focused staged-setup scenarios
 
 Use these when changing staged setup, recovery hooks, demo mode, destructive reinstall, or fail2ban filters:
