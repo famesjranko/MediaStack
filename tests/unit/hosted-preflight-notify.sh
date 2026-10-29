@@ -51,6 +51,20 @@ HELD = {"bazarr": "subtitle database migration is not covered"}
 
 
 class Notify(unittest.TestCase):
+    def test_npm_report_names_the_remote_command_and_keeps_other_gaps_visible(self):
+        # Given held NPM and WireGuard digests plus the permanent FlareSolverr hold.
+        pending = {"npm": "proxy migration", "wireguard": "peer migration",
+                   "flaresolverr": "no solve oracle"}
+
+        # When the weekly status report renders the next steps.
+        text = report(pending)
+
+        # Then it names the implemented NPM command and reports the other proof gaps.
+        self.assertIn("tests/gcp-vm/run-candidate.sh npm --plan <plan.json>", text)
+        self.assertIn("remote-image-preflight.md", text)
+        self.assertIn("held: peer migration; remote proof pending", text)
+        self.assertIn("| flaresolverr | held: no solve oracle |", text)
+
     def test_alert_comments_only_on_a_new_drift_set(self):
         _, body = alert([("bazarr", "1"), ("sonarr", "2")])
         for name, changed, expected in (

@@ -147,7 +147,8 @@ def preflight_ok(pf):
         return True
     if pf.startswith("scenario:"):
         names = scenarios_of(pf)
-        return all(name and os.path.isfile(os.path.join(REPO, "tests/scenarios", name + ".sh"))
+        return all(name and os.path.isfile(os.path.join(REPO, "tests/gcp-vm/run-candidate.sh"
+                   if name == "remote-gcp" else "tests/scenarios/" + name + ".sh"))
                    for name in names)
     if pf.startswith("unit:"):
         return os.path.isfile(os.path.join(REPO, pf.split(":", 1)[1]))
@@ -195,6 +196,7 @@ SCENARIO_COVERAGE = {
     "bazarr":         {"services": {"bazarr"}},
     "unpackerr":      {"services": {"unpackerr"}},
     "npm-heal":       {"services": {"npm"}},
+    "remote-gcp":     {"services": {"npm"}},
     "wireguard":      {"services": {"wireguard"}},
     "fail2ban-drift": {"services": {"fail2ban"}},
     "ddns-seed":      {"services": {"ddns-updater"}},

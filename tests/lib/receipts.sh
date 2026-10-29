@@ -4,6 +4,8 @@
 # A receipt row in tests/.image-preflight-passed.tsv lets scripts/image_drift.py accept
 # a digest. Format v2, tab separated:
 #   service image digest scenario source run_id arch recorded_at_utc
+# Operator-run remote v3 adds plan_hash before recorded_at_utc. RECEIPTS_LOCAL=1
+# uses the host Docker daemon through the same event verdict and image inspection.
 # `source` is the host checkout's HEAD at run start, with a `-dirty` suffix when the
 # tree had uncommitted or untracked changes, or `unknown` without git; `run_id` is one
 # id per tests/run.sh invocation. Both bind the evidence to a revision and a run, so an
@@ -38,7 +40,22 @@ _RCPT_RUN_ID_RE='^run-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$'
 
 _rcpt_say() { echo -e "${BLUE:-}[receipts]${NC:-} $*" >&2; }
 
-_rcpt_dind() { timeout "$RECEIPTS_TIMEOUT" docker exec "$DIND_NAME" "$@"; }
+_rcpt_dind() {
+    if [[ "${RECEIPTS_LOCAL:-0}" == 1 ]]; then
+        timeout "$RECEIPTS_TIMEOUT" "$@"
+    else
+        timeout "$RECEIPTS_TIMEOUT" docker exec "$DIND_NAME" "$@"
+    fi
+}
+
+_rcpt_recorder_spawn() {
+    local cmd="echo \$\$ >'$RECEIPTS_PID'; exec docker events --format '{{json .}}' --filter type=container --filter type=volume >>'$RECEIPTS_EVENTS' 2>&1"
+    if [[ "${RECEIPTS_LOCAL:-0}" == 1 ]]; then
+        sh -c "$cmd" </dev/null >/dev/null 2>&1 &
+    else
+        docker exec -d "$DIND_NAME" sh -c "$cmd"
+    fi
+}
 
 # Parse MS_TEST_IMAGE_OVERRIDES into the RECEIPTS_* maps. Tag-only refs carry no digest
 # to vouch for and are skipped. Commas, tabs and newlines separate tokens. A token with no
@@ -96,11 +113,11 @@ receipts_run_identity() {
 _rcpt_sync() {
     local name="ms-receipt-sync-$$-$((++_RCPT_SEQ))" waited=0
     if ! _rcpt_dind sh -c "kill -0 \"\$(cat '$RECEIPTS_PID')\"" >/dev/null 2>&1; then
-        _rcpt_say "event recorder is not running in $DIND_NAME"
+        _rcpt_say "event recorder is not running in ${DIND_NAME:-local host}"
         return 1
     fi
     if ! _rcpt_dind docker volume create "$name" >/dev/null 2>&1; then
-        _rcpt_say "cannot create the sync marker in $DIND_NAME"
+        _rcpt_say "cannot create the sync marker in ${DIND_NAME:-local host}"
         return 1
     fi
     while ((waited < RECEIPTS_TIMEOUT)); do
@@ -122,7 +139,7 @@ receipts_recorder_start() {
     ((${#RECEIPTS_REF[@]})) || return 0
     receipts_run_identity || return 0
     if _rcpt_dind sh -c ": >'$RECEIPTS_EVENTS'" \
-        && docker exec -d "$DIND_NAME" sh -c "echo \$\$ >'$RECEIPTS_PID'; exec docker events --format '{{json .}}' --filter type=container --filter type=volume >>'$RECEIPTS_EVENTS' 2>&1" \
+        && _rcpt_recorder_spawn \
         && sleep 1 && _rcpt_sync; then
         RECEIPTS_ACTIVE=1
         _rcpt_say "run id: $RECEIPTS_RUN_ID (source $RECEIPTS_SOURCE, $RECEIPTS_ARCH)"
@@ -231,13 +248,22 @@ PY
 # are identical when their evidence columns (everything but recorded_at_utc) match;
 # the timestamp only says when. A new or empty file gets the v2 header first.
 receipts_append_row() {
-    local tab=$'\t' evidence
+    local tab=$'\t' evidence columns=7
     evidence="$1${tab}$2${tab}$3${tab}$4${tab}$RECEIPTS_SOURCE${tab}$RECEIPTS_RUN_ID${tab}$RECEIPTS_ARCH"
-    if [[ -f "$RECEIPTS_FILE" ]] && cut -f1-7 "$RECEIPTS_FILE" | grep -qxF -- "$evidence"; then
+    if [[ -n "${RECEIPTS_PLAN_HASH:-}" ]]; then
+        [[ "$RECEIPTS_PLAN_HASH" =~ ^[0-9a-f]{64}$ ]] || return 1
+        evidence+="${tab}$RECEIPTS_PLAN_HASH"
+        columns=8
+    fi
+    if [[ -f "$RECEIPTS_FILE" ]] && cut -f1-"$columns" "$RECEIPTS_FILE" | grep -qxF -- "$evidence"; then
         return 0
     fi
     if [[ ! -s "$RECEIPTS_FILE" ]]; then
-        printf '# MediaStack image preflight receipts v2\n# service\timage\tdigest\tscenario\tsource\trun_id\tarch\trecorded_at_utc\n' >"$RECEIPTS_FILE"
+        local version=2
+        [[ "$columns" == 8 ]] && version=3
+        printf '# MediaStack image preflight receipts v%s\n# service\timage\tdigest\tscenario\tsource\trun_id\tarch' "$version" >"$RECEIPTS_FILE"
+        [[ "$columns" == 8 ]] && printf '\tplan_hash' >>"$RECEIPTS_FILE"
+        printf '\trecorded_at_utc\n' >>"$RECEIPTS_FILE"
     fi
     printf '%s\t%s\n' "$evidence" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$RECEIPTS_FILE"
     RECEIPTS_ROWS_WRITTEN=$((RECEIPTS_ROWS_WRITTEN + 1))

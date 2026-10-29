@@ -343,7 +343,7 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 | jackett | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/jackett/main.sh + tests/assertions/jackett.sh |
 | jellyfin | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/jellyfin/main.sh + tests/assertions/jellyfin.sh + fail2ban filter (assert_fail2ban_configured) |
 | seerr | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/seerr/main.sh + tests/assertions/seerr.sh + fail2ban filter (assert_fail2ban_configured) |
-| npm | major:2 | major-gated | scenario:npm-heal | scripts/services/npm/main.sh + tests/assertions/npm.sh |
+| npm | major:2 | major-gated | scenario:remote-gcp | tests/gcp-vm/run-candidate.sh npm — accepted-to-candidate proxy and certificate migration, staging renewal and public HTTPS; [remote runbook](remote-image-preflight.md). npm-heal remains a separate recovery scenario. |
 | portainer | latest | stable | scenario:fresh-install+install-e2e | scripts/services/portainer/main.sh + tests/assertions/portainer.sh |
 | qbittorrent | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/qbittorrent/main.sh + tests/assertions/qbittorrent.sh |
 | radarr | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/radarr/main.sh + tests/assertions/radarr.sh |
