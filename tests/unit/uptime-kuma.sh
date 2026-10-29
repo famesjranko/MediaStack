@@ -188,7 +188,7 @@ STALE_TMP=$(mktemp -d)
 trap 'rm -rf "$STALE_TMP"' EXIT
 STALE_WORKER="$STALE_TMP/worker.sh"
 write_kuma_worker "$STALE_WORKER" "$STALE_TMP/unused" \
-    "printf 'KUMA_STDERR_SENTINEL\\n' >\&2; printf '{\"created\":[\"Jellyfin\"],\"skipped\":[],\"errors\":[]}\\n'" \
+    "printf 'KUMA_STDERR_SENTINEL\\n' >&2; printf '{\"created\":[\"Jellyfin\"],\"skipped\":[],\"errors\":[]}\\n'" \
     'unset -f mktemp
 mkdir /tmp/kuma-configure.err
 configure_uptime_kuma
