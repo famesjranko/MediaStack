@@ -17,6 +17,9 @@ source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 set +e
 set +u
 
+nvidia_driver_healthy() { return 1; }
+ui_section() { :; }
+
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 

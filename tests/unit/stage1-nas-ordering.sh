@@ -56,6 +56,9 @@ stop_existing_stack() { record stop_existing_stack; }
 create_data_dirs() { record create_data_dirs; }
 create_config_dirs() { record create_config_dirs; }
 generate_override() { record generate_override; }
+setup_hardening() { :; }
+setup_ufw_service_ports() { :; }
+setup_samba() { :; }
 storage_install_watchdog() { record storage_install_watchdog; }
 pull_images() { record pull_images; }
 start_stack() { record start_stack; }

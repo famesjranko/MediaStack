@@ -13,6 +13,14 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 # Read by tests/lib/assert.sh for failure labels.
 # shellcheck disable=SC2034
 CURRENT_SCENARIO="launcher-hardware"
+nvidia-smi() {
+    case "$1" in
+        --query-gpu=name) printf 'Fixture GPU\n' ;;
+        --query-gpu=driver_version) printf '550.90\n' ;;
+        *) return 1 ;;
+    esac
+}
+export -f nvidia-smi
 echo -e "${CYAN}${BOLD}▶ scenario: launcher-hardware${NC}"
 
 menu_out=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '

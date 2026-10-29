@@ -2,6 +2,8 @@
 # (_stage1_preflight_nas_choice, _stage1_final_nas_preflight, etc).
 # Sourced by tests/unit/storage.sh; inherits its preamble.
 
+# No stack is running in these storage-choice fixtures.
+docker() { [[ "$*" == 'compose ps --filter status=running --format {{.Name}}' ]]; }
 ui_log() { :; }
 ui_choose() { printf '%s\n' "Use local storage instead"; }
 storage_ensure_nfs_common() { return 0; }

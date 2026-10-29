@@ -274,6 +274,16 @@ exit 1
 SHIM
     chmod +x "$sudo_guard_dir/sudo"
     export MS_UNIT_SUDO_GUARD_LOG="$sudo_guard_log"
+    export MS_UNIT_MISSING_COMMAND_LOG="$sudo_guard_dir/missing-commands"
+    # Bash runs this handler in a separate execution environment. A file keeps
+    # failures visible across swallowed errors, pipelines and command substitutions.
+    command_not_found_handle() {
+        local location="${BASH_SOURCE[1]:-$0}:${BASH_LINENO[0]:-0}"
+        printf '%s: %s: command not found\n' "$location" "$1" >>"$MS_UNIT_MISSING_COMMAND_LOG"
+        printf '%s: %s: command not found\n' "$location" "$1" >&2
+        return 127
+    }
+    export -f command_not_found_handle
     verdict_file="$sudo_guard_dir/verdict"
     export PATH="$sudo_guard_dir:$PATH"
     for f in "${unit_tests[@]}"; do
@@ -283,7 +293,7 @@ SHIM
         # reaches EOF) fails fast instead of hanging the run.
         # stdin from /dev/null: a test must never depend on the caller's stdin
         # (an open pipe or terminal makes a stdin-reading product path hang).
-        rm -f "$verdict_file"
+        rm -f "$verdict_file" "$MS_UNIT_MISSING_COMMAND_LOG"
         MS_UNIT_VERDICT_FILE="$verdict_file" timeout 300 bash "$f" </dev/null
         rc=$?
         endgroup
@@ -296,6 +306,10 @@ SHIM
         if [[ -s "$sudo_guard_log" ]]; then
             err "unit reached real sudo" "$name: $(head -n 3 "$sudo_guard_log" | tr '\n' ';') - stub sudo in the test"
             : >"$sudo_guard_log"
+            fail=1
+        fi
+        if [[ -s "$MS_UNIT_MISSING_COMMAND_LOG" ]]; then
+            err "unit called a missing command" "$name: $(head -n 3 "$MS_UNIT_MISSING_COMMAND_LOG" | tr '\n' ';') - source or stub the dependency in $f, then run ./tests/check.sh unit"
             fail=1
         fi
         if ((rc != 0)); then

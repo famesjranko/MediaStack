@@ -20,6 +20,8 @@ source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 set +e
 set +u
 
+ui_section() { :; }
+
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -119,6 +121,7 @@ assert_eq "2" "$verify_attempts" "Stage 3 timeout performs bounded verification 
 unset -f _stage3_verify_jellyfin_encoding sleep
 unset verify_attempts sleep_calls STAGE3_ENCODING_VERIFY_TIMEOUT STAGE3_ENCODING_VERIFY_INTERVAL
 
+# Given a prepared update with controlled driver, runtime and Jellyfin checks.
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 nvidia_update_dir=$(mktemp -d)
 SCRIPT_DIR="$nvidia_update_dir"
@@ -138,26 +141,71 @@ _env_write_kv() {
 }
 _env_write_kv_warn() { :; }
 _stage3_nvidia_finalize_failure() { UPDATE_FINALIZE_FAILURES=$((UPDATE_FINALIZE_FAILURES + 1)); }
-ui_log() { :; }
+ui_log() { UPDATE_FINALIZE_LOG+="$*"$'\n'; }
 sudo() { return 0; } # finalize restarts Docker; never the real one
+docker() { return 0; }
+verify_gpu_usable() { GPU_TYPE=nvidia; }
+_stage3_apply_runtime_override() {
+    UPDATE_FINALIZE_RUNTIME=$((UPDATE_FINALIZE_RUNTIME + 1))
+    return 0
+}
+stage3_probe_capabilities() { return 0; }
+_stage3_configure_jellyfin() { return 0; }
+_stage3_wait_for_jellyfin_encoding() { return 0; }
+stage3_verify_transcode_evidence() { return 0; }
+_stage3_print_final_summary() { :; }
 UPDATE_FINALIZE_INSTALLS=0
 UPDATE_FINALIZE_PATCHES=0
 UPDATE_FINALIZE_FAILURES=0
+UPDATE_FINALIZE_RUNTIME=0
+UPDATE_FINALIZE_LOG=""
+
+# When the loaded driver differs from the prepared update.
 stage3_finalize_nvidia
+
+# Then finalization refuses to patch or reinstall that driver.
 assert_eq "0" "$UPDATE_FINALIZE_INSTALLS" "update finalization never reinstalls the driver"
 assert_eq "0" "$UPDATE_FINALIZE_PATCHES" "version mismatch never patches the loaded driver"
 assert_eq "1" "$UPDATE_FINALIZE_FAILURES" "version mismatch uses finalization failure path"
+# Given the prepared driver loads but the optional Unlock patch fails.
 nvidia_driver_version() { printf '550.90'; }
 apply_nvidia_patch() {
     UPDATE_FINALIZE_PATCHES=$((UPDATE_FINALIZE_PATCHES + 1))
     return 1
 }
+
+# When finalization checks the usable driver and configures Jellyfin.
 stage3_finalize_nvidia
+
+# Then hardware encoding completes at the stock session limit without fallback.
 assert_eq "1" "$UPDATE_FINALIZE_PATCHES" "matching update attempts the Unlock patch once"
-assert_eq "2" "$UPDATE_FINALIZE_FAILURES" "failed Unlock patch uses finalization failure path"
+assert_eq "1" "$UPDATE_FINALIZE_FAILURES" "failed Unlock patch preserves working hardware NVENC"
+assert_eq "nvidia" "$GPU_TYPE" "failed Unlock patch retains the usable GPU"
+assert_eq "complete" "$STAGE_3_GPU_STATE" "failed Unlock patch completes hardware configuration"
+assert_eq "1" "$UPDATE_FINALIZE_RUNTIME" "failed Unlock patch still configures the NVIDIA runtime"
+assert_contains "$UPDATE_FINALIZE_LOG" "stock session limit" "failed Unlock patch explains the remaining session limit"
+assert_file_absent "$SCRIPT_DIR/.nvidia-finalize-pending" "failed Unlock patch clears the completed recovery marker"
+
+# Given the same update with an unusable GPU after the driver check.
+stage3_write_nvidia_marker unlock run-update 550.90
+verify_gpu_usable() {
+    GPU_TYPE=none
+    return 1
+}
+
+# When finalization probes the GPU.
+stage3_finalize_nvidia
+
+# Then a real GPU failure still takes the fallback path before runtime configuration.
+assert_eq "2" "$UPDATE_FINALIZE_FAILURES" "unusable GPU uses finalization failure path"
+assert_eq "1" "$UPDATE_FINALIZE_RUNTIME" "unusable GPU does not configure the NVIDIA runtime"
 unset -f command nvidia-smi nvidia_driver_version install_nvidia_drivers apply_nvidia_patch \
-    _env_write_kv _env_write_kv_warn _stage3_nvidia_finalize_failure ui_log sudo
-unset UPDATE_FINALIZE_INSTALLS UPDATE_FINALIZE_PATCHES UPDATE_FINALIZE_FAILURES
+    _env_write_kv _env_write_kv_warn _stage3_nvidia_finalize_failure ui_log sudo docker \
+    verify_gpu_usable _stage3_apply_runtime_override stage3_probe_capabilities \
+    _stage3_configure_jellyfin _stage3_wait_for_jellyfin_encoding \
+    stage3_verify_transcode_evidence _stage3_print_final_summary
+unset UPDATE_FINALIZE_INSTALLS UPDATE_FINALIZE_PATCHES UPDATE_FINALIZE_FAILURES \
+    UPDATE_FINALIZE_RUNTIME UPDATE_FINALIZE_LOG
 rm -rf "$nvidia_update_dir"
 unset nvidia_update_dir
 source "$REPO_ROOT/scripts/setup/stages/stage3.sh"

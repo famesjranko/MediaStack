@@ -741,6 +741,17 @@ unrun.
 `tests/unit/<dir>/` are sourced by a parent that owns the verdict and are
 exempt.
 
+### Missing commands fail the host tier
+
+The runner exports a Bash `command_not_found_handle` that records missing
+commands in a file. It fails the host tier even if a suite ignores exit 127,
+redirects stderr, or loses the error inside a subshell, pipeline, command
+substitution or child Bash process. A passing assertion summary cannot clear
+that record. Source or stub each dependency in the fixture. To test an
+unavailable tool deliberately, use a stub that returns 127.
+`tests/unit/unit-runner.sh` proves these rejection paths and checks that a clean
+suite and an explicit failing stub still pass.
+
 ### Units run with stdin from /dev/null
 
 The runner starts every unit with `</dev/null`, so no test depends on the

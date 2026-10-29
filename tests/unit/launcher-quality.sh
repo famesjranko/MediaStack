@@ -200,7 +200,8 @@ fi
 demo_out=$(UI_DEMO=1 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
-  mkdir -p "$tmp/scripts/setup"
+  mkdir -p "$tmp/scripts/setup" "$tmp/scripts/lib"
+  ln -s "$REPO_ROOT/scripts/lib/quality-select.sh" "$tmp/scripts/lib/quality-select.sh"
   ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
   ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
   cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
@@ -217,11 +218,12 @@ STUB
   _service_is_running(){ return 0; }
   launcher_pause_for_menu(){ :; }
   _show_action_result(){ echo "RESULT rc=$1" >> "$CAPTURE"; }
-  action_change_quality </dev/null >/dev/null 2>&1
+  action_change_quality </dev/null >>"$CAPTURE" 2>&1
   echo "RETURNED"; cat "$CAPTURE"; rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$demo_out" "RETURNED" \
     "non-TTY no-change: handler terminates deterministically (no hang)"
+assert_contains "$demo_out" "Already on" "non-TTY no-change: the real picker reaches the current-cell check"
 if grep -q "CONFIGURE_CALLED" <<<"$demo_out"; then
     fail "non-TTY no-change: current cell pre-selected -> no re-push"
 else
@@ -240,7 +242,8 @@ fi
 demo_confirm=$(UI_DEMO=1 MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
   source "$REPO_ROOT/mediastack" </dev/null
   tmp=$(mktemp -d); SCRIPT_DIR="$tmp"; export CAPTURE="$tmp/cap"; : > "$CAPTURE"
-  mkdir -p "$tmp/scripts/setup"
+  mkdir -p "$tmp/scripts/setup" "$tmp/scripts/lib"
+  ln -s "$REPO_ROOT/scripts/lib/quality-select.sh" "$tmp/scripts/lib/quality-select.sh"
   ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
   ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
   cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
@@ -254,11 +257,13 @@ STUB
   _service_is_running(){ return 0; }
   launcher_pause_for_menu(){ :; }
   _show_action_result(){ echo "RESULT rc=$1" >> "$CAPTURE"; }
-  action_change_quality </dev/null >/dev/null 2>&1
+  action_change_quality </dev/null >>"$CAPTURE" 2>&1
   echo "RETURNED"; cat "$CAPTURE"; rm -rf "$tmp"
 ' 2>&1)
 assert_contains "$demo_confirm" "RETURNED" \
     "non-TTY confirm: handler terminates deterministically (no hang)"
+assert_contains "$demo_confirm" "renamed in place" "non-TTY confirm: the real picker reaches the apply confirmation"
+assert_contains "$demo_confirm" "No change." "non-TTY confirm: the real default-no confirmation declines"
 if grep -q "CONFIGURE_CALLED" <<<"$demo_confirm"; then
     fail "non-TTY confirm: default-no ui_confirm declines -> no re-push"
 else

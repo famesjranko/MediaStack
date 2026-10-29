@@ -458,31 +458,27 @@ BEST_EFFORT_CALLS=()
 ui_confirm() { return 0; }
 _uninstall_ufw() {
     BEST_EFFORT_CALLS+=(ufw)
-    return 0
 }
 _uninstall_apt() {
     BEST_EFFORT_CALLS+=(apt)
-    return 0
 }
 _uninstall_sysctl() {
     BEST_EFFORT_CALLS+=("sysctl:$1")
-    return 0
 }
 _uninstall_samba() {
     BEST_EFFORT_CALLS+=(samba)
-    return 0
 }
 nvidia_driver_gpu_uninstall() {
     BEST_EFFORT_CALLS+=(gpu)
-    return 0
+}
+remove_broken_docker_apt_source() {
+    BEST_EFFORT_CALLS+=(docker-source)
 }
 storage_uninstall_watchdog() {
     BEST_EFFORT_CALLS+=(watchdog)
-    return 0
 }
 f2b_uninstall_reload_watcher() {
     BEST_EFFORT_CALLS+=(fail2ban)
-    return 0
 }
 sudo() {
     [[ "$1" == test ]] && return 1
@@ -490,7 +486,7 @@ sudo() {
 }
 main --uninstall >/dev/null 2>&1 </dev/null
 assert_eq "1" "$?" "best-effort: invalid-ledger uninstall still reports failure"
-assert_contains "${BEST_EFFORT_CALLS[*]}" "ufw apt gpu sysctl:true samba watchdog fail2ban" "best-effort: accepted offer runs every teardown, flagged as ledger-less"
+assert_contains "${BEST_EFFORT_CALLS[*]}" "ufw apt gpu docker-source sysctl:true samba watchdog fail2ban" "best-effort: accepted offer runs every teardown, flagged as ledger-less"
 ui_confirm() { return 1; }
 BEST_EFFORT_CALLS=()
 main --uninstall >/dev/null 2>&1 </dev/null

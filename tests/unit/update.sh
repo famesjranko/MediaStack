@@ -50,6 +50,7 @@ beszel_converge_local_system() { printf 'beszel_converge_local_system\n' >> "$UP
 STUB
     cat >"$TMP_DIR/sandbox/scripts/setup/storage.sh" <<'STUB'
 storage_guard_before_start() { printf 'storage_guard_before_start\n' >> "$UPDATE_DOCKER_LOG"; }
+storage_is_nas() { return 1; }
 STUB
     cat >"$TMP_DIR/sandbox/bin/docker" <<'STUB'
 #!/usr/bin/env bash

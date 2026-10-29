@@ -27,6 +27,7 @@ PROBE_RC=0
 PROBE_STATUS=200
 
 service_container_running() { return 1; }
+storage_is_nas() { return 1; }
 curl() {
     printf '%s\n' "$*" >>"$CURL_LOG"
     printf '%s' "$PROBE_BODY"

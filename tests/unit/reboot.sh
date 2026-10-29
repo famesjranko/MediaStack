@@ -47,8 +47,10 @@ SCRIPT_DIR="$TMP_ROOT/custom checkout \${USER} 100%"
 mkdir -p "$SCRIPT_DIR" "$TMP_ROOT/home"
 
 source "$REPO_ROOT/scripts/setup/reboot.sh"
+log_ok() { :; }
 
 schedule_post_reboot >/dev/null 2>&1
+assert_eq "0" "$?" "post-reboot scheduling returns success after writing the unit"
 service_content="$(cat "$SERVICE_CAPTURE")"
 escaped_script_dir="${SCRIPT_DIR//\\/\\x5c}"
 escaped_script_dir="${escaped_script_dir//$'\t'/\\x09}"

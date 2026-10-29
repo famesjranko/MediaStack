@@ -22,6 +22,10 @@ source "$REPO_ROOT/scripts/setup/env-gen.sh"
 set +e
 set +u
 
+# Wizard rendering is outside the storage-state contracts exercised here.
+ui_box() { :; }
+ui_kv() { :; }
+
 # Keep the historical assertion order: the children are sourced, not run as
 # independent suites, so the frozen output and summary remain one suite.
 source "$STORAGE_TEST_DIR/core.sh"

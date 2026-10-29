@@ -173,6 +173,7 @@ adding the next gate.
 | No secret in reachable history | `./tests/check.sh secrets-history` — run before a push that publishes new history, not in any tier | — |
 | Shell parses, Python byte-compiles, compose renders across profiles | `./tests/check.sh unit` → `tests/unit.sh` tiers 1, 3, 5 | `unit-host` |
 | Every `tests/unit/*.sh` suite passes | `tests/unit.sh` tier 6 | `unit-host` |
+| A missing command fails the host unit tier even when the suite ignores its exit status or redirects its stderr | `tests/unit.sh` tier 6 exports a Bash missing-command recorder; `tests/unit/unit-runner.sh` proves direct, subshell, pipeline, substitution and inherited child-shell failures, with clean and deliberately failing-stub controls | `unit-host` |
 | `tests/lint.sh` checks every tracked shell file in a separate ShellCheck process, continues after findings, and bounds dispatcher imports | `tests/unit/lint-sweep.sh` | `unit-host` |
 | Wizard PTY behaviour | `./tests/check.sh wizard` → `tests/ci-scenarios.sh` + `tests/run.sh` | `wizard-ui` |
 | No private, host, or credential artifact is tracked | `tests/unit/repository-safety.sh` over `tests/lib/repo_guard.py` | `unit-host` |
