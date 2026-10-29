@@ -102,7 +102,7 @@ wireguard_add_scenario_body() {
     remote_ready_idempotent_seed_env
     remote_ready_idempotent_start_proxy_fixture || return 1
     wireguard_add_establish_ready_without_wg || return 1
-    remote_ready_idempotent_prepare_public_route_user
+    remote_ready_idempotent_prepare_public_route_user || return 1
     remote_ready_idempotent_watch_fixture_state
     dind_exec "cp config/examples/config.yml config.yml && chown mstest:mstest config.yml"
     wireguard_add_enable_ufw || {
