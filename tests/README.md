@@ -1107,6 +1107,8 @@ fixture seeds real push-monitor events on the accepted image, then checks
 heartbeat and chart history before and after reconfiguration on the candidate.
 Clearing history must fail the comparison before the scenario trusts it.
 `tests/unit/kuma-state.sh` covers lost and changed-state refusal.
+`tests/unit/kuma-socket.sh` covers the initial server-readiness handshake and
+refuses unavailable readiness or rejected credentials before collecting state.
 
 `upgrade-path` boots the accepted lock, records persistent users and settings, then
 runs the real update script against exact candidate overrides. It checks persistence,
