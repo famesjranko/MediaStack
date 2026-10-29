@@ -30,11 +30,15 @@ remote_ready_idempotent_seed_env() {
 }
 
 remote_ready_idempotent_prepare_public_route_user() {
-    if ! dind_exec "id -u mstest >/dev/null 2>&1"; then
-        dind_exec "apt-get -o Acquire::Retries=3 update >/dev/null && apt-get -o Acquire::Retries=3 install -y -qq sudo >/dev/null"
-        dind_exec "useradd -m -s /bin/bash -G docker mstest"
-        dind_exec "printf 'mstest ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/90-mediastack-mstest && chmod 440 /etc/sudoers.d/90-mediastack-mstest"
+    if ! dind_exec "command -v sudo >/dev/null 2>&1"; then
+        dind_exec "apt-get -o Acquire::Retries=3 update >/dev/null && apt-get -o Acquire::Retries=3 install -y -qq sudo >/dev/null" || return 1
     fi
+    if ! dind_exec "id -u mstest >/dev/null 2>&1"; then
+        dind_exec "useradd -m -s /bin/bash mstest" || return 1
+    fi
+    # DinD resets retain accounts; install-e2e cleanup removes its sudo grant.
+    dind_exec "usermod -aG docker mstest" || return 1
+    dind_exec "printf 'mstest ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/90-mediastack-mstest && chmod 440 /etc/sudoers.d/90-mediastack-mstest" || return 1
 
     dind_exec "chmod 755 /root && chown -R mstest:mstest /root/MediaStack /tmp/ms-data"
 }
@@ -177,7 +181,7 @@ run_scenario() {
     remote_ready_idempotent_seed_env
     remote_ready_idempotent_start_proxy_fixture || return 1
     remote_ready_idempotent_establish_ready || return 1
-    remote_ready_idempotent_prepare_public_route_user
+    remote_ready_idempotent_prepare_public_route_user || return 1
     remote_ready_idempotent_watch_fixture_state
 
     local log_path="/tmp/remote-ready-idempotent.out"

@@ -38,7 +38,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 # Additional image-free scenarios beyond the wizard-ui-* family. Add a bare
 # scenario name (no path, no .sh); it is emitted only if its file exists.
-extra_image_free=(contract-mock)
+extra_image_free=(contract-mock remote-route-user)
 
 names=()
 for f in tests/scenarios/wizard-ui-*.sh; do

@@ -354,6 +354,11 @@ Proves:
 
 ### Stage 2 remote-access scenarios
 
+`./tests/run.sh --no-preload remote-route-user` checks both remote-setup account
+fixtures with an existing `mstest` account and no sudo rule. It verifies sudo,
+Docker access, preserved UID and other groups, protected sudoers permissions,
+and repeat calls. It needs no service images and runs in the CI image-free set.
+
 Stage 2 adds WireGuard/remote-access DinD scenarios:
 
 - `stage2-skip` proves the user can skip HTTPS setup, `REMOTE_WEB_STATE=skipped` is persisted, LAN URLs remain in Jellyfin/Homepage, and public NPM proxy hosts are not published.
@@ -1033,6 +1038,9 @@ what an *earlier* scenario in the same battery left behind. It does not cover:
   `config/examples/`/`.env.example` templates — a scenario still seeds those
   itself; the reset only guarantees they're back to that pristine (absent or
   template) state, not populated.
+- **Guest accounts and files outside the repo copy.** These survive the reset.
+  Fixtures must establish required tools, group memberships, and permissions
+  even when an account already exists.
 - **Runs without `--reset-between`.** A bare `tests/run.sh a b c` (no flag)
   shares one DinD with no reset, matching the historical behavior — pick this
   only when the scenarios are known not to mutate shared state.
