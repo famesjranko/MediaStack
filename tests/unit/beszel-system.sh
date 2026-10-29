@@ -34,8 +34,14 @@ sleep() { :; }
 SYSTEMS_JSON='{"items":[]}'
 WRITE_CODE=200
 AUTH_JSON='{"token":"tok","record":{"id":"user1"}}'
+SUPERUSER_HTTP=200
+SUPERUSER_RC=0
+SUPERUSER_JSON=""
 curl_data_stdin() {
-    if [[ "$*" == *'-o /dev/null'* ]]; then
+    if [[ "$*" == *'/collections/_superusers/auth-with-password'* ]]; then
+        printf '%s\n%s' "${SUPERUSER_JSON:-$AUTH_JSON}" "$SUPERUSER_HTTP"
+        return "$SUPERUSER_RC"
+    elif [[ "$*" == *'-o /dev/null'* ]]; then
         printf '200'
     else
         printf '%s\n200' "$AUTH_JSON"
@@ -228,6 +234,36 @@ CONFIGURE_RC=$?
 assert_eq 1 "$CONFIGURE_RC" "incomplete superuser response: setup fails"
 assert_eq "" "$(cat "$DOCKER_CALLS")" "incomplete superuser response: no CLI mutation"
 AUTH_JSON='{"token":"tok","record":{"id":"user1"}}'
+
+# Given an inconclusive superuser login, including a timeout and an unrelated bad request.
+for SUPERUSER_HTTP in 000 403 429 500 503 400; do
+    SUPERUSER_JSON='{"code":400,"message":"Invalid request data."}'
+    SUPERUSER_RC=0
+    [[ "$SUPERUSER_HTTP" != 000 ]] || SUPERUSER_RC=28
+    : >"$DOCKER_CALLS"
+
+    # When setup checks whether the superuser needs repair.
+    NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw configure_beszel >/dev/null
+    CONFIGURE_RC=$?
+
+    # Then it fails without changing credentials or recreating the agent.
+    assert_eq 1 "$CONFIGURE_RC" "unknown superuser login ($SUPERUSER_HTTP): setup fails"
+    assert_eq "" "$(cat "$DOCKER_CALLS")" "unknown superuser login ($SUPERUSER_HTTP): no Docker mutation"
+done
+
+# Given PocketBase explicitly rejects the superuser credentials.
+SUPERUSER_HTTP=400 SUPERUSER_RC=0
+SUPERUSER_JSON='{"code":400,"message":"Failed to authenticate.","data":{}}'
+: >"$DOCKER_CALLS"
+
+# When setup repairs the account and configures the existing system.
+NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw configure_beszel >/dev/null
+CONFIGURE_RC=$?
+
+# Then credential repair is attempted and setup can still complete.
+assert_contains "$(cat "$DOCKER_CALLS")" "exec beszel /beszel superuser upsert admin@example.com pw" "rejected credentials: explicit rejection permits repair"
+assert_eq 0 "$CONFIGURE_RC" "rejected credentials: setup completes after repair"
+SUPERUSER_HTTP=200 SUPERUSER_JSON=""
 
 # ---------------------------------------------------------------------------
 # Converge wiring: scripts/launcher/converge.sh runs the Beszel step on update.

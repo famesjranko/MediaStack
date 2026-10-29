@@ -101,6 +101,7 @@ case "$ACTION" in
     configure_quality_profile(){ :; }; configure_quality_definitions(){ :; }; configure_arr_custom_formats(){ :; }; configure_arr_format_scores(){ :; }; configure_arr_auth(){ :; }
     "configure_$ACTION" ;;
  libraries) configure_jellyfin_libraries http://fixture fixture ;;
+ jellyfin-public) configure_jellyfin ;;
  keys) save_jellyfin_api_key http://fixture fixture fixture ;;
  server) configure_jellyfin_server_name http://fixture fixture ;;
  streaming) configure_jellyfin_streaming http://fixture fixture ;;
@@ -135,6 +136,7 @@ CASES = [
  ("radarr","/api/v3/config/naming",'{"renameMovies":false}',"PUT /api/v3/config/naming"),
  ("indexers","/api/v3/indexer","[]","POST /api/v3/indexer"),
  ("libraries","/Library/VirtualFolders","[]","POST /Library/VirtualFolders"),
+ ("jellyfin-public","/System/Info/Public",'{"StartupWizardCompleted":false}',"POST /Startup/Configuration"),
  ("keys","/Auth/Keys",'{"Items":[]}',"POST /Auth/Keys"),
  ("server","/System/Configuration",'{"ServerName":""}',"POST /System/Configuration"),
  ("streaming","/System/Configuration",'{"RemoteClientBitrateLimit":0}',"POST /System/Configuration"),

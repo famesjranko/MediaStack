@@ -227,7 +227,7 @@ Dedup by case-insensitive exact name match. Each addition is `POST /api/v3/index
 
 ## Step 6 — Jellyfin (`configure_jellyfin` in `scripts/services/jellyfin/main.sh`)
 
-**Two paths selected by whether `/Startup/Configuration` returns anything:**
+**Two paths selected by `StartupWizardCompleted` from `GET /System/Info/Public`:** false permits first-time setup; true selects authentication. A failed request, malformed response, missing flag or non-boolean flag stops Jellyfin configuration before any write.
 
 ### Path A: wizard not yet run
 
@@ -240,7 +240,7 @@ Dedup by case-insensitive exact name match. Each addition is `POST /api/v3/index
 
 ### Path B: wizard already completed
 
-Skip straight to `POST /Users/AuthenticateByName`, use the session token to find or create a permanent MediaStack API key, and fall through to server name / library sync. Save the session token as `JELLYFIN_API_KEY` only if permanent-key creation fails.
+Skip straight to `POST /Users/AuthenticateByName`, use the session token to find or create a permanent MediaStack API key, and fall through to server name / library sync. A failed permanent-key read or creation warns and leaves the saved key unchanged.
 
 ### `configure_jellyfin_server_name` (in `scripts/services/jellyfin/server.sh`)
 
@@ -391,6 +391,8 @@ Only runs when the WireGuard container is running. After a health wait, the conf
 Beszel is part of the default stack. When selected, `configure.sh` waits for its service, then calls `configure_beszel` without a running-container guard. Configures the Beszel hub+agent system resource monitor via PocketBase REST API.
 
 **Auth:** `POST /api/collections/users/auth-with-password` with `NPM_ADMIN_EMAIL` / `JELLYFIN_ADMIN_PASSWORD`. The hub auto-creates this user from `USER_EMAIL`/`USER_PASSWORD` env vars on first container start — no API call needed for initial user creation.
+
+**Superuser repair:** Probe `POST /api/collections/_superusers/auth-with-password` first. A valid successful response leaves credentials unchanged. Only PocketBase's explicit HTTP 400 `Failed to authenticate.` response permits CLI repair. Transport failures, other HTTP errors, malformed responses and unrelated HTTP 400 responses stop the step without changing credentials.
 
 **Response checks:** Beszel uses the shared `http_json_request` policy described above. Login requires `token` and `record.id`; key retrieval requires `key`; the systems list requires `items` and each record's `id`, `name`, `host`, and `port`. An empty `items` array is valid. An unreadable list leaves the system unchanged.
 

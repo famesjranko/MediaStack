@@ -382,5 +382,46 @@ else
     pass "mktemp-failure: no false 'completed successfully'"
 fi
 
+# Given the quality picker and a configurator whose live profile read fails.
+read_failure=$(MEDIASTACK_NONINTERACTIVE=1 REPO_ROOT="$REPO_ROOT" bash -c '
+  source "$REPO_ROOT/mediastack" </dev/null
+  tmp=$(mktemp -d); SCRIPT_DIR="$tmp"
+  trap '\''rm -rf "$tmp"'\'' EXIT
+  mkdir -p "$tmp/scripts/setup"
+  ln -s "$REPO_ROOT/scripts/setup/wizard_apply.py" "$tmp/scripts/setup/wizard_apply.py"
+  ln -s "$REPO_ROOT/scripts/setup/presets.yml" "$tmp/scripts/setup/presets.yml"
+  cp "$REPO_ROOT/config/examples/config.yml" "$tmp/config.yml"
+  python3 "$tmp/scripts/setup/wizard_apply.py" --quality-only \
+    --resolution 1080p --size balanced --config "$tmp/config.yml" >/dev/null
+  cat > "$tmp/scripts/configure.sh" <<"STUB"
+#!/usr/bin/env bash
+set -uo pipefail
+source "$REPO_ROOT/scripts/lib/http.sh"
+source "$REPO_ROOT/scripts/lib/arr/main.sh"
+CONFIG_FILE="$(dirname "$0")/../config.yml"
+api_get(){ log_warn "fixture: HTTP 503"; return 1; }
+for app in sonarr radarr; do
+    configure_quality_profile "$app" http://fixture fixture "[1]"
+done
+# The real configurator reports warnings and continues independent work.
+exit 0
+STUB
+  chmod +x "$tmp/scripts/configure.sh"
+  _docker_reachable(){ return 0; }
+  _service_is_running(){ return 0; }
+  quality_select_pick(){ local -n r=$1; local -n s=$2; r=720p; s=large; }
+  ui_confirm(){ return 0; }
+  launcher_pause_for_menu(){ :; }
+
+  # When the user applies a new quality profile through the real menu handler.
+  action_change_quality 2>&1
+' 2>&1)
+
+# Then both failed applications are reported without a success claim.
+assert_contains "$read_failure" "fixture: HTTP 503" "failed profile read: the configurator reaches the failure"
+assert_contains "$read_failure" "did NOT apply to: sonarr radarr" "failed profile read: both apps are reported"
+assert_not_contains "$read_failure" "completed successfully" "failed profile read: no false completion"
+assert_not_contains "$read_failure" "updated in place" "failed profile read: no false profile update"
+
 scenario_end "$CURRENT_SCENARIO"
 summary

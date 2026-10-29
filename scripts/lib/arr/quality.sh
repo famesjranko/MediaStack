@@ -32,6 +32,7 @@ configure_quality_profile() {
     local existing qp_status
     if ! existing=$(api_get "$base/qualityprofile" "$key" :array '[].id:integer' '[].name:string' '[].cutoff:integer' '[].upgradeAllowed:boolean' '[].items:array' '[].formatItems:array' '[].formatItems[].score:integer'); then
         log_warn "Could not fetch ${app^} quality profiles - skipping check"
+        _qp_record_rename_failure "$app"
         return 1
     fi
 
@@ -63,7 +64,10 @@ elif old in names:
     print("rename\t" + str(p.get("id")))
 else:
     print("absent")                       # live name drifted -> refuse to orphan
-' 2>/dev/null) || return 1
+' 2>/dev/null) || {
+            _qp_record_rename_failure "$app"
+            return 1
+        }
         case "${rename_plan%%$'\t'*}" in
             rename)
                 local old_id="${rename_plan#*$'\t'}"
@@ -74,7 +78,10 @@ oid = os.environ["OLD_ID"]
 profiles = json.load(sys.stdin)
 p = next((pp for pp in profiles if str(pp.get("id")) == oid), None)
 print(json.dumps(p) if p else "")
-' 2>/dev/null) || return 1
+' 2>/dev/null) || {
+                    _qp_record_rename_failure "$app"
+                    return 1
+                }
                 # Render new items/cutoff/name using the OLD profile as template,
                 # then merge them onto the FULL old profile so id/language and
                 # every other field survive the PUT (same as the api-matrix
@@ -102,7 +109,10 @@ merged["minFormatScore"] = rendered["minFormatScore"]
 for it in merged.get("formatItems", []):
     it["score"] = 0
 print(json.dumps(merged))
-' 2>/dev/null) || return 1
+' 2>/dev/null) || {
+                    _qp_record_rename_failure "$app"
+                    return 1
+                }
                 # PUT the rename, then verify it actually landed: the live
                 # profile must show the new name AND every formatItems score at
                 # 0. If a transient dropped write leaves any managed
@@ -196,7 +206,10 @@ if live_ids != want_ids:
     if removed: parts.append("config.yml removes " + str(removed))
     drift.append("qualities (" + ", ".join(parts) + ")")
 print("drift\t" + "; ".join(drift) if drift else "match")
-' 2>/dev/null) || return 1
+' 2>/dev/null) || {
+        _qp_record_rename_failure "$app"
+        return 1
+    }
     case "${qp_status%%$'\t'*}" in
         match)
             log_skip "$app_label quality profile '$profile_name' already matches your settings"

@@ -29,9 +29,12 @@ configure_jellyfin() {
 
     local auth_header="MediaBrowser Client=\"MediaStack\", Device=\"Setup\", DeviceId=\"mediastack-setup\", Version=\"1.0\""
 
-    # Check if setup wizard is still pending
-    local startup_info
-    startup_info=$(http_curl -sf "$jf_url/Startup/Configuration" 2>/dev/null || echo "")
+    # A failed startup endpoint does not distinguish completed setup from an
+    # unavailable server. Use Jellyfin's explicit public completion flag.
+    local startup_info startup_completed
+    startup_info=$(http_json_request "Jellyfin startup state" GET "$jf_url/System/Info/Public" \
+        "" "" "" StartupWizardCompleted:boolean) || return 1
+    startup_completed=$(json_get StartupWizardCompleted <<<"$startup_info") || return 1
 
     # Auth body is JSON-safe regardless of what's in jf_user/jf_pw — python's
     # json.dumps escapes quotes, backslashes, and control chars. The previous
@@ -39,7 +42,7 @@ configure_jellyfin() {
     local auth_body
     auth_body=$(http_json_body Username "$jf_user" Pw "$jf_pw")
 
-    if [[ -z "$startup_info" ]]; then
+    if [[ "$startup_completed" == "True" ]]; then
         # Wizard already completed — wait for the auth subsystem to become
         # ready (it lags /health by several seconds after a container
         # recreate while SQLite WAL replays), then authenticate.

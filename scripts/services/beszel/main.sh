@@ -191,22 +191,45 @@ configure_beszel() {
     # PocketBase CLI accepts it only as a positional argument, and the hub image
     # is built FROM scratch, so there is no in-container shell to expand it from
     # the environment instead. Probing keeps that path out of every normal run.
-    local su_body su_rc=0
+    local su_body su_resp su_code
     su_body=$(http_json_body identity "$admin_email" password "$admin_pw")
-    if http_json_request "Beszel superuser login" POST "$hub_url/api/collections/_superusers/auth-with-password" \
-        "$su_body" "" "" token:string record.id:string >/dev/null; then
-        log_skip "Beszel superuser already present"
-    else
-        su_rc=$?
-        # Schema drift must not trigger a credential repair through the CLI.
-        ((su_rc == 2)) && return 1
-        if docker exec beszel /beszel superuser upsert "$admin_email" "$admin_pw" >/dev/null 2>&1; then
-            log_ok "Beszel superuser ensured"
-        else
-            log_warn "Could not upsert Beszel superuser"
+    su_resp=$(curl_data_stdin "$su_body" -sS -w '\n%{http_code}' \
+        -X POST "$hub_url/api/collections/_superusers/auth-with-password" \
+        -H "Content-Type: application/json" 2>/dev/null) || {
+        log_warn "Beszel superuser login: connection failed; credentials left unchanged"
+        return 1
+    }
+    su_code="${su_resp##*$'\n'}"
+    su_resp="${su_resp%$'\n'*}"
+    case "$su_code" in
+        200)
+            json_check "Beszel superuser login" token:string record.id:string <<<"$su_resp" || return 1
+            if [[ -z "$(json_get token <<<"$su_resp")" || -z "$(json_path record.id <<<"$su_resp")" ]]; then
+                log_warn "Beszel superuser login returned an empty identity"
+                return 1
+            fi
+            log_skip "Beszel superuser already present"
+            ;;
+        400)
+            # PocketBase uses 400 for both rejected credentials and invalid
+            # requests. Only its explicit credential rejection permits repair.
+            json_check "Beszel superuser rejection" code:integer message:string <<<"$su_resp" || return 1
+            if [[ "$(json_get code <<<"$su_resp")" != 400 || "$(json_get message <<<"$su_resp")" != "Failed to authenticate." ]]; then
+                log_warn "Beszel superuser login was inconclusive; credentials left unchanged"
+                return 1
+            fi
+            if docker exec beszel /beszel superuser upsert "$admin_email" "$admin_pw" >/dev/null 2>&1; then
+                log_ok "Beszel superuser ensured"
+            else
+                log_warn "Could not upsert Beszel superuser"
+                return 1
+            fi
+            ;;
+        *)
+            log_warn "Beszel superuser login: HTTP $su_code; credentials left unchanged"
             return 1
-        fi
-    fi
+            ;;
+    esac
 
     # --- 1. Authenticate to hub ---
     _beszel_login "$hub_url" "$admin_email" "$admin_pw" || return 1

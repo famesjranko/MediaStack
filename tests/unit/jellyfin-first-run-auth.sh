@@ -22,6 +22,9 @@ BOLD='' NC=''
 JELLYFIN_ADMIN_USER="admin"
 JELLYFIN_ADMIN_PASSWORD="fixture-password"
 AUTH_MODE="reject"
+PUBLIC_INFO='{"StartupWizardCompleted":false}'
+PUBLIC_HTTP=200
+PUBLIC_RC=0
 API_KEY_SAVES=0
 FOLLOW_UP_CONFIGURATION=0
 ERROR_MESSAGES=()
@@ -55,8 +58,13 @@ curl() {
             method_next=1
             continue
         fi
-        [[ "$arg" == *'/Startup/'* ]] && endpoint="$arg"
+        [[ "$arg" == http* ]] && endpoint="$arg"
     done
+    if [[ "$endpoint" == *'/System/Info/Public' ]]; then
+        printf '%s' "$PUBLIC_INFO"
+        [[ "$*" != *'%{http_code}'* ]] || printf '\n%s' "$PUBLIC_HTTP"
+        return "$PUBLIC_RC"
+    fi
     if [[ "$endpoint" == *'/Startup/Configuration' && "$method" == GET ]]; then
         printf '{}'
         return 0
@@ -146,6 +154,51 @@ assert_contains "${OK_MESSAGES[*]}" "Admin user created: admin" \
     "first-run accepted authentication reports the created admin"
 assert_contains "${OK_MESSAGES[*]}" "Setup wizard completed" \
     "first-run accepted authentication reports wizard completion"
+
+# Given an unavailable or malformed public startup state.
+for PUBLIC_INFO in 'not JSON' null '{}' '{"StartupWizardCompleted":null}' '{"StartupWizardCompleted":"false"}'; do
+    reset_fixture
+
+    # When the configurator decides whether first-time setup is allowed.
+    configure_jellyfin >/dev/null
+    rc=$?
+
+    # Then unknown state permits neither startup writes nor follow-up changes.
+    assert_eq 1 "$rc" "unknown startup state: setup fails ($PUBLIC_INFO)"
+    assert_eq "" "$(cat "$CALLS_FILE")" "unknown startup state: no startup writes ($PUBLIC_INFO)"
+    assert_eq 0 "$FOLLOW_UP_CONFIGURATION" "unknown startup state: no follow-up changes ($PUBLIC_INFO)"
+done
+
+# Given a plausible pending-wizard body delivered by a failed request.
+PUBLIC_INFO='{"StartupWizardCompleted":false}'
+for PUBLIC_HTTP in 000 401 503; do
+    reset_fixture
+    PUBLIC_RC=0
+    [[ "$PUBLIC_HTTP" != 000 ]] || PUBLIC_RC=28
+
+    # When the configurator reads the startup state.
+    configure_jellyfin >/dev/null
+    rc=$?
+
+    # Then HTTP and transport failures cannot authorize first-time setup.
+    assert_eq 1 "$rc" "failed startup read ($PUBLIC_HTTP): setup fails"
+    assert_eq "" "$(cat "$CALLS_FILE")" "failed startup read ($PUBLIC_HTTP): no startup writes"
+done
+
+# Given an explicitly completed wizard and working stored credentials.
+reset_fixture
+PUBLIC_HTTP=200 PUBLIC_RC=0 PUBLIC_INFO='{"StartupWizardCompleted":true}'
+wait_for_jellyfin_auth() { printf '{"AccessToken":"fixture-token"}'; }
+
+# When the same configurator is run again.
+configure_jellyfin >/dev/null
+rc=$?
+
+# Then it authenticates and continues without repeating the startup writes.
+assert_eq 0 "$rc" "completed wizard: authenticated re-run succeeds"
+assert_eq "" "$(cat "$CALLS_FILE")" "completed wizard: startup is not repeated"
+assert_eq 1 "$API_KEY_SAVES" "completed wizard: permanent key setup is reached"
+assert_eq 4 "$FOLLOW_UP_CONFIGURATION" "completed wizard: follow-up configuration continues"
 
 scenario_end "$CURRENT_SCENARIO"
 summary
