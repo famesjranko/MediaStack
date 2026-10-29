@@ -178,8 +178,14 @@ def snapshot(client: StateClient) -> dict[str, Any]:
     item = movie(client)
     if not item:
         raise ValueError("Jellyfin lost the fixture movie")
-    details = client.call("jellyfin", f"/Users/{user['Id']}/Items/{item['Id']}")
-    watched = details["UserData"]
+    # Jellyfin's per-item endpoint can return stale userdata after a library
+    # mark. The bulk query reads the persisted state for the explicit user.
+    details = client.call(
+        "jellyfin", f"/Items?UserId={user['Id']}&Ids={item['Id']}&EnableUserData=true"
+    )["Items"]
+    if len(details) != 1 or details[0]["Id"] != item["Id"]:
+        raise ValueError("Jellyfin lost the fixture watch state")
+    watched = details[0]["UserData"]
     if not watched["Played"] or watched["PlayCount"] < 1:
         raise ValueError("Jellyfin lost the fixture watch state")
     row = torrent(client)

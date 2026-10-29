@@ -86,8 +86,9 @@ SERVICES = {
     "8096/System/Configuration/encoding": {"EnableHardwareEncoding": False},
     "8096/System/Configuration/network": {"EnableIPv6": False},
     "8096/Items": {"Items": [{"Id": "m1", "Path": module.upgrade_media.MOVIE_PATH}]},
-    "8096/Users/u2/Items/m1": {"UserData": {"Played": True, "PlayCount": 1,
-                                           "PlaybackPositionTicks": 0, "LastPlayedDate": "2020-01-02T03:04:05Z"}},
+    "8096/Users/u2/Items/m1": {"UserData": {"Played": False, "PlayCount": 0}},
+    "8096/Items?EnableUserData=true&Ids=m1&UserId=u2": {"Items": [{"Id": "m1", "UserData": {"Played": True, "PlayCount": 1,
+                                           "PlaybackPositionTicks": 0, "LastPlayedDate": "2020-01-02T03:04:05Z"}}]},
     "8096/Auth/Keys": {"Items": [{"AppName": "MediaStack", "AccessToken": "test-key"},
                                  {"AppName": module.FIXTURE_KEY_APP, "AccessToken": "k" * 32}]},
     "5055/api/v1/auth/me": {"id": 1},
@@ -150,7 +151,9 @@ class Opener:
         if url.endswith("/auth/login"):
             return Response(self.status, self.body)
         parts = urllib.parse.urlsplit(url)
-        answer = self.routes.get(f"{parts.port}{parts.path}", {"fixture": True})
+        query = urllib.parse.urlencode(sorted(urllib.parse.parse_qsl(parts.query)))
+        answer = self.routes.get(f"{parts.port}{parts.path}?{query}",
+                                 self.routes.get(f"{parts.port}{parts.path}", {"fixture": True}))
         if isinstance(answer, Late):
             answer = answer.answers.pop(0)
         if isinstance(answer, int):
@@ -335,6 +338,8 @@ class SecretFreeSnapshot(unittest.TestCase):
         self.assertEqual(actual["credentials"], expected)
         # And the Jellyfin connection is recorded without its masked apiKey.
         self.assertNotIn("apiKey", actual["sonarr/notification"][0])
+        # And the bulk user read preserves watch state despite the stale per-item response.
+        self.assertTrue(actual["jellyfin/watch-state"]["Played"])
         # And no API key or token reaches the snapshot text.
         self.assertFalse([s for s in state.secrets if s != PASSWORD and s in json.dumps(actual)])
 
@@ -365,7 +370,7 @@ class ComparisonContract(unittest.TestCase):
             "seerr/jellyfin": mutated("5055/api/v1/settings/jellyfin", lambda a: a.update(hostname="wrong-server")),
             "seerr/network": mutated("5055/api/v1/settings/network", lambda a: a.update(trustProxy=False)),
             "seerr/requests": mutated("5055/api/v1/request", lambda a: a["results"][0].update(status=1)),
-            "jellyfin/watch-state": mutated("8096/Users/u2/Items/m1", lambda a: a["UserData"].update(PlayCount=2)),
+            "jellyfin/watch-state": mutated("8096/Items?EnableUserData=true&Ids=m1&UserId=u2", lambda a: a["Items"][0]["UserData"].update(PlayCount=2)),
             "qbittorrent/torrent": mutated("8080/api/v2/torrents/info", lambda a: a[0].update(dl_limit=0)),
             "qbittorrent/files": mutated("8080/api/v2/torrents/files", lambda a: a[0].update(priority=0)),
             "sonarr/episode": mutated("8989/api/v3/episode", lambda a: a[0].update(title="reset")),
@@ -399,7 +404,7 @@ class ComparisonContract(unittest.TestCase):
             "radarr.*history": {"7878/api/v3/history": {"records": []}},
             "Seerr.*request": {"5055/api/v1/request": {"results": []}},
             "Sonarr.*episode": {"8989/api/v3/episode": []},
-            "watch state": mutated("8096/Users/u2/Items/m1", lambda a: a["UserData"].update(Played=False)),
+            "watch state": mutated("8096/Items?EnableUserData=true&Ids=m1&UserId=u2", lambda a: a["Items"][0]["UserData"].update(Played=False)),
             "paused fixture": {"8080/api/v2/torrents/info": []},
             "verified piece": mutated("8080/api/v2/torrents/info", lambda a: a[0].update(progress=0)),
             "paused fixture or": mutated("8080/api/v2/torrents/info", lambda a: a[0].update(state="downloading")),
