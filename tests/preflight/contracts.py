@@ -34,7 +34,7 @@ SCHEMA = 2
 MAX_BYTES = 1_000_000
 # The scenarios that set MS_CONTRACT_TRACE on the commands that start product
 # code. Only their jobs carry contract evidence; the others make no traced call.
-TRACED_SCENARIOS = frozenset({"fresh-install", "install-e2e", "upgrade-path"})
+TRACED_SCENARIOS = frozenset({"fresh-install", "install-e2e", "upgrade-path", "portainer-upgrade"})
 TIMES = chr(0xD7)  # the multiplication sign, as in "seen 404 times 2"
 Job = dict[str, Any]
 Observations = list[tuple[str, dict[str, Any]]]

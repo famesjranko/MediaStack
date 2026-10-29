@@ -6,8 +6,10 @@ endpoints:
   - {id: readiness, method: GET, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
   - {id: admin-check, method: GET, path: /api/users/admin/check, expect: [204, 404], sends: [], reads: [], callers: [scripts/services/portainer/main.sh]}
   - {id: admin-init, method: POST, path: /api/users/admin/init, sends: [Username, Password], reads: [], callers: [scripts/services/portainer/main.sh]}
-  - {id: auth, method: POST, path: /api/auth, sends: [Username, Password], reads: [jwt], callers: [scripts/services/portainer/main.sh]}
+  # A legacy admin rename first rejects the new username, then logs in as admin.
+  # Coverage still requires a successful response containing jwt.
+  - {id: auth, method: POST, path: /api/auth, expect: [200, 422], sends: [Username, Password], reads: [jwt], callers: [scripts/services/portainer/main.sh]}
   - {id: user-update, method: PUT, path: "/api/users/{id}", sends: [Username, Role], reads: [], callers: [scripts/services/portainer/main.sh]}
-  - {id: endpoint-list, method: GET, path: /api/endpoints, sends: [], reads: [id, Name], callers: [scripts/services/portainer/main.sh]}
+  - {id: endpoint-list, method: GET, path: /api/endpoints, sends: [], reads: [Id, Name], callers: [scripts/services/portainer/main.sh]}
   - {id: user-token-create, method: POST, path: "/api/users/{id}/tokens", sends: [description, password], reads: [rawAPIKey], callers: [scripts/services/portainer/main.sh]}
   - {id: endpoint-create, method: POST, path: /api/endpoints, sends: [Name, EndpointCreationType], reads: [Id, Name], callers: [scripts/services/portainer/main.sh]}
