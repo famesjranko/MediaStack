@@ -157,6 +157,7 @@ unset gpu_env_calls verify_calls runtime_count probe_calls configure_calls summa
 
 source "$REPO_ROOT/scripts/lib/json.sh"
 source "$REPO_ROOT/scripts/services/jellyfin/main.sh"
+log_ok() { :; }
 
 # encoding.sh's config read/write now go through api_fetch_auth (secret
 # Authorization header off argv - see http.sh); the header is not under test
@@ -196,6 +197,7 @@ STAGE_3_GPU_ALLOW_HEVC_ENCODING=true
 STAGE_3_GPU_ALLOW_AV1_ENCODING=false
 STAGE_3_GPU_RENDER_DEVICE=/dev/dri/renderD129
 configure_jellyfin_encoding "http://localhost:8096" "test-token"
+assert_eq "0" "$?" "Intel VAAPI encoding configuration returns success"
 assert_contains "$api_fetch_post_body" '"HardwareAccelerationType": "vaapi"' "Intel VAAPI fallback can switch Jellyfin from QSV to VAAPI during pending verification"
 assert_contains "$api_fetch_post_body" '"VaapiDevice": "/dev/dri/renderD129"' "Intel VAAPI fallback writes selected VAAPI render device"
 assert_contains "$api_fetch_post_body" '"HardwareDecodingCodecs": ["h264", "hevc", "vp9"]' "Jellyfin encoding applies probed decode codec list"
@@ -233,6 +235,7 @@ STAGE_3_GPU_STATE=pending
 STAGE_3_GPU_ENCODER=nvenc
 STAGE_3_GPU_HW_DECODING_CODECS=none
 configure_jellyfin_encoding "http://localhost:8096" "test-token"
+assert_eq "0" "$?" "probed-empty decode configuration returns success"
 assert_contains "$api_fetch_post_body" '"HardwareDecodingCodecs": []' "probed-empty decode list (none) configures no hardware decode"
 
 # Given decode codecs were never probed (variable unset)
@@ -241,6 +244,7 @@ assert_contains "$api_fetch_post_body" '"HardwareDecodingCodecs": []' "probed-em
 api_fetch_post_body=""
 unset STAGE_3_GPU_HW_DECODING_CODECS
 configure_jellyfin_encoding "http://localhost:8096" "test-token"
+assert_eq "0" "$?" "never-probed decode configuration returns success"
 assert_contains "$api_fetch_post_body" '"HardwareDecodingCodecs": ["h264"]' "never-probed decode list keeps the h264 default"
 unset -f api_fetch
 unset api_fetch_post_body JELLYFIN_GPU STAGE_3_GPU_STATE STAGE_3_GPU_ENCODER
@@ -308,6 +312,7 @@ STAGE_3_GPU_ENCODER=qsv
 STAGE_3_GPU_HW_DECODING_CODECS=h264
 STAGE_3_GPU_RENDER_DEVICE=/dev/dri/renderD129
 configure_jellyfin_encoding "http://localhost:8096" "test-token"
+assert_eq "0" "$?" "Intel QSV render-device configuration returns success"
 assert_contains "$api_fetch_post_body" '"QsvDevice": "/dev/dri/renderD129"' "Intel QSV writes selected QSV render device"
 unset -f api_fetch
 unset api_fetch_post_body JELLYFIN_GPU STAGE_3_GPU_STATE STAGE_3_GPU_ENCODER STAGE_3_GPU_HW_DECODING_CODECS STAGE_3_GPU_RENDER_DEVICE

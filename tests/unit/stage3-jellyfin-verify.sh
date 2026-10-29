@@ -17,6 +17,9 @@ source "$REPO_ROOT/scripts/setup/stages/stage3.sh"
 set +e
 set +u
 
+nvidia_driver_healthy() { return 1; }
+ui_section() { :; }
+
 TMP_ROOT=$(mktemp -d)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -230,6 +233,7 @@ ui_banner() { :; }
 _stage3_offer() { printf '%s\n' "Configure hardware transcoding"; }
 _stage3_choose_nvidia_action() { printf 'unlock'; }
 nvidia_driver_source() { printf 'debian'; }
+nvidia_driver_healthy() { return 0; }
 prepare_nvidia_debian_to_unlock() {
     prepare_calls=$((prepare_calls + 1))
     return 0

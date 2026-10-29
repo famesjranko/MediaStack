@@ -108,13 +108,13 @@ assert_eq "1" "$STAGE3_WARN_CALLS" "Stage 3 failed write emits persistence warni
 unset -f _env_write_kv _env_write_kv_warn
 unset STAGE3_WARN_CALLS JELLYFIN_GPU STAGE_3_GPU_STATE STAGE_3_GPU_VENDOR STAGE_3_GPU_ENCODER
 
-# NVIDIA finalization: a failure writing the critical complete state must keep
-# the recovery marker and suppress the completion result.
+# Given successful hardware probes and a failure writing the complete state.
 SCRIPT_DIR="$TMP_ROOT/nvidia-finalize"
 mkdir -p "$SCRIPT_DIR"
 printf 'JELLYFIN_GPU=none\nSTAGE_3_GPU_STATE=pending\n' >"$SCRIPT_DIR/.env"
 stage3_write_nvidia_marker unlock run >/dev/null
 NVIDIA_FINALIZE_LOG="$TMP_ROOT/nvidia-finalize/log"
+NVIDIA_FINALIZE_WRITES="$TMP_ROOT/nvidia-finalize/writes"
 : >"$NVIDIA_FINALIZE_LOG"
 ui_log() { printf '%s\n' "$*" >>"$NVIDIA_FINALIZE_LOG"; }
 nvidia-smi() { return 0; }
@@ -134,6 +134,7 @@ _stage3_print_final_summary() { :; }
 _env_write_kv_warn() { :; }
 _env_write_kv() {
     local args="$*"
+    printf '%s\n' "$args" >>"$NVIDIA_FINALIZE_WRITES"
     if [[ "$args" == *"STAGE_3_GPU_STATE complete"* ]]; then
         printf 'write-error:simulated\n'
         return 6
@@ -141,11 +142,14 @@ _env_write_kv() {
     printf 'changed\n'
     return 0
 }
-if stage3_finalize_nvidia; then
-    fail "NVIDIA finalization rejects complete-state persistence failure"
-else
-    pass "NVIDIA finalization rejects complete-state persistence failure"
-fi
+FINALIZE_RC=0
+
+# When NVIDIA finalization attempts to persist completion.
+stage3_finalize_nvidia || FINALIZE_RC=$?
+
+# Then it reports the intended write failure and retains the recovery marker.
+assert_eq "3" "$FINALIZE_RC" "NVIDIA finalization reports complete-state persistence failure"
+assert_file_contains "$NVIDIA_FINALIZE_WRITES" "STAGE_3_GPU_STATE complete" "NVIDIA finalization reaches the intended failing writer"
 if stage3_marker_exists; then
     pass "NVIDIA finalization retains marker after complete-state persistence failure"
 else
@@ -293,6 +297,9 @@ GPU_TYPE=nvidia
 _stage3_choose_nvidia_action() { printf 'use\n'; }
 nvidia_driver_source() { printf 'debian\n'; }
 nvidia_driver_healthy() { return 0; }
+nvidia_driver_version() { printf '550.90'; }
+_nvidia_driver_below_nvenc_min() { return 1; }
+_nvidia_ensure_dkms_all_kernels() { return 0; }
 _install_nvidia_container_toolkit() { return 0; }
 verify_gpu_usable() { GPU_TYPE=nvidia; }
 NVIDIA_CALLER_RC=0

@@ -162,6 +162,7 @@ notice_calls=0
 confirm_calls=0
 reboot_calls=0
 ui_box() { :; }
+ui_section() { :; }
 ui_choose() { printf '%s\n' "${STAGE3_TEST_REBOOT_CHOICE:-Reboot manually later}"; }
 ui_confirm() {
     confirm_calls=$((confirm_calls + 1))

@@ -29,6 +29,7 @@ trap 'chmod -R u+w "$TMP_DIR" 2>/dev/null; rm -rf "$TMP_DIR"' EXIT
 
 # Stubs: no containers, no sudo.
 service_container_running() { return 1; }
+storage_is_nas() { return 1; }
 sudo() { return 1; }
 SCRIPT_DIR="$TMP_DIR"
 HOST_ADDRESS="10.0.0.5"

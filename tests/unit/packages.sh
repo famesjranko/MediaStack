@@ -32,6 +32,10 @@ ui_spin() {
 }
 
 PACKAGE_CALLS=()
+ui_sudo_prime() { PACKAGE_CALLS+=("ui_sudo_prime $*"); }
+# Group membership is fixture data. Never query or mutate the host's groups.
+getent() { [[ "$*" == "group docker" ]]; }
+usermod() { PACKAGE_CALLS+=("usermod $*"); }
 
 reset_package_shims() {
     PACKAGE_CALLS=()
@@ -81,6 +85,7 @@ dpkg() {
 groups() { printf '%s\n' "${USER:-tester} docker"; }
 
 install_docker
+assert_contains "${PACKAGE_CALLS[0]}" "ui_sudo_prime" "install_docker: primes sudo before the repository spinner"
 if install_call_seen "docker-compose-plugin"; then
     pass "install_docker: Docker present + Compose missing installs Compose plugin"
 else
@@ -358,6 +363,7 @@ install_docker
 # And the install ran under DEBIAN_FRONTEND=noninteractive with conffile defaults, so no debconf dialog hides behind the spinner.
 assert_contains "$ENV_SEEN" "DEBIAN_FRONTEND=noninteractive" "install_docker: apt install runs with DEBIAN_FRONTEND=noninteractive"
 assert_contains "$(cat "$FAKE/apt-calls")" "install -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold docker-compose-plugin" "install_docker: Compose-missing repair installs the plugin with conffile defaults"
+assert_contains "${PACKAGE_CALLS[*]}" "usermod -aG docker $USER" "install_docker: repairs group membership through the fixture stub"
 check "install_docker: repair wrote the Docker apt source" test -s "$MEDIASTACK_DOCKER_APT_LIST"
 
 # Given the source cannot be proven, When Docker is installed, Then it stops before installing anything.
