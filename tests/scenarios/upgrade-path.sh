@@ -2,6 +2,7 @@
 # Fresh configuration evidence is reported by fresh-install separately.
 source tests/scenarios/fresh-install.sh
 source tests/lib/upgrade-recovery.sh
+source tests/assertions/bazarr-upgrade.sh
 
 upgrade_state() { dind_exec "python3 -I tests/fixtures/upgrade_state.py $1"; }
 
@@ -74,6 +75,7 @@ run_scenario() {
     env_set ADMIN_PORT_FILTER false
     env_set HARDENING_ENABLED false
     env_set UFW_ENABLED false
+    upgrade_bazarr_prepare || return 1
     upgrade_state seed && upgrade_state save || {
         fail 'upgrade-path seeds and records real user settings'
         return 1
@@ -156,9 +158,9 @@ run_scenario() {
     for pair in $(echo "$MS_TEST_IMAGE_OVERRIDES" | tr ',' ' '); do
         svc=${pair%%=*}
         ref=${pair#*=}
-        # These profiles are absent from fresh-install. Hosted plans still pin
-        # their accepted companion refs, but neither can be tested here.
-        if [[ "$svc" == bazarr || "$svc" == wireguard ]]; then
+        # WireGuard's remote profile is absent here. Bazarr's subtitles
+        # profile was enabled and seeded above on the accepted lock.
+        if [[ "$svc" == wireguard ]]; then
             accepted=$(awk -F '\t' -v svc="$svc" '$1 == svc { print $2 "@" $3 }' "$REPO_ROOT/docs/operations/image-digests.lock")
             if [[ "$ref" != "$accepted" ]]; then
                 fail "upgrade-path: $svc candidate is outside active profiles"
@@ -171,13 +173,21 @@ run_scenario() {
             fail "upgrade-path: $svc image inspection failed"
         fi
     done
+    if ((baseline_only)); then
+        dind_exec 'docker compose --profile subtitles up -d --force-recreate --no-deps bazarr' || return 1
+    fi
+    wait_healthy bazarr 180 && upgrade_bazarr_check || {
+        fail 'upgrade-path preserves Bazarr subtitle state before repair'
+        return 1
+    }
+    pass 'upgrade-path preserves Bazarr subtitle state before repair'
     if upgrade_state check; then
         pass 'upgrade-path preserves users, settings, IDs, categories, and credentials'
     else
         fail 'upgrade-path preserves users, settings, IDs, categories, and credentials'
     fi
-    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only qbittorrent,jackett,sonarr,radarr,jellyfin,seerr" >"$log" 2>&1 \
-        && upgrade_state check; then
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr" >"$log" 2>&1 \
+        && upgrade_state check && upgrade_bazarr_check; then
         pass 'upgrade-path reconfiguration preserves intentional user changes'
     else
         fail 'upgrade-path reconfiguration preserves intentional user changes'
