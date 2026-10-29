@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 source tests/lib/assert.sh
 source tests/scenarios/upgrade-path.sh
+product_probes=$(declare -f fresh_install_assert_product_probes)
 scenario_begin upgrade-path
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -13,6 +14,8 @@ trap 'rm -rf "$tmp"' EXIT
 dind_exec() {
     case "$1" in
         'docker compose up -d --force-recreate '*) printf '%s\n' "$1" >"$tmp/baseline-recreated" ;;
+        *./scripts/update.sh) kuma_phase=updated ;;
+        *./scripts/configure.sh*--only\ uptime-kuma) kuma_phase=reconfigured ;;
         'cmp -s '*) return 1 ;;
         'docker inspect '*wireguard) return 1 ;;
         'docker inspect '*)
@@ -38,6 +41,17 @@ assert_sonarr_configured() { return 0; }
 assert_radarr_configured() { return 0; }
 assert_seerr_configured() { return 0; }
 fresh_install_assert_product_probes() { echo "product probes: ${1:-}"; }
+upgrade_kuma() {
+    case "$1" in
+        seed) kuma_dropped=0 ;;
+        drop) kuma_dropped=1 ;;
+        check)
+            [[ "$kuma_mode" == blind ]] && return 0
+            [[ "$kuma_mode" == "$kuma_phase" ]] && return 1
+            ((kuma_dropped == 0))
+            ;;
+    esac
+}
 # A stand-in for the state comparison. drop_report says how it reports a lost
 # Seerr user and a removed Jellyfin API key: both (correct), one name only,
 # both names with rc 0, or none (a blind comparison).
@@ -63,7 +77,7 @@ probe() (
     PASS_COUNT=0 FAIL_COUNT=0 SKIP_COUNT=0
     FAILED_TESTS=()
     scenario_begin candidate-inspection
-    flipped=0 dropped=0
+    flipped=0 dropped=0 kuma_dropped=0 kuma_phase=baseline
     run_scenario
     summary
 )
@@ -74,6 +88,7 @@ MS_TEST_IMAGE_OVERRIDES="homepage=$candidate"
 MS_TEST_STRIP_SERVICES=""
 inspection=matching
 drop_report=both
+kuma_mode=passing
 
 beszel_failure=""
 beszel_upgrade_state() {
@@ -98,6 +113,16 @@ run_cmd probe
 assert_rc 0 'upgrade-path accepts the exact requested image'
 # And the product probes run again with the candidate label.
 assert_contains "$OUT" 'product probes: upgrade-path candidate: ' 'upgrade-path re-runs the labelled product probes on the candidate'
+
+# Given the Kuma comparison is blind, or state is lost at either upgrade boundary.
+for kuma_mode in blind updated reconfigured; do
+    # When the scenario tests the oracle and compares state around reconfiguration.
+    run_cmd probe
+
+    # Then each defect blocks the scenario and its receipt.
+    assert_rc 1 "upgrade-path rejects Kuma state defect: $kuma_mode"
+done
+kuma_mode=passing
 
 # Given an earlier caller case has already recorded failed assertions.
 OUT=$(
@@ -214,4 +239,61 @@ assert_rc 0 'upgrade-path baseline succeeds without claiming candidate evidence'
 assert_eq yes "$([[ -f "$tmp/baseline-recreated" ]] && echo yes || echo no)" 'upgrade-path baseline reloads state from disk'
 assert_contains "$OUT" 'no candidate evidence' 'baseline replacement is labelled explicitly'
 assert_contains "$(cat "$tmp/baseline-recreated")" ' beszel' 'upgrade-path baseline reloads Beszel history from disk'
+
+probe_kuma_readiness() (
+    PASS_COUNT=0 FAIL_COUNT=0 SKIP_COUNT=0 FAILED_TESTS=()
+    eval "$product_probes"
+    svc_stripped() { return 1; }
+    fresh_install_product_probe() {
+        case "$1" in
+            jellyfin-health)
+                echo '/health responded but JELLYFIN_API_KEY is empty'
+                return 1
+                ;;
+            uptime-kuma) return "$kuma_rc" ;;
+            *) return 0 ;;
+        esac
+    }
+    fresh_install_assert_product_probes 'probe: '
+    summary
+)
+
+# Given the other product probes pass and Kuma's HTTP fallback succeeds or fails.
+for kuma_rc in 0 1; do
+    # When the real probe assertions judge those responses.
+    run_cmd probe_kuma_readiness
+
+    # Then fallback failure blocks the scenario, with a passing positive control.
+    assert_rc "$kuma_rc" "Kuma readiness fallback propagates exit $kuma_rc"
+done
+
+probe_kuma_http() (
+    mkdir -p "$tmp/probe/scripts"
+    ln -sfn "$REPO_ROOT/scripts/lib" "$tmp/probe/scripts/lib"
+    : >"$tmp/probe/.env"
+    cd "$tmp/probe" || exit 1
+    DIND_NAME=probe-container
+    KUMA_PROBE_CALLS=$tmp/http-call
+    KUMA_PROBE_RC=$kuma_rc
+    export KUMA_PROBE_CALLS KUMA_PROBE_RC
+    curl() {
+        printf '%s\n' "$*" >"$KUMA_PROBE_CALLS"
+        return "$KUMA_PROBE_RC"
+    }
+    sleep() { :; }
+    export -f curl sleep
+    # Run the real here-document in a clean process; only HTTP is simulated.
+    docker() { bash -s -- "${@: -1}"; }
+    fresh_install_product_probe uptime-kuma
+)
+
+# Given a clean process and HTTP success or failure from Kuma.
+for kuma_rc in 0 1; do
+    # When the real product probe sources its libraries and polls HTTP.
+    run_cmd probe_kuma_http
+
+    # Then the probe reaches the intended endpoint and preserves failure.
+    assert_rc "$kuma_rc" "Kuma probe runs in a clean process with HTTP exit $kuma_rc"
+    assert_contains "$(cat "$tmp/http-call")" 'http://localhost:3001' 'Kuma probe polls the production readiness URL'
+done
 summary

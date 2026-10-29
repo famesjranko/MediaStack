@@ -53,6 +53,7 @@ EXPECTED_TRACE_SITES = Counter({
      "qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr,beszel"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/configure.sh --only portainer"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/update.sh"): 1,
+    ("scenarios/upgrade-path.sh", "./scripts/configure.sh --only uptime-kuma"): 1,
 })
 PRODUCT = re.compile(r"\./(?:scripts/[\w./-]+|setup\.sh|mediastack)\b[^\"'>|&;]*")
 
