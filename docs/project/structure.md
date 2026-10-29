@@ -116,6 +116,8 @@ scripts/
     seerr/quotas.sh                 Seerr default permissions and request-quota reconcile, sourced by seerr/main.sh
     npm/{certs,health,post,publication,rendered,stale}.sh
                                     NPM's internal concerns, sourced by npm/main.sh
+    npm/renewal-deploy.sh            Certbot deploy hook mounted read-only by Compose; validates and reloads nginx
+    npm/templates/letsencrypt.ini    Certbot defaults and the deploy-hook path, mounted by Compose
     templates/*.json                Static API payloads (no variable substitution)
     render/*.py                     Optional pure per-service render/policy helpers
 

@@ -150,14 +150,9 @@ svc_stripped() {
 npm_acme_override() {
     echo -e "${BLUE}[pebble]${NC} writing NPM ACME overrides for Pebble"
     dind_exec 'mkdir -p config/npm'
-    dind_exec 'cat > config/npm/letsencrypt.test.ini <<EOF
-text = True
-non-interactive = True
-webroot-path = /data/letsencrypt-acme-challenge
-key-type = ecdsa
-elliptic-curve = secp384r1
-no-verify-ssl = True
-EOF'
+    # Retain production deployment behavior; Pebble uses its own untrusted CA.
+    dind_exec 'sed "/^preferred-chain[[:space:]]*=/d" scripts/services/npm/templates/letsencrypt.ini >config/npm/letsencrypt.test.ini
+printf "%s\n" "no-verify-ssl = True" >>config/npm/letsencrypt.test.ini'
     # NPM reads the ACME endpoint from the container env var LE_SERVER.
     # The base compose substitutes ${NPM_LE_SERVER:-prod} at PARSE TIME and
     # bakes that value into LE_SERVER on the container — so adding a
