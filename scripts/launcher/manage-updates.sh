@@ -115,6 +115,7 @@ _service_is_running() {
 # service stopped for the caller's undo, as starting it would pair the old container
 # with the swapped config), or "resume" when the caller's earlier attempt stopped a
 # running service (_MU_STOPPED_HERE=1 afterwards): treat it as running again.
+# "resume-swapped" combines these for a Revert resumed after interruption.
 # A failed recreate must not leave a service we stopped down: _MU_STOPPED_HERE
 # is 1 only when this call returns with such a service still stopped.
 _recreate_service() {
@@ -137,7 +138,7 @@ _recreate_service() {
         _MU_PULL_OK=0
     fi
     _service_is_running "$svc" && was_running=1
-    [[ "$mode" == resume ]] && was_running=1
+    [[ "$mode" == resume || "$mode" == resume-swapped ]] && was_running=1
     if [[ -n "$pre_up" ]]; then
         if ((was_running)); then
             docker compose "${pflag[@]}" stop "$svc" 2>&1
@@ -145,8 +146,8 @@ _recreate_service() {
         fi
         "$pre_up" "$svc" || {
             ui_log error "Could not swap the config of ${svc}."
-            # Nothing was recreated: wake the old container, still on its old image.
-            if ((was_running)); then
+            # Revert must undo its config first; other hooks can wake the old container.
+            if ((was_running)) && [[ "$mode" != swapped && "$mode" != resume-swapped ]]; then
                 docker compose "${pflag[@]}" start "$svc" 2>&1 && _MU_STOPPED_HERE=0
             fi
             return 1
@@ -170,7 +171,7 @@ _recreate_service() {
         ui_log error "Failed to recreate ${svc}."
         # `up -d` failed before it replaced the container: with the config still
         # the old one, the stopped container can simply start again.
-        if ((_MU_STOPPED_HERE)) && [[ "$mode" != swapped ]]; then
+        if ((_MU_STOPPED_HERE)) && [[ "$mode" != swapped && "$mode" != resume-swapped ]]; then
             docker compose "${pflag[@]}" start "$svc" 2>&1 && _MU_STOPPED_HERE=0
         fi
         return 1
@@ -179,6 +180,10 @@ _recreate_service() {
 
 _apply_service_update() {
     local svc="$1" skip_confirm="${2:-}"
+    if [[ -f "$(_revert_state_file "$svc")" ]]; then
+        ui_log error "${svc}: Revert recovery is pending. Run Revert for ${svc} again before updating it."
+        return 1
+    fi
     # A service is "on the image it was installed with" when it is stable-effective
     # (still on its lock/tag) OR has a digest pin (was reverted); updating
     # either floats it to its upstream tag and needs consent.

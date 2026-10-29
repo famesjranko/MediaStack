@@ -91,8 +91,12 @@ and the upstream digest are manifest-list digests, so the comparison is multi-ar
 - **Restore points.** Before an update moves a service off its installed image, MediaStack attempts to save a restore point of
   `config/<service>` (up to 256 MiB) while the service is stopped. A failed backup is reported, but the update can continue. When a restore point exists, Revert restores it with the
   old image, then checks service health and MediaStack's logins to qBittorrent, Sonarr, Radarr and
-  Jellyfin. A failed check keeps the restore point. With no restore point, Revert warns and asks to
-  confirm.
+  Jellyfin. A failed check restores the previous image and config and keeps the restore point.
+  With no restore point, Revert warns and asks for confirmation.
+- **Interrupted Revert.** Run **Revert a service to its installed image** again for the same service.
+  MediaStack keeps the safety archive, previous image policy and original running state until
+  recovery finishes. The retry resumes a service that Revert stopped. A service that was already
+  stopped stays stopped. **Update a service** refuses to replace a pending recovery's restore point.
 - **Skips.** The Revert list shows only installed services with a manual override. **Update all** skips
   stopped services and lists them as skipped.
 

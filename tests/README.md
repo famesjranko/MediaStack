@@ -705,6 +705,7 @@ inherits your stdin, so give it `</dev/null` as well.
 
 Current units:
 
+- **revert-interrupted** — kills a fresh Revert process before the safety archive is committed, after extraction, after each config rename and before container start, then retries in another process. Real files and archives prove config recovery, preserved safety data on rollback, the original image policy, workspace cleanup and stopped-service intent. Docker and login are stubbed. An update during pending recovery must leave the archives and containers alone.
 - **gpu-branching** — exercises the split GPU helpers under `scripts/setup/gpu/` (through the `scripts/setup/gpu.sh` entry) by shimming `lspci`/`mokutil`/`nvidia-smi`/`docker` and render-device helpers as in-shell functions. Catches regressions in GPU selection logic, including no-GPU `set -e` behavior and vendor-aware Intel/AMD render-node routing, without needing real hardware.
 - **qbittorrent** — checks qBittorrent login form encoding, first-run temp-password handling, shared-admin credential alignment, manual-storage behavior, and the reusable live assertion parser.
 - **portainer** — checks Portainer auth drift handling, including a warning when admin auth returns no JWT and the normal endpoint/API-token setup path when auth succeeds.
