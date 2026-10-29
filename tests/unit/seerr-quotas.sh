@@ -242,7 +242,10 @@ assert_file_absent "$TMP_DIR/pwned" "config values are not interpreted as Python
 # When the reconcile runs.
 # Then it sends no POST and warns.
 want 5 7 5 7
-for body in '{"apiKey":"k","defaultPermissions":32}' '{"defaultPermissions":32,"defaultQuotas":null}' 'not json' '[]' '{"defaultQuotas":{"movie":{"quotaLimit":"10"},"tv":{}}}'; do
+for body in '{"apiKey":"k","defaultPermissions":32}' '{"defaultPermissions":32,"defaultQuotas":null}' 'not json' '[]' '{"defaultQuotas":{"movie":{"quotaLimit":"10"},"tv":{}}}' \
+    '{"defaultPermissions":32,"defaultQuotas":{"movie":{"quotaLimit":false},"tv":{}}}' \
+    '{"defaultPermissions":32,"defaultQuotas":{"movie":{"quotaDays":""},"tv":{}}}' \
+    '{"defaultPermissions":32,"defaultQuotas":{"movie":{"quotaLimit":null},"tv":{}}}'; do
     printf '%s\n' "$body" >"$STATE"
     run_reconcile
     assert_eq "" "$(posts)" "unusable settings response '$body' sends no POST"

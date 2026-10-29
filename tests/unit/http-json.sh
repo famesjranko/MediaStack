@@ -32,6 +32,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(response.encode())
     do_POST = do_GET
     do_PATCH = do_GET
+    do_PUT = do_GET
     def log_message(self, *args):
         pass
 server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
@@ -127,6 +128,24 @@ assert_eq 1 "$RC" "HTTP rejection fails the request"
 assert_contains "$(cat "$TMP_DIR/error")" 'HTTP 503' "HTTP rejection reports the status"
 assert_eq "" "$OUTPUT" "HTTP rejection returns no body"
 assert_eq 1 "$(wc -l <"$TMP_DIR/requests" | tr -d ' ')" "failed writes are not retried"
+
+# Given an existing NPM host containing private metadata
+source "$REPO_ROOT/scripts/services/npm/rendered.sh"
+NPM_API_READ_TIMEOUT_SECONDS=3 NPM_API_WRITE_TIMEOUT_SECONDS=3
+printf '200\n{}' >"$TMP_DIR/reply"
+: >"$TMP_DIR/requests"
+
+# When the host is disabled through its real HTTP write path
+OUTPUT=$(_npm_disable_host "$TOKEN" "$BASE" 1 '{"meta":{"password":"fixture-password"},"locations":[]}')
+RC=$?
+
+# Then both credentials stay off argv and the preserved metadata reaches the API
+assert_eq 0 "$RC" "NPM host disable succeeds"
+assert_eq 200 "$OUTPUT" "NPM host disable returns the HTTP code"
+assert_contains "$(cat "$TMP_DIR/requests")" 'fixture-password' "NPM preserves private metadata"
+assert_contains "$(cat "$TMP_DIR/requests")" "$TOKEN" "NPM sends its bearer token"
+assert_not_contains "$(cat "$TMP_DIR/argv")" "$TOKEN" "NPM token stays off curl argv"
+assert_not_contains "$(cat "$TMP_DIR/argv")" 'fixture-password' "NPM payload stays off curl argv"
 
 # Given a transport timeout
 curl() { return 28; }

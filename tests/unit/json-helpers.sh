@@ -130,6 +130,8 @@ for CASE in \
     '{}|size?:nullable-number' \
     '{"size":null}|size?:nullable-number' \
     '{"size":0}|size?:nullable-number' \
+    '{"meta":null}|meta:nullable-object' \
+    '{"meta":{}}|meta:nullable-object' \
     '{"fixture":{"savePath":""}}|*.savePath:string'; do
     # When their declared contract is checked
     json_require "${CASE#*|}" <<<"${CASE%%|*}" >/dev/null 2>&1
@@ -149,6 +151,8 @@ for CASE in \
     '{"size":false}|size:nullable-number' \
     '{"size":"0"}|size:nullable-number' \
     '{"size":false}|size?:nullable-number' \
+    '{"meta":false}|meta:nullable-object' \
+    '{}|meta:nullable-object' \
     '{"fixture":{}}|*.savePath:string' \
     '{"items":[{"id":1},{}]}|items[].id:integer'; do
     # When their declared contract is checked

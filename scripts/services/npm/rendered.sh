@@ -101,9 +101,10 @@ path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 _npm_disable_host() {
     local _token="$1" _api="$2" _host_id="$3" _host_json="${4:-}"
     if [[ -z "$_host_json" ]]; then
-        _host_json=$(http_curl -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" -H "Authorization: Bearer $_token" \
+        _host_json=$(curl_header_stdin Authorization "Bearer $_token" -sf --max-time "$NPM_API_READ_TIMEOUT_SECONDS" \
             "$_api/nginx/proxy-hosts/$_host_id" 2>/dev/null) || return 1
     fi
+    json_check "NPM host to disable" :object meta:nullable-object locations:nullable-array <<<"$_host_json" || return 1
     local _body
     _body=$(echo "$_host_json" | python3 -c '
 import sys, json
@@ -116,12 +117,10 @@ for k in ("id","created_on","modified_on","owner_user_id","owner",
           "use_default_location","ipv6"):
     h.pop(k, None)
 print(json.dumps(h))
-' 2>/dev/null)
-    http_curl -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
+' 2>/dev/null) || return 1
+    curl_header_data_stdin Authorization "Bearer $_token" "$_body" -s -o /dev/null -w "%{http_code}" --max-time "$NPM_API_WRITE_TIMEOUT_SECONDS" -X PUT \
         "$_api/nginx/proxy-hosts/$_host_id" \
-        -H "Authorization: Bearer $_token" \
-        -H "Content-Type: application/json" \
-        -d "$_body"
+        -H "Content-Type: application/json"
 }
 
 _npm_host_path_from_container_path() {

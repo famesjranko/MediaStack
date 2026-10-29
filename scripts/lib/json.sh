@@ -93,11 +93,12 @@ import json, sys
 
 def require(value, parts, path, kind):
     if not parts:
-        if value is None and kind not in ("nullable", "nullable-array", "nullable-number"):
+        if value is None and kind not in ("nullable", "nullable-array", "nullable-number", "nullable-object"):
             raise ValueError("null required field " + path)
         types = {"string": str, "object": dict, "array": list, "boolean": bool,
                  "integer": int, "number": (int, float), "nullable": object,
-                 "nullable-array": (list, type(None)), "nullable-number": (int, float, type(None))}
+                 "nullable-array": (list, type(None)), "nullable-number": (int, float, type(None)),
+                 "nullable-object": (dict, type(None))}
         if kind and (not isinstance(value, types[kind]) or
                      (kind in ("number", "integer", "nullable-number") and isinstance(value, bool))):
             raise ValueError("unexpected type at required field " + path)
@@ -134,7 +135,7 @@ except (ValueError, UnicodeError):
 try:
     for spec in sys.argv[1:]:
         path, _, kind = spec.partition(":")
-        if kind not in ("", "string", "object", "array", "boolean", "integer", "number", "nullable", "nullable-array", "nullable-number"):
+        if kind not in ("", "string", "object", "array", "boolean", "integer", "number", "nullable", "nullable-array", "nullable-number", "nullable-object"):
             raise ValueError("invalid required field type")
         require(data, path.split(".") if path else [], path or "response", kind)
 except ValueError as error:

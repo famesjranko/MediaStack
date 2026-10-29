@@ -29,7 +29,7 @@ _npm_configure_publication() {
         if ! existing_hosts=$(api_fetch_auth "NPM proxy hosts" "Authorization" "Bearer $npm_token" "$npm_api/nginx/proxy-hosts"); then
             return 1
         fi
-        json_check "NPM proxy hosts" :array '[].id:integer' '[].domain_names:array' '[].domain_names[]:string' '[].certificate_id:integer' '[].enabled:boolean' <<<"$existing_hosts" || return 1
+        json_check "NPM proxy hosts" :array '[].id:integer' '[].domain_names:array' '[].domain_names[]:string' '[].certificate_id:integer' '[].enabled:boolean' '[].meta:nullable-object' '[].locations:nullable-array' <<<"$existing_hosts" || return 1
         _npm_warn_stale_managed_hosts "$npm_token" "$npm_api" "$domain" "$existing_hosts"
     fi
 
@@ -135,7 +135,7 @@ for host in json.load(sys.stdin):
             return 1
         fi
 
-        json_check "NPM proxy hosts (publish)" :array '[].id:integer' '[].domain_names:array' '[].domain_names[]:string' '[].certificate_id:integer' '[].enabled:boolean' <<<"$existing_hosts" || return 1
+        json_check "NPM proxy hosts (publish)" :array '[].id:integer' '[].domain_names:array' '[].domain_names[]:string' '[].certificate_id:integer' '[].enabled:boolean' '[].meta:nullable-object' '[].locations:nullable-array' <<<"$existing_hosts" || return 1
         for entry in "${proxy_hosts[@]}"; do
             IFS='|' read -r subdomain forward_host forward_port websocket <<<"$entry"
             local fqdn="${subdomain}.${domain}"

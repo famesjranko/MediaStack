@@ -244,6 +244,30 @@ class ReadSafety(unittest.TestCase):
         self.assertNotEqual(result.returncode,0)
         self.assertNotIn("POST /api/v1/settings/main",requests)
 
+    def test_unreadable_npm_preserved_fields_block_host_updates(self):
+        host={"id":1,"domain_names":["jellyfin.fixture.test"],"certificate_id":1,"enabled":True,
+              "meta":{"fixture":True},"locations":[]}
+        for field in ("meta","locations"):
+            for missing in (True,False):
+                with self.subTest(field=field,missing=missing):
+                    # Given a host whose preserved state is missing or has the wrong type
+                    incomplete=dict(host)
+                    if missing: del incomplete[field]
+                    else: incomplete[field]=False
+
+                    # When publication would otherwise update that host
+                    result,requests,_=self.run_case("npm-hosts","/api/nginx/proxy-hosts",json.dumps([incomplete]))
+
+                    # Then no update may replace unknown state with an empty container
+                    self.assertNotIn("PUT /api/nginx/proxy-hosts/1",requests,(requests,result.stderr))
+        # Given the same host with its preserved fields present
+
+        # When publication runs
+        result,requests,_=self.run_case("npm-hosts","/api/nginx/proxy-hosts",json.dumps([host]))
+
+        # Then the valid state still permits the update as a positive control
+        self.assertIn("PUT /api/nginx/proxy-hosts/1",requests,(requests,result.stderr))
+
 unittest.main(verbosity=2)
 PY
     pass "failed and incomplete reads block dependent writes across services"

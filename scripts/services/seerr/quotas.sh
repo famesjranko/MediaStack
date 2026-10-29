@@ -40,7 +40,7 @@ try:
     for kind in ("movie", "tv"):
         q = quotas[kind]
         # Seerr declares these two leaf fields optional; an empty quota is unlimited.
-        lim, days = q.get("quotaLimit") or 0, q.get("quotaDays") or 0
+        lim, days = q.get("quotaLimit", 0), q.get("quotaDays", 0)
         if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in (lim, days)):
             raise TypeError
         have[kind] = (lim, days) if lim > 0 else (0, 0)
