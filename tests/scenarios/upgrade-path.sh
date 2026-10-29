@@ -144,9 +144,9 @@ run_scenario() {
         return 1
     fi
     if ((baseline_only)); then
-        # With identical digests, Compose can leave the other five processes
-        # untouched. The local battery must still prove they reload disk state.
-        dind_exec 'docker compose up -d --force-recreate jellyfin sonarr radarr jackett qbittorrent seerr' >"$log" 2>&1 || {
+        # With identical digests, Compose can leave these processes running.
+        # The local battery must still prove they reload disk state.
+        dind_exec 'docker compose up -d --force-recreate jellyfin sonarr radarr jackett qbittorrent seerr beszel' >"$log" 2>&1 || {
             fail 'upgrade-path baseline recreates the data-owning services'
             tail -30 "$log"
             return 1

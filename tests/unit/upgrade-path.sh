@@ -12,7 +12,7 @@ trap 'rm -rf "$tmp"' EXIT
 # Isolate container operations while retaining the scenario and its assertions.
 dind_exec() {
     case "$1" in
-        'docker compose up -d --force-recreate '*) : >"$tmp/baseline-recreated" ;;
+        'docker compose up -d --force-recreate '*) printf '%s\n' "$1" >"$tmp/baseline-recreated" ;;
         'cmp -s '*) return 1 ;;
         'docker inspect '*wireguard) return 1 ;;
         'docker inspect '*)
@@ -213,4 +213,5 @@ run_cmd probe
 assert_rc 0 'upgrade-path baseline succeeds without claiming candidate evidence'
 assert_eq yes "$([[ -f "$tmp/baseline-recreated" ]] && echo yes || echo no)" 'upgrade-path baseline reloads state from disk'
 assert_contains "$OUT" 'no candidate evidence' 'baseline replacement is labelled explicitly'
+assert_contains "$(cat "$tmp/baseline-recreated")" ' beszel' 'upgrade-path baseline reloads Beszel history from disk'
 summary
