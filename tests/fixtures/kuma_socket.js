@@ -7,7 +7,7 @@ const mode = process.argv[1];
 const name = "MediaStack migration fixture";
 const slug = "migration-fixture";
 const socket = io("http://127.0.0.1:3001", {
-    transports: ["websocket"], reconnection: false, timeout: 10000,
+    transports: ["websocket"], reconnection: false, timeout: 10000, autoConnect: false,
 });
 const deadline = setTimeout(() => {
     console.error("Kuma fixture deadline exceeded");
@@ -123,7 +123,11 @@ async function snapshot() {
 
 (async () => {
     try {
-        await event("connect");
+        // Kuma awaits its initial info message before registering login handlers.
+        // A login sent on transport connect can be dropped on a cold server.
+        const ready = Promise.all([event("connect"), event("info")]);
+        socket.connect();
+        await ready;
         await call("login", credentials);
         if (mode === "seed") await seed();
         else if (mode === "drop") {
