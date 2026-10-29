@@ -14,6 +14,8 @@
 #   config/state/restore-points/<svc>.tar.gz             config/<svc> before the update
 #   config/state/restore-points/<svc>.pre-revert.tar.gz  config/<svc> just before a restore
 #   config/state/restore-points.tsv                      service<TAB>UTC time<TAB>archive
+#   config/state/revert-<svc>.tsv                         running/stopped, then prior policy
+#   config/state/restore-points/<svc>.work/               resumable config-swap workspace
 # Only config/<svc> is archived, never the media or download paths, and a dir over
 # _MU_RESTORE_MAX_KB is skipped so one update cannot fill the config disk.
 
@@ -21,6 +23,7 @@ _MU_RESTORE_MAX_KB=262144
 
 _restore_dir() { printf '%s\n' "$SCRIPT_DIR/config/state/restore-points"; }
 _restore_index() { printf '%s\n' "$SCRIPT_DIR/config/state/restore-points.tsv"; }
+_revert_state_file() { printf '%s/config/state/revert-%s.tsv\n' "$SCRIPT_DIR" "$1"; }
 
 # $1 service, $2 slot: "point" (default) or "pre-revert".
 _restore_archive() {
@@ -53,7 +56,7 @@ _restore_point_exists() {
 }
 
 _discard_restore_point() {
-    rm -f "$(_restore_archive "$1")" "$(_restore_archive "$1" pre-revert)"
+    rm -f "$(_restore_archive "$1")" "$(_restore_archive "$1" pre-revert)" "$(_revert_state_file "$1")"
     _restore_index_clear "$1"
 }
 
@@ -110,7 +113,7 @@ _take_restore_point() {
 }
 
 # Replace config/<svc> with the archive. The caller stops the service first.
-# The archive is unpacked beside the live dir and swapped in whole, so files the
+# The archive is unpacked in a private staging dir and swapped in whole, so files the
 # newer version created (a SQLite -wal/-shm next to the restored .db) cannot
 # survive. The old dir is deleted only after the swap succeeded.
 _restore_config() {
@@ -119,7 +122,18 @@ _restore_config() {
     _service_is_running "$svc" && return 1
     arc="$(_restore_archive "$svc" "${2:-point}")"
     [[ -f "$arc" ]] || return 1
-    stage="$(mktemp -d "${cfg}.restore.XXXXXX")" || return 1
+    if [[ -f "$(_revert_state_file "$svc")" && -f "$(_restore_archive "$svc" pre-revert)" ]]; then
+        # The safety archive is complete before this workspace is used. A retry
+        # can remove an interrupted extraction or swap without losing newer data.
+        stage="$(_restore_dir)/${svc}.work"
+        rm -rf "$stage" || sudo rm -rf "$stage" || return 1
+        (
+            umask 077
+            mkdir "$stage"
+        ) || return 1
+    else
+        stage="$(mktemp -d "${cfg}.restore.XXXXXX")" || return 1
+    fi
     if ! tar -xzf "$arc" -C "$stage" --no-same-owner 2>/dev/null || [[ ! -d "$stage/$svc" ]]; then
         rm -rf "$stage"
         return 1
@@ -134,7 +148,7 @@ _restore_config() {
         return 1
     fi
     # A stopped container can have made its old config root-owned. It is now only
-    # inside our mktemp staging directory, so retry that cleanup with sudo.
+    # inside our private staging directory, so retry that cleanup with sudo.
     rm -rf "$stage" || sudo rm -rf "$stage"
 }
 
@@ -177,11 +191,14 @@ _warn_qbt_restore_layout_incompatible() {
 
 # Revert: keep a safety copy of the newer config, then put the old config back.
 _restore_hook_point() {
-    rm -f "$(_restore_archive "$1" pre-revert)"
-    ui_log info "${1}: saving a safety copy of its current config..."
-    if ! _snapshot_config "$1" pre-revert; then
-        ui_log error "${1}: could not save a safety copy of the current config; its config was not changed."
-        return 1
+    # A completed safety archive belongs to this pending Revert. Replacing it on
+    # retry can save the already-restored config, or fail in the rename gap.
+    if [[ ! -f "$(_revert_state_file "$1")" || ! -f "$(_restore_archive "$1" pre-revert)" ]]; then
+        ui_log info "${1}: saving a safety copy of its current config..."
+        if ! _snapshot_config "$1" pre-revert; then
+            ui_log error "${1}: could not save a safety copy of the current config; its config was not changed."
+            return 1
+        fi
     fi
     _warn_qbt_restore_layout_incompatible "$1"
     ui_log info "${1}: restoring its config from the restore point..."
@@ -258,10 +275,12 @@ print(json.dumps({"Username": os.environ["JF_USER"], "Pw": os.environ["JF_PW"]})
 
 # After a revert: the service must be up and, where MediaStack logs in to it, the
 # login must still work. Failure is reported in full - this is the check that the
-# image-only revert lacked. A service that is stopped was only staged: skip.
+# image-only revert lacked. Skip a staged stopped service unless $2 is "running".
 _verify_reverted_service() {
     local svc="$1" rc=0
-    _service_is_running "$svc" || return 0
+    if ! _service_is_running "$svc" && [[ "${2:-}" != running ]]; then
+        return 0
+    fi
     if ! _verify_service_up "$svc"; then
         ui_log error "${svc}: reverted, but it did not come back healthy. Check: docker logs ${svc}"
         return 1
@@ -271,7 +290,7 @@ _verify_reverted_service() {
         0) ui_log ok "${svc}: back up and MediaStack can still log in." ;;
         1)
             ui_log error "${svc}: reverted and running, but MediaStack can no longer log in to it."
-            ui_log error "Its config may not match the older image. Update ${svc} again to move it forward."
+            ui_log error "Its config may not match the older image."
             return 1
             ;;
         2) ui_log warn "${svc}: back up, but the login could not be checked (credentials not available)." ;;
@@ -283,7 +302,8 @@ _verify_reverted_service() {
 # had then. No restore point means the config may be newer than the image, so ask.
 # Any failure after the config swap puts the previous config back before returning.
 _reset_service_to_default() {
-    local svc="$1" install_ref prior has_point=0 point_hook="" undo_hook=""
+    local svc="$1" install_ref prior has_point=0 point_hook="" undo_hook="" mode="" state was_running=stopped
+    _service_is_running "$svc" && was_running=running
     install_ref="$(_install_image_ref "$svc")"
     prior="$(_service_policy_raw "$svc")"
     if _restore_point_exists "$svc"; then
@@ -299,6 +319,30 @@ _reset_service_to_default() {
     if ((has_point)); then
         point_hook=_restore_hook_point
         undo_hook=_restore_hook_pre_revert
+        state="$(_revert_state_file "$svc")"
+        if [[ ! -f "$state" ]]; then
+            # Commit intent before stopping or moving config. The safety archive
+            # is committed separately by _snapshot_config's atomic rename.
+            rm -f "$(_restore_archive "$svc" pre-revert)"
+            if ! (
+                umask 077
+                printf '%s\n%s\n' "$was_running" "$prior" >"${state}.part"
+            ) \
+                || ! mv "${state}.part" "$state"; then
+                ui_log error "${svc}: could not record Revert recovery state."
+                return 1
+            fi
+        fi
+        was_running=$(sed -n '1p' "$state")
+        prior=$(sed -n '2p' "$state")
+        case "$was_running" in
+            running) mode="resume-swapped" ;;
+            stopped) mode=swapped ;;
+            *)
+                ui_log error "${svc}: invalid Revert recovery state in ${state}."
+                return 1
+                ;;
+        esac
     fi
     if [[ -z "$install_ref" ]]; then
         ui_log warn "${svc}: no recorded install digest; clearing its override instead."
@@ -312,20 +356,19 @@ _reset_service_to_default() {
         return 1
     }
     storage_guard_before_start || return 1
-    if _recreate_service "$svc" "${svc} reverted to its installed image." "$point_hook" "${point_hook:+swapped}"; then
-        if _verify_reverted_service "$svc"; then
+    if _recreate_service "$svc" "${svc} reverted to its installed image." "$point_hook" "$mode"; then
+        if _verify_reverted_service "$svc" "${was_running:-}"; then
             _discard_restore_point "$svc"
             return 0
         fi
         ((has_point)) && ui_log error "${svc}: the restore point and a copy of the newer config are kept in $(_restore_dir)."
-        return 1
     fi
-    # Recreate failed. A digest pin can point at an unfetchable image (and a restored
-    # config no longer matches the image it came from): restore the prior override and
+    # Start or verification failed. A digest pin can be unavailable or incompatible
+    # with its config: restore the prior override and
     # config, then bring the service back up (onto its previous cached image when that
     # pull also fails, else its prior tracking-tag image).
     if [[ -n "$install_ref" ]] || ((has_point)); then
-        ui_log warn "${svc}: revert failed (the installed image may no longer be available); restoring its previous image and config."
+        ui_log warn "${svc}: revert failed; restoring its previous image and config."
         _restore_service_policy_row "$svc" "$prior"
         _regenerate_override || {
             ui_log error "Could not regenerate compose override."
@@ -334,8 +377,13 @@ _reset_service_to_default() {
         # The first attempt stopped a running service and its `up -d` failed: it is
         # still down, so bring it back up rather than report it as staged.
         local resume=""
-        ((${_MU_STOPPED_HERE:-0})) && resume=resume
+        [[ -n "$undo_hook" ]] && resume=swapped
+        if ((${_MU_STOPPED_HERE:-0})) || [[ "$was_running" == running ]]; then
+            resume=resume
+            [[ -n "$undo_hook" ]] && resume="resume-swapped"
+        fi
         _recreate_service "$svc" "${svc} restored to its previous image." "$undo_hook" "$resume" || return 1
+        [[ -n "${state:-}" ]] && rm -f "$state"
     fi
     return 1
 }
