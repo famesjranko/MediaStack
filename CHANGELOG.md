@@ -27,6 +27,7 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+- Restore the Beszel superuser after an explicit credential rejection; validation now recognizes PocketBase's authentication error response.
 - Preserve existing WireGuard peers when setup is re-run; peer validation now accepts wg-easy's integer IDs.
 - Stop dependent service changes when API state is unreadable or required fields are missing. Shared response validation preserves valid empty inventories without treating failed reads as first-run state. Service HTTP requests now have connection and total time limits and do not retry writes automatically (#158).
 - Report failed Beszel agent recreation and retry it on the next setup run. Beszel credential repair requires an explicit authentication rejection. Portainer setup now stops on an unknown admin-check result; if its initial setup window expired, restart Portainer and re-run setup.

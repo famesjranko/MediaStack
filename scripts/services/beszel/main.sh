@@ -213,8 +213,8 @@ configure_beszel() {
         400)
             # PocketBase uses 400 for both rejected credentials and invalid
             # requests. Only its explicit credential rejection permits repair.
-            json_check "Beszel superuser rejection" code:integer message:string <<<"$su_resp" || return 1
-            if [[ "$(json_get code <<<"$su_resp")" != 400 || "$(json_get message <<<"$su_resp")" != "Failed to authenticate." ]]; then
+            json_check "Beszel superuser rejection" status:integer message:string <<<"$su_resp" || return 1
+            if [[ "$(json_get status <<<"$su_resp")" != 400 || "$(json_get message <<<"$su_resp")" != "Failed to authenticate." ]]; then
                 log_warn "Beszel superuser login was inconclusive; credentials left unchanged"
                 return 1
             fi
