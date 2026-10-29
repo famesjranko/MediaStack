@@ -494,5 +494,3 @@ assert_contains "$rec_empty" "No recent ban activity" "f2b_show_recent: empty-st
 
 scenario_end "$CURRENT_SCENARIO"
 summary
-scenario_end "$CURRENT_SCENARIO"
-summary
