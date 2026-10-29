@@ -171,7 +171,10 @@ fi
 # dispatchers bound their imports too: even one expanded launcher exceeds 1 GiB.
 # Keep checking after findings (1), but stop on an engine or invocation error.
 result=0
+file_index=0
 for file in "${files[@]}"; do
+    ((file_index += 1))
+    printf 'lint: [%d/%d] %s\n' "$file_index" "${#files[@]}" "$file" >&2
     "${sc_command[@]}" "${sc_flags[@]}" -- "$file"
     status=$?
     ((status == 0)) && continue
