@@ -58,7 +58,8 @@ class HostedEvidence(unittest.TestCase):
         self.results = self.folder / "results"
         self.old = rows(ROOT / "docs/operations/image-digests.lock")
         self.current = dict(self.old)
-        for service, digit in (("sonarr", "1"), ("radarr", "4")):
+        for service, digit in (("sonarr", "1"), ("radarr", "4"),
+                               ("beszel", "1"), ("uptime-kuma", "1")):
             prior = self.old[service]
             self.current[service] = drift.ImageDigest(service, prior.image, "sha256:" + digit * 64)
         self.digest = self.current["sonarr"].digest
@@ -74,10 +75,6 @@ class HostedEvidence(unittest.TestCase):
                         "arch": "amd64", "os": "linux"}]
 
     def phase1(self, selected):
-        if "uptime-kuma" in selected:
-            prior = self.old["uptime-kuma"]
-            self.current["uptime-kuma"] = drift.ImageDigest("uptime-kuma", prior.image, self.digest)
-            drift.write_tsv(self.snapshot, list(self.current.values()))
         return build_plan(self.old, self.current, selected, SOURCE, RUN, self.fixtures)
 
     def result_for(self, plan, job):
@@ -191,7 +188,6 @@ class HostedEvidence(unittest.TestCase):
 
     def test_each_candidate_is_isolated_in_phase_one(self):
         # Given changed core, Beszel and Kuma candidates selected together.
-        self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
         plan = self.phase1(["radarr", "sonarr", "beszel", "uptime-kuma"])
 
         # When their phase-1 jobs are planned.
@@ -209,7 +205,6 @@ class HostedEvidence(unittest.TestCase):
         for service, rc in (("radarr", 1), ("beszel", None), ("beszel", 1), ("uptime-kuma", None), ("uptime-kuma", 1)):
             with self.subTest(service=service, rc=rc):
                 # Given Sonarr passed but another candidate lacks passing upgrade evidence.
-                self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
                 plan = self.phase1([service, "sonarr"])
                 job = next(j for j in plan["jobs"] if j["id"] == f"p1-{service}.upgrade-path")
                 shutil.rmtree(self.results, ignore_errors=True)
@@ -229,8 +224,6 @@ class HostedEvidence(unittest.TestCase):
         for service in ("sonarr", "beszel"):
             with self.subTest(service=service):
                 # Given a core or Beszel candidate with complete phase-1 evidence.
-                self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
-                drift.write_tsv(self.snapshot, list(self.current.values()))
                 plan = self.phase1([service])
                 self.pass_jobs(plan)
                 selection = select_combination(plan, self.results)
