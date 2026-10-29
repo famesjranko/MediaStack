@@ -25,6 +25,11 @@ tests/gcp-vm/run-candidate.sh npm --plan /path/to/plan.json \
   --plan-hash WEEKLY_PLAN_HASH --output .tmp/npm-evidence
 ```
 
+The application-state oracle uses `--settings-only` on the remote guest. It
+seeds and compares users, credentials, integrations and settings. Media history,
+watch state and torrent resume fixtures remain exclusive to the DinD upgrade
+proof. A snapshot records its scope; a check with a different scope fails.
+
 It proves:
 
 - The real setup installs the accepted Stable lock and enables remote access.

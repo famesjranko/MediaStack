@@ -79,7 +79,8 @@ def install(gcp: Gcp, config: dict[str, str]) -> None:
         remote_step(
             gcp,
             f"Baseline fixture {fixture} {action}",
-            f"python3 tests/fixtures/{fixture}.py {action}",
+            f"python3 tests/fixtures/{fixture}.py {action}"
+            + (" --settings-only" if fixture == "upgrade_state" else ""),
             timeout=300,
         )
 

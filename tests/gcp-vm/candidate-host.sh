@@ -39,7 +39,7 @@ done
 [[ "$(docker inspect --format '{{.Config.Image}}' npm)" == "$1" ]]
 # Check before configure.sh can repair a lost managed row.
 printf '%s\n' application-state >/tmp/ms-remote-check
-python3 tests/fixtures/upgrade_state.py check >/tmp/ms-candidate-state.log 2>&1
+python3 tests/fixtures/upgrade_state.py check --settings-only >/tmp/ms-candidate-state.log 2>&1
 printf '%s\n' npm-state >/tmp/ms-remote-check
 python3 tests/fixtures/npm_state.py check >>/tmp/ms-candidate-state.log 2>&1
 printf '%s\n' reconfigure >/tmp/ms-remote-check

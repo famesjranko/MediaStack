@@ -50,7 +50,7 @@ sys.exit(66 if os.environ['FAULT'] == 'configure' else 0)
 ''')
         for file, label in (("upgrade_state.py", "application"), ("npm_state.py", "npm")):
             self.write("tests/fixtures/" + file, f'''import os, sys
-with open(os.environ['TRACE'], 'a') as f: f.write('{label} ' + sys.argv[1] + '\\n')
+with open(os.environ['TRACE'], 'a') as f: f.write('{label} ' + ' '.join(sys.argv[1:]) + '\\n')
 sys.exit(66 if os.environ['FAULT'] == '{label}-' + sys.argv[1] else 0)
 ''')
         self.write("bin/docker", '''#!/usr/bin/env python3
@@ -88,7 +88,7 @@ else: sys.exit(64)
 
         # Then migration is checked before repair and only complete proof earns a receipt.
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual((self.root / "trace").read_text().splitlines(), ["update", "application check",
+        self.assertEqual((self.root / "trace").read_text().splitlines(), ["update", "application check --settings-only",
                          "npm check", "configure --only npm", "npm check", "npm renew"])
         lines = (self.root / "ms-remote-receipts.tsv").read_text().splitlines()
         rows = [line.split("\t") for line in lines if not line.startswith("#")]

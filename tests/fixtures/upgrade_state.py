@@ -1,4 +1,6 @@
-"""Seed and compare persistent user state through the real service APIs in DinD.
+"""Seed and compare persistent user state through the real service APIs.
+
+Media/history fixtures require DinD; remote NPM checks use --settings-only.
 
 The snapshot may land in test artifacts, so it never holds a secret value. A
 credential is recorded as a short SHA-256 fingerprint or as a boolean, and
@@ -7,6 +9,7 @@ every stored credential must authenticate against the running service.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import http.cookiejar
 import json
@@ -25,6 +28,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import upgrade_history
 import upgrade_media
 
+SNAPSHOT = pathlib.Path("/tmp/upgrade-state.json")
 FIXTURE_USER = "upgrade-fixture-user"
 FIXTURE_KEY_APP = "upgrade-fixture-key"
 FIXTURE_SEERR_EMAIL = "upgrade-fixture@mediastack.test"
@@ -170,7 +174,8 @@ def assert_populated(result: dict[str, Any]) -> None:
 
 
 class StateClient:
-    def __init__(self) -> None:
+    def __init__(self, *, media_fixtures: bool = True) -> None:
+        self.media_fixtures = media_fixtures
         self.env = read_env()
         self.http = self.session()
         # Values that must never reach the snapshot file. Short values such as
@@ -263,16 +268,17 @@ class StateClient:
                 self.call("seerr", f"/api/v1/user/{user['id']}", method="DELETE")
 
     def seed(self) -> None:
-        if (
+        if self.media_fixtures and (
             pathlib.Path.cwd() != pathlib.Path("/root/MediaStack")
             or self.env.get("DATA_DIR") != "/tmp/ms-data"
         ):
             raise ValueError("migration fixtures require the isolated DinD test install")
         self.ensure_fixtures()
         self.flip_profile()
-        upgrade_history.seed(self)
-        upgrade_media.seed_watch_state(self)
-        upgrade_media.seed_torrent(self)
+        if self.media_fixtures:
+            upgrade_history.seed(self)
+            upgrade_media.seed_watch_state(self)
+            upgrade_media.seed_torrent(self)
 
     def qbt_request(
         self,
@@ -496,8 +502,10 @@ class StateClient:
         self.jackett_state(result)
         self.qbittorrent_state(result)
         self.integration_credentials()
-        result.update(upgrade_media.snapshot(self))
-        result.update(upgrade_history.snapshot(self))
+        result["fixture_scope"] = "full" if self.media_fixtures else "settings"
+        if self.media_fixtures:
+            result.update(upgrade_media.snapshot(self))
+            result.update(upgrade_history.snapshot(self))
         # A rotated key that was also rewritten into .env still authenticates,
         # but every client that holds the old key breaks.
         result["credentials"] = {
@@ -513,8 +521,16 @@ class StateClient:
 
 
 def main() -> None:
-    client = StateClient()
-    command = sys.argv[1]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=("seed", "flip", "drop", "restore", "save", "check"))
+    parser.add_argument(
+        "--settings-only",
+        action="store_true",
+        help="check users, credentials and settings without DinD media/history fixtures",
+    )
+    args = parser.parse_args()
+    client = StateClient(media_fixtures=not args.settings_only)
+    command = args.command
     actions = {
         "seed": client.seed,
         "flip": client.flip_profile,
@@ -524,7 +540,7 @@ def main() -> None:
     if command in actions:
         actions[command]()
         return
-    path = pathlib.Path("/tmp/upgrade-state.json")
+    path = SNAPSHOT
     if command == "save":
         path.write_text(json.dumps(client.snapshot(), sort_keys=True))
     elif command == "check":

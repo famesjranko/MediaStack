@@ -66,6 +66,8 @@ with open(os.environ['TRACE'], 'a') as f: f.write(json.dumps(['configure', *sys.
             if "bash tests/gcp-vm/prepare-state.sh" in script:
                 result = self.prepare()
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            if "upgrade_state.py" in script:
+                self.assertIn("--settings-only", script)
             if "upgrade_state.py save" in script:
                 # The existing migration oracle refuses an empty indexer population.
                 config = yaml.safe_load((self.root / "config.yml").read_text())
