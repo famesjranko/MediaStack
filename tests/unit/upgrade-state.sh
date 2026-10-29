@@ -37,6 +37,9 @@ module.read_env = lambda: dict(ENV)
 JACKETT_KEY = "j" * 32
 JACKETT_FILE = pathlib.Path(tempfile.mkdtemp()) / "ServerConfig.json"
 module.JACKETT_CONFIG = JACKETT_FILE
+module.upgrade_media.BACKUP = JACKETT_FILE.parent
+for suffix in ("torrent", "fastresume"):
+    (JACKETT_FILE.parent / f"{module.upgrade_media.TORRENT_HASH}.{suffix}").write_bytes(b"resume fixture")
 
 
 def arr(app, trigger):
@@ -51,6 +54,19 @@ def arr(app, trigger):
         f"{port}/api/v3/downloadclient": [{"id": 1, "name": "qBittorrent"}],
         f"{port}/api/v3/indexer": [{"id": 1, "name": "mstest"}],
         f"{port}/api/v3/notification": [jellyfin, {"id": 2, "implementation": "Email"}],
+        **{f"{port}/api/v3/{name}/testall": [{"id": 1, "isValid": True}]
+           for name in ("indexer", "downloadclient", "notification")},
+        f"{port}/api/v3/customformat": [{"id": 1, "name": "Repack"}],
+        f"{port}/api/v3/qualitydefinition": [{"id": 1, "minSize": 10}],
+        f"{port}/api/v3/config/naming": {"renameEpisodes": True},
+        f"{port}/api/v3/config/mediamanagement": {"minimumFreeSpaceWhenImporting": 1024},
+        f"{port}/api/v3/{'series' if app == 'sonarr' else 'movie'}": [
+            {"id": 157001, "title": "MediaStack Upgrade History", "path": "/data/media/fixture",
+             "tvdbId": 999999991, "tmdbId": 999999992, "monitored": False, "qualityProfileId": 1}],
+        f"{port}/api/v3/history": {"records": [{"id": 157001, "sourceTitle": "MediaStack Upgrade History",
+            "date": "2020-01-02T03:04:05Z", "eventType": "grabbed", "quality": {"quality": {"id": 3}},
+            "languages": [{"id": 1}], "downloadId": "fixture", "data": {"indexer": "mstest"},
+            "seriesId": 157001, "episodeId": 157001, "movieId": 157001}]},
     }
 
 
@@ -58,11 +74,21 @@ def arr(app, trigger):
 SERVICES = {
     **arr("sonarr", "onImportComplete"),
     **arr("radarr", "onDownload"),
+    "8989/api/v3/episode": [{"id": 157001, "seriesId": 157001, "seasonNumber": 1,
+                              "episodeNumber": 1, "title": "Migration episode", "monitored": False}],
     "8096/System/Info": {"Version": "10"},
     "8096/Users/AuthenticateByName": {"AccessToken": "t" * 32, "User": {"Policy": {"IsAdministrator": True}}},
     "8096/Users": [{"Id": "u1", "Name": "admin", "Policy": {"IsAdministrator": True, "IsDisabled": False}},
                    {"Id": "u2", "Name": module.FIXTURE_USER, "Policy": {"IsAdministrator": False, "IsDisabled": False}}],
-    "8096/Library/VirtualFolders": [{"Name": "Movies", "Locations": ["/data/movies"], "ItemId": "l1", "CollectionType": "movies"}],
+    "8096/Library/VirtualFolders": [{"Name": "Movies", "Locations": ["/data/movies"], "ItemId": "l1",
+                                      "CollectionType": "movies", "LibraryOptions": {"EnableRealtimeMonitor": True}}],
+    "8096/System/Configuration": {"ServerName": "MediaStack"},
+    "8096/System/Configuration/encoding": {"EnableHardwareEncoding": False},
+    "8096/System/Configuration/network": {"EnableIPv6": False},
+    "8096/Items": {"Items": [{"Id": "m1", "Path": module.upgrade_media.MOVIE_PATH}]},
+    "8096/Users/u2/Items/m1": {"UserData": {"Played": False, "PlayCount": 0}},
+    "8096/Items?EnableUserData=true&Ids=m1&UserId=u2": {"Items": [{"Id": "m1", "UserData": {"Played": True, "PlayCount": 1,
+                                           "PlaybackPositionTicks": 0, "LastPlayedDate": "2020-01-02T03:04:05Z"}}]},
     "8096/Auth/Keys": {"Items": [{"AppName": "MediaStack", "AccessToken": "test-key"},
                                  {"AppName": module.FIXTURE_KEY_APP, "AccessToken": "k" * 32}]},
     "5055/api/v1/auth/me": {"id": 1},
@@ -72,6 +98,12 @@ SERVICES = {
                                   "defaultQuotas": {"movie": {"quotaLimit": 0}, "tv": {"quotaLimit": 0}}},
     "5055/api/v1/settings/sonarr": [{"id": 0, "apiKey": "s" * 32}],
     "5055/api/v1/settings/radarr": [{"id": 0, "apiKey": "r" * 32}],
+    "5055/api/v1/settings/jellyfin": {"hostname": "jellyfin", "apiKey": "test-key"},
+    "5055/api/v1/settings/network": {"trustProxy": True},
+    "5055/api/v1/request": {"results": [{"id": 157001, "type": "movie", "status": 3, "is4k": False,
+                                        "createdAt": "2020-01-02T03:04:05Z", "updatedAt": "2020-01-02T03:04:05Z",
+                                        "requestedBy": {"id": 2, "email": module.FIXTURE_SEERR_EMAIL},
+                                        "media": {"id": 157001, "tmdbId": 999999993, "mediaType": "movie", "status": 1}}]},
     "9117/UI/Dashboard": b"",
     "9117/api/v2.0/server/config": {"api_key": JACKETT_KEY, "password": "a1b2", "flaresolverrurl": "http://flaresolverr:8191"},
     "9117/api/v2.0/indexers": [{"id": "mstest", "configured": True}],
@@ -79,6 +111,13 @@ SERVICES = {
     "8080/api/v2/torrents/categories": {"tv": {"savePath": "/data/torrents/tv"}},
     "8080/api/v2/app/preferences": {**{name: 1 for name in module.QBT_PREFERENCES},
                                     "bypass_auth_subnet_whitelist": "172.28.0.22/32\n172.28.0.23/32"},
+    "8080/api/v2/torrents/info": [{"hash": module.upgrade_media.TORRENT_HASH,
+                                   "name": "mediastack-upgrade-resume", "size": 32768,
+                                   "save_path": "/data/torrents/migration", "progress": 0.5,
+                                   "amount_left": 16384, "tags": "upgrade-fixture", "dl_limit": 123456,
+                                   "up_limit": 234567, "state": "stoppedDL"}],
+    "8080/api/v2/torrents/files": [{"name": "present.bin", "size": 16384, "progress": 1, "priority": 1},
+                                  {"name": "missing.bin", "size": 16384, "progress": 0, "priority": 1}],
 }
 
 
@@ -112,7 +151,9 @@ class Opener:
         if url.endswith("/auth/login"):
             return Response(self.status, self.body)
         parts = urllib.parse.urlsplit(url)
-        answer = self.routes.get(f"{parts.port}{parts.path}", {"fixture": True})
+        query = urllib.parse.urlencode(sorted(urllib.parse.parse_qsl(parts.query)))
+        answer = self.routes.get(f"{parts.port}{parts.path}?{query}",
+                                 self.routes.get(f"{parts.port}{parts.path}", {"fixture": True}))
         if isinstance(answer, Late):
             answer = answer.answers.pop(0)
         if isinstance(answer, int):
@@ -297,6 +338,8 @@ class SecretFreeSnapshot(unittest.TestCase):
         self.assertEqual(actual["credentials"], expected)
         # And the Jellyfin connection is recorded without its masked apiKey.
         self.assertNotIn("apiKey", actual["sonarr/notification"][0])
+        # And the bulk user read preserves watch state despite the stale per-item response.
+        self.assertTrue(actual["jellyfin/watch-state"]["Played"])
         # And no API key or token reaches the snapshot text.
         self.assertFalse([s for s in state.secrets if s != PASSWORD and s in json.dumps(actual)])
 
@@ -320,7 +363,29 @@ class ComparisonContract(unittest.TestCase):
             "jackett/flaresolverr": mutated("9117/api/v2.0/server/config", lambda a: a.update(flaresolverrurl="")),
             "jackett/admin": {"jackett_file_key": "x" * 32},
             "qbittorrent/preferences": mutated("8080/api/v2/app/preferences", lambda a: a.update(upnp=0)),
+            "jellyfin/system": mutated("8096/System/Configuration", lambda a: a.update(ServerName="reset")),
+            "jellyfin/encoding": mutated("8096/System/Configuration/encoding", lambda a: a.update(EnableHardwareEncoding=True)),
+            "jellyfin/network": mutated("8096/System/Configuration/network", lambda a: a.update(EnableIPv6=True)),
+            "jellyfin/libraries": mutated("8096/Library/VirtualFolders", lambda a: a[0]["LibraryOptions"].update(EnableRealtimeMonitor=False)),
+            "seerr/jellyfin": mutated("5055/api/v1/settings/jellyfin", lambda a: a.update(hostname="wrong-server")),
+            "seerr/network": mutated("5055/api/v1/settings/network", lambda a: a.update(trustProxy=False)),
+            "seerr/requests": mutated("5055/api/v1/request", lambda a: a["results"][0].update(status=1)),
+            "jellyfin/watch-state": mutated("8096/Items?EnableUserData=true&Ids=m1&UserId=u2", lambda a: a["Items"][0]["UserData"].update(PlayCount=2)),
+            "qbittorrent/torrent": mutated("8080/api/v2/torrents/info", lambda a: a[0].update(dl_limit=0)),
+            "qbittorrent/files": mutated("8080/api/v2/torrents/files", lambda a: a[0].update(priority=0)),
+            "sonarr/episode": mutated("8989/api/v3/episode", lambda a: a[0].update(title="reset")),
         }
+        for app, port in (("sonarr", 8989), ("radarr", 7878)):
+            for name, change in (
+                ("naming", lambda a: a.update(renameEpisodes=False)),
+                ("mediamanagement", lambda a: a.update(minimumFreeSpaceWhenImporting=0)),
+            ):
+                cases[f"{app}/{name}"] = mutated(f"{port}/api/v3/config/{name}", change)
+            cases[f"{app}/customformat"] = mutated(f"{port}/api/v3/customformat", lambda a: a[0].update(name="reset"))
+            cases[f"{app}/qualitydefinition"] = mutated(f"{port}/api/v3/qualitydefinition", lambda a: a[0].update(minSize=0))
+            cases[f"{app}/history"] = mutated(f"{port}/api/v3/history", lambda a: a["records"][0].update(eventType="downloadFailed"))
+            resource = "series" if app == "sonarr" else "movie"
+            cases[f"{app}/media"] = mutated(f"{port}/api/v3/{resource}", lambda a: a[0].update(path="/reset"))
         before = client().snapshot()
         for key, change in cases.items():
             with self.subTest(key=key):
@@ -332,6 +397,54 @@ class ComparisonContract(unittest.TestCase):
 
                 # Then the comparison names that value.
                 self.assertEqual(actual, [key])
+
+    def test_empty_history_and_reset_resume_state_are_refused(self):
+        cases = {
+            "sonarr.*history": {"8989/api/v3/history": {"records": []}},
+            "radarr.*history": {"7878/api/v3/history": {"records": []}},
+            "Seerr.*request": {"5055/api/v1/request": {"results": []}},
+            "Sonarr.*episode": {"8989/api/v3/episode": []},
+            "watch state": mutated("8096/Items?EnableUserData=true&Ids=m1&UserId=u2", lambda a: a["Items"][0]["UserData"].update(Played=False)),
+            "paused fixture": {"8080/api/v2/torrents/info": []},
+            "verified piece": mutated("8080/api/v2/torrents/info", lambda a: a[0].update(progress=0)),
+            "paused fixture or": mutated("8080/api/v2/torrents/info", lambda a: a[0].update(state="downloading")),
+        }
+        for message, change in cases.items():
+            with self.subTest(message=message):
+                # Given an upgrade lost a history record or reset a torrent to an empty shell.
+                state = client(**change)
+
+                # When a migration snapshot is requested.
+                # Then the missing population fails before it can become an accepted baseline.
+                with self.assertRaisesRegex(ValueError, message):
+                    state.snapshot()
+
+    def test_masked_credentials_must_work_from_the_storing_service(self):
+        for port in (8989, 7878):
+            for resource in ("notification", "indexer", "downloadclient"):
+                with self.subTest(port=port, resource=resource):
+                    # Given a stored integration still looks correct but its masked secret is rejected.
+                    state = client(**{f"{port}/api/v3/{resource}/testall": [{"id": 1, "isValid": False}]})
+
+                    # When the snapshot tests that integration through its owning Arr service.
+                    # Then a failed authenticated operation blocks the migration result.
+                    with self.assertRaisesRegex(ValueError, "stored credentials failed"):
+                        state.snapshot()
+
+    def test_missing_resume_file_is_refused(self):
+        # Given the paused torrent still appears in the API but its on-disk resume data was lost.
+        state = client()
+        path = module.upgrade_media.BACKUP / f"{module.upgrade_media.TORRENT_HASH}.fastresume"
+        original = path.read_bytes()
+        path.unlink()
+
+        # When the migration snapshot checks the persisted torrent.
+        # Then the API entry alone cannot conceal missing resume data.
+        try:
+            with self.assertRaisesRegex(ValueError, "resume files"):
+                state.snapshot()
+        finally:
+            path.write_bytes(original)
 
     def test_same_whitelist_in_another_form_is_unchanged(self):
         # Given a saved snapshot, and an image that stores the same whitelist comma-separated.
@@ -362,6 +475,7 @@ class ComparisonContract(unittest.TestCase):
             "jackett/admin": mutated("9117/api/v2.0/server/config", lambda a: a.update(password="")),
             "jellyfin/libraries": {"8096/Library/VirtualFolders": []},
             "radarr/notification": mutated("7878/api/v3/notification", lambda a: a.pop(0)),
+            "seerr/network": {"5055/api/v1/settings/network": {}},
         }
         for key, change in cases.items():
             with self.subTest(key=key):

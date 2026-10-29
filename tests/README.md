@@ -303,6 +303,11 @@ override, and pulls, starts and configures the LAN stack. The scenario then:
 5. runs the `fresh-install` service checks in `lan` mode on the final stack, then
    the Jellyfin encoding and drift checks.
 
+The disposable host starts with a root-owned `/tmp/kuma-configure.err` that the
+installer cannot write. Uptime Kuma must provision its monitors and status page,
+then reconfigure without changing this legacy file. The host unit suite also
+checks private stderr files and cleanup on success, failure and interruption.
+
 The PTY steps choose menu items by label (`"choose"` steps), because item numbers
 change with install state. Jellyfin, Sonarr, Radarr, Jackett, qBittorrent and Seerr
 install on their accepted digest and reach their candidate through the menu. Every
@@ -1074,9 +1079,33 @@ booleans, never a secret. The first check after the update runs before reconfigu
 which would apply some values again. Before the update the scenario proves that its comparison
 detects a changed profile, a deleted Seerr user and a deleted Jellyfin API key. After
 the update it runs the Stage 1 Jellyfin probes and the post-Revert login checks again
-on the candidate. At least one digest must differ from the accepted lock. See the
+on the candidate. A candidate run requires at least one changed digest. Without
+overrides, the battery recreates all six data-owning services, reports an
+accepted-image management check and earns no candidate evidence. See the
 [compatibility matrix](../docs/operations/image-compatibility.md) for service coverage
 and remaining boundaries.
+
+The shared snapshot also covers Arr series/movie history and episode identity,
+Jellyfin watch state, Seerr requests, and a paused qBittorrent torrent with one
+verified piece and non-default limits. `tests/fixtures/upgrade_history.py` seeds
+linked SQLite records only while accepted-image services are stopped.
+`tests/fixtures/upgrade_media.py` generates a local clip and private trackerless
+torrent; the running APIs must read the saved state after every move. Missing
+history, reset piece progress or missing torrent/resume files fail the check.
+The seeding command refuses to run outside the isolated DinD test install.
+
+Jellyfin system/encoding/network settings and library options, Seerr
+Jellyfin/network settings, and Arr naming/custom formats/quality definitions/media
+management are compared before reconfiguration. Each snapshot also asks Arr to
+test its stored download-client, indexer and Jellyfin notification connections.
+Masked credentials must work through these operations; the snapshot never
+stores them in clear text.
+
+`upgrade-path` additionally kills Revert in the real config rename gap, with
+qBittorrent stopped and its live config absent. A fresh launcher must reuse the
+same safety archive, restore the installed image and torrent state, pass real
+login, and clear the pending recovery. Docker and authentication are not stubbed.
+The host unit `revert-interrupted` covers the other interruption boundaries.
 
 ## Focused staged-setup scenarios
 

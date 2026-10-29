@@ -12,6 +12,7 @@ trap 'rm -rf "$tmp"' EXIT
 # Isolate container operations while retaining the scenario and its assertions.
 dind_exec() {
     case "$1" in
+        'docker compose up -d --force-recreate '*) : >"$tmp/baseline-recreated" ;;
         'cmp -s '*) return 1 ;;
         'docker inspect '*wireguard) return 1 ;;
         'docker inspect '*)
@@ -29,6 +30,7 @@ fresh_install_run() { return 0; }
 env_set() { return 0; }
 env_get() { printf '%s\n' fixture; }
 upgrade_launcher() { return 0; }
+upgrade_interrupted_revert() { return 0; }
 wait_healthy() { return 0; }
 assert_qbittorrent_configured() { return 0; }
 assert_jackett_configured() { return 0; }
@@ -174,4 +176,17 @@ run_cmd probe
 # Then the absent profile cannot earn candidate compatibility evidence.
 assert_rc 1 'upgrade-path rejects candidates outside active profiles'
 assert_contains "$OUT" 'wireguard candidate is outside active profiles' 'unsupported candidate has an explicit assertion failure'
+
+# Given the battery has no candidate and Compose would keep identical images running.
+MS_TEST_IMAGE_OVERRIDES=""
+candidate=$(awk -F '\t' '$1 == "qbittorrent" {print $2 "@" $3}' docs/operations/image-digests.lock)
+dind_override_images() { return 0; }
+
+# When the accepted-image management scenario runs.
+run_cmd probe
+
+# Then every data-owning service is recreated to reload its stored state.
+assert_rc 0 'upgrade-path baseline succeeds without claiming candidate evidence'
+assert_eq yes "$([[ -f "$tmp/baseline-recreated" ]] && echo yes || echo no)" 'upgrade-path baseline reloads state from disk'
+assert_contains "$OUT" 'no candidate evidence' 'baseline replacement is labelled explicitly'
 summary

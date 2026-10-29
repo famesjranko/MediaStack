@@ -42,8 +42,8 @@ assert_eq "http://beszel:8090/api/health" "$(monitor_url Beszel)" \
 assert_eq "http://wireguard:51821" "$(monitor_url WireGuard)" \
     "Uptime Kuma monitor URL: WireGuard optional service"
 
-# Both tests below drive the REAL configurator in a child shell with docker,
-# mktemp and timeout stubbed. They differ only in what the `docker run` step
+# The cleanup tests drive the REAL configurator in a child shell with docker,
+# mktemp and timeout stubbed. They differ in what the `docker run` step
 # does and what the worker does after the call returns, so the scaffolding is
 # written once here.
 #   $1 worker path  $2 env-file path  $3 `docker run` stub body  $4 epilogue
@@ -59,17 +59,10 @@ SCRIPT_DIR="$REPO_ROOT"
 CONFIG_FILE=/dev/null
 source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/services/uptime-kuma/main.sh"
-# The configurator calls mktemp twice: the env-file first, then the error
-# log. Like the real mktemp, each call creates its file before returning it.
 mktemp() {
-    if [[ -e "$envfile" ]]; then
-        : >"$envfile.err"
-        printf '%s' "$envfile.err"
-    else
-        : >"$envfile"
-        printf '%s' "$envfile"
-    fi
+    if ((\$#)); then command mktemp "\$@"; else printf '%s' "$envfile"; fi
 }
+export TMPDIR="$(dirname "$envfile")"
 docker() {
     case "\$1" in
         compose) printf 'jellyfin\n' ;;
@@ -110,6 +103,8 @@ for _ in $(seq 1 100); do
 done
 assert_eq "0" "$([[ -f "$ENVFILE" ]] && echo 0 || echo 1)" "env-file exists once the docker run step starts"
 assert_file_contains "$ENVFILE" "SEC5_SENTINEL_PW" "env-file holds the sentinel password mid-flight"
+assert_eq 1 "$(compgen -G "$KUMA_TMP/kuma-configure.*" | wc -l)" \
+    "stderr file exists before the run is interrupted"
 kill -TERM -"$WORKER_PID" 2>/dev/null
 # The signal hits every process in the group at once with no ordering
 # guarantee, so the top-level worker process can die (letting `wait` return)
@@ -122,7 +117,64 @@ for _ in $(seq 1 100); do
 done
 wait "$WORKER_PID" 2>/dev/null
 assert_eq "0" "$([[ -f "$ENVFILE" ]] && echo 1 || echo 0)" "env-file is gone after the run is interrupted mid-flight"
+assert_eq "" "$(compgen -G "$KUMA_TMP/kuma-configure.*")" \
+    "stderr file is gone after the run is interrupted mid-flight"
 rm -rf "$KUMA_TMP"
+trap - EXIT
+
+# Given a foreground configurator with a real controlling terminal.
+INT_TMP=$(mktemp -d)
+trap 'rm -rf "$INT_TMP"' EXIT
+write_kuma_worker "$INT_TMP/worker.sh" "$INT_TMP/envfile" \
+    "touch '$INT_TMP/ready'; sleep 30" 'configure_uptime_kuma >/dev/null 2>&1'
+INT_RC=0
+# When Ctrl-C interrupts the helper after both temporary files exist.
+python3 - "$INT_TMP/worker.sh" "$INT_TMP/ready" <<'PY' || INT_RC=$?
+import os
+import pathlib
+import pty
+import signal
+import sys
+import time
+
+pid, terminal = pty.fork()
+if pid == 0:
+    os.execlp("bash", "bash", sys.argv[1])
+try:
+    deadline = time.monotonic() + 5
+    while not pathlib.Path(sys.argv[2]).exists():
+        if time.monotonic() > deadline:
+            raise RuntimeError("helper did not start")
+        time.sleep(0.02)
+    os.write(terminal, b"\x03")
+    while True:
+        child, status = os.waitpid(pid, os.WNOHANG)
+        if child:
+            pid = 0
+            assert os.waitstatus_to_exitcode(status) in (-signal.SIGINT, 130), status
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError("Ctrl-C did not stop configuration")
+        time.sleep(0.02)
+    # The parent's exit can precede the command substitution's cleanup.
+    scratch = pathlib.Path(sys.argv[2]).parent
+    deadline = time.monotonic() + 2
+    while (scratch / "envfile").exists() or list(scratch.glob("kuma-configure.*")):
+        if time.monotonic() > deadline:
+            break
+        time.sleep(0.02)
+finally:
+    if pid:
+        os.killpg(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    os.close(terminal)
+PY
+
+# Then the interrupted configurator leaves no credentials or stderr file.
+assert_eq 0 "$INT_RC" 'Ctrl-C interrupts the real foreground configurator'
+assert_file_absent "$INT_TMP/envfile" 'Ctrl-C removes the credentials file'
+assert_eq "" "$(compgen -G "$INT_TMP/kuma-configure.*")" 'Ctrl-C removes the stderr file'
+rm -rf "$INT_TMP"
 trap - EXIT
 
 # --- the cleanup traps must survive a NORMAL return, not just an interrupt ---
@@ -142,7 +194,7 @@ NORMAL_WORKER="$NORMAL_TMP/worker.sh"
 # `source` in the same shell and would disarm any TERM handler installed after
 # it.
 write_kuma_worker "$NORMAL_WORKER" "$NORMAL_ENVFILE" \
-    ": >\"$NORMAL_TMP/reached\"; printf '{\"created\":0,\"skipped\":0,\"errors\":[]}\\n'" \
+    ": >\"$NORMAL_TMP/reached\"; printf '{\"created\":[],\"skipped\":[],\"errors\":[]}\\n'" \
     'caller_frame() { configure_uptime_kuma >/dev/null; }
 caller_frame
 trap -p RETURN >"'"$NORMAL_TMP"'/return-trap"
@@ -190,6 +242,7 @@ STALE_WORKER="$STALE_TMP/worker.sh"
 write_kuma_worker "$STALE_WORKER" "$STALE_TMP/unused" \
     "printf 'KUMA_STDERR_SENTINEL\\n' >&2; printf '{\"created\":[\"Jellyfin\"],\"skipped\":[],\"errors\":[]}\\n'" \
     'unset -f mktemp
+unset TMPDIR
 mkdir /tmp/kuma-configure.err
 configure_uptime_kuma
 printf "LEFTOVER:%s\n" "$(find /tmp -mindepth 1 ! -path /tmp/kuma-configure.err)"'
@@ -208,6 +261,91 @@ else
 fi
 rm -rf "$STALE_TMP"
 trap - EXIT
+
+# Given a private temporary directory and a helper that returns each supported result.
+SCRATCH_TMP=$(mktemp -d)
+trap 'rm -rf "$SCRATCH_TMP"' EXIT
+mkdir "$SCRATCH_TMP/private'logs"
+PREVIOUS_STDERR=
+for RESULT_KIND in success empty error; do
+    (
+        docker() {
+            case "$1" in
+                compose) printf 'jellyfin\n' ;;
+                pull) return 0 ;;
+                run)
+                    readlink /proc/self/fd/2 >"$SCRATCH_TMP/stderr-path"
+                    stat -Lc '%a' /proc/self/fd/2 >"$SCRATCH_TMP/stderr-mode"
+                    printf 'fixture helper diagnostic\n' >&2
+                    case "$RESULT_KIND" in
+                        success) printf '{"created":["Jellyfin"],"skipped":[],"errors":[]}' ;;
+                        error)
+                            printf '{"error":"fixture authentication failure"}'
+                            return 1
+                            ;;
+                    esac
+                    ;;
+            esac
+        }
+        timeout() {
+            shift
+            "$@"
+        }
+
+        # When the real configurator runs with real temporary files.
+        TMPDIR="$SCRATCH_TMP/private'logs" configure_uptime_kuma
+    ) >"$SCRATCH_TMP/output" 2>"$SCRATCH_TMP/errors"
+
+    # Then the helper uses a new private stderr file and leaves no temporary files.
+    STDERR_PATH=$(cat "$SCRATCH_TMP/stderr-path" 2>/dev/null)
+    assert_contains "$STDERR_PATH" "$SCRATCH_TMP/private'logs/" \
+        "$RESULT_KIND: helper stderr is inside the caller's temporary directory"
+    assert_eq 600 "$(cat "$SCRATCH_TMP/stderr-mode" 2>/dev/null)" \
+        "$RESULT_KIND: helper stderr is readable only by its owner"
+    assert_eq true "$([[ "$PREVIOUS_STDERR" != "$STDERR_PATH" ]] && echo true)" \
+        "$RESULT_KIND: stderr gets a unique path"
+    assert_eq "" "$(ls -A "$SCRATCH_TMP/private'logs")" \
+        "$RESULT_KIND: stderr and credentials are removed on return"
+    case "$RESULT_KIND" in
+        success) assert_file_contains "$SCRATCH_TMP/errors" 'Monitors created: Jellyfin' \
+            'success: provisioning result reaches the caller' ;;
+        empty) assert_file_contains "$SCRATCH_TMP/errors" 'fixture helper diagnostic' \
+            'empty: helper diagnostics remain readable until the warning is logged' ;;
+        error) assert_file_contains "$SCRATCH_TMP/errors" 'fixture authentication failure' \
+            'error: authentication failure reaches the caller' ;;
+    esac
+    PREVIOUS_STDERR="$STDERR_PATH"
+done
+
+# Given a failure to allocate either temporary file.
+for FAILED_FILE in stderr credentials; do
+    (
+        mktemp() {
+            if [[ "$FAILED_FILE" == stderr || $# == 0 ]]; then return 1; fi
+            command mktemp "$@"
+        }
+        docker() {
+            case "$1" in
+                compose) printf 'jellyfin\n' ;;
+                run) touch "$SCRATCH_TMP/unexpected-run" ;;
+            esac
+        }
+        timeout() {
+            shift
+            "$@"
+        }
+
+        # When configuration cannot allocate its scratch files.
+        TMPDIR="$SCRATCH_TMP/private'logs" configure_uptime_kuma
+    ) >"$SCRATCH_TMP/output" 2>"$SCRATCH_TMP/errors"
+
+    # Then configuration reports the failure without running the helper or leaking files.
+    assert_file_contains "$SCRATCH_TMP/errors" 'Could not create Uptime Kuma' \
+        "$FAILED_FILE: allocation failure is reported"
+    assert_file_absent "$SCRATCH_TMP/unexpected-run" "$FAILED_FILE: helper does not run"
+    assert_eq "" "$(ls -A "$SCRATCH_TMP/private'logs")" \
+        "$FAILED_FILE: allocation failure leaves no temporary files"
+done
 
 scenario_end "$CURRENT_SCENARIO"
 summary
