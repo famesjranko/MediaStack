@@ -27,30 +27,34 @@ class Migrations(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.results = pathlib.Path(temporary.name)
+        self.plan = self.plan_for("portainer")
+
+    def plan_for(self, service):
         old = rows(ROOT / "docs/operations/image-digests.lock")
         current = dict(old)
-        current["portainer"] = drift.ImageDigest("portainer", old["portainer"].image, "sha256:" + "a" * 64)
+        current[service] = drift.ImageDigest(service, old[service].image, "sha256:" + "a" * 64)
         fixtures = {key: ref + "@sha256:" + "2" * 64 for key, ref in FIXTURES.items()}
-        self.plan = build_plan(old, current, ["portainer"], SOURCE, RUN, fixtures)
+        return build_plan(old, current, [service], SOURCE, RUN, fixtures)
 
-    def write_evidence(self, job):
+    def write_evidence(self, job, rc=0):
         folder = self.results / ("result-" + job["id"])
-        folder.mkdir()
-        ref = self.plan["candidates"]["portainer"]
+        folder.mkdir(exist_ok=True)
+        service = job["services"][0]
+        ref = self.plan["candidates"][service]
         data = {
             "result": {"schema": 1, "plan": fingerprint(self.plan), "source": SOURCE, "run": RUN,
                        "job": job["id"], "scenario": job["scenario"], "run_id": job["run_id"],
-                       "architecture": "x86_64", "rc": 0, "passes": 7, "failures": 0, "skips": 0,
+                       "architecture": "x86_64", "rc": rc, "passes": 7, "failures": 0, "skips": 0,
                        "evidence_error": None, "elapsed_seconds": 30, "disk_error": None,
                        "runner_error": None, "disk_samples": 3, "disk_free_start_bytes": 30_000_000_000,
                        "disk_peak_growth_bytes": 1_000_000_000, "disk_growth_bytes": 1_000_000_000},
-            "events": [{"action": "start", "id": "portainer", "service": "portainer", "image": ref}],
-            "images": [{"id": "portainer", "digests": [ref], "arch": "amd64", "os": "linux"}],
+            "events": [{"action": "start", "id": service, "service": service, "image": ref}],
+            "images": [{"id": service, "digests": [ref], "arch": "amd64", "os": "linux"}],
             "contracts": covering(self.plan, job),
         }
         for name, value in data.items():
             (folder / (name + ".json")).write_text(json.dumps(value))
-        receipt = ["portainer", *ref.rsplit("@", 1), job["scenario"], SOURCE,
+        receipt = [service, *ref.rsplit("@", 1), job["scenario"], SOURCE,
                    job["run_id"], "x86_64", "2026-01-01T00:00:00Z"]
         (folder / "receipts.tsv").write_text("\t".join(receipt) + "\n")
         return folder
@@ -82,11 +86,43 @@ class Migrations(unittest.TestCase):
         self.assertEqual(selection["selected"], [])
         self.assertIn("portainer", selection["failed"])
 
+    def test_wireguard_requires_fresh_and_existing_client_evidence(self):
+        # Given complete evidence from both WireGuard image scenarios.
+        self.plan = self.plan_for("wireguard")
+        jobs = {job["scenario"]: job for job in self.plan["jobs"]}
+        for job in jobs.values():
+            self.write_evidence(job)
+
+        # When the verifier selects candidates for phase two.
+        selection = select_combination(self.plan, self.results)
+
+        # Then fresh setup and existing-client proof both qualify WireGuard.
+        self.assertEqual(set(jobs), {"wireguard", "wireguard-upgrade"})
+        self.assertTrue(set(jobs) <= TRACED_SCENARIOS)
+        self.assertEqual(selection["selected"], ["wireguard"])
+
+    def test_wireguard_without_existing_client_proof_cannot_qualify(self):
+        for rc in (None, 1):
+            with self.subTest(rc=rc):
+                # Given passing fresh setup and a missing or failed existing-client proof.
+                self.plan = self.plan_for("wireguard")
+                jobs = {job["scenario"]: job for job in self.plan["jobs"]}
+                self.write_evidence(jobs["wireguard"])
+                if rc is not None:
+                    self.write_evidence(jobs["wireguard-upgrade"], rc=rc)
+
+                # When the verifier selects candidates for phase two.
+                selection = select_combination(self.plan, self.results)
+
+                # Then neither result can qualify WireGuard for phase two.
+                self.assertEqual(selection["selected"], [])
+                self.assertEqual(selection["failed"], {"wireguard": ["wireguard-upgrade"]})
+
 
 unittest.main(argv=["hosted-preflight-migrations"], verbosity=2)
 PY
-    pass 'Portainer acceptance requires complete migration evidence'
+    pass 'Portainer and WireGuard acceptance require complete migration evidence'
 else
-    fail 'Portainer acceptance requires complete migration evidence'
+    fail 'Portainer and WireGuard acceptance require complete migration evidence'
 fi
 summary

@@ -1183,9 +1183,13 @@ The fixture's unit suite is `tests/unit/wireguard-state.sh`.
 
 This fixture changes non-WireGuard service profiles only in the disposable repo
 copy, so the real update script starts only WireGuard. Use it in a battery with
-`--reset-between` so the next scenario receives pristine compose files. It does
-not prove a real client handshake or public remote access; WireGuard remains
-held for those checks.
+`--reset-between` so the next scenario receives pristine compose files. An IPv4
+client on a separate Docker network reuses its accepted export and authenticates
+through the published UDP port. It must receive tunnel traffic before the update,
+before repair, and after reconfiguration. Blocked UDP and a wrong preshared key
+must fail. Both WireGuard scenarios record product API contracts for hosted
+acceptance. Public WAN access, LAN forwarding and host firewall rules remain
+separate operator checks.
 
 ## Focused staged-setup scenarios
 

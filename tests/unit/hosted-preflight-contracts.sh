@@ -36,7 +36,7 @@ MAIN = {"url": "https://example.test/run/1", "ref": "refs/heads/main", "default_
 NOTHING = {"outcome": "", "pr": "", "reason": ""}
 # Where product code runs with MS_CONTRACT_TRACE set: the product command, or
 # the named helper that sources product modules. Each count is a call site.
-TRACE_HELPERS = {"upgrade_launcher", "ie2e_user_exec", "fresh_install_product_probe"}
+TRACE_HELPERS = {"upgrade_launcher", "ie2e_user_exec", "fresh_install_product_probe", "wireguard_product_probe"}
 EXPECTED_TRACE_SITES = Counter({
     ("assertions/drift.sh", "./scripts/configure.sh --only sonarr,radarr,jellyfin"): 1,
     ("assertions/jackett.sh", "./scripts/configure.sh --only jackett"): 1,
@@ -53,6 +53,10 @@ EXPECTED_TRACE_SITES = Counter({
      "qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr,beszel"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/configure.sh --only portainer"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/update.sh"): 1,
+    ("scenarios/wireguard.sh", "./scripts/configure.sh --only wireguard"): 1,
+    ("scenarios/wireguard.sh", "wireguard_product_probe()"): 1,
+    ("scenarios/wireguard-upgrade.sh", "./scripts/configure.sh --only wireguard"): 1,
+    ("scenarios/wireguard-upgrade.sh", "./scripts/update.sh"): 1,
     ("scenarios/upgrade-path.sh", "./scripts/configure.sh --only uptime-kuma"): 2,
 })
 PRODUCT = re.compile(r"\./(?:scripts/[\w./-]+|setup\.sh|mediastack)\b[^\"'>|&;]*")

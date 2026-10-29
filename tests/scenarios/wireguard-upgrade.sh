@@ -2,6 +2,8 @@
 
 wireguard_upgrade_state() { dind_exec "python3 -I tests/fixtures/wireguard_state.py $1"; }
 
+wireguard_upgrade_tunnel() { dind_exec "python3 -I tests/fixtures/wireguard_tunnel.py $1 '$2'"; }
+
 wireguard_upgrade_override() {
     dind_exec 'bash -c '\''set -a; source .env; set +a; SCRIPT_DIR=$PWD; source scripts/lib/common.sh; source scripts/setup/override.sh; detect_host_memory; generate_override none'\'''
 }
@@ -57,15 +59,21 @@ PY
     local actual
     actual=$(dind_exec "docker ps --no-trunc --filter name=^wireguard\$ --format '{{.Image}}'" | tr -d '\r\n')
     assert_eq "$accepted" "$actual" 'wireguard-upgrade starts the accepted digest'
-    dind_exec "./scripts/configure.sh --only wireguard >/tmp/ms-wireguard-configure.log 2>&1" \
+    local configure="MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} ./scripts/configure.sh --only wireguard"
+    dind_exec "$configure >/tmp/ms-wireguard-configure.log 2>&1" \
         && wireguard_upgrade_state seed && wireguard_upgrade_state probe && wireguard_upgrade_state save && wireguard_upgrade_state check || {
         fail 'wireguard-upgrade seeds and records existing peers'
         return 1
     }
     pass 'wireguard-upgrade records accepted peers, keys, export and kernel configuration'
+    wireguard_upgrade_tunnel probe "$accepted" || {
+        fail 'wireguard-upgrade rejects blocked UDP and a wrong client key'
+        return 1
+    }
+    pass 'wireguard-upgrade rejects blocked UDP and a wrong client key, then connects the accepted client'
 
     dind_exec 'cp /tmp/wireguard-target.lock docs/operations/image-digests.lock' || return 1
-    if dind_exec "UI_ASCII=1 ./scripts/update.sh >/tmp/ms-wireguard-update.log 2>&1" \
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/update.sh >/tmp/ms-wireguard-update.log 2>&1" \
         && wait_healthy wireguard 150; then
         pass 'wireguard-upgrade real update.sh succeeds'
     else
@@ -84,10 +92,20 @@ PY
         fail 'wireguard-upgrade preserves state before reconfiguration'
         return 1
     fi
-    dind_exec "./scripts/configure.sh --only wireguard >/tmp/ms-wireguard-configure.log 2>&1" \
+    wireguard_upgrade_tunnel check "$accepted" || {
+        fail 'wireguard-upgrade existing client handshakes and sends traffic before repair'
+        return 1
+    }
+    pass 'wireguard-upgrade existing client handshakes and sends traffic before repair'
+    dind_exec "$configure >/tmp/ms-wireguard-configure.log 2>&1" \
         && wireguard_upgrade_state check || {
         fail 'wireguard-upgrade reconfiguration preserves existing peers'
         return 1
     }
     pass 'wireguard-upgrade reconfiguration preserves existing peers'
+    wireguard_upgrade_tunnel check "$accepted" || {
+        fail 'wireguard-upgrade existing client connects after reconfiguration'
+        return 1
+    }
+    pass 'wireguard-upgrade existing client connects after reconfiguration'
 }

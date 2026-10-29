@@ -6,6 +6,17 @@
 # Wall-time budget: ~4-6 min cold (single image pull + custom-port restart),
 # ~2 min warm.
 
+wireguard_product_probe() {
+    docker exec -i -e "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-}" -w /root/MediaStack "$DIND_NAME" bash -s <<'BASH'
+set -euo pipefail
+SCRIPT_DIR=/root/MediaStack
+source scripts/lib/common.sh
+source scripts/lib/http.sh
+# Exercise the production HTTP fallback as well as Docker health.
+wait_for_service "WireGuard HTTP fallback" "$(service_local_url wireguard)"
+BASH
+}
+
 run_scenario() {
     # ------------------------------------------------------------------
     # 0. Prep: populate .env with v15 INIT_* contract.
@@ -136,7 +147,7 @@ run_scenario() {
     # tier firewallIps. The later test-peer checks still exercise raw v15 API
     # creation, but this protects the actual setup/configure path.
     # ------------------------------------------------------------------
-    if dind_exec "./scripts/configure.sh --only wireguard" >/dev/null 2>&1; then
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} ./scripts/configure.sh --only wireguard" >/dev/null 2>&1; then
         pass "configure.sh --only wireguard succeeds"
     else
         fail "configure.sh --only wireguard succeeds"
@@ -146,6 +157,11 @@ run_scenario() {
     local admin_fw_state
     admin_fw_state=$(dind_exec "curl -s -u admin:$wg_password http://localhost:51821/api/client | IPS='192.168.1.0/24' python3 -c 'import os,sys,json; clients=json.load(sys.stdin); want=[x.strip() for x in os.environ[\"IPS\"].split(\",\") if x.strip()]; admin=next((c for c in clients if c.get(\"name\") == \"admin\"), {}); got=admin.get(\"firewallIps\") or []; print(\"yes\" if set(got) == set(want) else json.dumps(got))'" | tr -d '\r\n')
     assert_eq "yes" "$admin_fw_state" "configure.sh initial admin peer firewallIps = Full LAN tier"
+    wireguard_product_probe || {
+        fail 'WireGuard production HTTP readiness fallback'
+        return 1
+    }
+    pass 'WireGuard production HTTP readiness fallback'
 
     # ------------------------------------------------------------------
     # 6. Create a peer via the v15 API

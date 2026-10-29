@@ -22,7 +22,7 @@ the required scenarios. A combined token requires every named scenario.
 | autoheal | Unhealthy fixture restart through socket-proxy | Stateless container replacement | Intentional stops remain covered by product unit tests |
 | Unpackerr | Authenticated queue fixture through real extraction | Stateless worker replacement | A real transfer and Arr import remain separate |
 | Bazarr | Dedicated configurator and API assertions | `upgrade-path`: accepted-to-candidate subtitle history for a local episode and movie, a custom hearing-impaired language profile, settings, API-key fingerprints and external subtitle files; history must remain readable through the candidate API before and after reconfiguration | Records are seeded with the writers stopped. Matching Arr records and local video files keep normal startup sync active. Real provider downloads and media imports need separate proofs |
-| WireGuard | Dedicated peer and network policy scenario | `wireguard-upgrade`: accepted-to-candidate `update.sh`, API authentication, enabled and disabled peer IDs, addresses, expiry, routing, firewall settings, DNS, MTU, keepalive, key fingerprints, client exports and loaded kernel configuration; checked before and after reconfiguration | Stays held until a real client handshake after migration is covered; public remote access remains separate |
+| WireGuard | Dedicated peer and network policy scenario | `wireguard-upgrade`: accepted-to-candidate `update.sh`, API authentication, enabled and disabled peer IDs, addresses, expiry, routing, firewall settings, DNS, MTU, keepalive, key fingerprints, client exports and loaded kernel configuration; an existing IPv4 client handshakes and exchanges tunnel traffic before and after reconfiguration | Public remote access, LAN forwarding and host firewall rules remain separate |
 | FlareSolverr | Startup and health only, also under the real installer in `install-e2e` | No deterministic challenge-solve oracle | Health evidence does not authorize automatic acceptance |
 
 `upgrade-path` first installs the accepted lock, then applies the proposed lock
@@ -110,13 +110,22 @@ uses the stored admin credential. Client exports supply the private-key and
 preshared-key fingerprints; raw keys never enter the saved snapshot or logs.
 Enabled peers and their preshared keys must also be loaded in the kernel.
 
+The accepted image exports the enabled fixture peer once. A client on a separate
+Docker network reuses that private export and the accepted client image. Only
+the endpoint address changes to the Docker host gateway; it uses the exported
+custom UDP port and allowed routes. The client must authenticate a new tunnel
+and receive an ICMP reply from a fixture address on the server. A fresh client
+container and interface prevent a previous session from satisfying a later
+check. Blocked server UDP and a wrong preshared key must both fail before the
+valid client connects. Raw client keys stay inside DinD in private files.
+
 Without a candidate, the scenario forcibly recreates the accepted image and
 checks that it reloads the saved state. This earns no candidate receipt. An
 explicit candidate equal to the accepted digest is refused. Local acceptance
 requires both `wireguard` and `wireguard-upgrade` receipts for the same candidate.
-WireGuard stays held in the hosted publisher until the real-client handshake
-proof is added. This fixture does not test traffic, WAN reachability, host
-firewall rules, older MediaStack configurators, or Revert.
+The hosted publisher requires both scenarios and their product API traces.
+This fixture does not test IPv6 traffic, public WAN reachability, LAN forwarding,
+host firewall rules, older MediaStack configurators, or Revert.
 
 ## API contracts and other touchpoints
 
