@@ -18,7 +18,6 @@ import image_drift as drift  # noqa: E402
 HELD = {
     "bazarr": "subtitle database migration is not covered",
     "beszel": "hub database migration is not covered",
-    "portainer": "database migration is not covered",
     "uptime-kuma": "monitor history migration is not covered",
     "npm": "proxy and certificate database migration is not covered",
     "wireguard": "real-client handshake after migration is not covered",

@@ -1301,3 +1301,20 @@ Without image overrides, the full battery runs `upgrade-path` as an accepted-ima
 management check. It pins qBittorrent Update/Revert to the accepted digest and
 produces no candidate receipts. With explicit overrides, an unchanged candidate
 lock is rejected; only a changed exact combination can produce upgrade evidence.
+
+### Portainer database migration
+
+`./tests/run.sh portainer-upgrade` configures only Portainer on the accepted
+digest. It seeds a standard user and a renamed, tagged local Docker endpoint.
+It records user and tag IDs, roles, endpoint configuration and the Homepage
+token fingerprint. Both password logins and the stored token must work, and
+the local endpoint must list the running Portainer container. A deliberate
+endpoint change must be detected before the baseline is saved.
+
+The real `scripts/update.sh` applies an exact candidate digest. State must
+match before reconfiguration and again after it. With no override, the scenario
+recreates the accepted container and earns no candidate receipt. A tag-only or
+unchanged explicit candidate is refused. Portainer acceptance requires this
+scenario alongside `fresh-install` and `install-e2e`; hosted jobs also require
+its product HTTP contract trace. Snapshots hold no passwords or raw tokens.
+Stacks, registries, teams and remote endpoint migrations are not covered.
