@@ -7,6 +7,21 @@ source tests/assertions/bazarr-upgrade.sh
 beszel_upgrade_state() { dind_exec "python3 -I tests/fixtures/beszel_state.py $1"; }
 
 upgrade_state() { dind_exec "python3 -I tests/fixtures/upgrade_state.py $1"; }
+upgrade_kuma() { dind_exec "python3 -I tests/fixtures/kuma_state.py $1"; }
+
+upgrade_kuma_prepare() {
+    # Optional services must be monitored before the accepted-state snapshot.
+    # Bazarr starts after fresh-install configured the original monitor list.
+    dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only uptime-kuma" >/tmp/ms-upgrade-kuma-baseline.log 2>&1 || return 1
+    upgrade_kuma seed || return 1
+    upgrade_kuma drop || return 1
+    if upgrade_kuma check >/dev/null 2>&1; then
+        fail 'upgrade-path detects lost Kuma monitoring history'
+        return 1
+    fi
+    pass 'upgrade-path detects lost Kuma monitoring history'
+    upgrade_kuma seed && upgrade_kuma check
+}
 
 # Invoke the production update/revert functions. Only menu input is supplied by
 # the fixture; Docker, snapshots, policy writes and authentication stay real.
@@ -110,6 +125,12 @@ run_scenario() {
         fail 'upgrade-path detects a lost Seerr user and a removed Jellyfin API key' "$dropped"
     fi
     upgrade_state restore && upgrade_state save && upgrade_state check || return 1
+    if upgrade_kuma_prepare; then
+        pass 'upgrade-path records Kuma monitors, history, charts and status pages'
+    else
+        fail 'upgrade-path records Kuma monitors, history, charts and status pages'
+        return 1
+    fi
 
     dind_exec 'cp /tmp/upgrade-target.lock docs/operations/image-digests.lock' || return 1
     local log=/tmp/ms-upgrade-update.log
@@ -146,7 +167,7 @@ run_scenario() {
     if ((baseline_only)); then
         # With identical digests, Compose can leave these processes running.
         # The local battery must still prove they reload disk state.
-        dind_exec 'docker compose up -d --force-recreate jellyfin sonarr radarr jackett qbittorrent seerr beszel' >"$log" 2>&1 || {
+        dind_exec 'docker compose up -d --force-recreate jellyfin sonarr radarr jackett qbittorrent seerr beszel uptime-kuma' >"$log" 2>&1 || {
             fail 'upgrade-path baseline recreates the data-owning services'
             tail -30 "$log"
             return 1
@@ -154,7 +175,7 @@ run_scenario() {
         pass 'upgrade-path baseline recreates the data-owning services (no candidate evidence)'
     fi
     local svc
-    for svc in jellyfin sonarr radarr jackett qbittorrent seerr beszel; do
+    for svc in jellyfin sonarr radarr jackett qbittorrent seerr beszel uptime-kuma; do
         if wait_healthy "$svc" 180; then
             pass "upgrade-path: $svc ready after accepted-to-candidate update"
         else
@@ -198,6 +219,11 @@ run_scenario() {
     else
         fail 'upgrade-path preserves users, settings, IDs, categories, and credentials'
     fi
+    if upgrade_kuma check; then
+        pass 'upgrade-path preserves Kuma history and configuration before repair'
+    else
+        fail 'upgrade-path preserves Kuma history and configuration before repair'
+    fi
     # Exercise legacy TCP-entry and superuser CLI recovery on the candidate only
     # after its unmodified persistent state has passed the migration check.
     if beszel_upgrade_state prepare-recovery \
@@ -207,6 +233,14 @@ run_scenario() {
     else
         fail 'upgrade-path reconfiguration preserves intentional user changes'
         tail -30 "$log"
+    fi
+    local kuma_log=/tmp/ms-upgrade-kuma.log
+    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only uptime-kuma" >"$kuma_log" 2>&1 \
+        && upgrade_kuma check; then
+        pass 'upgrade-path Kuma reconfiguration preserves saved monitoring state'
+    else
+        fail 'upgrade-path Kuma reconfiguration preserves saved monitoring state'
+        tail -30 "$kuma_log"
     fi
     assert_qbittorrent_configured
     assert_jackett_configured

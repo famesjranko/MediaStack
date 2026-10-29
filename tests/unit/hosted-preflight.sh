@@ -58,7 +58,8 @@ class HostedEvidence(unittest.TestCase):
         self.results = self.folder / "results"
         self.old = rows(ROOT / "docs/operations/image-digests.lock")
         self.current = dict(self.old)
-        for service, digit in (("sonarr", "1"), ("radarr", "4")):
+        for service, digit in (("sonarr", "1"), ("radarr", "4"),
+                               ("beszel", "1"), ("uptime-kuma", "1")):
             prior = self.old[service]
             self.current[service] = drift.ImageDigest(service, prior.image, "sha256:" + digit * 64)
         self.digest = self.current["sonarr"].digest
@@ -186,15 +187,14 @@ class HostedEvidence(unittest.TestCase):
             build_plan(self.old, self.current, ["flaresolverr"], SOURCE, RUN, {})
 
     def test_each_candidate_is_isolated_in_phase_one(self):
-        # Given changed core and Beszel candidates selected together.
-        self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
-        plan = self.phase1(["radarr", "sonarr", "beszel"])
+        # Given changed core, Beszel and Kuma candidates selected together.
+        plan = self.phase1(["radarr", "sonarr", "beszel", "uptime-kuma"])
 
         # When their phase-1 jobs are planned.
         jobs = {j["id"]: j for j in plan["jobs"]}
 
         # Then each candidate runs alone through fresh, installer and existing-install scenarios.
-        self.assertEqual(set(jobs), {f"p1-{s}.{n}" for s in ("radarr", "sonarr", "beszel")
+        self.assertEqual(set(jobs), {f"p1-{s}.{n}" for s in ("radarr", "sonarr", "beszel", "uptime-kuma")
                                      for n in ("fresh-install", "install-e2e", "upgrade-path")})
         refs = effective(plan, jobs["p1-sonarr.upgrade-path"])
         # And the other candidate stays at its accepted digest in that job.
@@ -202,10 +202,9 @@ class HostedEvidence(unittest.TestCase):
         self.assertEqual(refs["sonarr"], plan["candidates"]["sonarr"])
 
     def test_selection_excludes_phase_one_failure(self):
-        for service, rc in (("radarr", 1), ("beszel", None), ("beszel", 1)):
+        for service, rc in (("radarr", 1), ("beszel", None), ("beszel", 1), ("uptime-kuma", None), ("uptime-kuma", 1)):
             with self.subTest(service=service, rc=rc):
                 # Given Sonarr passed but another candidate lacks passing upgrade evidence.
-                self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
                 plan = self.phase1([service, "sonarr"])
                 job = next(j for j in plan["jobs"] if j["id"] == f"p1-{service}.upgrade-path")
                 shutil.rmtree(self.results, ignore_errors=True)
@@ -225,8 +224,6 @@ class HostedEvidence(unittest.TestCase):
         for service in ("sonarr", "beszel"):
             with self.subTest(service=service):
                 # Given a core or Beszel candidate with complete phase-1 evidence.
-                self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
-                drift.write_tsv(self.snapshot, list(self.current.values()))
                 plan = self.phase1([service])
                 self.pass_jobs(plan)
                 selection = select_combination(plan, self.results)
@@ -274,7 +271,7 @@ class HostedEvidence(unittest.TestCase):
 
     def test_complete_combination_precedes_selective_write(self):
         # Given both candidates passed phase 1 but phase 2 lacks upgrade-path evidence.
-        plan = self.phase1(["radarr", "sonarr"])
+        plan = self.phase1(["uptime-kuma", "sonarr"])
         self.pass_jobs(plan)
         selection = select_combination(plan, self.results)
         self.pass_jobs(selection, skip={"p2-upgrade-path"})
@@ -295,7 +292,7 @@ class HostedEvidence(unittest.TestCase):
         # Then it changes both selected digests and preserves unrelated rows.
         accepted = rows(output / "image-digests.lock")
         for service in self.old:
-            expected = self.current if service in ("radarr", "sonarr") else self.old
+            expected = self.current if service in ("uptime-kuma", "sonarr") else self.old
             self.assertEqual(accepted[service].digest, expected[service].digest)
 
     def test_image_execution_has_no_publishing_permissions(self):

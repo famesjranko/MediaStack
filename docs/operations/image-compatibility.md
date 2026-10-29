@@ -14,7 +14,7 @@ the required scenarios. A combined token requires every named scenario.
 | Homepage | Generated dashboard and service widgets; `install-e2e` also through the real installer | Configuration is generated from the same source after updates | Browser rendering and widget interactions have narrower coverage |
 | Beszel, beszel-agent | Hub login, agent registration, Docker stats through socket-proxy; `install-e2e` also through the real installer | `upgrade-path` preserves hub admin and user logins, monitored systems, user preferences, system/container history and the agent key before and after reconfiguration | Hub candidates require all three scenarios; agent stats remain covered by fresh setup |
 | Portainer | Admin login, local endpoint and API key; `install-e2e` also through the real installer | `portainer-upgrade`: the real update script preserves user IDs, names and roles, password logins, the stored Homepage token, tag IDs and names, and local endpoint IDs, type, socket URL, group and tags. State is compared before and after reconfiguration. The endpoint must still list the running Portainer container | Stacks, registries, teams, remote endpoints and their credentials remain outside this fixture |
-| Uptime Kuma | Admin login, required monitors and idempotent re-run; `install-e2e` also through the real installer | No dedicated database migration fixture | Operator review required for stored monitoring history |
+| Uptime Kuma | Admin login, required monitors and idempotent re-run; `install-e2e` also through the real installer | `upgrade-path`: managed monitor IDs and settings, a paused push monitor with real up/down events, minute/hour/day uptime totals, custom retention and status-page membership survive the real update and reconfiguration. Each read logs in with the saved admin password | SQLite within major 2 is covered. External notification delivery, other database engines and major-version migration need separate proofs |
 | NPM | Admin auth, proxy/certificate writes, live HTTPS and security headers; `npm-heal` tests recovery | No dedicated proxy/database migration fixture | Real WAN DNS and public ACME are separate |
 | DDNS updater | `ddns-seed` configuration/startup and `ddns-verify` provider/error behavior | Existing rendered provider configuration is reused in the focused fixtures | Real provider accounts and WAN address changes are separate |
 | fail2ban | Static filter fixtures plus live Jellyfin/Seerr auth failures in `fresh-install` | `upgrade-path`: the update script's filter check (`fail2ban-regex`) runs on the candidate; jails/rules recreated and checked in DinD | Host networking remains an operator-run proof |
@@ -39,6 +39,19 @@ because a comparison with an empty value proves nothing.
 The first check after the update runs before `configure.sh`. Reconfiguration
 applies `config.yml` again, for example the Seerr default permissions and quotas,
 so a later check cannot show a value that the update lost.
+
+Kuma has a separate application-level snapshot (`tests/fixtures/kuma_state.py`).
+The fixture sends three local push events, then pauses that monitor so its
+history stays fixed. It compares heartbeat IDs, status, time, message, ping and
+duration, plus uptime samples and ping summaries at each chart period. It also
+checks saved monitor settings, retention, and both the managed and custom
+status pages. Normal service monitors continue polling; their changing history
+is excluded. Before the upgrade, clearing the fixture history through Kuma must
+make the check fail. The fixture is then seeded again. No SQL writes bypass the
+application. Status-page group IDs are excluded because configuration rebuilds
+managed groups; monitor IDs and group membership are compared.
+The shared product probes also call Kuma's real HTTP readiness fallback, so a
+healthy Docker check cannot leave that contract untested on the candidate.
 
 Before the update, the scenario tests its own comparison. It changes a Sonarr
 profile, and the comparison must report the change. It then deletes a Seerr user
@@ -122,7 +135,7 @@ touchpoints have no contract entries. This table gives the evidence for each:
 | Environment, ports and healthchecks | The compose render check, the receipts' health rule (the candidate container must end running or healthy), and the `install-e2e` check of health on the exact digest. |
 | fail2ban log formats | Live Jellyfin and Seerr authentication failures in `fresh-install`. fail2ban must ban the source address. |
 | Data paths and UID/GID | The persistence assertions in `upgrade-path` and `install-e2e`. Saved state must survive Update and Revert. |
-| Uptime Kuma (socket.io API) | Held for operator review. Only its scenario assertions run. |
+| Uptime Kuma (socket.io API) | Real configurator assertions in fresh and installer scenarios. `upgrade-path` compares authenticated Socket.IO reads of monitor settings, heartbeat events and each uptime chart period before and after reconfiguration. |
 
 ## Real installer and day-2 menu: `install-e2e`
 

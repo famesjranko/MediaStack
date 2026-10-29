@@ -237,6 +237,7 @@ PYEOF
 #   jellyfin-users   Stage 1 gate for STAGE_1_COMPLETE (scripts/setup/stage1/install.sh)
 #   jellyfin-health  the same probe's /health fallback when no API key was saved
 #   sonarr | radarr  the login check after a Revert (scripts/lib/update-restore.sh)
+#   uptime-kuma      the HTTP fallback when Docker health is unavailable
 fresh_install_product_probe() {
     docker exec -i -e "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-}" -e UI_ASCII=1 -w /root/MediaStack "$DIND_NAME" bash -s -- "$1" <<'BASH'
 set -euo pipefail
@@ -256,6 +257,11 @@ case "$1" in
     sonarr | radarr)
         source scripts/lib/update-restore.sh
         _service_login_check "$1"
+        ;;
+    uptime-kuma)
+        # Exercise the production HTTP fallback as well as Docker health.
+        source scripts/lib/http.sh
+        wait_for_service "Uptime Kuma HTTP fallback" "$(service_local_url uptime-kuma)"
         ;;
     *) exit 2 ;;
 esac
@@ -291,6 +297,13 @@ fresh_install_assert_product_probes() {
             fail "${label}$svc post-Revert login check succeeds with the saved API key" "$out"
         fi
     done
+    if svc_stripped uptime-kuma; then
+        skip "${label}Uptime Kuma HTTP readiness fallback" "stripped via MS_TEST_STRIP_SERVICES"
+    elif out=$(fresh_install_product_probe uptime-kuma 2>&1); then
+        pass "${label}Uptime Kuma HTTP readiness fallback succeeds"
+    else
+        fail "${label}Uptime Kuma HTTP readiness fallback succeeds" "$out"
+    fi
 }
 
 # Configured state of every default-profile service, as configure.sh leaves it.
