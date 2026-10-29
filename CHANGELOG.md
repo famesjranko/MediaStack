@@ -37,6 +37,7 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 - Preserve `MS_DISABLE_RESOURCE_LIMITS` across `.env` rewrites; an invalid value warns and keeps the limits on (#102).
 - The NAS storage watchdog no longer restarts a service you stopped from the launcher, at boot or after an outage; a service that depends on one you stopped starts without it (#106).
 - Re-running setup after Jackett drops its FlareSolverr URL, for example after a Jackett update, no longer reports every configured indexer as "not available in Jackett"; the configurator signs in again after the repair restart.
+- Uptime Kuma monitors and the status page are created even when an earlier `sudo` run left `/tmp/kuma-configure.err` behind; setup no longer skips the step with "returned no output" (#153).
 
 ### Breaking Changes
 

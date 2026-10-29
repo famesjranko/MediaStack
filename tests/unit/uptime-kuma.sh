@@ -59,7 +59,17 @@ SCRIPT_DIR="$REPO_ROOT"
 CONFIG_FILE=/dev/null
 source "$REPO_ROOT/scripts/lib/common.sh"
 source "$REPO_ROOT/scripts/services/uptime-kuma/main.sh"
-mktemp() { printf '%s' "$envfile"; }
+# The configurator calls mktemp twice: the env-file first, then the error
+# log. Like the real mktemp, each call creates its file before returning it.
+mktemp() {
+    if [[ -e "$envfile" ]]; then
+        : >"$envfile.err"
+        printf '%s' "$envfile.err"
+    else
+        : >"$envfile"
+        printf '%s' "$envfile"
+    fi
+}
 docker() {
     case "\$1" in
         compose) printf 'jellyfin\n' ;;
@@ -161,9 +171,42 @@ _kuma_trap_lines=$(grep -E '^[[:space:]]*trap .*(TERM|RETURN)$' \
     "$REPO_ROOT/scripts/services/uptime-kuma/main.sh")
 assert_eq "2" "$(grep -c '@Q' <<<"$_kuma_trap_lines")" \
     "both cleanup traps expand the env-file path when the trap is set"
-assert_eq "0" "$(grep -c '\$_kuma_envfile' <<<"$_kuma_trap_lines")" \
+assert_eq "0" "$(grep -c '\$_kuma_' <<<"$_kuma_trap_lines")" \
     "neither cleanup trap defers expansion to a frame where the local is gone"
 rm -rf "$NORMAL_TMP"
+trap - EXIT
+
+# --- #153: a stale fixed-path error log must not skip the whole step -------
+# The error log was once the fixed path /tmp/kuma-configure.err. A stale copy
+# owned by another user (one `sudo` run) made the stderr redirect fail, so the
+# step returned "no output" and created no monitors. The test runs in a user
+# and mount namespace with a private /tmp, so it never touches the host's
+# /tmp. A directory at the legacy path blocks the redirect even for the
+# namespace's root. The real mktemp runs, so the private /tmp also shows that
+# no temp file survives the step.
+STALE_TMP=$(mktemp -d)
+trap 'rm -rf "$STALE_TMP"' EXIT
+STALE_WORKER="$STALE_TMP/worker.sh"
+write_kuma_worker "$STALE_WORKER" "$STALE_TMP/unused" \
+    "printf 'KUMA_STDERR_SENTINEL\\n' >&2; printf '{\"created\":[\"Jellyfin\"],\"skipped\":[],\"errors\":[]}\\n'" \
+    'unset -f mktemp
+mkdir /tmp/kuma-configure.err
+configure_uptime_kuma
+printf "LEFTOVER:%s\n" "$(find /tmp -mindepth 1 ! -path /tmp/kuma-configure.err)"'
+if unshare -rm sh -c 'mount -t tmpfs none /tmp' 2>/dev/null; then
+    # Open the worker before /tmp is replaced, because it lives under /tmp.
+    STALE_OUT=$(unshare -rm bash -c \
+        'exec 3<"$1"; mount -t tmpfs none /tmp && bash /dev/fd/3' _ "$STALE_WORKER" 2>&1)
+    assert_contains "$STALE_OUT" "Monitors created: Jellyfin" \
+        "monitors are created when a stale error log blocks the legacy fixed path"
+    assert_not_contains "$STALE_OUT" "returned no output" \
+        "the step is not skipped when a stale error log blocks the legacy fixed path"
+    assert_contains "$STALE_OUT" "LEFTOVER:" "the worker reached the leftover check"
+    assert_not_contains "$STALE_OUT" "LEFTOVER:/" "no temp file survives the step"
+else
+    skip "stale error log: a private /tmp mount is unavailable on this host"
+fi
+rm -rf "$STALE_TMP"
 trap - EXIT
 
 scenario_end "$CURRENT_SCENARIO"

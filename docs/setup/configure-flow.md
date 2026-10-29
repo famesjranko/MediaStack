@@ -368,7 +368,7 @@ Only runs when the WireGuard container is running. After a health wait, the conf
 
 **Status page:** Creates (or updates) a public status page at slug `mediastack` with only MediaStack-managed monitors in a single "Services" group (user-added monitors are excluded). `addStatusPage` returns `{ok: false}` if the slug already exists (caught and ignored). `saveStatusPage` requires a config object with at minimum `slug`, `title`, `analyticsType: null`, and `domainNameList: []` — passing `{}` crashes upstream validation. `imgDataUrl` must be `""` (not `null` — upstream calls `.startsWith()` on it). The Homepage widget reads the status page via the public API (no API key needed).
 
-**Stderr handling:** npm install and Node.js errors go to `/tmp/kuma-configure.err`. On failure (empty stdout), the last 5 lines of stderr are logged via `log_warn`.
+**Stderr handling:** npm install and Node.js errors go to a private `mktemp` file, removed when the step returns. On failure (empty stdout), the last 5 lines of stderr are logged via `log_warn`.
 
 ## Step 13 — Beszel (`configure_beszel` in `scripts/services/beszel/main.sh`)
 
