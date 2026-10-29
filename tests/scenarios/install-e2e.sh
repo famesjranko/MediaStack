@@ -94,6 +94,13 @@ ie2e_prepare() {
     dind_exec "id -u $IE2E_USER >/dev/null 2>&1 || useradd -m -s /bin/bash -G docker $IE2E_USER" || return 1
     dind_exec "printf '%s ALL=(ALL) NOPASSWD:ALL\n' $IE2E_USER >/etc/sudoers.d/90-mediastack-e2e && chmod 440 /etc/sudoers.d/90-mediastack-e2e" || return 1
     [[ "$(dind_exec "id -u $IE2E_USER" | tr -d '\r\n')" == 1000 ]] || return 1
+    # Given an error file left by a root configure run on this disposable host.
+    dind_exec 'printf "legacy Kuma diagnostic\n" >/tmp/kuma-configure.err && chown 0:0 /tmp/kuma-configure.err && chmod 644 /tmp/kuma-configure.err' || return 1
+    if ie2e_user_exec 'test -w /tmp/kuma-configure.err'; then
+        fail 'install-e2e: legacy Kuma error file is unwritable by the installer'
+        return 1
+    fi
+    pass 'install-e2e: legacy Kuma error file is unwritable by the installer'
     dind_exec 'cp .env.example .env' || return 1
     # DEMO=1 takes every Stage 1 answer from an existing .env.
     env_set TZ Etc/UTC
@@ -307,8 +314,7 @@ ie2e_reconfigure() {
     else
         fail 'install-e2e: configure.sh re-run keeps saved user state'
     fi
-    # fresh-install's assert_uptime_kuma_idempotent, on this user run: as root
-    # it cannot reuse the error file that this user's run left in /tmp.
+    # Check monitor idempotency on the installer's own non-root reconfigure run.
     if grep -qE '^\[SKIP\] Monitors already exist' <<<"$plain" && ! grep -qE '^\[OK\] Monitors created' <<<"$plain"; then
         pass 'install-e2e: configure.sh re-run keeps the Uptime Kuma monitors and creates none'
     else
@@ -446,12 +452,16 @@ ie2e_run() {
         fail 'install-e2e: host and wizard answers prepared'
         return 1
     }
+    # When the non-root installer configures the stack and then runs it again.
     ie2e_install || return 1
     ie2e_rerun || return 1
     ie2e_reconfigure || return 1
     ie2e_menu_updates || return 1
     # Every default-profile service, now on its candidate, is still configured.
     fresh_install_assert_services "$IE2E_SETUP_LOG" "$IE2E_PASSWORD" lan
+    # Then real provisioning and reconfiguration leave the legacy file untouched.
+    assert_eq 'legacy Kuma diagnostic' "$(dind_exec 'cat /tmp/kuma-configure.err')" \
+        'install-e2e: Uptime Kuma does not overwrite the legacy error file'
     # The fresh-install checks that need no remote state. They change Jellyfin
     # encoding and config.yml, so they run last. Omitted checks and the reasons
     # are in docs/operations/image-compatibility.md.

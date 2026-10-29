@@ -63,12 +63,17 @@ configure_uptime_kuma() {
     # Pre-pull so the timeout budget covers configuration, not image download.
     docker pull node:22-slim >/dev/null 2>&1 || true
 
-    # The error log is private like the env-file. A fixed /tmp path broke the
-    # redirect whenever a stale copy belonged to another user (one `sudo`
-    # run), and the whole configure step was then skipped with no error.
-    local _kuma_envfile _kuma_errfile
-    _kuma_envfile=$(mktemp)
-    _kuma_errfile=$(mktemp)
+    local kuma_err
+    kuma_err=$(mktemp "${TMPDIR:-/tmp}/kuma-configure.XXXXXX") || {
+        log_warn "Could not create Uptime Kuma error file"
+        return 0
+    }
+    local _kuma_envfile
+    _kuma_envfile=$(mktemp) || {
+        rm -f "$kuma_err"
+        log_warn "Could not create Uptime Kuma credentials file"
+        return 0
+    }
     # Belt-and-braces beyond the subshell EXIT trap below: a TERM delivered to
     # THIS process (a `kill`, a `systemctl stop` on the unit driving setup)
     # in the narrow window between creating the env-file and entering the
@@ -83,25 +88,16 @@ configure_uptime_kuma() {
     # `set -u`. @Q quotes the value safely, so a TMPDIR containing a quote
     # cannot turn the trap body into a syntax error that silently does nothing.
     # shellcheck disable=SC2064 # deliberate: expand now, see above
-    trap "rm -f ${_kuma_envfile@Q} ${_kuma_errfile@Q}" TERM
+    trap "rm -f ${_kuma_envfile@Q} ${kuma_err@Q}" TERM
     # shellcheck disable=SC2064 # deliberate: expand now, see above
-    trap "rm -f ${_kuma_envfile@Q} ${_kuma_errfile@Q}; trap - TERM RETURN" RETURN
+    trap "rm -f ${_kuma_envfile@Q} ${kuma_err@Q}; trap - TERM RETURN" RETURN
     printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
-    # This EXIT trap is the ONLY cleanup on a real Ctrl-C, not a redundant
-    # backstop. SIGINT reaches the whole foreground process group: configure.sh
-    # installs no traps of its own, so it dies from the untrapped signal. The
-    # RETURN trap never runs (it is not an EXIT trap) and the TERM trap never
-    # runs (wrong signal). Only this subshell's EXIT trap fires, which is what
-    # keeps the shared admin password from surviving an interrupted run.
-    # Proven by driving the configurator under a PTY and sending a genuine
-    # ^C: with this line removed the env-file is left behind with KUMA_PW in
-    # it. Deleting it leaves the unit suite green, because a background job
-    # (`setsid bash worker &`) runs with SIGINT ignored and cannot reproduce
-    # a terminal interrupt — do not treat that green as coverage.
-    # The explicit rm below is belt-and-braces for the normal-exit path.
+    # Ctrl-C can kill the caller before RETURN or TERM cleanup runs. The
+    # subshell's EXIT trap removes both files on that path; the unit suite
+    # drives it through a real terminal interrupt as well as SIGTERM.
     result=$(
-        trap 'rm -f "$_kuma_envfile"' EXIT
+        trap 'rm -f "$_kuma_envfile" "$kuma_err"' EXIT
         timeout 120 docker run --rm --network mediastack \
             --env-file "$_kuma_envfile" \
             -e MONITORS_JSON="$monitors_json" \
@@ -219,13 +215,15 @@ function emit(socket, event, ...args) {
     }
 })();
 "
-' 2>"$_kuma_errfile"
+' 2>"$kuma_err"
+        # Keep diagnostics until the caller logs them; RETURN removes the file.
+        trap 'rm -f "$_kuma_envfile"' EXIT
     )
     rm -f "$_kuma_envfile"
 
     if [[ -z "$result" ]]; then
         log_warn "Uptime Kuma configuration returned no output"
-        [[ -s "$_kuma_errfile" ]] && log_warn "$(tail -5 "$_kuma_errfile")"
+        [[ -s "$kuma_err" ]] && log_warn "$(tail -5 "$kuma_err")"
         return 0
     fi
 

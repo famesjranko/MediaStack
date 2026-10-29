@@ -303,6 +303,11 @@ override, and pulls, starts and configures the LAN stack. The scenario then:
 5. runs the `fresh-install` service checks in `lan` mode on the final stack, then
    the Jellyfin encoding and drift checks.
 
+The disposable host starts with a root-owned `/tmp/kuma-configure.err` that the
+installer cannot write. Uptime Kuma must provision its monitors and status page,
+then reconfigure without changing this legacy file. The host unit suite also
+checks private stderr files and cleanup on success, failure and interruption.
+
 The PTY steps choose menu items by label (`"choose"` steps), because item numbers
 change with install state. Jellyfin, Sonarr, Radarr, Jackett, qBittorrent and Seerr
 install on their accepted digest and reach their candidate through the menu. Every
