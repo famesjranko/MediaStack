@@ -15,7 +15,9 @@ dind_exec() {
     case "$1" in
         'docker compose up -d --force-recreate '*) printf '%s\n' "$1" >"$tmp/baseline-recreated" ;;
         *./scripts/update.sh) kuma_phase=updated ;;
-        *./scripts/configure.sh*--only\ uptime-kuma) kuma_phase=reconfigured ;;
+        *./scripts/configure.sh*--only\ uptime-kuma)
+            if [[ "$kuma_phase" == baseline ]]; then kuma_prepared=1; else kuma_phase=reconfigured; fi
+            ;;
         'cmp -s '*) return 1 ;;
         'docker inspect '*wireguard) return 1 ;;
         'docker inspect '*)
@@ -43,7 +45,10 @@ assert_seerr_configured() { return 0; }
 fresh_install_assert_product_probes() { echo "product probes: ${1:-}"; }
 upgrade_kuma() {
     case "$1" in
-        seed) kuma_dropped=0 ;;
+        seed)
+            ((kuma_prepared)) || return 1
+            kuma_dropped=0
+            ;;
         drop) kuma_dropped=1 ;;
         check)
             [[ "$kuma_mode" == blind ]] && return 0
@@ -77,7 +82,7 @@ probe() (
     PASS_COUNT=0 FAIL_COUNT=0 SKIP_COUNT=0
     FAILED_TESTS=()
     scenario_begin candidate-inspection
-    flipped=0 dropped=0 kuma_dropped=0 kuma_phase=baseline
+    flipped=0 dropped=0 kuma_dropped=0 kuma_prepared=0 kuma_phase=baseline
     run_scenario
     summary
 )
@@ -158,7 +163,7 @@ scenario=tests/scenarios/upgrade-path.sh
 line_of() { grep -nF -- "$1" "$scenario" | head -1 | cut -d: -f1; }
 update_line=$(line_of './scripts/update.sh')
 check_line=$(line_of "if upgrade_state check; then")
-configure_line=$(line_of './scripts/configure.sh --only')
+configure_line=$(line_of './scripts/configure.sh --only qbittorrent,')
 beszel_check_line=$(line_of 'if beszel_upgrade_state check; then')
 beszel_repair_line=$(line_of 'if beszel_upgrade_state prepare-recovery')
 probes_line=$(line_of "fresh_install_assert_product_probes 'upgrade-path candidate: '")

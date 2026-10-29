@@ -10,6 +10,9 @@ upgrade_state() { dind_exec "python3 -I tests/fixtures/upgrade_state.py $1"; }
 upgrade_kuma() { dind_exec "python3 -I tests/fixtures/kuma_state.py $1"; }
 
 upgrade_kuma_prepare() {
+    # Optional services must be monitored before the accepted-state snapshot.
+    # Bazarr starts after fresh-install configured the original monitor list.
+    dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only uptime-kuma" >/tmp/ms-upgrade-kuma-baseline.log 2>&1 || return 1
     upgrade_kuma seed || return 1
     upgrade_kuma drop || return 1
     if upgrade_kuma check >/dev/null 2>&1; then
