@@ -244,6 +244,7 @@ assert_rc 0 'upgrade-path baseline succeeds without claiming candidate evidence'
 assert_eq yes "$([[ -f "$tmp/baseline-recreated" ]] && echo yes || echo no)" 'upgrade-path baseline reloads state from disk'
 assert_contains "$OUT" 'no candidate evidence' 'baseline replacement is labelled explicitly'
 assert_contains "$(cat "$tmp/baseline-recreated")" ' beszel' 'upgrade-path baseline reloads Beszel history from disk'
+assert_contains "$(cat "$tmp/baseline-recreated")" ' uptime-kuma' 'upgrade-path baseline reloads Kuma history from disk'
 
 probe_kuma_readiness() (
     PASS_COUNT=0 FAIL_COUNT=0 SKIP_COUNT=0 FAILED_TESTS=()
