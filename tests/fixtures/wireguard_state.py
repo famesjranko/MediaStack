@@ -19,6 +19,7 @@ import urllib.request
 from typing import Any
 
 STATE = pathlib.Path("/tmp/ms-wireguard-state.json")
+CLIENT_CONFIG = pathlib.Path("/tmp/ms-wireguard-client.conf")
 PEER_FIELDS = (
     "id",
     "name",
@@ -203,6 +204,11 @@ def main() -> None:
         client.probe()
     elif action == "save":
         STATE.write_text(json.dumps(client.snapshot(), sort_keys=True))
+        peer = next(row for row in client.peers() if row["name"] == "migration-enabled")
+        # Keep the accepted export private and reuse it after migration. Fetching
+        # another export on the candidate could hide a rotated client key.
+        CLIENT_CONFIG.touch(mode=0o600)
+        CLIENT_CONFIG.write_text(client.call(f"/client/{peer['id']}/configuration", raw=True))
     elif action == "check":
         check(json.loads(STATE.read_text()), client.snapshot())
     else:
