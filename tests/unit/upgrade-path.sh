@@ -12,7 +12,7 @@ trap 'rm -rf "$tmp"' EXIT
 # Isolate container operations while retaining the scenario and its assertions.
 dind_exec() {
     case "$1" in
-        'docker compose up -d --force-recreate '*) : >"$tmp/baseline-recreated" ;;
+        'docker compose up -d --force-recreate '*) printf '%s\n' "$1" >"$tmp/baseline-recreated" ;;
         'cmp -s '*) return 1 ;;
         'docker inspect '*wireguard) return 1 ;;
         'docker inspect '*)
@@ -75,6 +75,22 @@ MS_TEST_STRIP_SERVICES=""
 inspection=matching
 drop_report=both
 
+beszel_failure=""
+beszel_upgrade_state() {
+    printf '%s\n' "$1" >>"$tmp/beszel-calls"
+    [[ "$1" != "$beszel_failure" ]]
+}
+
+# Given each Beszel migration phase can fail independently.
+for beszel_failure in seed save check prepare-recovery; do
+    # When the real scenario encounters that failed phase.
+    run_cmd probe
+
+    # Then failed Beszel evidence makes the scenario fail.
+    assert_rc 1 "upgrade-path rejects failed Beszel $beszel_failure"
+done
+beszel_failure=""
+
 # When the real upgrade scenario inspects the running image.
 run_cmd probe
 
@@ -118,6 +134,8 @@ line_of() { grep -nF -- "$1" "$scenario" | head -1 | cut -d: -f1; }
 update_line=$(line_of './scripts/update.sh')
 check_line=$(line_of "if upgrade_state check; then")
 configure_line=$(line_of './scripts/configure.sh --only')
+beszel_check_line=$(line_of 'if beszel_upgrade_state check; then')
+beszel_repair_line=$(line_of 'if beszel_upgrade_state prepare-recovery')
 probes_line=$(line_of "fresh_install_assert_product_probes 'upgrade-path candidate: '")
 
 # Then state is compared after the update and before configure.sh re-applies
@@ -127,6 +145,12 @@ if ((update_line && update_line < check_line && check_line < configure_line)); t
 else
     fail 'upgrade-path compares state after the update and before reconfiguration' \
         "update=$update_line check=$check_line configure=$configure_line"
+fi
+# And Beszel's migration comparison precedes any candidate credential repair.
+if ((update_line < beszel_check_line && beszel_check_line < beszel_repair_line && beszel_repair_line < configure_line)); then
+    pass 'upgrade-path compares Beszel state before candidate recovery and reconfiguration'
+else
+    fail 'upgrade-path compares Beszel state before candidate recovery and reconfiguration'
 fi
 # And the labelled candidate probes run after the update.
 if ((update_line && probes_line > update_line)); then
@@ -189,4 +213,5 @@ run_cmd probe
 assert_rc 0 'upgrade-path baseline succeeds without claiming candidate evidence'
 assert_eq yes "$([[ -f "$tmp/baseline-recreated" ]] && echo yes || echo no)" 'upgrade-path baseline reloads state from disk'
 assert_contains "$OUT" 'no candidate evidence' 'baseline replacement is labelled explicitly'
+assert_contains "$(cat "$tmp/baseline-recreated")" ' beszel' 'upgrade-path baseline reloads Beszel history from disk'
 summary

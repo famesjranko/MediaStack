@@ -237,7 +237,7 @@ AUTH_JSON='{"token":"tok","record":{"id":"user1"}}'
 
 # Given an inconclusive superuser login, including a timeout and an unrelated bad request.
 for SUPERUSER_HTTP in 000 403 429 500 503 400; do
-    SUPERUSER_JSON='{"code":400,"message":"Invalid request data."}'
+    SUPERUSER_JSON='{"status":400,"message":"Invalid request data."}'
     SUPERUSER_RC=0
     [[ "$SUPERUSER_HTTP" != 000 ]] || SUPERUSER_RC=28
     : >"$DOCKER_CALLS"
@@ -253,7 +253,7 @@ done
 
 # Given PocketBase explicitly rejects the superuser credentials.
 SUPERUSER_HTTP=400 SUPERUSER_RC=0
-SUPERUSER_JSON='{"code":400,"message":"Failed to authenticate.","data":{}}'
+SUPERUSER_JSON='{"status":400,"message":"Failed to authenticate.","data":{}}'
 : >"$DOCKER_CALLS"
 
 # When setup repairs the account and configures the existing system.

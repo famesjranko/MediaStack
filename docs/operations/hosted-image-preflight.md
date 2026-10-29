@@ -20,7 +20,7 @@ gh workflow run image-drift.yml --ref main \
 ```
 
 An empty `services` input selects changed images that have sufficient automated
-coverage. The planner holds Beszel hub, Uptime Kuma, NPM,
+coverage. The planner holds Uptime Kuma, NPM,
 WireGuard and FlareSolverr for separate operator review. Their specific gaps are
 listed in the [compatibility matrix](image-compatibility.md). Explicit selection
 does not bypass a hold. Image tag/repository changes and service additions or
