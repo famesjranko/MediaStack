@@ -198,6 +198,7 @@ SCENARIO_COVERAGE = {
     "npm-heal":       {"services": {"npm"}},
     "remote-gcp":     {"services": {"npm"}},
     "wireguard":      {"services": {"wireguard"}},
+    "wireguard-upgrade": {"services": {"wireguard"}},
     "fail2ban-drift": {"services": {"fail2ban"}},
     "ddns-seed":      {"services": {"ddns-updater"}},
     "ddns-verify":    {"services": {"ddns-updater"}},

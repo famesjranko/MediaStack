@@ -70,7 +70,7 @@ reset_fixture() {
     printf 'false' >"$INTERFACE_STATE_FILE"
     printf 'null' >"$PEER_FIREWALL_STATE_FILE"
     CREATE_HTTP='201'
-    CREATE_BODY='{"id":"peer-uuid-1","name":"mediaadmin"}'
+    CREATE_BODY='{"id":1,"name":"mediaadmin"}'
     CREATE_PERSISTS='false'
     POST_INTERFACE_HTTP='200'
     POST_INTERFACE_PERSISTS='true'
@@ -115,7 +115,7 @@ curl() {
             ;;
         POST:*/api/client)
             if [[ "$CREATE_PERSISTS" == "true" ]]; then
-                printf '[{"id":"peer-uuid-1","name":"mediaadmin"}]' >"$CLIENTS_STATE_FILE"
+                printf '[{"id":1,"name":"mediaadmin"}]' >"$CLIENTS_STATE_FILE"
             fi
             body_out="$CREATE_BODY"
             http_out="$CREATE_HTTP"
@@ -123,7 +123,7 @@ curl() {
         GET:*/api/client/*)
             local peer_fw
             peer_fw=$(cat "$PEER_FIREWALL_STATE_FILE")
-            body_out="{\"id\":\"peer-uuid-1\",\"name\":\"mediaadmin\",\"enabled\":true,\"expiresAt\":null,\"ipv4Address\":\"10.8.0.2\",\"ipv6Address\":\"fdcc:ad94:bacf:61a4::cafe:2\",\"preUp\":\"\",\"postUp\":\"\",\"preDown\":\"\",\"postDown\":\"\",\"allowedIps\":null,\"serverAllowedIps\":[],\"firewallIps\":$peer_fw,\"persistentKeepalive\":0,\"mtu\":1420,\"jC\":7,\"jMin\":10,\"jMax\":1000,\"i1\":null,\"i2\":null,\"i3\":null,\"i4\":null,\"i5\":null,\"dns\":null,\"serverEndpoint\":null}"
+            body_out="{\"id\":1,\"name\":\"mediaadmin\",\"enabled\":true,\"expiresAt\":null,\"ipv4Address\":\"10.8.0.2\",\"ipv6Address\":\"fdcc:ad94:bacf:61a4::cafe:2\",\"preUp\":\"\",\"postUp\":\"\",\"preDown\":\"\",\"postDown\":\"\",\"allowedIps\":null,\"serverAllowedIps\":[],\"firewallIps\":$peer_fw,\"persistentKeepalive\":0,\"mtu\":1420,\"jC\":7,\"jMin\":10,\"jMax\":1000,\"i1\":null,\"i2\":null,\"i3\":null,\"i4\":null,\"i5\":null,\"dns\":null,\"serverEndpoint\":null}"
             http_out="200"
             ;;
         POST:*/api/client/*)
@@ -205,7 +205,7 @@ assert_contains "$(cat "$BODY_LOG")" '"firewallEnabled": true' \
     "full-lan: POSTs firewallEnabled=true on /api/admin/interface"
 assert_contains "$(cat "$BODY_LOG")" '"firewallIps": ["192.168.1.0/24"]' \
     "full-lan: initial peer firewallIps = LAN CIDR"
-post_peer_id_calls=$(grep -cE '^POST .*/api/client/peer-uuid-1$' "$CURL_LOG" 2>/dev/null || true)
+post_peer_id_calls=$(grep -cE '^POST .*/api/client/1$' "$CURL_LOG" 2>/dev/null || true)
 assert_eq "1" "$post_peer_id_calls" \
     "full-lan: POSTs /api/client/<id> exactly once (firewallIps update)"
 assert_contains "${OK_MESSAGES[*]:-}" "wg-easy per-client firewall enabled" \
@@ -239,7 +239,7 @@ assert_contains "$(cat "$BODY_LOG")" '"192.168.1.50:5055/tcp"' \
     "containers: Seerr port appears in initial peer firewallIps"
 assert_contains "$(cat "$BODY_LOG")" '"192.168.1.50:7359/udp"' \
     "containers: Jellyfin auto-discovery (UDP) appears in initial peer firewallIps"
-peer_post_body=$(grep "POST .*/api/client/peer-uuid-1" "$BODY_LOG" | sed 's/^[^:]*:: //' || true)
+peer_post_body=$(grep "POST .*/api/client/1" "$BODY_LOG" | sed 's/^[^:]*:: //' || true)
 case "$peer_post_body" in
     *'192.168.1.50:51821/'*) fail "containers: wg-easy admin (51821) MUST NOT appear in initial peer firewallIps" ;;
     *) pass "containers: wg-easy admin (51821) excluded from initial peer firewallIps" ;;
@@ -253,7 +253,7 @@ WG_ACCESS_TIER="full-lan"
 WG_LAN_CIDR="192.168.1.0/24"
 WG_SERVER_LAN_IP="192.168.1.50"
 WG_PER_CLIENT_FIREWALL="true"
-CLIENTS_JSON='[{"id":"peer-uuid-1","name":"mediaadmin"}]'
+CLIENTS_JSON='[{"id":1,"name":"mediaadmin"}]'
 printf '%s' "$CLIENTS_JSON" >"$CLIENTS_STATE_FILE"
 configure_wireguard
 create_calls=$(grep -c '^POST .*/api/client$' "$CURL_LOG" 2>/dev/null || true)
@@ -275,7 +275,7 @@ configure_wireguard
 post_interface_calls=$(grep -c '^POST .*/api/admin/interface' "$CURL_LOG" 2>/dev/null || true)
 assert_eq "0" "$post_interface_calls" \
     "escape-hatch: WG_PER_CLIENT_FIREWALL=false skips firewall enable"
-post_peer_id_calls=$(grep -cE '^POST .*/api/client/peer-uuid-1$' "$CURL_LOG" 2>/dev/null || true)
+post_peer_id_calls=$(grep -cE '^POST .*/api/client/1$' "$CURL_LOG" 2>/dev/null || true)
 assert_eq "0" "$post_peer_id_calls" \
     "escape-hatch: WG_PER_CLIENT_FIREWALL=false skips peer firewallIps update"
 
@@ -394,7 +394,7 @@ assert_contains "${WARN_MESSAGES[*]:-}" "state persisted as enabled" \
     "full-lan: firewall enable accepts HTTP 500 with persisted state"
 assert_contains "${WARN_MESSAGES[*]:-}" "firewallIps returned HTTP 500 but state persisted" \
     "full-lan: peer firewallIps accepts HTTP 500 with persisted state"
-post_peer_id_calls=$(grep -cE '^POST .*/api/client/peer-uuid-1$' "$CURL_LOG" 2>/dev/null || true)
+post_peer_id_calls=$(grep -cE '^POST .*/api/client/1$' "$CURL_LOG" 2>/dev/null || true)
 assert_eq "1" "$post_peer_id_calls" \
     "full-lan: persisted peer read-back still receives firewallIps update"
 
@@ -432,7 +432,7 @@ CREATE_PERSISTS='true'
 configure_wireguard
 assert_contains "${OK_MESSAGES[*]:-}" "WireGuard peer 'mediaadmin' created" \
     "full-lan: 2xx peer creation without id reads back persisted peer"
-post_peer_id_calls=$(grep -cE '^POST .*/api/client/peer-uuid-1$' "$CURL_LOG" 2>/dev/null || true)
+post_peer_id_calls=$(grep -cE '^POST .*/api/client/1$' "$CURL_LOG" 2>/dev/null || true)
 assert_eq "1" "$post_peer_id_calls" \
     "full-lan: 2xx-without-id read-back still receives firewallIps update"
 

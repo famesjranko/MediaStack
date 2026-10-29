@@ -21,7 +21,7 @@ HELD = {
     "portainer": "database migration is not covered",
     "uptime-kuma": "monitor history migration is not covered",
     "npm": "proxy and certificate database migration is not covered",
-    "wireguard": "existing-peer migration is not covered",
+    "wireguard": "real-client handshake after migration is not covered",
     "flaresolverr": "health alone cannot prove a challenge solve",
 }
 # fail2ban needs upgrade-path: its regex-count exec runs only in scripts/update.sh.

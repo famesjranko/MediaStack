@@ -69,7 +69,7 @@ Swap a candidate tag into the **DinD copy** of compose (the host file is never t
 service's oracle:
 
 ```
-MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:16.0.0" ./tests/run.sh wireguard
+MS_TEST_IMAGE_OVERRIDES="wireguard=ghcr.io/wg-easy/wg-easy:15@sha256:<digest>" ./tests/run.sh --reset-between wireguard wireguard-upgrade
 ```
 
 `MS_TEST_IMAGE_OVERRIDES` takes `svc=ref` pairs (comma/space separated); a typo (unknown service,
@@ -351,5 +351,5 @@ third-party site and current Cloudflare policy, neither of which this repo can k
 | sonarr | latest | stable | scenario:fresh-install+install-e2e+upgrade-path | scripts/services/sonarr/main.sh + tests/assertions/sonarr.sh |
 | unpackerr | latest | stable | scenario:unpackerr | docker-compose.yml unpackerr environment (UN_SONARR_0_*/UN_RADARR_0_*) + tests/scenarios/unpackerr.sh — proves generated-key/authenticated completed-Radarr-queue → configured torrent-path archive extraction; does not prove a live qBittorrent transfer or Arr import |
 | uptime-kuma | major:2 | major-gated | scenario:fresh-install+install-e2e | scripts/services/uptime-kuma/main.sh + tests/assertions/uptime-kuma.sh |
-| wireguard | major:15 | unstable | scenario:wireguard | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios |
+| wireguard | major:15 | unstable | scenario:wireguard+wireguard-upgrade | scripts/services/wireguard/main.sh + tests/unit/wireguard-service.sh + wireguard scenarios |
 <!-- upgrades-manifest:end -->

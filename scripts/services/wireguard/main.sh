@@ -76,7 +76,7 @@ configure_wireguard() {
         log_warn "Could not read WireGuard peers"
         return 1
     }
-    json_check "WireGuard peers" :array '[].name:string' '[].id:string' <<<"$clients_json" || return 1
+    json_check "WireGuard peers" :array '[].name:string' '[].id:integer' <<<"$clients_json" || return 1
     peer_id=$(echo "$clients_json" | WG_PEER="$wg_user" python3 -c '
 import os, sys, json
 peer = os.environ["WG_PEER"]

@@ -22,7 +22,7 @@ the required scenarios. A combined token requires every named scenario.
 | autoheal | Unhealthy fixture restart through socket-proxy | Stateless container replacement | Intentional stops remain covered by product unit tests |
 | Unpackerr | Authenticated queue fixture through real extraction | Stateless worker replacement | A real transfer and Arr import remain separate |
 | Bazarr | Dedicated configurator and API assertions | No existing subtitle database migration fixture | Operator review required |
-| WireGuard | Dedicated peer and network policy scenario | No existing-peer migration fixture | Real client traffic and remote access remain separate |
+| WireGuard | Dedicated peer and network policy scenario | `wireguard-upgrade`: accepted-to-candidate `update.sh`, API authentication, enabled and disabled peer IDs, addresses, expiry, routing, firewall settings, DNS, MTU, keepalive, key fingerprints, client exports and loaded kernel configuration; checked before and after reconfiguration | Stays held until a real client handshake after migration is covered; public remote access remains separate |
 | FlareSolverr | Startup and health only, also under the real installer in `install-e2e` | No deterministic challenge-solve oracle | Health evidence does not authorize automatic acceptance |
 
 `upgrade-path` first installs the accepted lock, then applies the proposed lock
@@ -82,6 +82,28 @@ Neither test simulates host power loss or a Docker daemon crash.
 The fixture covers one small population per service. It does not prove every
 history event type, real media playback, a live torrent transfer, an Arr import,
 or a migration from an older MediaStack release.
+
+## WireGuard peer migration
+
+`wireguard-upgrade` starts the accepted Stable digest and configures the admin
+peer. It adds an enabled peer and a disabled peer with non-default settings.
+Before recording the baseline, it changes a peer MTU through the API and requires
+the comparison to reject the change. It restores the setting before the upgrade.
+
+The scenario runs the real `scripts/update.sh` with an exact candidate digest.
+Only WireGuard is active in this dedicated Docker fixture. It compares saved
+state before reconfiguration, then reconfigures and compares again. Each check
+uses the stored admin credential. Client exports supply the private-key and
+preshared-key fingerprints; raw keys never enter the saved snapshot or logs.
+Enabled peers and their preshared keys must also be loaded in the kernel.
+
+Without a candidate, the scenario forcibly recreates the accepted image and
+checks that it reloads the saved state. This earns no candidate receipt. An
+explicit candidate equal to the accepted digest is refused. Local acceptance
+requires both `wireguard` and `wireguard-upgrade` receipts for the same candidate.
+WireGuard stays held in the hosted publisher until the real-client handshake
+proof is added. This fixture does not test traffic, WAN reachability, host
+firewall rules, older MediaStack configurators, or Revert.
 
 ## API contracts and other touchpoints
 
