@@ -13,9 +13,11 @@ import urllib.request
 from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from npm_renewal import require_served
 from upgrade_state import changed_keys, fingerprint, read_env
 
 STAGING = "https://acme-staging-v02.api.letsencrypt.org/directory"
+PEBBLE = "https://pebble:14000/dir"
 STATE = pathlib.Path("/tmp/ms-npm-before.json")
 HOST_FIELDS = (
     "id",
@@ -53,6 +55,9 @@ def prepare() -> None:
 class Npm:
     def __init__(self, base: str = "http://127.0.0.1:81/api") -> None:
         self.env = read_env()
+        self.acme = self.env.get("NPM_LE_SERVER", STAGING)
+        if self.acme not in (STAGING, PEBBLE):
+            raise ValueError("NPM fixtures require staging or Pebble ACME")
         self.base = base
         self.token = ""
         result = self.call(
@@ -66,7 +71,7 @@ class Npm:
         if not self.token:
             raise ValueError("NPM login returned no token")
 
-    def call(self, path: str, body: Any = None) -> Any:
+    def call(self, path: str, body: Any = None, method: str | None = None) -> Any:
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -74,6 +79,7 @@ class Npm:
             self.base + path,
             data=json.dumps(body).encode() if body is not None else None,
             headers=headers,
+            method=method,
         )
         with urllib.request.urlopen(request, timeout=240) as response:
             return json.load(response)
@@ -99,7 +105,9 @@ class Npm:
             raise ValueError("required HTTPS proxy hosts are missing or disabled")
         if not any(h["domain_names"] == ["upgrade-fixture.invalid"] for h in hosts):
             raise ValueError("NPM lost the deliberate user proxy fixture")
+        admin = self.call("/users/me")
         result: dict[str, Any] = {
+            "admin": {key: admin[key] for key in ("id", "email", "roles", "is_disabled")},
             "hosts": sorted(
                 [{key: h[key] for key in HOST_FIELDS} for h in hosts], key=lambda h: h["id"]
             ),
@@ -118,8 +126,9 @@ class Npm:
             issuer = subprocess.check_output(
                 ["openssl", "x509", "-noout", "-issuer"], input=pem, timeout=10
             )
-            if b"STAGING" not in issuer.upper():
-                raise ValueError("certificate is not from Let's Encrypt staging")
+            expected_issuer = b"PEBBLE" if self.acme == PEBBLE else b"STAGING"
+            if expected_issuer not in issuer.upper():
+                raise ValueError("certificate is not from the fixture ACME issuer")
             subprocess.run(
                 ["openssl", "x509", "-noout", "-checkend", "0"],
                 input=pem,
@@ -137,8 +146,8 @@ class Npm:
                 )
             conf = f"/etc/letsencrypt/renewal/npm-{cert_id}.conf"
             renewal = subprocess.check_output(["docker", "exec", "npm", "cat", conf], timeout=20)
-            if STAGING.encode() not in renewal:
-                raise ValueError("certificate renewal does not use staging")
+            if self.acme.encode() not in renewal:
+                raise ValueError("certificate renewal does not use the fixture ACME server")
             leaf = pem.decode().split("-----END CERTIFICATE-----", 1)[0]
             der = ssl.PEM_cert_to_DER_cert(leaf + "-----END CERTIFICATE-----\n")
             result[f"certificate/{cert_id}"] = hashlib.sha256(der).hexdigest()
@@ -167,7 +176,15 @@ class Npm:
             "enabled": False,
             "ssl_forced": False,
             "advanced_config": "# user fixture",
-            "locations": [],
+            "locations": [
+                {
+                    "path": "/fixture",
+                    "forward_scheme": "http",
+                    "forward_host": "jellyfin",
+                    "forward_port": 8096,
+                    "advanced_config": "# user location",
+                }
+            ],
             "access_list_id": 0,
             "block_exploits": True,
             "allow_websocket_upgrade": True,
@@ -175,7 +192,7 @@ class Npm:
             "caching_enabled": False,
             "hsts_enabled": False,
             "hsts_subdomains": False,
-            "meta": {},
+            "meta": {"nginx_online": False},
         }
         self.call("/nginx/proxy-hosts", body)
         STATE.write_text(json.dumps(self.snapshot(), sort_keys=True))
@@ -184,6 +201,59 @@ class Npm:
         changed = changed_keys(json.loads(STATE.read_text()), self.snapshot())
         if changed:
             raise ValueError("NPM persistent state changed: " + ", ".join(changed))
+
+    def probe(self) -> None:
+        host = next(
+            h
+            for h in self.call("/nginx/proxy-hosts")
+            if h["domain_names"] == ["upgrade-fixture.invalid"]
+        )
+        body = {key: host[key] for key in HOST_FIELDS if key != "id"}
+        body["meta"] = host.get("meta") or {}
+        changed = dict(body, forward_port=8097)
+        try:
+            self.call(f"/nginx/proxy-hosts/{host['id']}", changed, "PUT")
+            try:
+                self.check()
+            except ValueError as error:
+                if "NPM persistent state changed" not in str(error):
+                    raise
+            else:
+                raise ValueError("NPM comparison missed a changed user proxy")
+        finally:
+            self.call(f"/nginx/proxy-hosts/{host['id']}", body, "PUT")
+        self.check()
+
+    def served(self) -> None:
+        state = self.snapshot()
+        for host in state["hosts"]:
+            if host["certificate_id"]:
+                for domain in host["domain_names"]:
+                    require_served(domain, state[f"certificate/{host['certificate_id']}"])
+
+    def legacy(self) -> None:
+        """Exercise the configurator's supported default-admin rotation on a candidate."""
+        if (
+            self.acme != PEBBLE
+            or pathlib.Path.cwd() != pathlib.Path("/root/MediaStack")
+            or self.env.get("DATA_DIR") != "/tmp/ms-data"
+        ):
+            raise ValueError("legacy admin fixture requires the isolated DinD install")
+        # Password changes invalidate the token needed for the identity update.
+        self.call(
+            "/users/me",
+            {"name": "Administrator", "nickname": "Admin", "email": "admin@example.com"},
+            "PUT",
+        )
+        self.call(
+            "/users/me/auth",
+            {
+                "type": "password",
+                "current": self.env["JELLYFIN_ADMIN_PASSWORD"],
+                "secret": "changeme",
+            },
+            "PUT",
+        )
 
     def renew(self) -> None:
         before = self.snapshot()
@@ -201,6 +271,8 @@ class Npm:
         ):
             raise ValueError("staging renewal changed proxy or certificate identity")
         pathlib.Path("/tmp/ms-npm-after.json").write_text(json.dumps(after, sort_keys=True))
+        if self.acme == PEBBLE:
+            self.served()
 
 
 if __name__ == "__main__":

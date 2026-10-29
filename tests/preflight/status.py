@@ -12,7 +12,7 @@ RUNBOOK = (
 def remote_pointer(service: str) -> str:
     if service == "npm":
         return (
-            " → run `tests/gcp-vm/run-candidate.sh npm --plan <plan.json> "
+            "; separate WAN proof: run `tests/gcp-vm/run-candidate.sh npm --plan <plan.json> "
             "--plan-hash <hash> --output <new-dir>` "
             f"([runbook]({RUNBOOK}))"
         )

@@ -16,7 +16,6 @@ import image_drift as drift  # noqa: E402
 
 # Existing-install or behavioral gaps require an operator's separate review.
 HELD = {
-    "npm": "proxy and certificate database migration is not covered",
     "flaresolverr": "health alone cannot prove a challenge solve",
 }
 # fail2ban needs upgrade-path: its regex-count exec runs only in scripts/update.sh.

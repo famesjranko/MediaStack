@@ -40,6 +40,7 @@ TRACED_SCENARIOS = frozenset(
         "install-e2e",
         "upgrade-path",
         "portainer-upgrade",
+        "npm-upgrade",
         "wireguard",
         "wireguard-upgrade",
     }

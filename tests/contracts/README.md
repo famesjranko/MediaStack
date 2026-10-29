@@ -117,7 +117,7 @@ top-level `exec` key lists them. A file with no HTTP API, such as
 exec:
   - {id: client-reload, command: [fail2ban-client, reload], callers: [scripts/configure.sh]}
   - {id: regex-count, command: [sh, -c], match: fail2ban-regex, callers: [scripts/lib/health.sh]}
-  - {id: certbot-lock, command: [test, -e, /var/lib/letsencrypt/.certbot.lock], expect_exit: [0, 1], callers: [scripts/services/npm/certs.sh]}
+  - {id: certbot-lock, command: [sh, -c], match: /tmp/letsencrypt-lib/.certbot.lock, expect_exit: [0, 10], callers: [scripts/services/npm/certs.sh]}
 ```
 
 - The container is the file's `service`; each MediaStack container is named

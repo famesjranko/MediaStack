@@ -60,8 +60,8 @@ class FrozenInputs(unittest.TestCase):
         self.snapshot = self.folder / "current.tsv"
         drift.write_tsv(self.snapshot, list(self.current.values()))
 
-    def test_held_digest_is_frozen_in_weekly_plan(self):
-        # Given a drifted held NPM image and no automatic selection.
+    def test_npm_digest_is_frozen_for_both_local_and_remote_proofs(self):
+        # Given a drifted NPM image that has local automated coverage.
         hosted = build_plan(self.baseline, self.current, [], SOURCE, "99-1", {})
         path = self.folder / "plan.json"
         path.write_text(json.dumps(hosted))
@@ -70,9 +70,9 @@ class FrozenInputs(unittest.TestCase):
         with patch("remote_preflight.inputs.source_sha", return_value=SOURCE):
             result = frozen_inputs(None, path, fingerprint(hosted))
 
-        # Then NPM stays held and its frozen digest is available for remote proof.
-        self.assertIn("npm", HELD)
-        self.assertNotIn("npm", hosted["selected"])
+        # Then local selection keeps the same frozen digest available for remote proof.
+        self.assertNotIn("npm", HELD)
+        self.assertIn("npm", hosted["selected"])
         self.assertEqual(result["candidate"], hosted["snapshot"]["npm"])
         self.assertEqual(result["weekly_plan_hash"], fingerprint(hosted))
 

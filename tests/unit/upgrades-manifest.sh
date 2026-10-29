@@ -197,6 +197,8 @@ SCENARIO_COVERAGE = {
     "bazarr":         {"services": {"bazarr"}},
     "unpackerr":      {"services": {"unpackerr"}},
     "npm-heal":       {"services": {"npm"}},
+    "npm-upgrade":    {"services": {"npm"}},
+    "npm-renewal":    {"services": {"npm"}},
     "remote-gcp":     {"services": {"npm"}},
     "wireguard":      {"services": {"wireguard"}},
     "wireguard-upgrade": {"services": {"wireguard"}},

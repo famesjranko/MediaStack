@@ -1170,6 +1170,26 @@ they do not test downloads from subtitle providers or real media imports.
 Without a candidate, Bazarr is recreated on its accepted image to check disk
 reload. This gives no new-image acceptance evidence.
 
+## NPM migration scenario
+
+`./tests/run.sh npm-upgrade` starts the accepted NPM digest and issues two local
+Pebble certificates through the real configurator. It saves admin identity,
+proxy IDs and rules, a disabled user proxy with a custom location, certificate
+IDs, and certificate/private-key fingerprints.
+A deliberate user proxy change must fail the comparison before it is trusted.
+The real `scripts/update.sh` applies the candidate. State and fresh SNI TLS
+connections are checked before repair and after reconfiguration. The candidate
+also runs legacy admin rotation, opt-in rate-zone reload and certificate renewal.
+It acquires a real Certbot work-directory lock inside NPM. The product probe
+must report busy while that lock is held and idle after release.
+
+Without an override, it recreates the accepted container and earns no candidate
+receipt. An unchanged or tag-only explicit NPM candidate is refused. Hosted
+acceptance requires `fresh-install`, `npm-upgrade` and `npm-renewal`; the last
+scenario checks both manual and scheduled deployment. Companion applications
+are absent in `npm-upgrade`, so `fresh-install` supplies forwarding and security
+header checks. Public DNS, WAN access and public ACME remain separate checks.
+
 ## WireGuard migration scenario
 
 `./tests/run.sh wireguard-upgrade` boots and configures the accepted WireGuard

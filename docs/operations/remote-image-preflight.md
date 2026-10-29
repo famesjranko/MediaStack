@@ -1,6 +1,6 @@
 # Remote image preflight
 
-Use this operator-run check for an NPM digest that the weekly hosted gate holds.
+Use this operator-run check for an NPM digest that needs public WAN evidence.
 It installs the accepted stack, seeds user state, upgrades NPM through the real
 `scripts/update.sh`, and tests the candidate from the public internet.
 It then deletes the disposable VM. It publishes a local receipt only after
@@ -49,8 +49,9 @@ This populates the shared migration oracle when the installer's optional public
 indexers are disabled. The tracker uses a digest-pinned helper image on the
 stack network, publishes no host port and makes no public tracker calls.
 
-NPM stays in `HELD`. Remote evidence is for local acceptance and PR review.
-It does not enter the hosted publisher.
+NPM's hosted acceptance requires fresh setup, local migration and renewal with
+Pebble. This remote proof adds public DNS, staging ACME and WAN firewall evidence.
+Remote receipts do not enter the hosted publisher or replace the local scenarios.
 
 Local WireGuard scenarios cover stored peer migration and an existing IPv4
 client's handshake and tunnel traffic. Public WAN access remains a separate
@@ -177,7 +178,9 @@ created with automatic deletion. No static address or additional disk is created
 A successful output directory contains `plan.json`, `current.tsv`, `run.log`,
 `summary.md`, and `receipts.tsv`. The remote v3 receipt adds `plan_hash` between
 `arch` and `recorded_at_utc` in the existing tab-separated format. Hosted v2
-receipts stay unchanged. Local acceptance requires the reviewed remote hash.
+receipts stay unchanged. The remote harness verifies the receipt's `plan_hash`
+against the reviewed plan before publication. Local acceptance requires the
+three local scenario receipts; operator-run WAN evidence remains separate.
 
 A failed or interrupted run publishes no receipt. Pending receipts are removed.
 The failure names the operation that failed or reached its deadline. Common
@@ -191,19 +194,22 @@ with it. Do not retrieve or publish those files: they can contain credentials.
 Keep the reduced evidence outside tracked paths. Review it before attaching it
 to a PR. Remote evidence is operator testimony, not a hosted attestation.
 
-Accept only the tested NPM row:
+For a digest update, first collect the required local receipts from
+`fresh-install`, `npm-upgrade` and `npm-renewal` at this source commit. The remote
+receipt alone cannot authorize the update. Keep the local receipts in
+`.tmp/npm-local-receipts.tsv`, then accept only the tested NPM row:
 
 ```bash
 python3 scripts/image_drift.py \
   --previous docs/operations/image-digests.lock \
   --current-file .tmp/npm-evidence/current.tsv \
   --write-current docs/operations/image-digests.lock --accept-services npm \
-  --preflight-receipt .tmp/npm-evidence/receipts.tsv \
-  --receipt-plan-hash REMOTE_PLAN_HASH --receipt-run-id REMOTE_RUN_ID
+  --preflight-receipt .tmp/npm-local-receipts.tsv
 ```
 
-Read `REMOTE_PLAN_HASH` and `REMOTE_RUN_ID` from `summary.md`. They differ from the
-weekly plan hash. Run acceptance at the same source commit. The gate checks the
-digest, source, scenario, architecture, run and remote plan hash. Other lock rows
-are preserved. Open a normal PR with the run log and evidence summary attached
-or linked. Keep NPM held in the hosted planner. Never merge automatically.
+The harness checks the remote receipt's digest, source, scenario, architecture,
+run and remote plan hash before it publishes evidence. The local acceptance gate
+checks the required local receipts at the same source commit. Other lock rows
+are preserved. Open a normal PR with both sets of evidence attached
+or linked. State which checks used local fixtures and which used public WAN.
+Never merge automatically.
