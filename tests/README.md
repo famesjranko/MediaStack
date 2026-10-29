@@ -18,6 +18,13 @@ weekly, one hour after the lightweight image-drift alert, and by manual dispatch
 use the accepted digest record through the generated compose override; Latest-channel
 installs intentionally follow upstream tags.
 
+The separate weekly `Baseline Canary` runs `install-e2e` on accepted images
+even when no digest changes. It reports failures in one `baseline-canary` issue
+and warns about schedule inactivity after 45 days without a default-branch
+commit. It never publishes image updates. Its planner, failure report and issue
+lifecycle have host coverage in `tests/unit/baseline-canary.sh`. See the
+[baseline canary runbook](../docs/operations/hosted-image-preflight.md#weekly-baseline-canary).
+
 ## What reaches DinD
 
 `dind_copy_repo` (`tests/lib/dind.sh`) exports the pristine source tree: every tracked file plus every untracked file git does not ignore, from `git ls-files --cached --others --exclude-standard`. Uncommitted edits and new scenario files travel; the gitignored runtime state of a live install or an earlier run on the host (`.env`, `config.yml`, `docker-compose.override.yml`, the `config/<service>/` databases, completion markers, receipts, override records) never does, so a "fresh" scenario cannot inherit a completed setup. The tracked templates under `config/examples/` do reach DinD, and scenarios seed the live copies from them (`create_config_dirs_in_dind`). A non-git directory or an empty population is refused. `tests/unit/dind.sh` proves the exclusion set.

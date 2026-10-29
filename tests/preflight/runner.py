@@ -68,6 +68,13 @@ def lifecycle_events(raw: str) -> list[dict[str, Any]]:
 
 
 def evidence(name: str, output: pathlib.Path) -> None:
+    version = json.loads(docker("exec", name, "docker", "version", "--format", "{{json .}}"))
+    runtime = {
+        "client": version["Client"]["Version"],
+        "engine": version["Server"]["Version"],
+        "compose": docker("exec", name, "docker", "compose", "version", "--short").strip(),
+    }
+    (output / "runtime.json").write_bytes(canonical(runtime))
     raw = docker("exec", name, "cat", "/tmp/ms-receipt-events.jsonl")
     events = lifecycle_events(raw)
     (output / "events.json").write_bytes(canonical(events))
@@ -288,7 +295,7 @@ def record(
         result[key] = len(re.findall(r"^  \[" + marker + r"\] ", text, re.M))
     try:
         evidence(name, output)
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         result["evidence_error"] = sanitize(str(exc))
     result["elapsed_seconds"] = round(time.monotonic() - start)
     result.update(sampler.finish())

@@ -1,0 +1,79 @@
+name: Baseline Canary
+
+# Runs independently of image-drift's candidate selection, including no-drift weeks.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baseline-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Install YAML reader
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      - name: Free runner disk before DinD starts
+        continue-on-error: true
+        run: bash tests/preflight/free-runner-disk.sh
+      - name: Refresh the DinD base image and package layers
+        run: docker build --pull --no-cache -t ms-hosted-dind:debian -f tests/Dockerfile.dind tests
+      - name: Check accepted images with current Docker, packages and fixtures
+        shell: bash
+        env:
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p /tmp/baseline-canary
+          python3 tests/baseline_canary.py run --run "$RUN_ID" \
+            --output /tmp/baseline-canary/result 2>&1 | tee /tmp/baseline-canary/runner.log
+      - name: Preserve evidence before releasing the disposable VM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: baseline-canary-${{ github.run_attempt }}
+          path: /tmp/baseline-canary/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Images never run in this job. Artifacts are read as data by checked-out source.
+  report:
+    needs: canary
+    if: ${{ !cancelled() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Install YAML reader
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          name: baseline-canary-${{ github.run_attempt }}
+          path: /tmp/baseline-canary
+      - name: Update failure and inactivity issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          OUTCOME: ${{ needs.canary.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 tests/baseline_canary.py report --folder /tmp/baseline-canary \
+            --outcome "$OUTCOME" --run-url "$RUN_URL"
