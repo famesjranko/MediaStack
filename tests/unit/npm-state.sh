@@ -269,6 +269,51 @@ class Wan(unittest.TestCase):
 
 
 class Tls(unittest.TestCase):
+    def test_slow_headers_and_body_cannot_extend_the_total_request_deadline(self):
+        # Given a TLS server that keeps each read active beyond the total request budget.
+        with tempfile.TemporaryDirectory() as folder:
+            cert, key = pathlib.Path(folder) / "cert.pem", pathlib.Path(folder) / "key"
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                "-keyout", str(key), "-out", str(cert), "-days", "1", "-subj", "/CN=fixture.test"],
+                check=True, capture_output=True)
+            expected = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert.read_text())).hexdigest()
+            for phase in ("headers", "body"):
+                with self.subTest(phase):
+                    dripped = threading.Event()
+                    stopped = threading.Event()
+                    class Slow(http.server.BaseHTTPRequestHandler):
+                        def log_message(self, *args): pass
+                        def do_GET(self):
+                            body = b'{"Id":"fixture"}' + b' ' * 100
+                            headers = (f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n"
+                                       "X-Fixture: " + "a" * 100 + "\r\n\r\n").encode()
+                            try:
+                                if phase == "body": self.wfile.write(headers)
+                                payload = headers + body if phase == "headers" else body
+                                for index, byte in enumerate(payload):
+                                    self.wfile.write(bytes([byte]))
+                                    if index: dripped.set()
+                                    if stopped.wait(0.02): break
+                            except (BrokenPipeError, ConnectionResetError, ssl.SSLError): pass
+                    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+                    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    context.load_cert_chain(cert, key)
+                    server.socket = context.wrap_socket(server.socket, server_side=True)
+                    thread = threading.Thread(target=server.serve_forever, daemon=True)
+                    thread.start()
+                    try:
+                        # When the public probe has a short total deadline and receives frequent bytes.
+                        with patch.object(wan, "HTTPS_TIMEOUT", 0.5, create=True):
+                            # Then both header and body streaming expire despite continued activity.
+                            with self.assertRaises(TimeoutError):
+                                wan.https("fixture.test", "127.0.0.1", "/", expected, server.server_port)
+                        self.assertTrue(dripped.is_set())
+                    finally:
+                        stopped.set()
+                        server.shutdown()
+                        server.server_close()
+                        thread.join(timeout=5)
+
     def test_public_https_requires_the_candidate_certificate_and_working_backend(self):
         # Given a real TLS endpoint with the candidate's leaf certificate.
         with tempfile.TemporaryDirectory() as folder:

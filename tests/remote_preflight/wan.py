@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import json
 import re
 import socket
@@ -14,6 +15,30 @@ from typing import Any
 from preflight.model import ROOT
 
 from .gcp import command
+
+HTTPS_TIMEOUT = 30
+
+
+def _remaining(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("public HTTPS exceeded its total request deadline")
+    return remaining
+
+
+class _DeadlineReader(io.RawIOBase):
+    """Apply the remaining budget to every TLS read, including HTTP parser reads."""
+
+    def __init__(self, tls: ssl.SSLSocket, deadline: float) -> None:
+        super().__init__()
+        self.tls, self.deadline = tls, deadline
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Any) -> int:
+        self.tls.settimeout(_remaining(self.deadline))
+        return self.tls.recv_into(buffer)
 
 
 def dns_ready(hosts: list[str], ip: str) -> None:
@@ -38,18 +63,31 @@ def https(host: str, ip: str, path: str, cert_hash: str, port: int = 443) -> dic
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
-    with (
-        socket.create_connection((ip, port), timeout=10) as sock,
-        context.wrap_socket(sock, server_hostname=host) as tls,
-    ):
-        if hashlib.sha256(tls.getpeercert(binary_form=True) or b"").hexdigest() != cert_hash:
-            raise ValueError("public HTTPS served a different certificate")
-        tls.sendall(f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
-        response = http.client.HTTPResponse(tls)
+    deadline = time.monotonic() + HTTPS_TIMEOUT
+    with socket.create_connection((ip, port), timeout=min(10, _remaining(deadline))) as sock:
+        sock.settimeout(_remaining(deadline))
+        with context.wrap_socket(sock, server_hostname=host) as tls:
+            return _https_response(tls, host, path, cert_hash, deadline)
+
+
+def _https_response(
+    tls: ssl.SSLSocket, host: str, path: str, cert_hash: str, deadline: float
+) -> dict[str, Any]:
+    if hashlib.sha256(tls.getpeercert(binary_form=True) or b"").hexdigest() != cert_hash:
+        raise ValueError("public HTTPS served a different certificate")
+    tls.settimeout(_remaining(deadline))
+    tls.sendall(f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
+    with http.client.HTTPResponse(tls) as response:
+        # HTTPResponse's normal buffered file restarts the socket timeout on
+        # every recv. Repeated bytes must not extend the complete request.
+        assert response.fp is not None
+        response.fp.close()
+        response.fp = io.BufferedReader(_DeadlineReader(tls, deadline))
         response.begin()
         if response.status != 200:
             raise ValueError("public HTTPS returned a non-200 response")
         value: dict[str, Any] = json.loads(response.read(1_000_000))
+        _remaining(deadline)
         return value
 
 
