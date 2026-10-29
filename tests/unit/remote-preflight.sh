@@ -304,14 +304,16 @@ class Cleanup(unittest.TestCase):
         self.assertFalse(any("delete" in argv for argv in cloud.calls))
 
     def test_success_failure_interrupt_and_lost_create_response(self):
-        for fault in ("", "candidate", "interrupt", "create", "cleanup", "wan", "receipt"):
+        for fault in ("", "candidate", "interrupt", "create", "cleanup", "wan", "wan-timeout", "receipt"):
             with self.subTest(fault), tempfile.TemporaryDirectory() as folder:
                 # Given a disposable cloud transport with one injected failure.
                 cloud = FakeCloud(fault)
                 out = pathlib.Path(folder) / "result"
                 p = plan()
+                expected = TimeoutError if fault == "wan-timeout" else (ValueError, RuntimeError, KeyboardInterrupt)
                 def candidate(gcp, actual, ph):
                     if fault == "wan": raise ValueError("no candidate HTTPS")
+                    if fault == "wan-timeout": raise TimeoutError("public HTTPS deadline expired")
                     return receipt(actual, ph, **({"digest": "bad"} if fault == "receipt" else {}))
                 patches = [patch("remote_preflight.gcp.command", cloud),
                            patch.object(run, "clean_source"), patch.object(run, "install"),
@@ -321,7 +323,7 @@ class Cleanup(unittest.TestCase):
                 with contextlib.ExitStack() as stack, contextlib.redirect_stdout(io.StringIO()):
                     for item in patches: stack.enter_context(item)
                     if fault:
-                        with self.assertRaises((ValueError, RuntimeError, KeyboardInterrupt)):
+                        with self.assertRaises(expected):
                             run.execute(p, CONFIG, out)
                     else:
                         run.execute(p, CONFIG, out)

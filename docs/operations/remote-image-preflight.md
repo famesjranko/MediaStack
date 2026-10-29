@@ -150,6 +150,9 @@ the operator's environment, git credentials or untracked files.
 Run the command from [Coverage](#coverage). Select a new output directory each
 time. Existing output directories are refused. The log prints the last stage
 reached. Each cloud command and remote operation has a deadline.
+Each public HTTPS request has a 30-second total deadline. This includes the
+connection, TLS handshake, response headers and response body. A server that
+keeps sending small amounts of data cannot extend the deadline.
 
 Cleanup runs on success, failure, SIGINT and SIGTERM. It waits for pending cloud
 creation before it verifies the VM's run
