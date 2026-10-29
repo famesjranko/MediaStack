@@ -43,13 +43,14 @@ EXPECTED_TRACE_SITES = Counter({
     ("assertions/jellyfin-encoding.sh", "./scripts/configure.sh --only jellyfin"): 6,
     ("assertions/seerr.sh", "./scripts/configure.sh --only seerr"): 2,
     ("assertions/uptime-kuma.sh", "./scripts/configure.sh --only uptime-kuma"): 1,
+    ("assertions/bazarr-upgrade.sh", "./scripts/configure.sh --only bazarr"): 1,
     ("scenarios/fresh-install.sh", "./scripts/configure.sh"): 1,
     ("scenarios/fresh-install.sh", "fresh_install_product_probe()"): 1,
     ("scenarios/install-e2e.sh", "ie2e_user_exec()"): 1,
     ("scenarios/upgrade-path.sh", "upgrade_launcher()"): 1,
     ("scenarios/upgrade-path.sh", "./scripts/update.sh"): 1,
     ("scenarios/upgrade-path.sh", "./scripts/configure.sh --only "
-     "qbittorrent,jackett,sonarr,radarr,jellyfin,seerr"): 1,
+     "qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/configure.sh --only portainer"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/update.sh"): 1,
 })

@@ -189,7 +189,7 @@ SCENARIO_COVERAGE = {
     # scenario -> compose profiles it brings up (override reaches via the patched
     # compose) and/or services it launches standalone (docker run + ms_test_image)
     "fresh-install":  {"profiles": {"default", "proxy", "autoheal"}},
-    "upgrade-path":   {"profiles": {"default", "proxy", "autoheal"}},
+    "upgrade-path":   {"profiles": {"default", "proxy", "autoheal", "subtitles"}},
     "portainer-upgrade": {"services": {"portainer"}},
     # The DEMO=1 installer is LAN-only: no DOMAIN, so no proxy profile.
     "install-e2e":    {"profiles": {"default", "autoheal"}},

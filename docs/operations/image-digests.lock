@@ -9,7 +9,7 @@ qbittorrent	linuxserver/qbittorrent:latest	sha256:75ecbb1c89ab7b0a21c4bde40b4820
 flaresolverr	ghcr.io/flaresolverr/flaresolverr:latest	sha256:c80ae007ce2ccdcd217a12426e4f039ef763ff90738c808d38810c3e59323767	2026-10-20T03:25:34Z	scenario:fresh-install+install-e2e
 seerr	ghcr.io/seerr-team/seerr:latest	sha256:d8fab675b55ad293ded98fd71efcfd46054cbad9746534ae1cc4794a88c0b3be	2026-10-22T10:18:13Z	scenario:fresh-install+install-e2e+upgrade-path
 unpackerr	ghcr.io/hotio/unpackerr:latest	sha256:724c702e81727e3d90c42cf2b3d900674203906a6d135ba07416c9a3f9f67fbb	2026-09-07T16:47:56Z	scenario:unpackerr
-bazarr	linuxserver/bazarr:latest	sha256:946dc8c5bb5331418eac60050cf40a63cb8f66ac039841dda493870e3559799c	2026-10-22T10:18:13Z	scenario:bazarr
+bazarr	linuxserver/bazarr:latest	sha256:946dc8c5bb5331418eac60050cf40a63cb8f66ac039841dda493870e3559799c	2026-10-22T10:18:13Z	scenario:bazarr+upgrade-path
 homepage	ghcr.io/gethomepage/homepage:latest	sha256:19c5c09184458a41b7b5915e71463a39f36cd33540f41bdbed008791b8182d5f	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e
 portainer	portainer/portainer-ce:latest	sha256:3609c307943bca8e5c492f69ddd6965df177208b50678a4cff28391c8dd4e96e	2026-10-22T10:18:13Z	scenario:fresh-install+install-e2e+portainer-upgrade
 npm	jc21/nginx-proxy-manager:2	sha256:4393e642e233e5efd5adeb7f10918d4aaea71c9ed875b94190273fc8e87f9594	2026-10-20T03:25:34Z	scenario:remote-gcp

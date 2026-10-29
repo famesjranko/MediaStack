@@ -1129,6 +1129,18 @@ same safety archive, restore the installed image and torrent state, pass real
 login, and clear the pending recovery. Docker and authentication are not stubbed.
 The host unit `revert-interrupted` covers the other interruption boundaries.
 
+`upgrade-path` also enables Bazarr's subtitles profile on the accepted lock.
+`tests/fixtures/bazarr_state.py` seeds a user language profile and subtitle
+history for a local episode and movie while the writers are stopped. Matching
+Arr file records and a generated local video keep normal startup sync active.
+The fixture disables Jellyfin metadata lookups for those local files. The candidate
+must preserve the database records, API settings and key fingerprints, and
+external subtitle files. The running API must return both history records
+before and after reconfiguration. These synthetic records test preservation;
+they do not test downloads from subtitle providers or real media imports.
+Without a candidate, Bazarr is recreated on its accepted image to check disk
+reload. This gives no new-image acceptance evidence.
+
 ## WireGuard migration scenario
 
 `./tests/run.sh wireguard-upgrade` boots and configures the accepted WireGuard
