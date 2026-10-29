@@ -16,7 +16,6 @@ import image_drift as drift  # noqa: E402
 
 # Existing-install or behavioral gaps require an operator's separate review.
 HELD = {
-    "beszel": "hub database migration is not covered",
     "uptime-kuma": "monitor history migration is not covered",
     "npm": "proxy and certificate database migration is not covered",
     "wireguard": "real-client handshake after migration is not covered",

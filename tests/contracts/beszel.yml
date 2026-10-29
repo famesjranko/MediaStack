@@ -10,4 +10,4 @@ endpoints:
   - {id: system-create, method: POST, path: /collections/systems/records, sends: [name, host, users], reads: [id, name], callers: [scripts/services/beszel/main.sh]}
   - {id: system-update-host, method: PATCH, path: "/collections/systems/records/{key}", sends: [host], reads: [], callers: [scripts/services/beszel/main.sh]}
 exec:
-  - {id: superuser-upsert, unexercised: held-profile, command: [/beszel, superuser, upsert], callers: [scripts/services/beszel/main.sh]}
+  - {id: superuser-upsert, command: [/beszel, superuser, upsert], callers: [scripts/services/beszel/main.sh]}

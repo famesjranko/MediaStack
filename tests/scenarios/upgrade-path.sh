@@ -4,6 +4,8 @@ source tests/scenarios/fresh-install.sh
 source tests/lib/upgrade-recovery.sh
 source tests/assertions/bazarr-upgrade.sh
 
+beszel_upgrade_state() { dind_exec "python3 -I tests/fixtures/beszel_state.py $1"; }
+
 upgrade_state() { dind_exec "python3 -I tests/fixtures/upgrade_state.py $1"; }
 
 # Invoke the production update/revert functions. Only menu input is supplied by
@@ -76,6 +78,11 @@ run_scenario() {
     env_set HARDENING_ENABLED false
     env_set UFW_ENABLED false
     upgrade_bazarr_prepare || return 1
+    beszel_upgrade_state seed && beszel_upgrade_state save || {
+        fail 'upgrade-path seeds and records Beszel users, systems and history'
+        return 1
+    }
+    pass 'upgrade-path records Beszel users, systems, preferences, history and agent key'
     upgrade_state seed && upgrade_state save || {
         fail 'upgrade-path seeds and records real user settings'
         return 1
@@ -147,7 +154,7 @@ run_scenario() {
         pass 'upgrade-path baseline recreates the data-owning services (no candidate evidence)'
     fi
     local svc
-    for svc in jellyfin sonarr radarr jackett qbittorrent seerr; do
+    for svc in jellyfin sonarr radarr jackett qbittorrent seerr beszel; do
         if wait_healthy "$svc" 180; then
             pass "upgrade-path: $svc ready after accepted-to-candidate update"
         else
@@ -181,13 +188,21 @@ run_scenario() {
         return 1
     }
     pass 'upgrade-path preserves Bazarr subtitle state before repair'
+    if beszel_upgrade_state check; then
+        pass 'upgrade-path preserves Beszel users, systems, preferences, history and agent key'
+    else
+        fail 'upgrade-path preserves Beszel users, systems, preferences, history and agent key'
+    fi
     if upgrade_state check; then
         pass 'upgrade-path preserves users, settings, IDs, categories, and credentials'
     else
         fail 'upgrade-path preserves users, settings, IDs, categories, and credentials'
     fi
-    if dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr" >"$log" 2>&1 \
-        && upgrade_state check && upgrade_bazarr_check; then
+    # Exercise legacy TCP-entry and superuser CLI recovery on the candidate only
+    # after its unmodified persistent state has passed the migration check.
+    if beszel_upgrade_state prepare-recovery \
+        && dind_exec "MS_CONTRACT_TRACE=${CONTRACT_TRACE_DIR:-} UI_ASCII=1 ./scripts/configure.sh --only qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr,beszel" >"$log" 2>&1 \
+        && beszel_upgrade_state check && upgrade_state check && upgrade_bazarr_check; then
         pass 'upgrade-path reconfiguration preserves intentional user changes'
     else
         fail 'upgrade-path reconfiguration preserves intentional user changes'

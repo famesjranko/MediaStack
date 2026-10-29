@@ -186,14 +186,15 @@ class HostedEvidence(unittest.TestCase):
             build_plan(self.old, self.current, ["flaresolverr"], SOURCE, RUN, {})
 
     def test_each_candidate_is_isolated_in_phase_one(self):
-        # Given two changed candidates selected together.
-        plan = self.phase1(["radarr", "sonarr"])
+        # Given changed core and Beszel candidates selected together.
+        self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
+        plan = self.phase1(["radarr", "sonarr", "beszel"])
 
         # When their phase-1 jobs are planned.
         jobs = {j["id"]: j for j in plan["jobs"]}
 
         # Then each candidate runs alone through fresh, installer and existing-install scenarios.
-        self.assertEqual(set(jobs), {f"p1-{s}.{n}" for s in ("radarr", "sonarr")
+        self.assertEqual(set(jobs), {f"p1-{s}.{n}" for s in ("radarr", "sonarr", "beszel")
                                      for n in ("fresh-install", "install-e2e", "upgrade-path")})
         refs = effective(plan, jobs["p1-sonarr.upgrade-path"])
         # And the other candidate stays at its accepted digest in that job.
@@ -201,37 +202,46 @@ class HostedEvidence(unittest.TestCase):
         self.assertEqual(refs["sonarr"], plan["candidates"]["sonarr"])
 
     def test_selection_excludes_phase_one_failure(self):
-        # Given Sonarr passed phase 1 and Radarr failed its upgrade-path job.
-        plan = self.phase1(["radarr", "sonarr"])
-        self.pass_jobs(plan)
-        job = next(j for j in plan["jobs"] if j["id"] == "p1-radarr.upgrade-path")
-        self.write_evidence(plan, job, result=dict(self.result_for(plan, job), rc=1))
+        for service, rc in (("radarr", 1), ("beszel", None), ("beszel", 1)):
+            with self.subTest(service=service, rc=rc):
+                # Given Sonarr passed but another candidate lacks passing upgrade evidence.
+                self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
+                plan = self.phase1([service, "sonarr"])
+                job = next(j for j in plan["jobs"] if j["id"] == f"p1-{service}.upgrade-path")
+                shutil.rmtree(self.results, ignore_errors=True)
+                self.pass_jobs(plan, skip={job["id"]})
+                if rc is not None:
+                    self.write_evidence(plan, job, result=dict(self.result_for(plan, job), rc=rc))
 
-        # When the read-only selection job reads the phase-1 results.
-        selection = select_combination(plan, self.results)
+                # When the read-only selection job reads the phase-1 results.
+                selection = select_combination(plan, self.results)
 
-        # Then only Sonarr continues, and Radarr's failure is recorded.
-        self.assertEqual(selection["selected"], ["sonarr"])
-        self.assertEqual(selection["failed"], {"radarr": ["upgrade-path"]})
-        # And the frozen selection is bound to the phase-1 plan.
-        self.assertEqual(selection["parent"], fingerprint(plan))
+                # Then only Sonarr continues and the missing or failed upgrade is recorded.
+                self.assertEqual(selection["selected"], ["sonarr"])
+                self.assertEqual(selection["failed"], {service: ["upgrade-path"]})
+                self.assertEqual(selection["parent"], fingerprint(plan))
 
     def test_single_candidate_authorizes_from_phase_one(self):
-        # Given one selected candidate with complete phase-1 evidence.
-        self.pass_jobs(self.plan)
-        selection = select_combination(self.plan, self.results)
-        output = self.folder / "accepted"
+        for service in ("sonarr", "beszel"):
+            with self.subTest(service=service):
+                # Given a core or Beszel candidate with complete phase-1 evidence.
+                self.current["beszel"] = drift.ImageDigest("beszel", self.old["beszel"].image, self.digest)
+                drift.write_tsv(self.snapshot, list(self.current.values()))
+                plan = self.phase1([service])
+                self.pass_jobs(plan)
+                selection = select_combination(plan, self.results)
+                output = self.folder / ("accepted-" + service)
 
-        # When the verifier accepts the run.
-        accept(self.plan, selection, self.snapshot, self.results, output)
+                # When the verifier accepts the run.
+                accept(plan, selection, self.snapshot, self.results, output)
 
-        # Then phase-1 evidence authorizes that exact combination without phase 2.
-        self.assertEqual((selection["authority"], selection["jobs"]), ("phase-1", []))
-        accepted = rows(output / "image-digests.lock")
-        self.assertEqual(accepted["sonarr"].digest, self.digest)
-        # And every other row, including the drifted Radarr, keeps its accepted digest.
-        for service in self.old.keys() - {"sonarr"}:
-            self.assertEqual(accepted[service], self.old[service])
+                # Then phase-1 evidence authorizes that exact candidate without phase 2.
+                self.assertEqual((selection["authority"], selection["jobs"]), ("phase-1", []))
+                accepted = rows(output / "image-digests.lock")
+                self.assertEqual(accepted[service].digest, self.digest)
+                # And every other row keeps its accepted digest.
+                for other in self.old.keys() - {service}:
+                    self.assertEqual(accepted[other], self.old[other])
 
     def test_phase_one_cannot_authorize_combination(self):
         # Given two candidates that each passed phase 1 alone.

@@ -30,6 +30,16 @@ commit. It never publishes image updates. Its planner, failure report and issue
 lifecycle have host coverage in `tests/unit/baseline-canary.sh`. See the
 [baseline canary runbook](../docs/operations/hosted-image-preflight.md#weekly-baseline-canary).
 
+The `upgrade-path` scenario also saves Beszel hub users, monitored systems,
+user preferences, system and container history, and the installed agent key.
+It authenticates both admin identities and an additional user after the update,
+then repeats the state comparison after reconfiguration. After the first
+state comparison, it exercises the candidate configurator's legacy TCP-entry
+and superuser CLI recovery.
+The synthetic history belongs to a paused local fixture system, so new live
+samples do not change the comparison. `tests/unit/beszel-state.sh` proves the
+oracle rejects missing state, changed credentials and lost user access.
+
 ## What reaches DinD
 
 `dind_copy_repo` (`tests/lib/dind.sh`) exports the pristine source tree: every tracked file plus every untracked file git does not ignore, from `git ls-files --cached --others --exclude-standard`. Uncommitted edits and new scenario files travel; the gitignored runtime state of a live install or an earlier run on the host (`.env`, `config.yml`, `docker-compose.override.yml`, the `config/<service>/` databases, completion markers, receipts, override records) never does, so a "fresh" scenario cannot inherit a completed setup. The tracked templates under `config/examples/` do reach DinD, and scenarios seed the live copies from them (`create_config_dirs_in_dind`). A non-git directory or an empty population is refused. `tests/unit/dind.sh` proves the exclusion set.

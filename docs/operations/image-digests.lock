@@ -16,7 +16,7 @@ npm	jc21/nginx-proxy-manager:2	sha256:4393e642e233e5efd5adeb7f10918d4aaea71c9ed8
 fail2ban	crazymax/fail2ban:latest	sha256:34a1e5cc4ac7bb2527b806bcf1c3aa7f747db51930540f648521ba927a58c0bc	2026-10-22T10:18:13Z	scenario:fail2ban-drift
 ddns-updater	qmcgaw/ddns-updater:latest	sha256:d63829b761ba45e37fc8273de722c5f3bdc65d2196e8dd8195406969eb657543	2026-10-20T03:25:34Z	scenario:ddns-verify
 uptime-kuma	louislam/uptime-kuma:2	sha256:4b95dbe7ac5343b768f8e04e3035ccd59997872b1a35ab9b0f082d2cc279070e	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e
-beszel	henrygd/beszel:latest	sha256:8514a69d9bbbcb74f371a3205561ee231fc0289739cea64e8131f341d695b770	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e
+beszel	henrygd/beszel:latest	sha256:8514a69d9bbbcb74f371a3205561ee231fc0289739cea64e8131f341d695b770	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e+upgrade-path
 beszel-agent	henrygd/beszel-agent:alpine	sha256:4100e26f7b5e6ab89e73699b2366417795f5046ab36bc452daf1f105766b40a0	2026-10-25T06:18:34Z	scenario:fresh-install+install-e2e
 wireguard	ghcr.io/wg-easy/wg-easy:15	sha256:071f79a639e9361123a5e57733107320207b844ddbbd92dfa6962f541fe8aac8	2026-10-25T06:18:34Z	scenario:wireguard+wireguard-upgrade
 autoheal	willfarrell/autoheal:latest	sha256:a4645c87683564c02154fbfb056eba3431cdb32b48c923359c3d55c4ec56ce89	2026-10-28T14:16:37Z	scenario:autoheal

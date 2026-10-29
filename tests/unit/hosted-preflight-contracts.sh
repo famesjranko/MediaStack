@@ -50,7 +50,7 @@ EXPECTED_TRACE_SITES = Counter({
     ("scenarios/upgrade-path.sh", "upgrade_launcher()"): 1,
     ("scenarios/upgrade-path.sh", "./scripts/update.sh"): 1,
     ("scenarios/upgrade-path.sh", "./scripts/configure.sh --only "
-     "qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr"): 1,
+     "qbittorrent,jackett,sonarr,radarr,jellyfin,seerr,bazarr,beszel"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/configure.sh --only portainer"): 1,
     ("scenarios/portainer-upgrade.sh", "./scripts/update.sh"): 1,
 })
