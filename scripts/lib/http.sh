@@ -9,6 +9,9 @@ _HTTP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$_HTTP_LIB_DIR/common.sh"
 
+# shellcheck source=json.sh
+source "$_HTTP_LIB_DIR/json.sh"
+
 # Build a JSON object from key/value string pairs. All values are emitted as
 # strings and properly JSON-escaped (quotes, backslashes, control chars) —
 # safe for user-supplied input like passwords. For nested objects, numeric
@@ -105,6 +108,27 @@ api_fetch() { _http_request log_warn "$1" "" "" "" "${@:2}"; }
 http_check_data() { _http_request log_error "$2" "$1" "" "" "${@:3}"; }
 http_check_auth() { _http_request log_error "$1" "" "$2" "$3" "${@:4}"; }
 api_fetch_auth() { _http_request log_warn "$1" "" "$2" "$3" "${@:4}"; }
+
+# Strict service JSON request. Both secrets use curl stdin; successful bodies
+# reach the caller only after their required fields have been checked.
+# One attempt, with 10s connect / 45s total limits: replaying a POST/PATCH after
+# a lost response could duplicate a write. Callers own deliberate retries.
+# Args: <label> <method> <url> <body-or-empty> <header-or-empty> <value-or-empty>
+#       [required.dot.path ...] (array members use [], e.g. items[].id)
+# Returns 2 for a schema failure, 1 for a request failure.
+http_json_request() {
+    local label="$1" method="$2" url="$3" body="$4" header="$5" value="$6"
+    shift 6
+    local response error
+    response=$(_http_request log_warn "$label" "$body" "$header" "$value" \
+        --connect-timeout 10 --max-time 45 --retry 0 -X "$method" \
+        -H "Content-Type: application/json" "$url") || return 1
+    if ! error=$(json_require "$@" <<<"$response" 2>&1 >/dev/null); then
+        log_warn "$label: $error"
+        return 2
+    fi
+    printf '%s' "$response"
+}
 
 # Poll $url until it returns 2xx/3xx or ~90s elapses.
 wait_for_service() {

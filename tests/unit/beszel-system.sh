@@ -33,8 +33,25 @@ sleep() { :; }
 # logged as "<method> <url> <body>" and answers HTTP WRITE_CODE.
 SYSTEMS_JSON='{"items":[]}'
 WRITE_CODE=200
-curl_data_stdin() { printf '{"token":"tok","record":{"id":"user1"}}\n200'; }
-curl_header_stdin() { printf '%s' "$SYSTEMS_JSON"; }
+AUTH_JSON='{"token":"tok","record":{"id":"user1"}}'
+curl_data_stdin() {
+    if [[ "$*" == *'-o /dev/null'* ]]; then
+        printf '200'
+    else
+        printf '%s\n200' "$AUTH_JSON"
+    fi
+}
+SYSTEMS_CODE=200
+KEY_JSON='{"key":"fixture-agent-key"}'
+curl_header_stdin() {
+    if [[ "$*" == *getkey* ]]; then
+        printf '%s' "$KEY_JSON"
+        [[ "$*" != *'%{http_code}'* ]] || printf '\n200'
+    else
+        printf '%s' "$SYSTEMS_JSON"
+        [[ "$*" != *'%{http_code}'* ]] || printf '\n%s' "$SYSTEMS_CODE"
+    fi
+}
 curl_header_data_stdin() {
     local data="$3" method="" url="" prev=""
     shift 3
@@ -45,7 +62,7 @@ curl_header_data_stdin() {
         prev="$arg"
     done
     printf '%s %s %s\n' "$method" "$url" "$data" >>"$WRITES"
-    printf '{}\n%s' "$WRITE_CODE"
+    printf '{"id":"rec1","name":"MediaStack"}\n%s' "$WRITE_CODE"
 }
 
 run_sync() {
@@ -105,9 +122,112 @@ assert_contains "$LOGGED" "SKIP: Beszel system 'MediaStack' already registered" 
 SYSTEMS_JSON='{"items":[{"id":"rec1","name":"MediaStack","host":"host.docker.internal","port":"45876"}]}'
 WRITE_CODE=400
 run_sync
-assert_contains "$LOGGED" "WARN: Beszel system migration returned HTTP 400" "rejected move: warned"
+assert_contains "$LOGGED" "WARN: Beszel system migration failed" "rejected move: warned"
 assert_eq "1" "$SYNC_RC" "rejected move: the sync fails"
 WRITE_CODE=200
+
+# Given the hub returns a renamed systems-list field
+SYSTEMS_JSON='{"records":[]}'
+# When the local system is synced
+run_sync
+# Then the sync fails without creating a system from an assumed empty list
+assert_eq "1" "$SYNC_RC" "missing items: the sync fails"
+assert_eq "" "$(cat "$WRITES")" "missing items: no system is created"
+
+# Given the hub authenticates but omits the user record id
+AUTH_JSON='{"token":"tok","record":{}}'
+# When MediaStack logs in
+_beszel_login http://localhost:8090 admin@example.com pw
+LOGIN_RC=$?
+# Then the incomplete identity is rejected and no credentials remain usable
+assert_eq "1" "$LOGIN_RC" "missing user id: login fails"
+assert_eq "" "$BESZEL_TOKEN" "missing user id: token is cleared"
+AUTH_JSON='{"token":"tok","record":{"id":"user1"}}'
+
+for SYSTEMS_JSON in '{"items":null}' '{"items":{}}' '{"items":[{}]}' '{"items":[{"id":"","name":"MediaStack","host":"old","port":""}]}'; do
+    # Given an invalid systems list or an unaddressable record
+
+    # When the local system is synced
+    run_sync
+
+    # Then no record is written and the sync fails
+    assert_eq "1" "$SYNC_RC" "invalid systems list: sync fails ($SYSTEMS_JSON)"
+    assert_eq "" "$(cat "$WRITES")" "invalid systems list: no writes ($SYSTEMS_JSON)"
+done
+
+# Given a failed list request whose body resembles an empty list
+SYSTEMS_CODE=500
+SYSTEMS_JSON='{"items":[]}'
+
+# When the local system is synced
+run_sync
+
+# Then the error response cannot trigger system creation
+assert_eq "1" "$SYNC_RC" "rejected list: sync fails"
+assert_eq "" "$(cat "$WRITES")" "rejected list: no system is created"
+SYSTEMS_CODE=200
+
+# Given a valid hub whose agent recreate will fail
+DOCKER_CALLS="$TMP_DIR/docker.log"
+docker() {
+    printf '%s\n' "$*" >>"$DOCKER_CALLS"
+    return 1
+}
+env_save_api_key() { return 0; }
+log_info() { :; }
+LOGGED=""
+
+# When setup receives a new key and tries to recreate the agent
+NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw configure_beszel >/dev/null
+CONFIGURE_RC=$?
+
+# Then setup reports the failure and does not claim the agent restarted
+assert_eq 1 "$CONFIGURE_RC" "failed agent recreate: setup fails"
+assert_contains "$LOGGED" "Could not recreate Beszel agent" "failed agent recreate: actionable warning"
+assert_not_contains "$LOGGED" "Beszel agent restarted" "failed agent recreate: no false success"
+
+# Given a previous run saved the key but failed to recreate the agent
+LOGGED=""
+: >"$DOCKER_CALLS"
+
+# When setup is re-run with that key already saved
+BESZEL_AGENT_KEY=fixture-agent-key NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw configure_beszel >/dev/null
+CONFIGURE_RC=$?
+
+# Then it retries the pending recreate and reports its failure
+assert_eq 1 "$CONFIGURE_RC" "saved key: pending recreate is not skipped"
+assert_contains "$(cat "$DOCKER_CALLS")" "compose up -d beszel-agent" "saved key: compose is retried"
+
+# Given an unchanged valid hub and a successful Compose operation
+docker() {
+    printf '%s\n' "$*" >>"$DOCKER_CALLS"
+    return 0
+}
+SYSTEMS_JSON='{"items":[{"id":"rec1","name":"MediaStack","host":"/beszel_data/socket/beszel.sock","port":""}]}'
+: >"$WRITES"
+LOGGED=""
+
+# When setup is re-run with the current key
+BESZEL_AGENT_KEY=fixture-agent-key NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw configure_beszel >/dev/null
+CONFIGURE_RC=$?
+
+# Then it succeeds without rewriting the existing system record
+assert_eq 0 "$CONFIGURE_RC" "valid setup rerun: succeeds"
+assert_eq "" "$(cat "$WRITES")" "valid setup rerun: existing system is preserved"
+assert_contains "$LOGGED" "Beszel agent is running with the hub key" "valid setup rerun: reports the ready agent"
+
+# Given a superuser response missing its user record
+AUTH_JSON='{"token":"tok"}'
+: >"$DOCKER_CALLS"
+
+# When setup validates the successful authentication response
+NPM_ADMIN_EMAIL=admin@example.com JELLYFIN_ADMIN_PASSWORD=pw configure_beszel >/dev/null
+CONFIGURE_RC=$?
+
+# Then it fails without attempting to repair credentials through the CLI
+assert_eq 1 "$CONFIGURE_RC" "incomplete superuser response: setup fails"
+assert_eq "" "$(cat "$DOCKER_CALLS")" "incomplete superuser response: no CLI mutation"
+AUTH_JSON='{"token":"tok","record":{"id":"user1"}}'
 
 # ---------------------------------------------------------------------------
 # Converge wiring: scripts/launcher/converge.sh runs the Beszel step on update.

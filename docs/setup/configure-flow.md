@@ -13,8 +13,8 @@ scripts/
 ├── configure.sh              # thin entrypoint: env load, lib+service sourcing, main() orchestration
 ├── lib/
 │   ├── common.sh             # colours, logging, cfg_* YAML readers, api_get/api_post/api_put, curl_basic_auth/curl_data_stdin (secrets on stdin, never argv), *_api_key helpers
-│   ├── http.sh               # wait_for_service, http_json_body, http_json_post (cookie-session POST with body capture), http_check_data (secret-bearing body on stdin)
-│   ├── json.sh               # json_get, json_path, json_has_name, json_array_nonempty
+│   ├── http.sh               # wait_for_service, http_json_body, http_json_post (cookie-session POST with body capture), http_check_data (secret-bearing body on stdin), http_json_request (bounded request with required response fields)
+│   ├── json.sh               # json_get, json_path, json_has_name, json_array_nonempty, json_require
 │   └── arr/
 │       ├── main.sh           # configure_quality_profile, configure_quality_definitions, configure_arr_custom_formats, configure_arr_format_scores, configure_arr_indexers, configure_arr_disk_threshold
 │       ├── custom_formats.yml         # curated TRaSH Guides format definitions
@@ -387,13 +387,15 @@ Beszel is part of the default stack. When selected, `configure.sh` waits for its
 
 **Auth:** `POST /api/collections/users/auth-with-password` with `NPM_ADMIN_EMAIL` / `JELLYFIN_ADMIN_PASSWORD`. The hub auto-creates this user from `USER_EMAIL`/`USER_PASSWORD` env vars on first container start — no API call needed for initial user creation.
 
+**Response checks:** Beszel uses `http_json_request` for its API calls, with a 10-second connection limit, a 45-second total limit, and one attempt per call. Writes are not retried automatically because a lost response can hide a completed write. Required fields must be present, non-null, and of the expected type. Login requires `token` and `record.id`; key retrieval requires `key`; the systems list requires `items` and each record's `id`, `name`, `host`, and `port`. An empty `items` array is valid. An unreadable list leaves the system unchanged. Other services still use their existing HTTP paths while #158 is migrated service by service.
+
 **SSH key retrieval:** `GET /api/beszel/getkey` with Bearer auth returns the hub's ed25519 public key. This key is stable across restarts (generated once, persisted in `/beszel_data`). Saved to `.env` as `BESZEL_AGENT_KEY` via `env_save_api_key`.
 
-**Agent recreate:** When the key changes, `docker compose up -d beszel-agent` recreates the agent container with the new `KEY` env var. `docker restart` would NOT pick up the new key (same pattern as the Unpackerr recreate at the end of `main()`).
+**Agent recreate:** `docker compose up -d beszel-agent` applies the saved `KEY` on each run. Compose leaves an unchanged agent alone. This also retries a recreate that failed after an earlier run saved the key. A failed recreate warns and fails the Beszel step. `docker restart` would NOT pick up the new key (same pattern as the Unpackerr recreate at the end of `main()`).
 
 **System registration:** `POST /api/collections/systems/records` with `{name: "MediaStack", host: "/beszel_data/socket/beszel.sock", users: [user_id]}`. The agent listens on that unix socket (`LISTEN=/beszel_socket/beszel.sock`, the same `./config/beszel/socket` directory), not on a TCP port: with host networking a port would be open on every host interface. The `users` field is an **array** of user IDs, not a single string — a single string silently fails.
 
-**Idempotency:** Skip key save if `.env` already has the correct key. Skip system registration if the "MediaStack" system already uses the socket. An existing install's entry that is exactly `host.docker.internal` port `45876` (MediaStack's old entry) is `PATCH`ed to the socket, on configure and on the converge action after an update (`beszel_converge_local_system`); a "MediaStack" entry with any other host or port is user state and is reported with `log_drift`, never rewritten. Graceful failure on auth (`log_warn` + `return 0`) — hub may still be initializing on first run.
+**Idempotency:** Skip key save if `.env` already has the correct key. Skip system registration if the "MediaStack" system already uses the socket. An existing install's entry that is exactly `host.docker.internal` port `45876` (MediaStack's old entry) is `PATCH`ed to the socket, on configure and on the converge action after an update (`beszel_converge_local_system`); a "MediaStack" entry with any other host or port is user state and is reported with `log_drift`, never rewritten. A failed request or incomplete response logs a warning and fails the Beszel step. Re-run setup after the hub finishes initializing.
 
 ## Unpackerr restart (end of `main()` in `scripts/configure.sh`)
 

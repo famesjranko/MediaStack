@@ -87,8 +87,8 @@ body=""
 printf 'curl %s <<%s>>\n' "$*" "$body" | tr '\n' ' ' >>"$STUBLOG"
 echo >>"$STUBLOG"
 case "$*" in
-    *"-X PATCH"*) printf '\n200' ;;
-    *systems/records*) printf '{"items":[{"id":"s1","name":"MediaStack","host":"host.docker.internal","port":45876}]}' ;;
+    *"-X PATCH"*) printf '{}\n200' ;;
+    *systems/records*) printf '{"items":[{"id":"s1","name":"MediaStack","host":"host.docker.internal","port":"45876"}]}\n200' ;;
     *users/auth-with-password*) printf '{"token":"tok","record":{"id":"u1"}}\n200' ;;
     *auth/login*) printf 'Ok.\n200' ;;
     *app/preferences*) printf '{"bypass_auth_subnet_whitelist":"172.16.0.0/12","bypass_auth_subnet_whitelist_enabled":true}' ;;
@@ -118,7 +118,8 @@ run_entry() {
     assert_contains "$log" "/etc/systemd/system/docker.service.d/mediastack-admin-filter.conf" "$entry: the docker.service drop-in is installed"
     assert_contains "$log" "sudo /usr/local/sbin/mediastack-admin-filter apply" "$entry: the filter is applied"
     assert_contains "$log" '172.28.0.22/32, 172.28.0.23/32, 172.28.0.40/32' "$entry: qBittorrent's whitelist is narrowed to compose's default addresses"
-    assert_contains "$log" "-X PATCH http://localhost:" "$entry: Beszel's old entry is moved"
+    assert_contains "$log" "-X PATCH" "$entry: Beszel's old entry is patched"
+    assert_contains "$log" "/api/collections/systems/records/s1" "$entry: Beszel's exact old record is moved"
     assert_contains "$log" "ufw --force delete 2" "$entry: the unused Beszel UFW rule is deleted"
 }
 
