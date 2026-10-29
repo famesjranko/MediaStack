@@ -169,6 +169,8 @@ def build_plan(
         "run": run,
         "architecture": "x86_64",
         "accepted": {s: f"{r.image}@{r.digest}" for s, r in baseline.items()},
+        # Held digests also need frozen identity for the operator-run remote checks.
+        "snapshot": {s: f"{r.image}@{r.digest}" for s, r in current.items()},
         "candidates": {s: f"{current[s].image}@{current[s].digest}" for s in sorted(requested)},
         "selected": sorted(requested),
         "fixtures": fixtures,

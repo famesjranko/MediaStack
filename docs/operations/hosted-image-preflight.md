@@ -26,6 +26,10 @@ listed in the [compatibility matrix](image-compatibility.md). Explicit selection
 does not bypass a hold. Image tag/repository changes and service additions or
 removals require a separately reviewed baseline change.
 
+NPM has an [operator-run GCP check](remote-image-preflight.md) for its held digest.
+The weekly plan hash includes the full snapshot, including held services. Remote
+receipts remain on the local acceptance and PR-review path.
+
 ## Weekly schedule
 
 The workflow has two crons, in UTC. Each Monday:

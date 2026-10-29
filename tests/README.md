@@ -1,5 +1,10 @@
 # MediaStack E2E Test Framework
 
+Operator-run NPM candidate checks use
+[`gcp-vm/run-candidate.sh`](gcp-vm/run-candidate.sh). See the
+[remote image preflight runbook](../docs/operations/remote-image-preflight.md)
+for frozen inputs, disposable targets and local acceptance evidence.
+
 End-to-end tests that run inside a Docker-in-Docker container so your host stays clean after normal runs — no apt-installs, no stray containers, no lingering port bindings. The host-side image cache volume persists by design unless explicitly purged.
 
 DinD is a **Debian-based** image (`ms-dind:debian`, built from `tests/Dockerfile.dind`), matching the production distro. First `./tests/run.sh` invocation builds it (~40s); subsequent runs use the docker layer cache.

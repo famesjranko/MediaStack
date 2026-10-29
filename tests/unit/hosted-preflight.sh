@@ -441,7 +441,9 @@ class HostedEvidence(unittest.TestCase):
         self.assertIn("| sonarr | proposed in PR #12 |", text)
         self.assertIn("| radarr | failed in phase 1 (", text)
         self.assertIn("`result-p1-radarr.upgrade-path`", text)
-        self.assertIn("| bazarr | held: subtitle database migration is not covered |", text)
+        self.assertIn("| bazarr | held: subtitle database migration is not covered; remote proof pending "
+                      "([coverage and next checks](https://github.com/famesjranko/MediaStack/blob/main/"
+                      "docs/operations/remote-image-preflight.md#coverage)) |", text)
         self.assertIn("| lidarr | not selected |", text)
         # And a default-branch run is not marked as a trial.
         self.assertIn("Ref: `refs/heads/main`\n", text)

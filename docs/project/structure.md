@@ -26,6 +26,7 @@ README.md, LICENSE, CONTRIBUTING.md Front door, licence, and contribution guidan
 AGENTS.md                           Shared agent router
 .claude/CLAUDE.md                   Symlink to ../AGENTS.md (Claude Code reads this path)
 .github/                            Issue templates, security policy, CI and image-drift workflows
+skills/remote-image-preflight/       Portable operator workflow; points to the remote preflight runbook
 
 scripts/
   configure.sh                      Configuration entrypoint — sources lib/ + services/
@@ -157,6 +158,8 @@ tests/
   api-matrix/                       Per-service direct-API modules for the api-matrix layer
   scenarios/                        One file per scenario; tests/README.md documents each
   unit/                             Host unit suites, discovered by glob
+  remote_image_preflight.py         Operator-run NPM candidate command implementation
+  remote_preflight/                 Frozen inputs, disposable GCP transport and public WAN probes
   gcp-vm/                            Disposable GCP VM remote/WAN acceptance harness
   lan-host/                          Dedicated Debian hardware/GPU acceptance harness
 

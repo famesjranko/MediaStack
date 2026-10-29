@@ -59,6 +59,8 @@ def prepare(args: argparse.Namespace) -> None:
         "",
         "Source: `" + plan["source"] + "`",
         "",
+        "Plan SHA-256: `" + fingerprint(plan) + "`",
+        "",
         "Selected (each tested alone): " + (", ".join(plan["selected"]) or "none"),
         "",
         "Jobs: " + (", ".join(j["id"] for j in plan["jobs"]) or "none"),

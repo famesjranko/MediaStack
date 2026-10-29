@@ -4,6 +4,32 @@ from __future__ import annotations
 
 from typing import Any
 
+RUNBOOK = (
+    "https://github.com/famesjranko/MediaStack/blob/main/docs/operations/remote-image-preflight.md"
+)
+
+
+def remote_pointer(service: str) -> str:
+    if service == "npm":
+        return (
+            " → run `tests/gcp-vm/run-candidate.sh npm --plan <plan.json> "
+            "--plan-hash <hash> --output <new-dir>` "
+            f"([runbook]({RUNBOOK}))"
+        )
+    if service in {
+        "wireguard",
+        "ddns-updater",
+        "fail2ban",
+        "jellyfin",
+        "bazarr",
+        "beszel",
+        "portainer",
+        "uptime-kuma",
+    }:
+        return f"; remote proof pending ([coverage and next checks]({RUNBOOK}#coverage))"
+    return ""
+
+
 # publish.decide actions after which the open PR carries this run's lock.
 PROPOSED = ("create", "update", "unchanged")
 
@@ -125,6 +151,8 @@ def render(
     }
     for service, reason in plan["pending"].items():
         status[service] = "not selected" if reason == "not selected" else "held: " + reason
+    for service in status:
+        status[service] += remote_pointer(service)
     lines = [*heading(f"`{plan['run']}`", run), "| Service | Status |", "|---|---|"]
     lines += [f"| {service} | {text} |" for service, text in sorted(status.items())]
     if not status:

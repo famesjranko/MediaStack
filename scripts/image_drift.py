@@ -39,7 +39,7 @@ class ImageDigest:
 
 @dataclass(frozen=True)
 class Receipt:
-    """One v2 row of tests/.image-preflight-passed.tsv (service is the dict key)."""
+    """One v2 or remote v3 row (service is the dict key)."""
 
     image: str
     digest: str
@@ -47,6 +47,7 @@ class Receipt:
     source: str
     run_id: str
     arch: str
+    plan_hash: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,7 @@ class ReceiptPolicy:
     source: str | None
     run_ids: frozenset[str] | None = None
     arch: str = platform.machine()
+    plan_hash: str | None = None
 
 
 RECEIPT_COLUMNS = 8
@@ -157,6 +159,11 @@ def parse_args() -> argparse.Namespace:
             "Only receipts from these tests/run.sh run ids qualify (repeatable and "
             "comma-separated). Default: any run from the expected source."
         ),
+    )
+    parser.add_argument(
+        "--receipt-plan-hash",
+        metavar="SHA256",
+        help="Full hash of the reviewed remote plan; required for remote scenario receipts.",
     )
     parser.add_argument(
         "--preflight-plan",
@@ -550,14 +557,15 @@ def merge_selective(
 
 
 def read_pass_receipts(path: pathlib.Path | None) -> dict[str, list[Receipt]]:
-    """Load the v2 preflight pass-receipts written by tests/run.sh.
+    """Load hosted v2 and operator-run remote v3 pass receipts.
 
     Each row is ``service image digest scenario source run_id arch recorded_at_utc``
     (tab separated), appended by one ``./tests/run.sh`` invocation per scenario that
     passed and whose container events show the service running from that override's
     digest. Returns service -> receipts. A missing file is empty (nothing vouched
-    for, so accept fails closed). A row with any other column count is a legacy
-    (pre-v2) or malformed row: it never qualifies, and one stderr line counts them so
+    for, so accept fails closed). Remote v3 adds plan_hash before the timestamp.
+    A row with any other column count is legacy or malformed: it never qualifies,
+    and one stderr line counts it so
     a maintainer knows to delete the old file and re-run the preflight.
     """
     receipts: dict[str, list[Receipt]] = {}
@@ -569,18 +577,19 @@ def read_pass_receipts(path: pathlib.Path | None) -> dict[str, list[Receipt]]:
         if not line or line.startswith("#"):
             continue
         parts = line.split("\t")
-        if len(parts) != RECEIPT_COLUMNS:
+        if len(parts) not in (RECEIPT_COLUMNS, RECEIPT_COLUMNS + 1):
             skipped += 1
             continue
-        service, image, digest, scenario, source, run_id, _arch, _recorded = parts
+        service, image, digest, scenario, source, run_id, _arch = parts[:7]
+        plan_hash = parts[7] if len(parts) == RECEIPT_COLUMNS + 1 else ""
         receipts.setdefault(service, []).append(
-            Receipt(image, digest, scenario, source, run_id, _arch)
+            Receipt(image, digest, scenario, source, run_id, _arch, plan_hash)
         )
     if skipped:
         print(
             f"WARNING: ignored {skipped} legacy or malformed receipt row(s) in {path}; only v2 "
-            "rows (8 columns, with source and run id) can vouch for a digest. Delete the file "
-            "and re-run the preflight to record v2 rows.",
+            "(8 columns) or remote v3 (9 columns) rows can vouch for a digest. Delete the file "
+            "and re-run the preflight to record v2 rows or remote v3 rows.",
             file=sys.stderr,
         )
     return receipts
@@ -644,6 +653,12 @@ def _receipt_failure(
     arch_rows = [r for r in source_rows if r.arch == policy.arch]
     if not arch_rows:
         return f"receipt architecture differs from {policy.arch}; re-run on this architecture"
+    if scenario.startswith("remote-"):
+        if policy.plan_hash is None:
+            return "remote evidence requires --receipt-plan-hash from the reviewed run plan"
+        arch_rows = [r for r in arch_rows if r.plan_hash == policy.plan_hash]
+        if not arch_rows:
+            return "remote receipt plan hash differs from the reviewed run plan"
     if policy.run_ids is not None and not any(r.run_id in policy.run_ids for r in arch_rows):
         seen = ", ".join(sorted({r.run_id for r in source_rows}))
         allowed = ", ".join(sorted(policy.run_ids))
@@ -771,12 +786,22 @@ def resolve_receipt_source(args: argparse.Namespace, lock_path: pathlib.Path | N
 
 def receipt_policy(args: argparse.Namespace, lock_path: pathlib.Path | None) -> ReceiptPolicy:
     run_ids = frozenset(parse_service_selection(args.receipt_run_id or []))
-    return ReceiptPolicy(resolve_receipt_source(args, lock_path), run_ids or None)
+    plan_hash = args.receipt_plan_hash
+    if plan_hash is not None and not re.fullmatch(r"[0-9a-f]{64}", plan_hash):
+        raise SystemExit("--receipt-plan-hash must be a full SHA-256 hex hash")
+    return ReceiptPolicy(
+        resolve_receipt_source(args, lock_path), run_ids or None, plan_hash=plan_hash
+    )
 
 
 def preflight_commands(row: ImageDigest) -> list[str]:
     """One command per oracle a drifted row needs (one per scenario of a ``+`` token)."""
     scenarios = scenarios_of(row.preflight)
+    if scenarios == ["remote-gcp"]:
+        return [
+            f"tests/gcp-vm/run-candidate.sh {row.service} --snapshot <current.tsv> "
+            "--output <new-evidence-directory> (docs/operations/remote-image-preflight.md)"
+        ]
     if scenarios:
         image_ref = f"{row.image}@{row.digest}"
         return [
@@ -846,7 +871,7 @@ def markdown_summary(
             "",
             "Remote image tags now resolve differently than the previous baseline.",
             "Run the affected service preflight from `docs/operations/upgrades.md` locally "
-            "with DinD before accepting the new baseline.",
+            "on its documented target before accepting the new baseline.",
         ]
     )
     # Jellyfin/seerr preflight is scenario:fresh-install, which also runs

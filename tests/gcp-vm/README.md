@@ -1,5 +1,11 @@
 # GCP fresh-VM end-to-end test
 
+For frozen candidate upgrades and local acceptance evidence, use
+[`run-candidate.sh`](run-candidate.sh) and the
+[remote image preflight runbook](../../docs/operations/remote-image-preflight.md).
+That harness supports NPM and deletes its disposable VM on completion.
+`run-fresh.sh` below tests a fresh install and leaves its VM running.
+
 This is the **only** test surface that exercises the real public remote-access
 stack: real Let's Encrypt HTTP-01, real public DNS via Dynu, real GCP firewall,
 real DDNS pushes, and real HTTPS through Nginx Proxy Manager. The DinD battery

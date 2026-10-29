@@ -162,7 +162,7 @@ For automated option-driving (capture output for analysis):
 Stage 2 credentials available in tests/.env.gcp:
   DOMAIN              for "Add remote access" prompt
   DDNS_PASSWORD       Dynu API password (Dynu no longer prompts for a username)
-  NPM_LE_SERVER       LE staging endpoint (UNTRUSTED but unrate-limited)
+  NPM_LE_SERVER       LE staging endpoint (UNTRUSTED, generous rate limits)
 
 Helpful diagnostics (read-only):
   ssh $SSH_HOST 'cat /opt/MediaStack/.env'
