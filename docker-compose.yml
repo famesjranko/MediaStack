@@ -424,6 +424,9 @@ services:
     volumes:
       - ./config/npm/data:/data
       - ./config/npm/letsencrypt:/etc/letsencrypt
+      # Keep these outside /etc/letsencrypt: NPM repairs that tree's ownership.
+      - ./scripts/services/npm/templates/letsencrypt.ini:/etc/letsencrypt.ini:ro
+      - ./scripts/services/npm/renewal-deploy.sh:/opt/mediastack/certbot-deploy.sh:ro
     networks:
       mediastack:
         # Pinned so Jellyfin's KnownProxies can trust this IP literal.

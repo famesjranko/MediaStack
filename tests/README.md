@@ -241,6 +241,21 @@ Proves:
 7. New credentials authenticate; NPM's stock `changeme` admin login is never active.
 8. Second `POST /api/users` is rejected → `configure.sh`'s re-run path falls through to the rotation/idempotency branch.
 
+### `npm-renewal` — NPM certificate deployment
+
+Run `./tests/run.sh npm-renewal`. Uses NPM and the local Pebble ACME fixture.
+NPM starts with directories owned by the installing user, so startup must repair
+ownership without failing on the hook mounts. Two HTTPS hosts have separate
+certificates, with no saved deploy hook in their renewal files to represent an
+existing install. Each API renewal must change the on-disk leaf and serve that
+exact leaf on new TLS connections with the correct
+SNI name. The scenario also makes both certificates due in NPM's database and
+calls its real scheduled renewal callback without waiting one hour. Both new
+leaves must reach HTTPS. The test never reloads nginx itself.
+
+`tests/unit/npm-renewal-deploy.sh` checks that the deploy hook validates before
+reload, refuses invalid configuration, and reports a failed reload.
+
 ### `fresh-install` — ~15-18 min warm / ~25 min cold
 
 Full default-profile stack: `docker compose up -d`, wait for health, `configure.sh`, per-step evidence assertions, `.env` back-population check.

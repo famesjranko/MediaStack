@@ -315,6 +315,17 @@ All services get `description` (short role label) and `siteMonitor` (internal UR
 
 ## Step 9 — NPM (`scripts/services/npm/main.sh`)
 
+Compose mounts the Certbot settings from `templates/letsencrypt.ini` read-only
+at `/etc/letsencrypt.ini`. Its `deploy-hook` calls `renewal-deploy.sh`, mounted
+read-only at `/opt/mediastack/certbot-deploy.sh`. Both mounts stay outside the
+certificate directory because NPM repairs that directory's ownership on startup.
+After successful issuance or renewal, the hook runs `nginx -t`, then reloads
+nginx to serve the new certificate. This covers API renewals and NPM's scheduled
+renewal callback. A failed configuration test prevents the reload. Hook errors
+appear in Certbot's logs; Certbot can still report renewal success when a hook
+fails. Existing containers gain the mounts when Compose recreates NPM, for
+example through `./scripts/update.sh`.
+
 NPM ships with an empty user table on first boot. The famous `admin@example.com / changeme` default only appears after the UI first-run wizard completes.
 
 **Primary path:** `POST /api/users` unauthenticated. Succeeds (201) only while the table is empty, creating the admin with the shared `JELLYFIN_ADMIN_PASSWORD` directly.

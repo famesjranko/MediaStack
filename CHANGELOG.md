@@ -27,6 +27,7 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+- Deploy renewed NPM certificates to HTTPS with a validated nginx reload; update NPM through `./scripts/update.sh` once to add the renewal hook to an existing container (#167).
 - Retry an interrupted Revert without losing its safety copy or original image policy; services that were running resume, and failed checks restore the previous image and config (#157).
 - Report a failed Unpackerr recreate instead of claiming success; the warning names the Compose exit and the service shows WARN in the summary (#100).
 - Start a service recreates a stopped service on its staged image and starts its stopped dependencies; a failed recreate is reported and the service stays stopped (#103).
