@@ -63,9 +63,12 @@ configure_uptime_kuma() {
     # Pre-pull so the timeout budget covers configuration, not image download.
     docker pull node:22-slim >/dev/null 2>&1 || true
 
-    local kuma_err="/tmp/kuma-configure.err"
-    local _kuma_envfile
+    # The error log is private like the env-file. A fixed /tmp path broke the
+    # redirect whenever a stale copy belonged to another user (one `sudo`
+    # run), and the whole configure step was then skipped with no error.
+    local _kuma_envfile _kuma_errfile
     _kuma_envfile=$(mktemp)
+    _kuma_errfile=$(mktemp)
     # Belt-and-braces beyond the subshell EXIT trap below: a TERM delivered to
     # THIS process (a `kill`, a `systemctl stop` on the unit driving setup)
     # in the narrow window between creating the env-file and entering the
@@ -80,9 +83,9 @@ configure_uptime_kuma() {
     # `set -u`. @Q quotes the value safely, so a TMPDIR containing a quote
     # cannot turn the trap body into a syntax error that silently does nothing.
     # shellcheck disable=SC2064 # deliberate: expand now, see above
-    trap "rm -f ${_kuma_envfile@Q}" TERM
+    trap "rm -f ${_kuma_envfile@Q} ${_kuma_errfile@Q}" TERM
     # shellcheck disable=SC2064 # deliberate: expand now, see above
-    trap "rm -f ${_kuma_envfile@Q}; trap - TERM RETURN" RETURN
+    trap "rm -f ${_kuma_envfile@Q} ${_kuma_errfile@Q}; trap - TERM RETURN" RETURN
     printf 'KUMA_USER=%s\nKUMA_PW=%s\n' "$admin_user" "$admin_pw" >"$_kuma_envfile"
     local result
     # This EXIT trap is the ONLY cleanup on a real Ctrl-C, not a redundant
@@ -216,13 +219,13 @@ function emit(socket, event, ...args) {
     }
 })();
 "
-' 2>"$kuma_err"
+' 2>"$_kuma_errfile"
     )
     rm -f "$_kuma_envfile"
 
     if [[ -z "$result" ]]; then
         log_warn "Uptime Kuma configuration returned no output"
-        [[ -s "$kuma_err" ]] && log_warn "$(tail -5 "$kuma_err")"
+        [[ -s "$_kuma_errfile" ]] && log_warn "$(tail -5 "$_kuma_errfile")"
         return 0
     fi
 
