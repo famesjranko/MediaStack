@@ -38,6 +38,12 @@ It proves:
 - Public DNS points to the VM. Public HTTPS serves Jellyfin and Seerr with the
   exact renewed certificates. WAN connections to the canonical admin ports fail.
 
+The baseline uses the same synthetic local tracker as the DinD migration tests.
+The harness registers it in Jackett, Sonarr and Radarr before saving user state.
+This populates the shared migration oracle when the installer's optional public
+indexers are disabled. The tracker uses a digest-pinned helper image on the
+stack network, publishes no host port and makes no public tracker calls.
+
 NPM stays in `HELD`. Remote evidence is for local acceptance and PR review.
 It does not enter the hosted publisher.
 

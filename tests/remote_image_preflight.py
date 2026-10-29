@@ -67,12 +67,21 @@ def install(gcp: Gcp, config: dict[str, str]) -> None:
     )
     remote_step(
         gcp,
-        "Seed and save representative accepted user state",
-        "python3 tests/fixtures/upgrade_state.py seed && "
-        "python3 tests/fixtures/upgrade_state.py save && "
-        "python3 tests/fixtures/npm_state.py seed",
-        timeout=300,
+        "Prepare deterministic local indexer for the migration oracle",
+        "timeout 600 bash tests/gcp-vm/prepare-state.sh",
+        timeout=660,
     )
+    for fixture, action in (
+        ("upgrade_state", "seed"),
+        ("upgrade_state", "save"),
+        ("npm_state", "seed"),
+    ):
+        remote_step(
+            gcp,
+            f"Baseline fixture {fixture} {action}",
+            f"python3 tests/fixtures/{fixture}.py {action}",
+            timeout=300,
+        )
 
 
 def candidate(gcp: Gcp, plan: dict[str, Any], plan_hash: str) -> bytes:
