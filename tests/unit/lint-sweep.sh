@@ -48,6 +48,7 @@ if ((${#files[@]} != 1)); then
     echo "unbounded root set: ${#files[@]}"
     exit 2
 fi
+printf 'ANALYSE:%s\n' "${files[0]}"
 case "${files[0]}" in
     bad1.sh) echo 'finding in bad1.sh'; exit 1 ;;
     -bad.sh) echo 'finding in -bad.sh'; exit 1 ;;
@@ -103,6 +104,11 @@ assert_eq 3 "$(grep -c '^CALL$' "$SWEEP_LOG")" "each file gets its own analysis"
 expected=$(printf 'FILE:%s\n' bad1.sh 'ok 3.sh' ok2.sh)
 assert_eq "$expected" "$(grep '^FILE:' "$SWEEP_LOG")" "every tracked file is checked once with its name intact"
 assert_eq 3 "$(grep -c '^FLAG:--severity=info$' "$SWEEP_LOG")" "every analysis retains info severity"
+expected_progress=$(printf '%s\n' \
+    'lint: [1/3] bad1.sh' 'ANALYSE:bad1.sh' 'finding in bad1.sh' \
+    'lint: [2/3] ok 3.sh' 'ANALYSE:ok 3.sh' \
+    'lint: [3/3] ok2.sh' 'ANALYSE:ok2.sh')
+assert_eq "$expected_progress" "$OUT" "native progress names each file before analysis, including after findings"
 
 # Given Docker is the only available pinned-engine delivery.
 # When the runner discovers the tracked population through the Docker rung.
@@ -114,6 +120,7 @@ assert_contains "$OUT" 'Docker fallback starts one container per file' "Docker f
 assert_eq 3 "$(grep -c '^RUN$' "$DOCKER_LOG")" "Docker starts one container for each bounded root"
 assert_eq 3 "$(grep -c '^CALL$' "$SWEEP_LOG")" "Docker invokes ShellCheck once for each root"
 assert_eq "$expected" "$(grep '^FILE:' "$SWEEP_LOG")" "Docker checks every tracked file once with its name intact"
+assert_contains "$OUT" "$expected_progress" "Docker progress names each file before analysis, including after findings"
 
 # Given the native engine is available again.
 # When the runner takes the native rung.
@@ -166,6 +173,18 @@ assert_rc 0 "a clean targeted check passes"
 assert_eq 'FILE:ok 3.sh' "$(grep '^FILE:' "$SWEEP_LOG")" "explicit selection keeps spaces and excludes other files"
 assert_contains "$(cat "$SWEEP_LOG")" 'FLAG:--severity=warning' "severity override reaches the engine"
 assert_not_contains "$(cat "$SWEEP_LOG")" 'FLAG:--severity=info' "the default severity does not override the caller"
+assert_contains "$OUT" 'lint: [1/1] ok 3.sh' "targeted progress counts only selected files"
+
+# Given a caller captures engine output separately from progress messages.
+# When a clean targeted check redirects stderr.
+OUT=$(cd "$FIXTURE_ROOT" && PATH="$FIXTURE_ROOT/bin:$PATH" MS_TOOL_CACHE="$TMP_DIR/empty-cache" \
+    bash tests/lint.sh 'ok 3.sh' 2>"$TMP_DIR/progress")
+RC=$?
+
+# Then progress goes to stderr and the engine's stdout is preserved.
+assert_rc 0 "a check with redirected progress passes"
+assert_eq 'ANALYSE:ok 3.sh' "$OUT" "progress does not change engine stdout"
+assert_eq 'lint: [1/1] ok 3.sh' "$(cat "$TMP_DIR/progress")" "progress is visible on redirected stderr"
 
 # Given the engine cannot analyse a selected file.
 printf '#!/usr/bin/env bash\ntrue\n' >"$FIXTURE_ROOT/engine-error.sh"
@@ -177,6 +196,7 @@ run_fixture engine-error.sh 'ok 3.sh'
 assert_rc 2 "engine errors retain their exit status"
 assert_contains "$OUT" 'engine failed' "engine error output is preserved"
 assert_eq 1 "$(grep -c '^CALL$' "$SWEEP_LOG")" "an engine error stops the sweep"
+assert_not_contains "$OUT" 'lint: [2/2]' "an engine error does not announce an unanalysed file"
 
 # Given a Docker engine error precedes a clean selected file.
 # When the Docker fallback runs the selected files.
