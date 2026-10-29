@@ -85,7 +85,7 @@ with open(os.environ['TRACE'], 'a') as f: f.write(json.dumps(['configure', *sys.
         launch = commands[0]
         self.assertEqual(launch[:6], ["run", "-d", "--name", "torznab-fixture", "--network", "mediastack"])
         self.assertTrue(any(arg.startswith("python:3.12-alpine@sha256:") for arg in launch))
-        self.assertFalse(set(launch) & {"-p", "--publish", "--publish-all", "-P"})
+        self.assertFalse(any(arg == "-P" or arg.startswith(("-p", "--publish")) for arg in launch))
         self.assertLess(commands.index(["restart", "jackett"]),
                         commands.index(["configure", "--only", "jackett,sonarr,radarr"]))
 
