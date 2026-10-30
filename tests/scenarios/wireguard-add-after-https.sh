@@ -30,7 +30,8 @@ wireguard_add_establish_ready_without_wg() {
 }
 
 wireguard_add_enable_ufw() {
-    dind_exec "apt-get -o Acquire::Retries=3 install -y -qq ufw >/dev/null && ufw --force enable >/dev/null"
+    # A fresh DinD image has no package index; no earlier scenario is required.
+    dind_exec "apt-get -o Acquire::Retries=3 update -qq >/dev/null && apt-get -o Acquire::Retries=3 install -y -qq ufw >/dev/null && ufw --force enable >/dev/null"
 }
 
 # Everything the "unchanged" claims cover: env, config, containers, firewall.
