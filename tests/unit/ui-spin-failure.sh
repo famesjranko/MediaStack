@@ -61,11 +61,11 @@ else
     pass "ui_spin failure: output carries no terminal escapes"
 fi
 
-# Given a command that succeeds,
+# Given a command that succeeds after the spinner has time to paint,
 # When the spinner finishes,
-# Then nothing is printed.
-quiet=$(ui_spin "Working..." true 2>&1 | tr -d '\r\033[K' | tr -d '[:space:]')
-assert_eq "" "$quiet" "ui_spin success: prints nothing after the spinner clears"
+# Then the final cursor return erases the spinner line and prints no more text.
+out=$(ui_spin "Working..." sleep 0.2 2>&1)
+assert_eq $'\033[K' "${out##*$'\r'}" "ui_spin success: erases its final terminal frame"
 
 # Given apt cannot fetch a package while install_base_packages runs under set -e (the 404 that
 # left the audit user with only "exited with code 100"),
