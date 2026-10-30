@@ -27,6 +27,12 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+- Wait for Jellyfin's startup API before configuration, so a web page that responds early no longer causes setup to fail.
+- Select the Homepage Jellyfin widget API from the installed Jellyfin version; if version discovery fails, preserve the existing dashboard configuration and report a warning (#90).
+- Retry Jellyfin configuration before considering a reset when admin login fails; optional reset guidance preserves the old application state and explains the loss of active users, settings and watch history (#94).
+- Record valid image references for Revert when the running image was already pinned to a digest.
+- Show the Dashboard's correct port, 3000, in the setup demo (#93).
+- Refresh the Stable container image baseline after service-specific installation and upgrade preflights.
 - Wait for an active NPM certificate request before starting another; re-running setup now checks NPM's actual Certbot lock.
 - Restore the Beszel superuser after an explicit credential rejection; validation now recognizes PocketBase's authentication error response.
 - Preserve existing WireGuard peers when setup is re-run; peer validation now accepts wg-easy's integer IDs.
@@ -38,19 +44,22 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 - Report a failed Unpackerr recreate instead of claiming success; the warning names the Compose exit and the service shows WARN in the summary (#100).
 - Start a service recreates a stopped service on its staged image and starts its stopped dependencies; a failed recreate is reported and the service stays stopped (#103).
 - State why setup asks for the sudo password and warn when the prompt fails, so a later prompt behind the spinner is explained (#95).
+- Clear stale prompt text when the spinner redraws (#128).
 - Changing the quality profile no longer claims to start a library search; the prompt describes the in-place profile update (#104).
 - Drift notices give a keep route and a reapply route instead of recommending `docker compose down -v`, which keeps service databases; Uninstall MediaStack is the only reset (#105).
 - Warn on re-run when a Sonarr or Radarr Jellyfin connection holds a key Jellyfin rejects; Features & settings -> Repair Jellyfin connections replaces it after confirmation (#107).
 - Add WireGuard VPN from Features & settings once HTTPS is ready; declining leaves the install unchanged and re-running finishes starting wg-easy if its settings were saved (#98).
 - Preserve `MS_DISABLE_RESOURCE_LIMITS` across `.env` rewrites; an invalid value warns and keeps the limits on (#102).
 - The NAS storage watchdog no longer restarts a service you stopped from the launcher, at boot or after an outage; a service that depends on one you stopped starts without it (#106).
+- Health explains when a NAS-backed service stays stopped because you stopped it or one of its dependencies; unreadable stop intent produces a warning (#130).
 - Re-running setup after Jackett drops its FlareSolverr URL, for example after a Jackett update, no longer reports every configured indexer as "not available in Jackett"; the configurator signs in again after the repair restart.
 - Uptime Kuma monitors and the status page are created even when an earlier `sudo` run left `/tmp/kuma-configure.err` behind; setup no longer skips the step with "returned no output" (#153).
 
 ### Breaking Changes
 
-- Reconcile Seerr quota periods; a `config.yml` limit of 0 now clears a quota set in the Seerr UI on the next re-run; before re-running, set `seerr.quotas` in `config.yml` to the limits you want to keep (#101) (#108).
-- Require per-scenario evidence for Stable preflight receipts; delete the receipt file from releases up to v0.2.0 once before accepting image updates (#99).
+- Read scalar configuration numbers as decimal: `010` now means 10, not 8. Before re-running setup, write intended scalar values as plain decimal numbers; hexadecimal and sexagesimal forms remain text for field validation (#129).
+- Reconcile Seerr quota periods; a `config.yml` limit of 0 or a missing limit now clears a quota set in the Seerr UI on the next re-run; before re-running, set `seerr.quotas` in `config.yml` to the limits you want to keep (#101) (#108) (#131).
+- Require Stable preflight receipts to identify each scenario and the clean source commit; delete `tests/.image-preflight-passed.tsv` from releases up to v0.2.0 and re-run the required preflights before accepting image updates (#99).
 
 ## [0.2.0] - 2026-10-25
 
