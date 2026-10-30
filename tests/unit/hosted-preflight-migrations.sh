@@ -7,6 +7,7 @@ scenario_begin hosted-preflight-migrations
 if python3 -I - "$REPO_ROOT" <<'PY'; then
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,7 @@ from contract_evidence import covering
 from preflight.contracts import TRACED_SCENARIOS
 from preflight.model import FIXTURES, ROOT, build_plan, drift, fingerprint, rows, source_sha
 from preflight.verify import select_combination
+from inventory import read_present
 
 SOURCE = source_sha()
 RUN = "123-1"
@@ -101,6 +103,62 @@ class Migrations(unittest.TestCase):
         self.assertTrue(set(jobs) <= TRACED_SCENARIOS)
         self.assertEqual(selection["selected"], ["wireguard"])
 
+    def test_npm_requires_local_migration_and_renewal_evidence(self):
+        # Given a drifted NPM digest with complete local fixture evidence.
+        self.plan = self.plan_for("npm")
+        jobs = {job["scenario"]: job for job in self.plan["jobs"]}
+        for job in jobs.values():
+            self.write_evidence(job)
+
+        # When the verifier selects candidates for phase two.
+        selection = select_combination(self.plan, self.results)
+
+        # Then local migration and renewal qualify NPM without a WAN receipt.
+        self.assertEqual(set(jobs), {"fresh-install", "npm-upgrade", "npm-renewal"})
+        self.assertIn("npm-upgrade", TRACED_SCENARIOS)
+        self.assertEqual(selection["selected"], ["npm"])
+
+    def test_npm_missing_or_failed_migration_or_renewal_cannot_qualify(self):
+        for missing in ("npm-upgrade", "npm-renewal"):
+            for rc in (None, 1):
+                with self.subTest(missing=missing, rc=rc):
+                    # Given fresh setup but a missing or failed migration or renewal proof.
+                    self.plan = self.plan_for("npm")
+                    jobs = {job["scenario"]: job for job in self.plan["jobs"]}
+                    for name, job in jobs.items():
+                        if name != missing:
+                            self.write_evidence(job)
+                    missing_folder = self.results / ("result-" + jobs[missing]["id"])
+                    if missing_folder.exists():
+                        shutil.rmtree(missing_folder)
+                    if rc is not None:
+                        self.write_evidence(jobs[missing], rc=rc)
+
+                    # When the verifier selects candidates for phase two.
+                    selection = select_combination(self.plan, self.results)
+
+                    # Then neither missing nor failed evidence can qualify NPM.
+                    self.assertEqual(selection["selected"], [])
+                    self.assertEqual(selection["failed"], {"npm": [missing]})
+
+    def test_npm_certificate_contract_accepts_the_public_api_shape(self):
+        # Given NPM's serialized certificate response without its hidden deletion flag.
+        self.plan = self.plan_for("npm")
+        payload = [{"id": 7, "domain_names": ["jellyfin.fixture.test"], "provider": "letsencrypt"}]
+        for job in self.plan["jobs"]:
+            folder = self.write_evidence(job)
+            path = folder / "contracts.json"
+            evidence = json.loads(path.read_text())
+            entry = evidence["entries"]["npm"]["certificate-list"]
+            entry["reads"] = [field for field in entry["reads"] if read_present(payload, field)]
+            path.write_text(json.dumps(evidence))
+
+        # When the hosted gate checks that response beside complete other evidence.
+        selection = select_combination(self.plan, self.results)
+
+        # Then the public API's omission does not disqualify a working candidate.
+        self.assertEqual(selection["selected"], ["npm"])
+
     def test_wireguard_without_existing_client_proof_cannot_qualify(self):
         for rc in (None, 1):
             with self.subTest(rc=rc):
@@ -121,8 +179,8 @@ class Migrations(unittest.TestCase):
 
 unittest.main(argv=["hosted-preflight-migrations"], verbosity=2)
 PY
-    pass 'Portainer and WireGuard acceptance require complete migration evidence'
+    pass 'NPM, Portainer and WireGuard acceptance require complete migration evidence'
 else
-    fail 'Portainer and WireGuard acceptance require complete migration evidence'
+    fail 'NPM, Portainer and WireGuard acceptance require complete migration evidence'
 fi
 summary

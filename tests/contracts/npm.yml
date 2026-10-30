@@ -13,13 +13,12 @@ endpoints:
   - {id: proxy-host-get, method: GET, path: "/nginx/proxy-hosts/{id}", sends: [], reads: [id, domain_names, certificate_id, enabled, meta, locations], callers: [scripts/services/npm/health.sh, scripts/services/npm/rendered.sh]}
   - {id: proxy-host-create, method: POST, path: /nginx/proxy-hosts, sends: [domain_names, forward_scheme, forward_host, forward_port, block_exploits, allow_websocket_upgrade, access_list_id, certificate_id, ssl_forced, http2_support, meta, advanced_config, locations, caching_enabled, hsts_enabled, hsts_subdomains, enabled], reads: [id], callers: [scripts/services/npm/publication.sh]}
   - {id: proxy-host-update, method: PUT, path: "/nginx/proxy-hosts/{id}", sends: [domain_names, forward_scheme, forward_host, forward_port, block_exploits, allow_websocket_upgrade, access_list_id, certificate_id, ssl_forced, http2_support, meta, advanced_config, locations, caching_enabled, hsts_enabled, hsts_subdomains, enabled], reads: [], callers: [scripts/services/npm/health.sh, scripts/services/npm/publication.sh, scripts/services/npm/rendered.sh]}
-  - {id: certificate-list, method: GET, path: /nginx/certificates, sends: [], reads: [id, domain_names, is_deleted], callers: [scripts/lib/npm-remote.sh]}
+  # NPM deliberately omits its internal is_deleted flag from public responses.
+  - {id: certificate-list, method: GET, path: /nginx/certificates, sends: [], reads: [id, domain_names], callers: [scripts/lib/npm-remote.sh]}
   - {id: certificate-create, method: POST, path: /nginx/certificates, sends: [provider, domain_names, meta.dns_challenge], reads: [id], callers: [scripts/services/npm/publication.sh]}
 exec:
   - {id: nginx-test, command: [nginx, -t], callers: [scripts/services/npm/health.sh, scripts/setup/stage2/le.sh]}
-  - {id: nginx-reload, unexercised: held-profile, command: [nginx, -s, reload], callers: [scripts/services/npm/post.sh]}
-  # expect_exit [0, 1] is weak: docker exec also exits 1 when the container is
-  # not running, so exit 1 does not prove that test ran. npm is held.
-  - {id: certbot-lock, command: [test, -e, /var/lib/letsencrypt/.certbot.lock], expect_exit: [0, 1], callers: [scripts/services/npm/certs.sh]}
+  - {id: nginx-reload, command: [nginx, -s, reload], callers: [scripts/services/npm/post.sh]}
+  - {id: certbot-lock, command: [sh, -c], match: /tmp/letsencrypt-lib/.certbot.lock, expect_exit: [0, 10], callers: [scripts/services/npm/certs.sh]}
   - {id: file-test, command: [test, -f], callers: [scripts/lib/npm-remote.sh]}
   - {id: file-grep, command: [grep, -q], callers: [scripts/lib/npm-remote.sh]}

@@ -20,12 +20,14 @@ gh workflow run image-drift.yml --ref main \
 ```
 
 An empty `services` input selects changed images that have sufficient automated
-coverage. The planner holds NPM and FlareSolverr for separate operator review.
+coverage. The planner holds FlareSolverr for separate operator review.
 Their specific gaps are listed in the [compatibility matrix](image-compatibility.md). Explicit selection
 does not bypass a hold. Image tag/repository changes and service additions or
 removals require a separately reviewed baseline change.
 
-NPM has an [operator-run GCP check](remote-image-preflight.md) for its held digest.
+NPM requires fresh setup, local proxy/certificate migration, and manual/scheduled
+renewal with Pebble. Public WAN behavior has a separate
+[operator-run GCP check](remote-image-preflight.md).
 The weekly plan hash includes the full snapshot, including held services. Remote
 receipts remain on the local acceptance and PR-review path.
 

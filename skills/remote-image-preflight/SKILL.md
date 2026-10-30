@@ -1,6 +1,6 @@
 ---
 name: remote-image-preflight
-description: Run MediaStack's operator-only NPM candidate check on a disposable GCP VM and prepare receipt-gated local digest acceptance. Use for held image validation; WireGuard, NAS and GPU checks are not implemented yet.
+description: Run MediaStack's operator-only NPM candidate check on a disposable GCP VM and prepare public WAN evidence. WireGuard, NAS and GPU checks are not implemented yet.
 ---
 
 Read `docs/operations/remote-image-preflight.md` in the MediaStack checkout.
@@ -20,5 +20,6 @@ remote logs or HTTP bodies. Use dedicated test DNS and staging ACME only.
 
 After the run, verify deletion from the log and cloud state. Report an unverified
 deletion immediately, with the exact target. Do not accept a digest without the
-receipt and reviewed remote plan hash. Link the sanitized evidence in a normal
-PR and report failures and untested surfaces explicitly. Keep held services held.
+receipt and reviewed remote plan hash. NPM also needs the required local scenario
+receipts; a remote receipt does not replace them. Link the sanitized evidence in
+a normal PR and report failures and untested surfaces explicitly. Keep held services held.

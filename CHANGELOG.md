@@ -27,6 +27,7 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+- Wait for an active NPM certificate request before starting another; re-running setup now checks NPM's actual Certbot lock.
 - Restore the Beszel superuser after an explicit credential rejection; validation now recognizes PocketBase's authentication error response.
 - Preserve existing WireGuard peers when setup is re-run; peer validation now accepts wg-easy's integer IDs.
 - Stop dependent service changes when API state is unreadable or required fields are missing. Shared response validation preserves valid empty inventories without treating failed reads as first-run state. Service HTTP requests now have connection and total time limits and do not retry writes automatically (#158).

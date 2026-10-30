@@ -37,6 +37,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def do_GET(self): self.respond()
     def do_POST(self): self.respond()
+    def do_PUT(self): self.respond()
     def respond(self):
         s = self.state
         data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"null")
@@ -48,6 +49,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.headers.get("Authorization") != "Bearer fixture-session":
             self.send_error(401)
             return
+        elif self.path == "/api/users/me":
+            result = {"id": 1, "email": "admin@fixture.test", "roles": ["admin"], "is_disabled": False}
+        elif self.path.startswith("/api/nginx/proxy-hosts/"):
+            index = next(i for i, h in enumerate(s["hosts"]) if str(h["id"]) == self.path.split("/")[-1])
+            result = dict(data, id=s["hosts"][index]["id"])
+            s["hosts"][index] = result
         elif self.path == "/api/nginx/proxy-hosts":
             if self.command == "POST":
                 data["id"] = 3
@@ -153,6 +160,29 @@ class Migration(unittest.TestCase):
                 # Then the loss fails instead of being silently repaired.
                 with self.assertRaises((ValueError, StopIteration)): self.npm.check()
 
+    def test_live_probe_rejects_a_blind_comparison_and_restores_the_proxy(self):
+        # Given saved proxy state and a comparison that ignores persistent changes.
+        self.npm.seed()
+        original = copy.deepcopy(self.data["hosts"])
+
+        # When the live mutation probe tests that comparison.
+        with patch.object(self.npm, "check"):
+            with self.assertRaisesRegex(ValueError, "missed a changed user proxy"):
+                self.npm.probe()
+
+        # Then the probe refuses to trust it and restores the original proxy.
+        self.assertEqual(self.data["hosts"], original)
+
+    def test_legacy_fixture_refuses_a_remote_host_before_changing_credentials(self):
+        # Given an authenticated remote staging installation.
+        with patch.object(self.npm, "call", wraps=self.npm.call) as calls:
+            # When the local legacy-admin fixture is invoked.
+            with self.assertRaisesRegex(ValueError, "isolated DinD install"):
+                self.npm.legacy()
+
+            # Then no credential or identity change reaches the API.
+            calls.assert_not_called()
+
     def test_success_status_without_new_certificate_is_not_renewal(self):
         # Given an NPM renew endpoint that returns 200 but leaves the old certificate.
         self.npm.seed()
@@ -172,7 +202,7 @@ class Migration(unittest.TestCase):
         def inspect(argv, **kwargs):
             return b"server = https://acme-v02.api.letsencrypt.org/directory" if argv[0] == "docker" else original(argv, **kwargs)
         with patch.object(fixture.subprocess, "check_output", side_effect=inspect):
-            with self.assertRaisesRegex(ValueError, "renewal does not use staging"):
+            with self.assertRaisesRegex(ValueError, "renewal does not use the fixture ACME server"):
                 self.npm.check()
 
     def test_lost_private_key_is_not_hidden_by_later_renewal(self):
@@ -200,7 +230,7 @@ class Migration(unittest.TestCase):
         # When the candidate certificate material is inspected.
         # Then the issuer check independently refuses it.
         with patch.object(fixture.subprocess, "check_output", side_effect=inspect):
-            with self.assertRaisesRegex(ValueError, "not from Let's Encrypt staging"):
+            with self.assertRaisesRegex(ValueError, "not from the fixture ACME issuer"):
                 self.npm.check()
 
     def test_changed_nonempty_private_key_blocks_migration(self):

@@ -59,14 +59,11 @@ _npm_usable_cert_id_by_fqdn() {
 
 # Is certbot currently running inside the NPM container? Used to refuse
 # starting a second issuance for the same FQDN while one is in flight.
-# We check the global certbot lock (/var/lib/letsencrypt/.certbot.lock).
-# Stale lock files would be a false-positive risk, but on the NPM image
-# the lock is opened with flock() and released on process exit, so a
-# leftover file that's not actually locked is treated as "busy" too —
-# which is the safe default for our use case (we'd rather wait an extra
-# poll than burn an LE cert).
+# NPM invokes Certbot with --work-dir /tmp/letsencrypt-lib. Certbot removes
+# its lock on release; a leftover file is conservatively treated as busy.
 _npm_certbot_busy() {
-    docker exec npm test -e /var/lib/letsencrypt/.certbot.lock >/dev/null 2>&1
+    # Exit 10 distinguishes an absent lock from Docker's exit 1 on failure.
+    docker exec npm sh -c 'if test -e /tmp/letsencrypt-lib/.certbot.lock; then exit 0; else exit 10; fi' >/dev/null 2>&1
 }
 
 # Long poll: wait up to ~max_polls × interval seconds for a cert with
