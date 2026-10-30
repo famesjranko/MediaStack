@@ -7,7 +7,7 @@ source "$REPO_ROOT/tests/lib/assert.sh"
 CURRENT_SCENARIO=configure-jellyfin-ready
 scenario_begin "$CURRENT_SCENARIO"
 
-if python3 - "$REPO_ROOT" <<'PY'
+if python3 - "$REPO_ROOT" <<'PY'; then
 import http.server
 import json
 import pathlib
@@ -122,7 +122,6 @@ configure_jellyfin() {
 
 unittest.main(argv=["configure-jellyfin-ready"], verbosity=2)
 PY
-then
     pass 'Jellyfin configuration waits for its API and rejects unknown startup state'
 else
     fail 'Jellyfin configuration waits for its API and rejects unknown startup state'
