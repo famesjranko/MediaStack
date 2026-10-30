@@ -88,6 +88,11 @@ Before a read authorizes a write, the caller declares its required fields and ty
 
 `main()` runs `wait_for_service` for eight services: qBittorrent, Jackett, Sonarr, Radarr, Jellyfin, Seerr, Portainer, and Homepage (subject to `--only`). Each wait times out after 90s; if a service never comes up, its configure step still runs. Bazarr, NPM, Uptime Kuma, WireGuard, and Beszel have later readiness checks.
 
+Jellyfin waits for `/System/Info/Public` to return a valid `StartupWizardCompleted`
+boolean. Its web root can redirect and its bootstrap server can return a different
+JSON schema before the normal API is ready. Configuration validates the flag again;
+an unavailable API or an incomplete response still stops that step.
+
 ## Step 1 — Portainer (`configure_portainer` in `scripts/services/portainer/main.sh`)
 
 Portainer CE is distroless (no shell, no curl inside the container), so all configuration happens via external API calls.

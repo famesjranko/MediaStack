@@ -196,7 +196,8 @@ main() {
     _should_configure jackett && wait_for_service "Jackett" "$(service_local_url jackett)"
     _should_configure sonarr && wait_for_service "Sonarr" "$(service_local_url sonarr)"
     _should_configure radarr && wait_for_service "Radarr" "$(service_local_url radarr)"
-    _should_configure jellyfin && wait_for_service "Jellyfin" "$(service_local_url jellyfin)"
+    # Jellyfin serves redirects and bootstrap JSON before its normal API is ready.
+    _should_configure jellyfin && wait_for_service "Jellyfin" "$(service_local_url jellyfin)/System/Info/Public" StartupWizardCompleted:boolean
     _should_configure seerr && wait_for_service "Seerr" "$(service_local_url seerr)"
     _should_configure portainer && wait_for_service "Portainer" "$(service_local_url portainer)"
     _should_configure homepage && wait_for_service "Homepage" "$(service_local_url homepage)"

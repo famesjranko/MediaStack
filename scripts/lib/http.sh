@@ -98,12 +98,20 @@ http_json_request() {
     printf '%s' "$response"
 }
 
-# Poll $url until it returns 2xx/3xx or ~90s elapses.
+# Poll $url until it responds, optionally requiring typed JSON fields.
+# Args: <label> <url> [required.dot.path:type ...]. Uses the existing ~90s budget.
 wait_for_service() {
     local name="$1" url="$2" max=90 i=0
+    shift 2
     echo -ne "  Waiting for ${name}..."
     while ((i < max)); do
-        if http_curl -sf "$url" >/dev/null 2>&1; then
+        if {
+            if (($#)); then
+                http_json_request "$name readiness" GET "$url" "" "" "" "$@"
+            else
+                http_curl -sf "$url"
+            fi
+        } >/dev/null 2>&1; then
             echo -e " ${GREEN}ready${NC}"
             return 0
         fi

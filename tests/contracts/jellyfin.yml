@@ -8,8 +8,7 @@ auth: {type: header, name: Authorization, format: 'MediaBrowser Client="MediaSta
 # (System/Configuration/{encoding,network}, /health) — found by replay.py spec
 # mode 2026-08-04. Restore an openapi: URL if upstream documents them.
 endpoints:
-  - {id: readiness, method: GET, path: /, expect: [200, 301, 302, 303, 307, 308], sends: [], reads: [], callers: [scripts/configure.sh]}
-  - {id: public-system-info, method: GET, path: /System/Info/Public, sends: [], reads: [Version, StartupWizardCompleted], callers: [scripts/services/homepage/main.sh, scripts/services/jellyfin/main.sh]}
+  - {id: public-system-info, method: GET, path: /System/Info/Public, sends: [], reads: [Version, StartupWizardCompleted], callers: [scripts/configure.sh, scripts/services/homepage/main.sh, scripts/services/jellyfin/main.sh]}
   - {id: startup-configuration-update, method: POST, path: /Startup/Configuration, sends: [UICulture, MetadataCountry, PreferredMetadataLanguage], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: startup-user-get, method: GET, path: /Startup/User, sends: [], reads: [], callers: [scripts/services/jellyfin/main.sh]}
   - {id: startup-user-create, method: POST, path: /Startup/User, sends: [Name, Password], reads: [], callers: [scripts/services/jellyfin/main.sh]}
