@@ -27,6 +27,8 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
 - Wait for Jellyfin's startup API before configuration, so a web page that responds early no longer causes setup to fail.
 - Select the Homepage Jellyfin widget API from the installed Jellyfin version; if version discovery fails, preserve the existing dashboard configuration and report a warning (#90).
 - Retry Jellyfin configuration before considering a reset when admin login fails; optional reset guidance preserves the old application state and explains the loss of active users, settings and watch history (#94).
