@@ -114,8 +114,9 @@ gcloud compute ssh "$GPU_VM" --zone "$ZONE" --command "
   mkdir -p ~/nv && curl -fsSL -o ~/nv/drv.run \$(echo \"\$ROW\" | grep -oP 'https://[^)]+\.run')"
 ```
 
-Run each case on the VM. The base flags are the ones in
-`_nvidia_driver_install_run_file`.
+Run each case on the VM. `FLAGS` are the base flags in
+`_nvidia_driver_install_run_file`. Since #188 it adds `SIGN` when Secure Boot
+is on.
 
 ```bash
 FLAGS='--silent --dkms --no-x-check --no-cc-version-check --no-nouveau-check --no-install-compat32-libs'
@@ -124,7 +125,7 @@ SIGN='--module-signing-secret-key=/var/lib/dkms/mok.key --module-signing-public-
 
 | Case | Command on the VM | Pass condition |
 |---|---|---|
-| A. Unlock flags today | `sudo sh ~/nv/drv.run $FLAGS --tmpdir ~/nv` | Records current behaviour |
+| A. Unlock without signing | `sudo sh ~/nv/drv.run $FLAGS --tmpdir ~/nv` | Fails: shows why the signing options are necessary |
 | B. Unlock with signing | `sudo sh ~/nv/drv.run $FLAGS $SIGN --tmpdir ~/nv` | Exit 0; `modinfo -F signer nvidia` is `DKMS module signing key`; `nvidia-smi -L` lists the GPU |
 | C. Kernel-upgrade rebuild | `sudo dkms remove nvidia/VER -k $(uname -r)`, then `sudo dkms install nvidia/VER -k $(uname -r)`, then reboot | DKMS prints `Signing module`; `nvidia-smi -L` works after the reboot |
 | D. Unlock patch and NVENC | `bash patch.sh -c VER` and `sudo bash patch.sh -s` from a clone of nvidia-patch at `$COMMIT`, then an `h264_nvenc` encode with `ffmpeg` | Patch exits 0; the encode writes an H.264 stream |
@@ -147,7 +148,7 @@ rm -rf .tmp/sb-keys
 
 ## Results
 
-2026-10-31, Debian 12 (`6.1.0-54-cloud-amd64`), Tesla P4, driver 580.142,
+2026-10-31, before #188, Debian 12 (`6.1.0-54-cloud-amd64`), Tesla P4, driver 580.142,
 dkms 3.0.10, nvidia-patch at the pinned commit.
 
 | Case | Result |
@@ -158,4 +159,4 @@ dkms 3.0.10, nvidia-patch at the pinned commit.
 | B | Passes. Module signed by the DKMS key; `nvidia-smi -L` lists the P4 |
 | C | Passes. DKMS signs the rebuilt modules with `/var/lib/dkms/mok.key`; the driver loads after a reboot |
 | D | Passes. Patch applied; six concurrent `h264_nvenc` sessions ran |
-| E | `/var/lib/dkms/mok.pub is already in db`, exit 1. `nvidia_driver_mok_state` matches only `already enrolled`, so it reports `not_enrolled` here |
+| E | `/var/lib/dkms/mok.pub is already in db`, exit 1. Before #188, `nvidia_driver_mok_state` reported `not_enrolled` here; it now reads only the text and reports `enrolled` |
