@@ -9,7 +9,9 @@ command() {
 }
 curl() { return 47; }
 sudo() {
-    cat >/dev/null
+    case "${1:-}" in
+        gpg | tee) cat >/dev/null ;;
+    esac
     return 0
 }
 INSTALL_ERROR_MESSAGES=()
