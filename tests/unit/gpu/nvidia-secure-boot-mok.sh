@@ -3,7 +3,7 @@
 # shellcheck disable=SC2034 # GPU_TYPE and STAGE3_FALLBACK_REASON are read by product code and asserts.
 # Live enrolment needs the firmware MOK screen and is not covered here.
 
-# Stubbed mokutil: MOK_TRUST (mok/db/none) answers --test-key; MOK_NEW holds the
+# Stubbed mokutil: MOK_TRUST (mok/db/request/none) answers --test-key; MOK_NEW holds the
 # --list-new text. Wording and exit codes follow mokutil 0.6.0/0.7.2 test_key:
 # exit 1 when the key is already trusted, exit 0 when it can still be enrolled.
 MOK_TRUST=none
@@ -15,6 +15,7 @@ mokutil() {
             case "$MOK_TRUST" in
                 mok) echo "$2 is already enrolled" ;;
                 db) echo "$2 is already in db" ;;
+                request) echo "$2 is already in the enrollment request" ;;
                 *)
                     echo "$2 is not enrolled"
                     return 0
@@ -36,8 +37,8 @@ log_ok() { _mok_logs+=("$*"); }
 log_warn() { _mok_logs+=("$*"); }
 log_error() { _mok_logs+=("$*"); }
 _mok_setup() { # $1 key (yes/no), $2 trust (mok/db/none), $3 pending (yes/no)
-    rm -f "$NVIDIA_DKMS_MOK_PUB"
-    [[ "$1" == yes ]] && : >"$NVIDIA_DKMS_MOK_PUB"
+    rm -f "$NVIDIA_DKMS_MOK_PUB" "$_mok_tmp/mok.key"
+    [[ "$1" == yes ]] && : >"$NVIDIA_DKMS_MOK_PUB" && : >"$_mok_tmp/mok.key"
     MOK_TRUST=$2
     MOK_NEW="MokNew is empty"
     [[ "$3" == yes ]] && MOK_NEW="[key 1] SHA1 Fingerprint: aa:bb"
@@ -67,6 +68,13 @@ _mok_setup yes none no
 assert_eq "not_enrolled" "$(nvidia_driver_mok_state)" "mok_state: key exists, not enrolled, nothing queued"
 _mok_setup yes none yes
 assert_eq "pending" "$(nvidia_driver_mok_state)" "mok_state: key not enrolled, import queued"
+# mokutil run as root reads MokNew itself and says so; that is still pending.
+_mok_setup yes request yes
+assert_eq "pending" "$(nvidia_driver_mok_state)" "mok_state: key already in the enrollment request"
+# An enrolled public key is no use without the private key that signs.
+_mok_setup yes mok no
+rm -f "$_mok_tmp/mok.key"
+assert_eq "no_key" "$(nvidia_driver_mok_state)" "mok_state: enrolled key with the private key missing"
 
 # --- Debian DKMS route (install_nvidia_drivers_apt) ---
 nvidia_driver_source() { printf 'none'; }
@@ -121,6 +129,17 @@ install_nvidia_drivers_apt || rc=$?
 assert_eq "1" "$rc" "SB+pending apt route: refused"
 assert_contains "${_mok_logs[*]}" "reboot; in the blue MOK screen" "SB+pending apt route: says reboot to enrol"
 assert_not_contains "${_mok_logs[*]}" "mokutil --import" "SB+pending apt route: does not ask to import again"
+
+# Given Secure Boot is off
+# When the Debian route installs and nvidia-smi does not work yet
+# Then it does not warn about Secure Boot
+nvidia_driver_check_secure_boot() { printf 'disabled'; }
+_mok_setup no none no
+rc=0
+install_nvidia_drivers_apt || rc=$?
+assert_eq "0" "$rc" "SB off apt route: proceeds"
+assert_not_contains "${_mok_logs[*]}" "under Secure Boot" "SB off apt route: no Secure Boot warning"
+nvidia_driver_check_secure_boot() { printf 'enabled'; }
 
 # Given Secure Boot is on and no DKMS key exists
 # When the Debian route runs
@@ -236,6 +255,17 @@ install_nvidia_drivers || rc=$?
 assert_eq "0" "$rc" "SB off Unlock route: proceeds"
 assert_contains "$(_mok_installer_call)" "--dkms" "SB off Unlock route: runs the .run installer"
 assert_not_contains "$(_mok_installer_call)" "--module-signing" "SB off Unlock route: passes no signing options"
+
+# Given mokutil is missing, so the Secure Boot state is unknown, and there is no DKMS key
+# When the Unlock route runs
+# Then it proceeds with a warning and passes no signing options
+nvidia_driver_check_secure_boot() { printf 'unavailable'; }
+_mok_setup no none no
+rc=0
+install_nvidia_drivers || rc=$?
+assert_eq "0" "$rc" "SB unknown Unlock route: proceeds"
+assert_contains "${_mok_logs[*]}" "mokutil not found" "SB unknown Unlock route: warns that the state is unknown"
+assert_not_contains "$(_mok_installer_call)" "--module-signing" "SB unknown Unlock route: passes no signing options"
 
 SCRIPT_DIR=$_saved_script_dir
 unset -f nvidia_driver_nouveau_is_active _install_nvidia_container_toolkit _mok_installer_call

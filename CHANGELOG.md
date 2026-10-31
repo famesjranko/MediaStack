@@ -27,7 +27,7 @@ under the 0.x policy in [docs/project/release.md](docs/project/release.md).
 
 ## [Unreleased]
 
-- Install the NVIDIA Unlock driver under Secure Boot when the DKMS signing key is enrolled; the installer now signs the module with that key, so Secure Boot no longer has to be disabled for Unlock (#186).
+- Install the NVIDIA Unlock driver under Secure Boot when the DKMS signing key is enrolled; the installer now signs the module with that key, so Secure Boot no longer has to be disabled for Unlock. The Unlock driver update now checks the key before it stops anything (#186).
 - Recognize an enrolled DKMS signing key under Secure Boot; setup previously reported an enrolled key, or one in the firmware `db`, as not enrolled and fell back to software transcoding (#186).
 
 ## [0.3.0] - 2026-10-30

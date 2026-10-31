@@ -35,6 +35,7 @@ check_internet_reachability() { printf '%s\n' internet >>"$TRACE"; }
 nvidia_driver_source() { printf foreign; }
 nvidia_driver_healthy() { return 0; }
 stage3_marker_exists() { return 1; }
+nvidia_driver_check_secure_boot() { printf disabled; }
 ui_confirm() {
     printf '%s\n' confirm >>"$TRACE"
     return 0
@@ -128,6 +129,39 @@ assert_eq "0" "$?" "NVIDIA repatch: successful patch returns 0"
 assert_eq "absent" "$([[ -e "$SCRIPT_DIR/.setup-result" ]] && echo present || echo absent)" \
     "NVIDIA repatch: successful patch clears the stale login banner"
 unset -f _apply_nvidia_patch_impl
+
+# Given Secure Boot is on and the DKMS signing key is no longer trusted
+# When the Unlock driver update runs
+# Then it refuses before it stops, unloads or installs anything, and shows the key steps
+seed_unlock_env
+: >"$TRACE"
+nvidia_driver_check_secure_boot() { printf enabled; }
+nvidia_driver_mok_state() { printf not_enrolled; }
+_sb_errors=()
+log_error() { _sb_errors+=("$*"); }
+ui_confirm() {
+    printf '%s\n' confirm >>"$TRACE"
+    return 0
+}
+run_nvidia_unlock_maintenance update >/dev/null 2>&1
+assert_eq "1" "$?" "NVIDIA update: Secure Boot with an untrusted key is refused"
+trace=$(cat "$TRACE")
+case "$trace" in
+    *confirm* | *resolve* | *docker:* | *unload* | *install:* | *marker:*) fail "NVIDIA update: untrusted key under Secure Boot mutates nothing" "$trace" ;;
+    *) pass "NVIDIA update: untrusted key under Secure Boot mutates nothing" ;;
+esac
+assert_contains "${_sb_errors[*]}" "sudo mokutil --import" "NVIDIA update: untrusted key shows the enrollment steps"
+
+# Given Secure Boot is on and the DKMS signing key is trusted
+# When the Unlock driver update runs
+# Then it installs
+: >"$TRACE"
+nvidia_driver_mok_state() { printf enrolled; }
+run_nvidia_unlock_maintenance update >/dev/null 2>&1
+assert_contains "$(cat "$TRACE")" "install:550.90" "NVIDIA update: trusted key under Secure Boot installs"
+nvidia_driver_check_secure_boot() { printf disabled; }
+log_error() { :; }
+unset _sb_errors
 
 seed_unlock_env
 nvidia_driver_source() { printf debian; }

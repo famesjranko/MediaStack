@@ -32,16 +32,17 @@ NVIDIA_DKMS_MOK_PUB="${NVIDIA_DKMS_MOK_PUB:-/var/lib/dkms/mok.pub}"
 # Prints the state of the DKMS signing key: no_key, enrolled, pending (imported,
 # waiting for the MOK screen at the next boot) or not_enrolled. enrolled means the
 # kernel trusts the key: it is in the MOK list or in the firmware db (the kernel
-# loads db keys into its .platform keyring). Reading MokNew needs root, hence sudo
-# on --list-new.
+# loads db keys into its .platform keyring). no_key also covers a lost private
+# key: nothing can sign with it, and dkms makes a new, unenrolled pair when either
+# file is missing. Reading MokNew needs root, hence sudo on --list-new.
 nvidia_driver_mok_state() {
-    [[ -f "$NVIDIA_DKMS_MOK_PUB" ]] || {
+    [[ -f "$NVIDIA_DKMS_MOK_PUB" && -f "${NVIDIA_DKMS_MOK_PUB%/*}/mok.key" ]] || {
         echo "no_key"
         return
     }
     local out
-    # --test-key exits 1 when the key is already trusted and 0 when it can still
-    # be enrolled (mokutil 0.6.0 and 0.7.2 test_key), so only the text decides.
+    # The exit code differs between mokutil releases (0.6.0 and 0.7.2 exit 1 for
+    # a trusted key; later sources exit 0), so only the text decides.
     out=$(mokutil --test-key "$NVIDIA_DKMS_MOK_PUB" 2>&1) || true
     if grep -Eq 'is already (enrolled|in db)$' <<<"$out"; then
         echo "enrolled"
