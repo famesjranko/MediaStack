@@ -5,6 +5,8 @@ For frozen candidate upgrades and local acceptance evidence, use
 [remote image preflight runbook](../../docs/operations/remote-image-preflight.md).
 That harness supports NPM and deletes its disposable VM on completion.
 `run-fresh.sh` below tests a fresh install and leaves its VM running.
+For NVIDIA driver paths under Secure Boot, use the manual
+[Secure Boot GPU check](../../docs/operations/secure-boot-gpu-check.md).
 
 This is the **only** test surface that exercises the real public remote-access
 stack: real Let's Encrypt HTTP-01, real public DNS via Dynu, real GCP firewall,

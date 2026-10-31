@@ -36,6 +36,7 @@ For people who change the code, compose files, tests, or docs.
 | [operations/day-2.md](operations/day-2.md) | Day-2 internals: how the launcher and repair scripts work. |
 | [operations/upgrades.md](operations/upgrades.md) | Image pin policy, bump preflight, and the image-drift workflow. |
 | [operations/remote-image-preflight.md](operations/remote-image-preflight.md) | Operator-run NPM upgrade, staging renewal, public HTTPS, and receipt-gated acceptance. |
+| [operations/secure-boot-gpu-check.md](operations/secure-boot-gpu-check.md) | Operator-run NVIDIA driver check on a Secure Boot GCP VM, with a firmware `db` key in place of MOK enrollment. |
 | [../tests/README.md](../tests/README.md) | DinD, unit, GCP VM, and LAN hardware test surfaces. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Pull request process and expectations. |
 
