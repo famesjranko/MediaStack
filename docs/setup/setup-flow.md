@@ -134,13 +134,13 @@ NVIDIA must not use the old setup-level reboot path without `.nvidia-finalize-pe
 
 `install_nvidia_drivers` (Unlock mode):
 
-1. Check for a `pending` marker from a pre-reboot cache — if found, verify nouveau is gone and install the cached `.run`.
-2. Check Secure Boot state via `nvidia_driver_check_secure_boot` — if enabled, fall back to software transcoding (unsigned kernel modules won't load).
+1. Run `nvidia_driver_secure_boot_gate`, the same gate as Standard. If Secure Boot is on and the DKMS key (`/var/lib/dkms/mok.pub`) is not trusted (`nvidia_driver_mok_state` is not `enrolled`), fall back to software transcoding and show the remaining MOK steps. The gate also runs before a post-reboot resume, because Secure Boot or the key can change across the reboot.
+2. Check for a `pending` marker from a pre-reboot cache — if found, verify nouveau is gone and install the cached `.run`.
 3. Install kernel headers and DKMS build prerequisites.
 4. Blacklist nouveau unconditionally (`/etc/modprobe.d/blacklist-nouveau.conf` + `update-initramfs`). Attempt runtime unload via `nvidia_driver_try_unload_nouveau()` — stops display manager, unbinds fbcon from vtconsoles, runs `modprobe -r nouveau drm_kms_helper drm`. Checks sysfs PCI binding for success, not just lsmod.
 5. Resolve the correct driver via `nvidia_driver_resolve_driver()`: fetch the keylase/nvidia-patch README from MediaStack's reviewed pinned commit, then check GPU compatibility by curling NVIDIA's `supportedchips.html` for the target driver version (lightweight HTML, no `.run` download yet). The page lists PCI device IDs under "Current NVIDIA GPUs" or `legacy_NNN.xx` sections — a python parser identifies which section the GPU falls in. If legacy, switch to the matching branch from the README. Only then download the correct `.run` file.
 6. If nouveau is still active (sysfs check): cache the `.run` in `.nvidia-tmp/pending`, set `NEEDS_REBOOT`, return. The installer is never run while nouveau has the GPU — it would either abort (`--silent`) or compile-then-rollback.
-7. If nouveau is gone: install via `.run --silent --dkms --no-nouveau-check`. Sets `NEEDS_REBOOT=true`.
+7. If nouveau is gone: install via `.run --silent --dkms --no-nouveau-check`. Under Secure Boot, `_nvidia_driver_install_run_file` also passes `--module-signing-secret-key`/`--module-signing-public-key` with the DKMS key: the installer test-loads its own build before DKMS signs anything, and DKMS signs later rebuilds with the same key. The day-2 driver update uses the same helper. Sets `NEEDS_REBOOT=true`.
 8. Install `nvidia-container-toolkit`, run `nvidia-ctk runtime configure --runtime=docker`, restart Docker.
 
 `install_intel_drivers` — installs `intel-media-va-driver-non-free vainfo` from non-free. No reboot required.

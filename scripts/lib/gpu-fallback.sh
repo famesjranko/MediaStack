@@ -57,33 +57,25 @@ gpu_fallback_secure_boot_lines() {
         pending)
             echo "A Machine Owner Key import is queued but not enrolled yet. Then retry from ${GPU_RETRY_PATH}:"
             echo "  1. sudo reboot; in the blue MOK screen pick Enroll MOK, Continue, enter the one-time password"
-            echo "  2. Retry from the menu path above; DKMS signs the module with that key."
+            echo "  2. Retry from the menu path above; setup signs the NVIDIA module with that key."
             return
             ;;
         not_enrolled)
             echo "The DKMS signing key exists but is not enrolled. Then retry from ${GPU_RETRY_PATH}:"
             echo "  1. sudo mokutil --import /var/lib/dkms/mok.pub   (set a one-time password)"
             echo "  2. sudo reboot; in the blue MOK screen pick Enroll MOK, Continue, enter the password"
-            echo "  3. Retry from the menu path above; DKMS signs the module with that key."
+            echo "  3. Retry from the menu path above; setup signs the NVIDIA module with that key."
             return
             ;;
     esac
     echo "Fix one of the following, then retry from ${GPU_RETRY_PATH}:"
     echo "  (a) Disable Secure Boot in the UEFI firmware (or your cloud console), OR"
-    echo "  (b) Enrol a Machine Owner Key (MOK) so the DKMS-signed nvidia module loads:"
+    echo "  (b) Enrol a Machine Owner Key (MOK) so the signed nvidia module loads:"
     echo "        1. sudo apt-get -y install dkms mokutil openssl"
     echo "        2. sudo mkdir -p /var/lib/dkms && sudo openssl req -new -x509 -nodes -days 36500 -subj \"/CN=DKMS module signing key\" -newkey rsa:2048 -keyout /var/lib/dkms/mok.key -addext \"extendedKeyUsage=codeSigning\" -outform DER -out /var/lib/dkms/mok.pub"
     echo "        3. sudo mokutil --import /var/lib/dkms/mok.pub   (set a one-time password)"
     echo "        4. sudo reboot; in the blue MOK screen pick Enroll MOK, Continue, enter the password"
-    echo "        5. Retry from the menu path above; DKMS signs the module with that key."
-}
-
-# The Unlock (.run) installer builds the module with its own signing, not the
-# DKMS key, so an enrolled DKMS key does not help it.
-gpu_fallback_secure_boot_unlock_lines() {
-    echo "The Unlock (.run) driver cannot use the DKMS signing key, so its module will not load under Secure Boot."
-    echo "Either disable Secure Boot in the UEFI firmware (or your cloud console), or choose the Standard"
-    echo "(Debian) driver after enrolling a MOK. Then retry from ${GPU_RETRY_PATH}."
+    echo "        5. Retry from the menu path above; setup signs the NVIDIA module with that key."
 }
 
 # One-line remedy for the status view and the health check; empty when none.
