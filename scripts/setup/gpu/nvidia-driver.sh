@@ -30,15 +30,21 @@ nvidia_driver_check_secure_boot() {
 NVIDIA_DKMS_MOK_PUB="${NVIDIA_DKMS_MOK_PUB:-/var/lib/dkms/mok.pub}"
 
 # Prints the state of the DKMS signing key: no_key, enrolled, pending (imported,
-# waiting for the MOK screen at the next boot) or not_enrolled. Reading MokNew
-# needs root, hence sudo on --list-new.
+# waiting for the MOK screen at the next boot) or not_enrolled. enrolled means the
+# kernel trusts the key: it is in the MOK list or in the firmware db (the kernel
+# loads db keys into its .platform keyring). no_key also covers a lost private
+# key: nothing can sign with it, and dkms makes a new, unenrolled pair when either
+# file is missing. Reading MokNew needs root, hence sudo on --list-new.
 nvidia_driver_mok_state() {
-    [[ -f "$NVIDIA_DKMS_MOK_PUB" ]] || {
+    [[ -f "$NVIDIA_DKMS_MOK_PUB" && -f "${NVIDIA_DKMS_MOK_PUB%/*}/mok.key" ]] || {
         echo "no_key"
         return
     }
     local out
-    if out=$(mokutil --test-key "$NVIDIA_DKMS_MOK_PUB" 2>&1) && grep -qi 'already enrolled' <<<"$out"; then
+    # The exit code differs between mokutil releases (0.6.0 and 0.7.2 exit 1 for
+    # a trusted key; later sources exit 0), so only the text decides.
+    out=$(mokutil --test-key "$NVIDIA_DKMS_MOK_PUB" 2>&1) || true
+    if grep -Eq 'is already (enrolled|in db)$' <<<"$out"; then
         echo "enrolled"
         return
     fi
@@ -50,6 +56,35 @@ nvidia_driver_mok_state() {
         return
     fi
     echo "not_enrolled"
+}
+
+# Refuses an NVIDIA driver install that Secure Boot would block: Secure Boot is on
+# and the DKMS key is not trusted. It then records the secure_boot fallback, logs
+# the remaining key steps and returns 1. Both driver routes sign the module with
+# the DKMS key, so one gate serves both.
+# shellcheck disable=SC2034 # GPU_TYPE and STAGE3_FALLBACK_REASON are published globals.
+nvidia_driver_secure_boot_gate() {
+    local mok_state
+    case "$(nvidia_driver_check_secure_boot)" in
+        enabled)
+            mok_state=$(nvidia_driver_mok_state)
+            if [[ "$mok_state" != "enrolled" ]]; then
+                STAGE3_FALLBACK_REASON=secure_boot
+                log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
+                while IFS= read -r _sb_line; do log_error "$_sb_line"; done < <(gpu_fallback_secure_boot_lines "$mok_state")
+                log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
+                GPU_TYPE="none"
+                return 1
+            fi
+            log_ok "Secure Boot is on and the kernel trusts the DKMS key; the NVIDIA module will be signed with ${NVIDIA_DKMS_MOK_PUB}"
+            ;;
+        disabled)
+            log_ok "Secure Boot is disabled"
+            ;;
+        unavailable)
+            log_warn "mokutil not found; cannot verify Secure Boot state - proceeding (driver may fail to load if SB is on)"
+            ;;
+    esac
 }
 
 # Check whether nouveau is bound to any NVIDIA GPU via sysfs PCI driver
@@ -96,11 +131,19 @@ nvidia_driver_try_unload_nouveau() {
 
 _nvidia_driver_install_run_file() {
     local run_file="$1" driver_version="$2" temp_dir="$3"
+    local -a sign_args=()
+    # Under Secure Boot the installer test-loads its own build before DKMS signs
+    # anything, so it must sign with the DKMS key itself. DKMS then signs later
+    # rebuilds (kernel upgrades) with the same key. Checked live on a P4 in #186.
+    if [[ "$(nvidia_driver_check_secure_boot)" == "enabled" ]]; then
+        sign_args=(--module-signing-secret-key="${NVIDIA_DKMS_MOK_PUB%/*}/mok.key"
+            --module-signing-public-key="$NVIDIA_DKMS_MOK_PUB")
+    fi
     # ui_spin captures output to a log and surfaces it on failure, so the noisy
     # "Uncompressing..."/dpkg output stays hidden behind the spinner.
     ui_spin "Installing NVIDIA driver ${driver_version} (compiling kernel module)..." \
         sudo sh "$run_file" --silent --dkms --no-x-check --no-cc-version-check \
-        --no-nouveau-check --no-install-compat32-libs --tmpdir "$temp_dir"
+        --no-nouveau-check --no-install-compat32-libs "${sign_args[@]}" --tmpdir "$temp_dir"
 }
 
 # Lowest NVIDIA driver that runs Jellyfin's NVENC. The jellyfin-ffmpeg in the

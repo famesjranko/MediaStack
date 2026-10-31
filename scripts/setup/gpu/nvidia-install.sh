@@ -20,6 +20,13 @@ install_nvidia_drivers() {
 
     local _nvidia_tmp="$SCRIPT_DIR/.nvidia-tmp"
 
+    # Also gates the post-reboot resume: Secure Boot or the key can change
+    # across the reboot.
+    if ! nvidia_driver_secure_boot_gate; then
+        sudo rm -rf "$_nvidia_tmp" 2>/dev/null || true
+        return 1
+    fi
+
     # Post-reboot resume: cached .run from a pre-reboot run
     if [[ -f "$_nvidia_tmp/pending" ]]; then
         if ! source "$_nvidia_tmp/pending"; then
@@ -59,25 +66,6 @@ install_nvidia_drivers() {
         fi
         return 0
     fi
-
-    local sb_state
-    sb_state=$(nvidia_driver_check_secure_boot)
-    case "$sb_state" in
-        enabled)
-            STAGE3_FALLBACK_REASON=secure_boot
-            log_error "Secure Boot is enabled - the Unlock (.run) NVIDIA driver will not load."
-            while IFS= read -r _sb_line; do log_error "$_sb_line"; done < <(gpu_fallback_secure_boot_unlock_lines)
-            log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
-            GPU_TYPE="none"
-            return 1
-            ;;
-        disabled)
-            log_ok "Secure Boot is disabled"
-            ;;
-        unavailable)
-            log_warn "mokutil not found; cannot verify Secure Boot state - proceeding (driver may fail to load if SB is on)"
-            ;;
-    esac
 
     if ! ui_spin "Installing kernel headers and build prerequisites..." \
         "${MS_APT_INSTALL[@]}" "linux-headers-$(uname -r)" build-essential dkms pkg-config libglvnd-dev; then

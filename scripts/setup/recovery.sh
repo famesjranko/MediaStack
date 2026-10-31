@@ -407,6 +407,19 @@ run_nvidia_unlock_maintenance() {
         return "$_rc"
     fi
 
+    # Under Secure Boot the installer signs with the DKMS key. Check it before
+    # anything is stopped or unloaded: a key that is lost or no longer trusted
+    # would leave NVENC down until it is fixed.
+    if [[ "$(nvidia_driver_check_secure_boot)" == "enabled" ]]; then
+        local mok_state
+        mok_state=$(nvidia_driver_mok_state)
+        if [[ "$mok_state" != "enrolled" ]]; then
+            log_error "Secure Boot is on and the DKMS signing key is not ready, so an updated driver would not load. No changes were made."
+            while IFS= read -r _sb_line; do log_error "$_sb_line"; done < <(gpu_fallback_secure_boot_lines "$mok_state")
+            return 1
+        fi
+    fi
+
     check_internet_reachability
     if ! ui_confirm "Update the NVIDIA driver and prepare Unlock patch finalization after reboot?" "no"; then
         log_skip "NVIDIA driver update cancelled."

@@ -66,7 +66,7 @@ diag_readiness() {
     if ! command -v mokutil &>/dev/null; then
         log_warn "mokutil not installed — Secure Boot state unknown (install mokutil to verify before adding NVIDIA drivers)"
     elif mokutil --sb-state 2>/dev/null | grep -qi enabled; then
-        log_warn "Secure Boot is ENABLED — NVIDIA kernel module will not load; disable it in UEFI firmware before adding GPU support"
+        log_warn "Secure Boot is ENABLED — the NVIDIA kernel module loads only if you enrol the DKMS signing key (MOK) or disable Secure Boot; GPU setup shows the steps"
     else
         log_ok "Secure Boot: disabled"
     fi

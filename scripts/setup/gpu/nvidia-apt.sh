@@ -213,31 +213,7 @@ install_nvidia_drivers_apt() {
             ;;
     esac
 
-    local sb_state mok_state sb_mok
-    sb_state=$(nvidia_driver_check_secure_boot)
-    sb_mok=false
-    case "$sb_state" in
-        enabled)
-            mok_state=$(nvidia_driver_mok_state)
-            if [[ "$mok_state" == "enrolled" ]]; then
-                sb_mok=true
-                log_ok "Secure Boot is on with an enrolled MOK; DKMS will sign the NVIDIA module with ${NVIDIA_DKMS_MOK_PUB}"
-            else
-                STAGE3_FALLBACK_REASON=secure_boot
-                log_error "Secure Boot is enabled - the NVIDIA kernel module will not load."
-                while IFS= read -r _sb_line; do log_error "$_sb_line"; done < <(gpu_fallback_secure_boot_lines "$mok_state")
-                log_warn "Falling back to software transcoding; GPU acceleration will not be configured."
-                GPU_TYPE="none"
-                return 1
-            fi
-            ;;
-        disabled)
-            log_ok "Secure Boot is disabled"
-            ;;
-        unavailable)
-            log_warn "mokutil not found; cannot verify Secure Boot state - proceeding (driver may fail to load if SB is on)"
-            ;;
-    esac
+    nvidia_driver_secure_boot_gate || return 1
 
     if ! nvidia_driver_ensure_debian_nonfree; then
         log_warn "Falling back to software transcoding"
@@ -353,7 +329,8 @@ install_nvidia_drivers_apt() {
         # shellcheck disable=SC2034
         NEEDS_REBOOT=true
         log_ok "Debian NVIDIA driver installed (reboot required to load the kernel module)"
-        if [[ "$sb_mok" == true ]] && ! nvidia_driver_nouveau_is_active; then
+        # The gate passed, so Secure Boot on here means the module is signed.
+        if [[ "$(nvidia_driver_check_secure_boot)" == "enabled" ]] && ! nvidia_driver_nouveau_is_active; then
             log_warn "nvidia-smi does not work yet under Secure Boot; if it still fails after the reboot, check that DKMS signed the module (modinfo -F signer nvidia-current)"
         fi
     fi
