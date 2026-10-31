@@ -74,7 +74,7 @@ _nf_cap=$(mktemp)
 _nf_src=$(mktemp)
 export MEDIASTACK_APT_SOURCES="$_nf_src"
 sudo() {
-    if [[ "${1:-}" == "tee" ]]; then cat >"$_nf_cap"; else cat >/dev/null 2>&1 || true; fi
+    if [[ "${1:-}" == "tee" ]]; then cat >"$_nf_cap"; fi
     return 0
 }
 : >"$_nf_src" # no components visible → managed file is written
@@ -110,7 +110,7 @@ unset _nf_cap _nf_src _nf_line
 # --- nvidia_driver_ensure_debian_backports: managed source, idempotent, codename-aware ---
 _bp_cap=$(mktemp)
 sudo() {
-    if [[ "${1:-}" == "tee" ]]; then cat >"$_bp_cap"; else cat >/dev/null 2>&1 || true; fi
+    if [[ "${1:-}" == "tee" ]]; then cat >"$_bp_cap"; fi
     return 0
 }
 nvidia_driver_debian_codename() { printf 'bookworm'; }

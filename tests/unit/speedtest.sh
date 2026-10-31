@@ -44,7 +44,8 @@ unset -f curl
 
 # --- 2. librespeed-cli fallback when curl fails ----------------------------
 curl() {
-    cat >/dev/null 2>&1 || true
+    # Only the upload probe gets a piped payload; the download probe has none.
+    if [[ "$*" == *"__up"* ]]; then cat >/dev/null 2>&1; fi
     return 1
 } # primary method fails
 timeout() {
