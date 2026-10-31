@@ -238,7 +238,8 @@ trap - EXIT
 # no temp file survives the step.
 # The private /tmp also hides a repository checked out under /tmp, so the
 # namespace bind-mounts the repository at STALE_REPO first, and the worker
-# sources the configurator from there. /mnt is outside /tmp and always exists.
+# sources the configurator from there. /mnt is outside /tmp; the probe below
+# skips the test on a host where the bind or the private /tmp is unavailable.
 STALE_REPO=/mnt
 STALE_TMP=$(mktemp -d)
 trap 'rm -rf "$STALE_TMP"' EXIT
@@ -250,7 +251,7 @@ unset TMPDIR
 mkdir /tmp/kuma-configure.err
 configure_uptime_kuma
 printf "LEFTOVER:%s\n" "$(find /tmp -mindepth 1 ! -path /tmp/kuma-configure.err)"'
-if unshare -rm sh -c 'mount -t tmpfs none /tmp' 2>/dev/null; then
+if unshare -rm sh -c 'mount --bind "$1" "$2" && mount -t tmpfs none /tmp' _ "$REPO_ROOT" "$STALE_REPO" 2>/dev/null; then
     # Open the worker and bind the repository before /tmp is replaced,
     # because either may live under /tmp.
     STALE_OUT=$(unshare -rm bash -c \
@@ -263,7 +264,7 @@ if unshare -rm sh -c 'mount -t tmpfs none /tmp' 2>/dev/null; then
     assert_contains "$STALE_OUT" "LEFTOVER:" "the worker reached the leftover check"
     assert_not_contains "$STALE_OUT" "LEFTOVER:/" "no temp file survives the step"
 else
-    skip "stale error log: a private /tmp mount is unavailable on this host"
+    skip "stale error log: a private /tmp mount or a bind at ${STALE_REPO} is unavailable on this host"
 fi
 rm -rf "$STALE_TMP"
 trap - EXIT
